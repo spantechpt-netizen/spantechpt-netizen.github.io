@@ -1,0 +1,241 @@
+-- Span Tech CRM — database schema
+-- Engine: SQLite (node:sqlite). All money is stored as REAL in the quotation currency.
+
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT    NOT NULL,
+  name_ar       TEXT,
+  email         TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT    NOT NULL,
+  role          TEXT    NOT NULL DEFAULT 'engineer',  -- admin | manager | engineer | viewer
+  title         TEXT,
+  title_ar      TEXT,
+  phone         TEXT,
+  country       TEXT    DEFAULT 'SA',
+  lang          TEXT    NOT NULL DEFAULT 'ar',
+  active        INTEGER NOT NULL DEFAULT 1,
+  last_login_at TEXT,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token      TEXT    PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT    NOT NULL,
+  ip         TEXT,
+  user_agent TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+
+-- ---------------------------------------------------------------- customers
+CREATE TABLE IF NOT EXISTS customers (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code        TEXT    UNIQUE,
+  name_en     TEXT    NOT NULL,
+  name_ar     TEXT,
+  type        TEXT    NOT NULL DEFAULT 'main_contractor',
+  country     TEXT    NOT NULL DEFAULT 'SA',   -- SA | EG | QA
+  city        TEXT,
+  sector      TEXT,                            -- residential | commercial | education | healthcare | industrial | infrastructure | mixed
+  website     TEXT,
+  phone       TEXT,
+  email       TEXT,
+  address     TEXT,
+  tax_number  TEXT,
+  cr_number   TEXT,
+  status      TEXT    NOT NULL DEFAULT 'target', -- target | prospect | active | dormant | blacklisted
+  source      TEXT,                              -- referral | website | exhibition | cold_call | existing | tender | social
+  rating      INTEGER NOT NULL DEFAULT 3,        -- 1..5 priority of the target
+  owner_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  notes       TEXT,
+  created_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_customers_country ON customers(country);
+CREATE INDEX IF NOT EXISTS idx_customers_status  ON customers(status);
+CREATE INDEX IF NOT EXISTS idx_customers_owner   ON customers(owner_id);
+
+CREATE TABLE IF NOT EXISTS contacts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  name        TEXT    NOT NULL,
+  name_ar     TEXT,
+  title       TEXT,
+  phone       TEXT,
+  mobile      TEXT,
+  email       TEXT,
+  is_primary  INTEGER NOT NULL DEFAULT 0,
+  notes       TEXT,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_contacts_customer ON contacts(customer_id);
+
+-- ------------------------------------------------------------ opportunities
+CREATE TABLE IF NOT EXISTS opportunities (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  code           TEXT    UNIQUE,
+  title          TEXT    NOT NULL,
+  title_ar       TEXT,
+  customer_id    INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  contact_id     INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  country        TEXT    NOT NULL DEFAULT 'SA',
+  city           TEXT,
+  project_type   TEXT,                            -- tower | school | mall | villa | rest_house | admin | hospital | parking | other
+  area_sqm       REAL    NOT NULL DEFAULT 0,
+  stage          TEXT    NOT NULL DEFAULT 'new',  -- new | qualified | quoted | negotiation | won | lost
+  probability    INTEGER NOT NULL DEFAULT 10,     -- 0..100
+  expected_value REAL    NOT NULL DEFAULT 0,
+  currency       TEXT    NOT NULL DEFAULT 'SAR',
+  expected_close TEXT,
+  source         TEXT,
+  owner_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  lost_reason    TEXT,                            -- price | timing | competitor | scope | no_budget | no_response | other
+  lost_to        TEXT,
+  notes          TEXT,
+  closed_at      TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_opps_stage    ON opportunities(stage);
+CREATE INDEX IF NOT EXISTS idx_opps_customer ON opportunities(customer_id);
+CREATE INDEX IF NOT EXISTS idx_opps_owner    ON opportunities(owner_id);
+CREATE INDEX IF NOT EXISTS idx_opps_country  ON opportunities(country);
+
+-- --------------------------------------------------- activities / reminders
+CREATE TABLE IF NOT EXISTS activities (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  type           TEXT    NOT NULL DEFAULT 'call',  -- call | meeting | email | whatsapp | site_visit | task | note
+  subject        TEXT    NOT NULL,
+  notes          TEXT,
+  customer_id    INTEGER REFERENCES customers(id) ON DELETE CASCADE,
+  opportunity_id INTEGER REFERENCES opportunities(id) ON DELETE CASCADE,
+  quotation_id   INTEGER REFERENCES quotations(id) ON DELETE CASCADE,
+  contact_id     INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  owner_id       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  due_at         TEXT,
+  done           INTEGER NOT NULL DEFAULT 0,
+  done_at        TEXT,
+  outcome        TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activities_due   ON activities(done, due_at);
+CREATE INDEX IF NOT EXISTS idx_activities_owner ON activities(owner_id);
+CREATE INDEX IF NOT EXISTS idx_activities_cust  ON activities(customer_id);
+CREATE INDEX IF NOT EXISTS idx_activities_opp   ON activities(opportunity_id);
+
+-- --------------------------------------------------------------- quotations
+CREATE TABLE IF NOT EXISTS quotations (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  number           TEXT    NOT NULL,            -- SPAN TECH P.T - 26 - 059
+  revision         INTEGER NOT NULL DEFAULT 0,
+  parent_id        INTEGER REFERENCES quotations(id) ON DELETE SET NULL,
+  opportunity_id   INTEGER REFERENCES opportunities(id) ON DELETE SET NULL,
+  customer_id      INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+  contact_id       INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  project_name     TEXT    NOT NULL,
+  project_name_ar  TEXT,
+  location         TEXT,
+  location_ar      TEXT,
+  attention        TEXT,
+  attention_ar     TEXT,
+  subject_en       TEXT,
+  subject_ar       TEXT,
+  country          TEXT    NOT NULL DEFAULT 'SA',
+  currency         TEXT    NOT NULL DEFAULT 'SAR',
+  vat_rate         REAL    NOT NULL DEFAULT 15,
+  vat_included     INTEGER NOT NULL DEFAULT 0,  -- 0 = prices exclude VAT
+  issue_date       TEXT    NOT NULL DEFAULT (date('now')),
+  valid_days       INTEGER NOT NULL DEFAULT 10,
+  status           TEXT    NOT NULL DEFAULT 'draft',
+  -- cost model inputs (note 2 of the printed offer)
+  strand_price_ton REAL    NOT NULL DEFAULT 4000,
+  strand_kg_sqm    REAL    NOT NULL DEFAULT 3.5,
+  anchors_per_ton  REAL    NOT NULL DEFAULT 25,
+  anchor_cost      REAL    NOT NULL DEFAULT 0,
+  duct_cost_sqm    REAL    NOT NULL DEFAULT 0,
+  grout_cost_sqm   REAL    NOT NULL DEFAULT 0,
+  labour_cost_sqm  REAL    NOT NULL DEFAULT 0,
+  design_cost_sqm  REAL    NOT NULL DEFAULT 0,
+  overhead_pct     REAL    NOT NULL DEFAULT 0,
+  target_margin    REAL    NOT NULL DEFAULT 0,
+  price_variance   REAL    NOT NULL DEFAULT 5,   -- ± % re-negotiation trigger
+  -- totals (computed server side, never trusted from the client)
+  subtotal         REAL    NOT NULL DEFAULT 0,
+  discount_type    TEXT    NOT NULL DEFAULT 'none', -- none | percent | amount
+  discount_value   REAL    NOT NULL DEFAULT 0,
+  discount_amount  REAL    NOT NULL DEFAULT 0,
+  net_amount       REAL    NOT NULL DEFAULT 0,
+  vat_amount       REAL    NOT NULL DEFAULT 0,
+  total            REAL    NOT NULL DEFAULT 0,
+  cost_total       REAL    NOT NULL DEFAULT 0,
+  margin_amount    REAL    NOT NULL DEFAULT 0,
+  margin_pct       REAL    NOT NULL DEFAULT 0,
+  -- editable document content
+  scope_json         TEXT,   -- { design:[], supply:[], installation:[], deliverables:[], requirements:[] }
+  payment_terms_json TEXT,   -- [ { pct, label_en, label_ar } ]
+  conditions_json    TEXT,   -- [ { en, ar } ]
+  notes_en           TEXT,
+  notes_ar           TEXT,
+  intro_en           TEXT,
+  intro_ar           TEXT,
+  owner_id         INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  sent_at          TEXT,
+  decided_at       TEXT,
+  reject_reason    TEXT,
+  created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (number, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_quotes_customer ON quotations(customer_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_status   ON quotations(status);
+CREATE INDEX IF NOT EXISTS idx_quotes_owner    ON quotations(owner_id);
+CREATE INDEX IF NOT EXISTS idx_quotes_date     ON quotations(issue_date);
+
+CREATE TABLE IF NOT EXISTS quotation_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  desc_en      TEXT    NOT NULL,
+  desc_ar      TEXT,
+  unit_en      TEXT    NOT NULL DEFAULT 'm²',
+  unit_ar      TEXT    NOT NULL DEFAULT 'م²',
+  qty          REAL    NOT NULL DEFAULT 0,
+  unit_price   REAL    NOT NULL DEFAULT 0,
+  amount       REAL    NOT NULL DEFAULT 0,
+  is_optional  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_items_quote ON quotation_items(quotation_id);
+
+-- ------------------------------------------------------ settings and audit
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS counters (
+  key   TEXT    PRIMARY KEY,
+  value INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  entity      TEXT NOT NULL,
+  entity_id   INTEGER,
+  action      TEXT NOT NULL,
+  detail_json TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_time   ON audit_log(created_at);

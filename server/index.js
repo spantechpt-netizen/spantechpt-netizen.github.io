@@ -1,0 +1,109 @@
+import { createServer } from 'node:http';
+import { config, isDefaultSecret } from './config.js';
+import { db } from './db.js';
+import { userFromRequest, purgeExpiredSessions } from './auth.js';
+import { seedSettings, seedAdmin } from './seed.js';
+import {
+  Router, readJsonBody, sendJson, sendError, serveStatic, notFound, HttpError,
+} from './http.js';
+
+import * as authRoutes from './routes/auth.js';
+import * as userRoutes from './routes/users.js';
+import * as customerRoutes from './routes/customers.js';
+import * as opportunityRoutes from './routes/opportunities.js';
+import * as activityRoutes from './routes/activities.js';
+import * as quotationRoutes from './routes/quotations.js';
+import * as analyticsRoutes from './routes/analytics.js';
+import * as settingsRoutes from './routes/settings.js';
+
+const router = new Router();
+for (const module of [
+  authRoutes, userRoutes, customerRoutes, opportunityRoutes,
+  activityRoutes, quotationRoutes, analyticsRoutes, settingsRoutes,
+]) {
+  module.register(router);
+}
+
+router.get('/api/health', () => ({
+  ok: true,
+  version: '1.0.0',
+  time: new Date().toISOString(),
+}), { public: true });
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = decodeURIComponent(url.pathname);
+
+  try {
+    if (pathname.startsWith('/api/')) {
+      const matched = router.match(req.method, pathname);
+      if (!matched) throw notFound('Unknown endpoint', 'المسار غير موجود');
+      if (matched.methodMismatch) {
+        throw new HttpError(405, 'Method not allowed', 'طريقة الطلب غير مسموحة');
+      }
+
+      const user = userFromRequest(req);
+      if (!matched.route.options.public && !user) {
+        throw new HttpError(401, 'Not signed in', 'لم يتم تسجيل الدخول');
+      }
+
+      const body = await readJsonBody(req);
+      const query = Object.fromEntries(url.searchParams);
+      const result = await matched.route.handler({
+        req, res, body, query, user, params: matched.params,
+      });
+      if (!res.headersSent) sendJson(res, req.method === 'POST' ? 201 : 200, result);
+      return;
+    }
+
+    // Static assets, then the SPA shell for any unknown client-side route.
+    if (serveStatic(req, res, config.publicDir, pathname)) return;
+    if (serveStatic(req, res, config.publicDir, '/index.html')) return;
+    throw notFound();
+  } catch (error) {
+    if (!res.headersSent) sendError(res, error);
+    else res.end();
+  }
+});
+
+// Housekeeping: drop expired sessions hourly.
+const cleanup = setInterval(() => {
+  try { purgeExpiredSessions(); } catch (error) { console.error('[cleanup]', error); }
+}, 3600_000);
+cleanup.unref();
+
+function shutdown(signal) {
+  console.log(`\n${signal} received — shutting down.`);
+  server.close(() => {
+    try { db.close(); } catch { /* already closed */ }
+    process.exit(0);
+  });
+  // Don't hang forever on a stuck connection.
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+seedSettings();
+const admin = seedAdmin();
+
+server.listen(config.port, config.host, () => {
+  console.log('');
+  console.log('  Span Tech CRM  |  نظام سبان تك لإدارة العملاء وعروض الأسعار');
+  console.log('  ' + '─'.repeat(60));
+  console.log(`  URL       http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);
+  console.log(`  Database  ${config.dbPath}`);
+  if (admin) {
+    console.log('');
+    console.log(`  First administrator created:`);
+    console.log(`    email     ${admin.email}`);
+    console.log(`    password  ${admin.password}`);
+    console.log('    Sign in and change this password immediately.');
+  }
+  if (isDefaultSecret()) {
+    console.log('');
+    console.log('  WARNING: SESSION_SECRET is still the default value.');
+    console.log('  Set it in .env before exposing this server to the network.');
+  }
+  console.log('');
+});

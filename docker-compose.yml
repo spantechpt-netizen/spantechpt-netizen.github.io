@@ -1,0 +1,21 @@
+services:
+  crm:
+    build: .
+    image: spantech-crm:latest
+    container_name: spantech-crm
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      SESSION_SECRET: "CHANGE-ME-BEFORE-GOING-LIVE"
+      SESSION_HOURS: "72"
+      # Set to "true" once the CRM is behind HTTPS.
+      SECURE_COOKIES: "false"
+      ADMIN_EMAIL: "admin@spantech-pt.com"
+      ADMIN_PASSWORD: "SpanTech@2026"
+      ADMIN_NAME: "System Administrator"
+    volumes:
+      # The database lives here — this is the only thing you need to back up.
+      - ./data:/app/data
