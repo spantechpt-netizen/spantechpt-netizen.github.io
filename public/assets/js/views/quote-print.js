@@ -51,7 +51,7 @@ const LABELS = {
     price_note: 'ملاحظة السعر',
     closing: 'نؤكد التزامنا بأعلى معايير الجودة والسلامة، ونأمل أن ينال عرضنا قبولكم.',
     regards: 'مع خالص التحية والتقدير،',
-    for_company: 'عن شركة سبان تك للمقاولات', for_client: 'الموافقة والاعتماد — العميل',
+    for_company: 'عن', for_client: 'الموافقة والاعتماد — العميل',
     name: 'الاسم', signature: 'التوقيع', stamp: 'الختم',
     page: 'صفحة', of: 'من', cr: 'سجل تجاري', vat_no: 'الرقم الضريبي',
     page_note: 'أرقام الصفحات تظهر على النسخة المطبوعة',
@@ -80,7 +80,7 @@ const LABELS = {
     price_note: 'Price basis',
     closing: 'We confirm our commitment to the highest standards of quality and safety, and trust that our offer meets your approval.',
     regards: 'With our best regards,',
-    for_company: 'For Span Tech Contracting Co.', for_client: 'Client Acceptance & Approval',
+    for_company: 'For', for_client: 'Client Acceptance & Approval',
     name: 'Name', signature: 'Signature', stamp: 'Stamp',
     page: 'Page', of: 'of', cr: 'CR', vat_no: 'VAT No.',
     page_note: 'Page numbers appear on the printed copy',
@@ -193,14 +193,19 @@ function buildDocument(data, lang) {
     || branch.address_en || branch.address_ar || '';
   const quoteRef = `${q.number}${q.revision ? ` / R${q.revision}` : ''}`;
 
+  // A phone number like "+974 60008582" loses its plus sign to the bidi
+  // algorithm when it sits in an Arabic line, so each Latin run is isolated.
+  const ltr = (value) => (value ? `\u2066${value}\u2069` : '');
+
   const footContact = [
-    [branchAddress].filter(Boolean).join(''),
-    [branch.phone, branch.email, branch.website].filter(Boolean).join('  ·  '),
+    branchAddress,
+    [branch.phone, branch.email, branch.email_alt, branch.website]
+      .filter(Boolean).map(ltr).join(' · '),
   ].filter(Boolean).join('\n');
 
   // Page one already shows the letterhead, so the running header only starts
   // on page two — see the `@page :first` rule.
-  const runHeadRef = [quoteRef, projectName].filter(Boolean).join('  —  ');
+  const runHeadRef = [ltr(quoteRef), projectName].filter(Boolean).join('  —  ');
 
   // `counter(pages)` is the real total, so the reader can tell a four-page
   // offer from one that lost a page in the printer.
@@ -249,7 +254,8 @@ function buildDocument(data, lang) {
     }
 
     @bottom-${startSide} {
-      content: "${cssString(quoteRef)}  ·  ${cssString(formatDate(q.issue_date))}";
+      content: "${cssString(ltr(quoteRef))} · ${cssString(ltr(formatDate(q.issue_date)))}";
+      white-space: nowrap;
       vertical-align: top; padding-top: 2.6mm;
       border-top: .6pt solid #c8d3e0;
     }
@@ -349,8 +355,9 @@ function buildDocument(data, lang) {
     padding-bottom: 9px; margin-bottom: 12px;
     border-bottom: 2.5px solid var(--brand);
   }
-  /* The mark sits above the wordmark, so it needs height rather than width. */
-  .letterhead img { height: 62px; width: auto; }
+  /* The group mark is tall and the Qatar one is wide, so bound both axes and
+     let the browser keep whichever aspect ratio the branch's logo has. */
+  .letterhead img { max-height: 62px; max-width: 58mm; }
   .letterhead .who { flex: 1; }
   .letterhead .who .n { font-size: 14pt; font-weight: 800; color: var(--brand); line-height: 1.25; }
   .letterhead .who .t { font-size: 8.6pt; color: var(--grey); letter-spacing: .02em; }
@@ -494,10 +501,10 @@ function buildDocument(data, lang) {
 
 <div class="sheet">
 
-  <div class="watermark" aria-hidden="true"><img src="/assets/img/logo@2x.png" alt=""></div>
+  <div class="watermark" aria-hidden="true"><img src="${esc(branch.logo || '/assets/img/logo@2x.png')}" alt=""></div>
 
   <div class="letterhead">
-    <img src="/assets/img/logo@2x.png" alt="Span Tech">
+    <img src="${esc(branch.logo || '/assets/img/logo@2x.png')}" alt="${esc(branchName)}">
     <div class="who">
       <div class="n">${esc(isAr ? (branch.name_ar || company.name_ar) : (branch.name_en || company.name_en))}</div>
       <div class="t">${esc(isAr ? company.tagline_ar : company.tagline_en)}</div>
@@ -642,7 +649,8 @@ function buildDocument(data, lang) {
 
   <div class="signatures">
     <div class="sig">
-      <div class="h">${esc(L.for_company)}</div>
+      <!-- The branch signs, so a Qatari offer is signed by the Qatari entity. -->
+      <div class="h">${esc(`${L.for_company} ${branchName}`)}</div>
       <div class="l"><span class="k">${esc(L.name)}</span><span class="line">${esc(isAr ? (q.owner_name_ar || q.owner_name || '') : (q.owner_name || ''))}</span></div>
       <div class="l"><span class="k">${esc(L.signature)}</span><span class="line"></span></div>
       <div class="l"><span class="k">${esc(L.stamp)}</span><span class="line"></span></div>

@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { config, isDefaultSecret } from './config.js';
 import { db } from './db.js';
 import { userFromRequest, purgeExpiredSessions } from './auth.js';
-import { seedSettings, seedAdmin } from './seed.js';
+import { seedSettings, seedAdmin, reconcileCounters } from './seed.js';
 import {
   Router, readJsonBody, sendJson, sendError, serveStatic, notFound, HttpError,
 } from './http.js';
@@ -132,6 +132,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 seedSettings();
+reconcileCounters();
 const admin = seedAdmin();
 
 // Run one sweep at boot so reminders are current even after downtime.

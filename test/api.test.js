@@ -630,10 +630,12 @@ test('a branch with nothing filled in still prints a usable letterhead', async (
 
   const doc = await api('GET', `/api/quotations/${quote.body.quotation.id}/document`);
   const branch = doc.body.branch;
-  assert.ok(branch.name_en, 'the company name always prints');
-  assert.ok(branch.phone, 'a blank branch borrows the default contact details');
-  assert.equal(branch.cr_number, '', 'but never another country’s registration');
-  assert.match(branch.address_en, /Qatar/, 'its own address is kept');
+  assert.match(branch.name_en, /SPAN TEC Trading/, 'Qatar trades under its own name');
+  assert.equal(branch.cr_number, '175473', 'and its own registration');
+  assert.match(branch.phone, /^\+974/, 'and its own phone');
+  assert.match(branch.email, /spantec-qa\.com$/i);
+  assert.match(branch.address_en, /Qatar/);
+  assert.match(branch.logo, /logo-qa/, 'and its own mark');
 });
 
 test('company settings carry per-country branches', async () => {
@@ -644,6 +646,8 @@ test('company settings carry per-country branches', async () => {
     assert.ok(company.branches[code], `${code} branch missing`);
   }
   assert.equal(company.branches.SA.cr_number, '7038269549');
+  assert.equal(company.branches.QA.cr_number, '175473');
   assert.match(company.branches.EG.email, /spantechpt\.com$/i);
   assert.match(company.branches.SA.email, /spantechksa\.com$/i);
+  assert.match(company.branches.QA.email_alt, /finance@spantec-qa\.com/i);
 });

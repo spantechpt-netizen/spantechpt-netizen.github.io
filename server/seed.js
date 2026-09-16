@@ -44,14 +44,29 @@ export function seedSettings() {
     });
   }
 
-  // A short-lived seed carried the wrong Saudi commercial registration. Correct
-  // it in place, but only where the stored value is still that exact number, so
-  // a registration the company has edited itself is never overwritten.
+  // Corrections to branches that already exist in the database. These run on
+  // every start, so each one has to recognise its own placeholder and refuse to
+  // touch anything the company has edited since.
   const stored = getSetting('company');
+  let corrected = false;
+
+  // A short-lived seed carried the wrong Saudi commercial registration.
   if (stored?.branches?.SA?.cr_number === '1010981534') {
     stored.branches.SA.cr_number = COMPANY.branches.SA.cr_number;
-    setSetting('company', stored);
+    corrected = true;
   }
+
+  // Qatar shipped as a placeholder — the group name and address with no
+  // registration, phone or email. The real branch trades under its own name
+  // and mark, so fill the whole thing in, but only while it is still that
+  // placeholder: any contact detail present means someone has been here.
+  const qa = stored?.branches?.QA;
+  if (qa && !qa.cr_number && !qa.phone && !qa.email) {
+    stored.branches.QA = { ...qa, ...COMPANY.branches.QA };
+    corrected = true;
+  }
+
+  if (corrected) setSetting('company', stored);
 
   if (!getSetting('scope')) setSetting('scope', SCOPE);
   if (!getSetting('payment_terms')) setSetting('payment_terms', PAYMENT_TERMS);
@@ -60,6 +75,49 @@ export function seedSettings() {
   if (!getSetting('intro')) setSetting('intro', INTRO);
   if (!getSetting('price_clause')) setSetting('price_clause', PRICE_ADJUSTMENT_CLAUSE);
   if (!getSetting('quote_prefix')) setSetting('quote_prefix', 'SPAN TECH P.T');
+}
+
+/**
+ * Brings the code sequences up to the highest code actually in the tables.
+ *
+ * The demo data is written with codes numbered from one and never touched the
+ * counters, so on a seeded database the first customer an engineer added
+ * reused a code the seed had already taken and the insert failed against the
+ * unique index. Running this on every start also heals a database restored
+ * from a backup or edited by hand, and it never lowers a counter.
+ */
+export function reconcileCounters() {
+  const trailing = (value) => {
+    const match = /(\d+)\s*$/.exec(String(value ?? ''));
+    return match ? Number(match[1]) : 0;
+  };
+
+  const raise = (key, highest) => {
+    if (!highest) return;
+    const current = get('SELECT value FROM counters WHERE key = ?', key);
+    if (current && current.value >= highest) return;
+    run(
+      `INSERT INTO counters (key, value) VALUES (?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      key, highest,
+    );
+  };
+
+  const highestCode = (table) => all(`SELECT code FROM ${table}`)
+    .reduce((top, row) => Math.max(top, trailing(row.code)), 0);
+
+  raise('customer', highestCode('customers'));
+  raise('opportunity', highestCode('opportunities'));
+
+  // A quotation number restarts its sequence every calendar year, so each year
+  // carries its own counter.
+  const perYear = new Map();
+  for (const row of all('SELECT number, issue_date FROM quotations')) {
+    const year = String(row.issue_date || '').slice(0, 4);
+    if (year.length !== 4) continue;
+    perYear.set(year, Math.max(perYear.get(year) || 0, trailing(row.number)));
+  }
+  for (const [year, highest] of perYear) raise(`quote_${year}`, highest);
 }
 
 export function seedAdmin() {
@@ -247,6 +305,10 @@ function seedDemo() {
     { type: 'call', subject: 'مكالمة تعريفية', customer_id: 5, opportunity_id: 5, owner_id: engineerIds[2], due_at: iso(-12) + 'T10:00:00.000Z', done: 1, done_at: iso(-12), outcome: 'إيجابية — طلبوا عرض سعر رسمي' },
   ];
   activities.forEach((activity) => insert('activities', { ...activity, created_by: owner }));
+
+  // The rows above are numbered by hand, so hand the sequences back in step
+  // before anyone adds a customer of their own.
+  reconcileCounters();
 
   console.log(`  demo data: ${customers.length} customers, ${opportunities.length} opportunities, ${activities.length} activities`);
   console.log('  demo engineer logins use password: SpanTech@2026');

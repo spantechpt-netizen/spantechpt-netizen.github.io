@@ -139,18 +139,27 @@ The company operates in more than one country, and a quotation must carry the
 office that issues it. *Settings → Company profile → Branch details* holds a
 block per country:
 
-| | Saudi Arabia | Egypt |
-|---|---|---|
-| Phone | 0504291572 | +20 100 9896731 |
-| Email | Info@spantechksa.com | Info@spantechpt.com |
-| Website | www.spantechksa.com | www.spantechpt.com |
-| Registration | CR 7038269549 | — |
-| Address | Riyadh | Villa 119, Al Banafseg, M. Naguib St., New Cairo |
+| | Saudi Arabia | Egypt | Qatar |
+|---|---|---|---|
+| Trading name | SPAN TECH Contracting & Post Tensioning | SPAN TECH Contracting & Post Tensioning | SPAN TEC Trading & Contracting |
+| Phone | 0504291572 | +20 100 9896731 | +974 60008582 |
+| Email | Info@spantechksa.com | Info@spantechpt.com | sales@spantec-qa.com, finance@spantec-qa.com |
+| Website | www.spantechksa.com | www.spantechpt.com | www.spantechpt.com |
+| Registration | CR 7038269549 | — | C.R. 175473 |
+| Address | Riyadh | Villa 119, Al Banafseg, M. Naguib St., New Cairo | Doha |
+| Logo | `logo@2x.png` | `logo@2x.png` | `logo-qa@2x.png` |
 
 A quotation prints the branch matching **its own country**, so a Saudi offer
 carries the Saudi commercial registration and Riyadh address while an Egyptian
 one carries the Cairo office — from one set of settings, with no separate
-templates to keep in step.
+templates to keep in step. Qatar trades under its own name and its own mark,
+so a Qatari offer is not the Saudi letterhead with a different phone number on
+it: the logo, trading name and registration label all come from that branch.
+
+Code sequences (`C-0007`, `OPP-0012`, `SPAN TECH P.T - 26 - 006`) are
+reconciled against the highest code actually in each table on every start, so a
+database seeded with demo data, restored from a backup or edited by hand cannot
+hand out a code that is already taken.
 
 A branch you have not filled in yet borrows the default branch's contact details
 rather than printing blanks, **except for the commercial registration and VAT
