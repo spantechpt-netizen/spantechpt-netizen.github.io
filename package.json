@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node --no-warnings server/index.js",
     "dev": "node --no-warnings --watch server/index.js",
+    "demo": "node --no-warnings scripts/first-run.mjs",
     "check": "node --no-warnings scripts/check.mjs",
     "seed": "node --no-warnings server/seed.js",
     "reset": "node --no-warnings server/seed.js --reset",

@@ -203,6 +203,17 @@ no shell scripts in the runtime path.
 
 ## Running it
 
+### Just trying it out
+
+```bash
+npm run demo     # writes .env, seeds demo data, prints the logins
+npm start
+```
+
+Or double-click `start.bat` on Windows / run `./start.sh` on macOS and Linux —
+those check the Node version, do the above and open the browser. There is an
+Arabic quickstart for non-technical users in [`docs/TRY-IT.md`](docs/TRY-IT.md).
+
 ### Option A — Docker (recommended for the company server)
 
 ```bash
