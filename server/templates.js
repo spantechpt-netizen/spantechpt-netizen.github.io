@@ -29,7 +29,7 @@ export const COMPANY = {
       name_ar: 'شركة سبان تك للمقاولات',
       registration_label_ar: 'سجل تجاري',
       registration_label_en: 'CR',
-      cr_number: '1010981534',
+      cr_number: '7038269549',
       vat_number: '',
       phone: '0504291572',
       email: 'Info@spantechksa.com',

@@ -144,7 +144,7 @@ block per country:
 | Phone | 0504291572 | +20 100 9896731 |
 | Email | Info@spantechksa.com | Info@spantechpt.com |
 | Website | www.spantechksa.com | www.spantechpt.com |
-| Registration | CR 1010981534 | — |
+| Registration | CR 7038269549 | — |
 | Address | Riyadh | Villa 119, Al Banafseg, M. Naguib St., New Cairo |
 
 A quotation prints the branch matching **its own country**, so a Saudi offer

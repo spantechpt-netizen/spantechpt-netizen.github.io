@@ -643,7 +643,7 @@ test('company settings carry per-country branches', async () => {
   for (const code of ['SA', 'EG', 'QA']) {
     assert.ok(company.branches[code], `${code} branch missing`);
   }
-  assert.equal(company.branches.SA.cr_number, '1010981534');
+  assert.equal(company.branches.SA.cr_number, '7038269549');
   assert.match(company.branches.EG.email, /spantechpt\.com$/i);
   assert.match(company.branches.SA.email, /spantechksa\.com$/i);
 });

@@ -43,6 +43,16 @@ export function seedSettings() {
       branches,
     });
   }
+
+  // A short-lived seed carried the wrong Saudi commercial registration. Correct
+  // it in place, but only where the stored value is still that exact number, so
+  // a registration the company has edited itself is never overwritten.
+  const stored = getSetting('company');
+  if (stored?.branches?.SA?.cr_number === '1010981534') {
+    stored.branches.SA.cr_number = COMPANY.branches.SA.cr_number;
+    setSetting('company', stored);
+  }
+
   if (!getSetting('scope')) setSetting('scope', SCOPE);
   if (!getSetting('payment_terms')) setSetting('payment_terms', PAYMENT_TERMS);
   if (!getSetting('conditions')) setSetting('conditions', CONDITIONS);
