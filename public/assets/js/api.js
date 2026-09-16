@@ -20,6 +20,43 @@ export class ApiError extends Error {
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn; };
 
+/**
+ * Works out why a request could not be sent, so the message names something
+ * the reader can act on.
+ */
+async function networkFailure() {
+  const where = location.origin;
+
+  // The page itself came from somewhere, so if health answers now, the server
+  // is up and it was this one request that failed — a browser extension, a
+  // proxy, or a blip.
+  let serverUp = false;
+  try {
+    const probe = await fetch('/api/health', { cache: 'no-store' });
+    serverUp = probe.ok;
+  } catch { /* server really is gone */ }
+
+  if (serverUp) {
+    return { error: {
+      message: `The server at ${where} is running, but that request did not get through. `
+        + 'Something between the browser and it — an extension, antivirus or a proxy — '
+        + 'is blocking it. Try again, or try a different browser.',
+      message_ar: `السيرفر على ${where} شغال، بس الطلب ده مش بيعدّي. `
+        + 'في حاجة بين المتصفح والسيرفر بتمنعه — إضافة في المتصفح أو مضاد فيروسات '
+        + 'أو بروكسي. جرّب تاني، أو جرّب متصفح تاني.',
+    } };
+  }
+
+  return { error: {
+    message: `The server at ${where} has stopped answering. Look at the window that is `
+      + 'running it: if it closed, or shows an error, start it again with start.bat '
+      + '(or ./start.sh) and keep that window open.',
+    message_ar: `السيرفر على ${where} وقف. بصّ على النافذة السودا اللي شغّالاه: `
+      + 'لو اتقفلت أو فيها رسالة خطأ، شغّل start.bat تاني وسيبها مفتوحة — '
+      + 'قفل النافذة دي بيوقّف النظام.',
+  } };
+}
+
 async function request(method, path, body) {
   let res;
   try {
@@ -30,12 +67,10 @@ async function request(method, path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, {
-      error: {
-        message: 'Cannot reach the server. Check your connection.',
-        message_ar: 'تعذر الاتصال بالخادم. تحقق من الاتصال بالشبكة.',
-      },
-    });
+    // "Check your connection" sends people hunting the network for a problem
+    // that is usually the server having stopped. Ask it directly and say which
+    // of the two it is, and where to look.
+    throw new ApiError(0, await networkFailure());
   }
 
   const text = await res.text();

@@ -45,8 +45,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM يفتح المتصفح بعد ثانيتين، لما السيرفر يكون قام
-start "" cmd /c "timeout /t 2 >nul & start http://localhost:8090"
+REM يفتح المتصفح أول ما السيرفر يرد فعلاً — مش بعد وقت محدد
+start "" /b node --no-warnings scripts\open-when-ready.mjs
 
 echo   السيرفر شغال. اقفل النافذة دي عشان توقفه.
 echo.

@@ -30,12 +30,8 @@ fi
 
 npm run demo
 
-# يفتح المتصفح بعد ثانيتين، لما السيرفر يكون قام
-( sleep 2
-  URL="http://localhost:8090"
-  if   command -v xdg-open >/dev/null 2>&1; then xdg-open  "$URL"
-  elif command -v open     >/dev/null 2>&1; then open      "$URL"
-  fi ) >/dev/null 2>&1 &
+# يفتح المتصفح أول ما السيرفر يرد فعلاً — مش بعد وقت محدد
+node --no-warnings scripts/open-when-ready.mjs &
 
 echo "  السيرفر شغال. اضغط Ctrl+C عشان توقفه."
 echo
