@@ -74,6 +74,23 @@ a one-line summary in both languages. The key is stored encrypted, never sent
 back to the browser, and if the call fails the built-in rules still stand. Get a
 key from [console.anthropic.com](https://console.anthropic.com).
 
+### Requests that arrive somewhere else
+
+Not everything comes by email. A WhatsApp message, a phone call, a conversation
+on site — paste it into *Incoming requests → Add a WhatsApp request* and it
+joins the same queue, with the same extraction, the same triage and the same
+one-button conversion behind it. Give it the sender's number and the sender is
+matched against customers already on file, comparing the last eight digits so
+`+966 55 123 4477` and `0551234477` are the same person (eight rather than
+nine, because Qatari numbers are only eight digits long).
+
+The CRM is also installable as an app on a phone, which is what puts it in the
+share sheet: on Android, share a WhatsApp message to Span Tech and the capture
+form opens already filled in. On iOS the share sheet cannot reach a web app, so
+there it is copy and paste. The service worker that makes the app installable
+caches nothing on purpose — an offline cache would go on serving yesterday's
+JavaScript after a deployment, which is a worse problem than the one it solves.
+
 ### Importing your past email
 
 *Settings → Mailboxes → Import from past email* scans as far back as you like,

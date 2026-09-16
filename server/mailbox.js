@@ -9,7 +9,7 @@
  * until someone assigns it and presses convert — an email is a claim, not a
  * fact, and a CRM that invents customers from spam is worse than no CRM.
  */
-import { all, get, insert, run, update, getSetting, transaction } from './db.js';
+import { all, get, insert, run, update, getSetting, transaction, audit } from './db.js';
 import { withImap, imapDate } from './imap.js';
 import { parseMessage, decodeWords, parseAddresses, stripQuotedReply } from './mime.js';
 import { extractFromEmail, looksLikeRfq, mentionsPostTension } from './extract.js';
@@ -38,7 +38,7 @@ export const isNoise = (fromEmail, subject, headers = {}) => {
 export const listAccounts = () => all(
   `SELECT id, label, host, port, secure, username, folders, active, sync_minutes,
           allow_self_signed, last_sync_at, last_error, state_json, created_at
-     FROM mail_accounts ORDER BY id`,
+     FROM mail_accounts WHERE channel = 'imap' ORDER BY id`,
 ).map((row) => ({
   ...row,
   folders: safeJson(row.folders, ['INBOX']),
@@ -237,8 +237,100 @@ async function storeMessage(account, folder, fetched) {
   return 'queued';
 }
 
+// ------------------------------------------------------------------- capture
+// Not every request arrives by email. A WhatsApp message, a phone call, a
+// conversation on site — someone pastes it in and it joins the same queue,
+// with the same extraction and the same triage behind it, rather than living
+// in a notebook until it is forgotten.
+
+/** The pseudo-account that owns pasted requests, created on first use. */
+function captureAccountId() {
+  const existing = get("SELECT id FROM mail_accounts WHERE channel = 'capture' LIMIT 1");
+  if (existing) return existing.id;
+  // It is never synced and never shown in Settings; it exists so a captured
+  // message can hang off the same table as a fetched one.
+  return insert('mail_accounts', {
+    label: 'Captured requests',
+    channel: 'capture',
+    host: '-', port: 0, secure: 0,
+    username: '-', password_enc: '',
+    folders: '[]', active: 0, sync_minutes: 0,
+  });
+}
+
+/** A WhatsApp message has no subject, so its first line stands in for one. */
+function firstLine(text) {
+  const line = String(text || '').split(/\r?\n/).find((l) => l.trim());
+  return (line || '').trim().slice(0, 140);
+}
+
+export async function captureMessage({
+  text, fromName = null, fromPhone = null, channel = 'whatsapp', userId = null,
+} = {}) {
+  const body = String(text || '').trim();
+  if (!body) throw new Error('empty capture');
+
+  const accountId = captureAccountId();
+  const folder = channel;
+  const last = get(
+    'SELECT MAX(uid) AS uid FROM mail_messages WHERE account_id = ? AND folder = ?',
+    accountId, folder,
+  );
+  const receivedAt = new Date().toISOString();
+  const subject = firstLine(body);
+
+  const messageRowId = insert('mail_messages', {
+    account_id: accountId,
+    channel,
+    folder,
+    uid: Number(last?.uid || 0) + 1,
+    from_name: fromName,
+    from_phone: fromPhone,
+    subject: subject || null,
+    body_text: body.slice(0, 40_000),
+    snippet: body.replace(/\s+/g, ' ').slice(0, 300),
+    received_at: receivedAt,
+  });
+
+  const settings = getSetting('ai', {}) || {};
+  const extraction = await extractFromEmail({
+    fromEmail: null,
+    fromName,
+    fromPhone,
+    subject,
+    body,
+    receivedAt,
+  }, { useAi: Boolean(settings.api_key) && settings.enabled !== false });
+
+  // A person chose to paste this in, so it is queued whatever the wording —
+  // unlike mail, where the filter exists to keep newsletters out.
+  const requestId = insert('mail_requests', {
+    message_id: messageRowId,
+    status: 'new',
+    kind: extraction.is_rfq ? 'rfq' : 'other',
+    confidence: extraction.confidence || 0,
+    extraction_json: JSON.stringify(extraction),
+    summary_ar: extraction.summary_ar || null,
+    summary_en: extraction.summary_en || null,
+    customer_id: extraction.customer?.matched_id || null,
+  });
+
+  notifyTriagers({
+    subject,
+    from: { name: fromName, email: fromPhone },
+    extraction,
+    requestId,
+    channel,
+  });
+  audit(userId, 'mail_request', requestId, 'capture', { channel, from: fromPhone || fromName });
+
+  return { requestId, extraction };
+}
+
 /** Tells whoever triages the queue that something new landed. */
-function notifyTriagers({ subject, from, extraction, requestId }) {
+function notifyTriagers({ subject, from, extraction, requestId, channel = 'email' }) {
+  const CHANNEL_AR = { email: 'من الإيميل', whatsapp: 'من الواتساب', phone: 'من مكالمة', other: '' };
+  const CHANNEL_EN = { email: 'from email', whatsapp: 'from WhatsApp', phone: 'from a call', other: '' };
   const recipients = all(
     `SELECT id, role, permissions FROM users WHERE active = 1 AND role IN ('admin', 'manager')`,
   );
@@ -249,8 +341,12 @@ function notifyTriagers({ subject, from, extraction, requestId }) {
     notify({
       userId: person.id,
       type: 'mail_request',
-      titleAr: extraction.is_rfq ? 'طلب عرض سعر جديد من الإيميل' : 'رسالة جديدة محتاجة متابعة',
-      titleEn: extraction.is_rfq ? 'New quotation request from email' : 'New email needs attention',
+      titleAr: extraction.is_rfq
+        ? `طلب عرض سعر جديد ${CHANNEL_AR[channel] ?? ''}`.trim()
+        : 'رسالة جديدة محتاجة متابعة',
+      titleEn: extraction.is_rfq
+        ? `New quotation request ${CHANNEL_EN[channel] ?? ''}`.trim()
+        : 'New message needs attention',
       bodyAr: `${who} — ${subject}${area ? ` (${area} م²)` : ''}`,
       bodyEn: `${who} — ${subject}${area ? ` (${area} m²)` : ''}`,
       entity: 'mail_request',
@@ -284,7 +380,7 @@ export async function syncDueAccounts() {
   running = true;
   const results = {};
   try {
-    for (const account of all('SELECT * FROM mail_accounts WHERE active = 1')) {
+    for (const account of all("SELECT * FROM mail_accounts WHERE active = 1 AND channel = 'imap'")) {
       const last = account.last_sync_at ? new Date(account.last_sync_at).getTime() : 0;
       const due = Date.now() - last >= Math.max(account.sync_minutes, 1) * 60_000;
       if (!due) continue;
@@ -307,8 +403,9 @@ export async function syncDueAccounts() {
 // ----------------------------------------------------------- queue helpers
 const REQUEST_SELECT = `
   SELECT r.*,
-         m.subject, m.from_email, m.from_name, m.snippet, m.body_text,
+         m.subject, m.from_email, m.from_name, m.from_phone, m.snippet, m.body_text,
          m.received_at, m.has_attachments, m.attachments_json, m.to_emails,
+         m.channel,
          a.label AS account_label,
          c.name_en AS customer_name, c.name_ar AS customer_name_ar,
          o.title  AS opportunity_title,

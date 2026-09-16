@@ -32,6 +32,12 @@ addColumn('users', 'stale_after_days', 'INTEGER NOT NULL DEFAULT 30');
 addColumn('users', 'permissions', 'TEXT');
 // Accept a self-signed certificate on an internal mail server.
 addColumn('mail_accounts', 'allow_self_signed', 'INTEGER NOT NULL DEFAULT 0');
+// Requests do not all arrive by email. A capture account holds the ones a
+// person pasted in — from WhatsApp, a phone call, a meeting — so they land in
+// the same triage queue as the mail, with the same extraction behind them.
+addColumn('mail_accounts', 'channel', "TEXT NOT NULL DEFAULT 'imap'");
+addColumn('mail_messages', 'channel', "TEXT NOT NULL DEFAULT 'email'");
+addColumn('mail_messages', 'from_phone', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

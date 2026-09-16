@@ -66,8 +66,52 @@ export const isPublicDomain = (domain) => !domain || PUBLIC_DOMAINS.has(domain);
  * Finds an existing customer for this sender: first by an exact contact email,
  * then by the company's own email domain, then by a name appearing in the text.
  */
-export function matchCustomer({ fromEmail, fromName, subject = '', body = '' }) {
+/**
+ * The last eight digits of a phone number, which is what survives the
+ * difference between +966 50 429 1572, 00966504291572 and 0504291572. Eight
+ * rather than nine because Qatari numbers are only eight digits long.
+ */
+export function phoneKey(value) {
+  const digits = normaliseDigits(String(value ?? '')).replace(/\D+/g, '');
+  return digits.length >= 8 ? digits.slice(-8) : null;
+}
+
+/** A customer whose contact carries this number, however it was written. */
+export function matchByPhone(phone) {
+  const key = phoneKey(phone);
+  if (!key) return { customer: null, contactId: null, how: null };
+
+  const contacts = all(
+    `SELECT ct.id AS contact_id, ct.mobile, ct.phone, c.*
+       FROM contacts ct JOIN customers c ON c.id = ct.customer_id
+      WHERE ct.mobile IS NOT NULL AND ct.mobile != ''
+         OR ct.phone IS NOT NULL AND ct.phone != ''`,
+  );
+  for (const row of contacts) {
+    if (phoneKey(row.mobile) === key || phoneKey(row.phone) === key) {
+      return { customer: row, contactId: row.contact_id, how: 'contact_phone' };
+    }
+  }
+
+  const customers = all("SELECT * FROM customers WHERE phone IS NOT NULL AND phone != ''");
+  for (const customer of customers) {
+    if (phoneKey(customer.phone) === key) {
+      return { customer, contactId: null, how: 'customer_phone' };
+    }
+  }
+
+  return { customer: null, contactId: null, how: null };
+}
+
+export function matchCustomer({ fromEmail, fromName, fromPhone, subject = '', body = '' }) {
   const domain = domainOf(fromEmail);
+
+  // On a WhatsApp capture the number is all we have, and it is the strongest
+  // identifier there is — stronger than a name typed by hand.
+  if (fromPhone) {
+    const byPhone = matchByPhone(fromPhone);
+    if (byPhone.customer) return byPhone;
+  }
 
   if (fromEmail) {
     const byContact = get(
@@ -197,13 +241,45 @@ export function extractProjectName(subject, body) {
 }
 
 /** A company name from the sender's display name or signature. */
+// A sign-off, and whatever leads into the name after it. WhatsApp messages
+// end this way constantly: "تحياتي — م. أحمد من شركة المستقبل للمقاولات"
+// should yield the company, not the whole farewell.
+// Longest first, and no \b — a word boundary is an ASCII notion, so it never
+// matches at the end of an Arabic word.
+const SIGN_OFF = /^\s*(?:وتقبلوا تحياتي|مع تحياتي|تحياتي|تحياتى|شكراً|شكرا|best regards|kind regards|regards|thanks(?: a lot)?|thank you|br)[\s,،.—–:-]*/i;
+// "م. أحمد من شركة المستقبل" / "Ahmed Fathy of Delta Contracting" — the company
+// is what follows the connector.
+const NAME_CONNECTOR = /\s(?:من|of|at|from)\s/i;
+
+const PERSON_LEAD = /^(?:م\.?|مهندس|د\.?|eng\.?|mr\.?|ms\.?|dr\.?)\s/i;
+
+/**
+ * Trims a farewell and the person's name off a signature line. The connector
+ * is only followed when the line really is a signature — otherwise "Ministry
+ * of Housing" would lose its ministry.
+ */
+function stripSignOff(line) {
+  const original = tidy(line);
+  const text = original.replace(SIGN_OFF, '');
+  const hadSignOff = text !== original;
+
+  const parts = text.split(NAME_CONNECTOR);
+  if (parts.length > 1 && (hadSignOff || PERSON_LEAD.test(text))) {
+    const tail = tidy(parts[parts.length - 1]);
+    if (tail.length > 4) return tail;
+  }
+  return text;
+}
+
 export function extractCompanyName(fromName, body, domain) {
   const suffixes = /(contracting|construction|engineering|consultants?|group|holding|company|co\.?|llc|w\.l\.l|est\.?|trading|للمقاولات|للإنشاءات|للاستشارات|هندسية|القابضة|مجموعة)/i;
 
   for (const line of String(body || '').split('\n').slice(0, 40)) {
     const trimmed = tidy(line);
     if (trimmed.length > 4 && trimmed.length < 70 && suffixes.test(trimmed) && !trimmed.includes('@')) {
-      return trimmed;
+      const cleaned = stripSignOff(trimmed);
+      // Only take the trimmed version if it still names a company.
+      return cleaned.length > 4 && suffixes.test(cleaned) ? cleaned : trimmed;
     }
   }
   if (fromName && suffixes.test(fromName)) return tidy(fromName);
@@ -221,10 +297,10 @@ const tidy = (text) => String(text || '').replace(/\s+/g, ' ').trim();
  * The offline pass. Returns a draft plus a confidence score, where every
  * field notes its source so the reviewer can see what was guessed.
  */
-export function heuristicExtract({ fromEmail, fromName, subject, body, receivedAt }) {
+export function heuristicExtract({ fromEmail, fromName, fromPhone, subject, body, receivedAt }) {
   const text = `${subject || ''}\n${body || ''}`;
   const domain = domainOf(fromEmail);
-  const match = matchCustomer({ fromEmail, fromName, subject, body });
+  const match = matchCustomer({ fromEmail, fromName, fromPhone, subject, body });
 
   const area = extractArea(text);
   const country = detectCountry(text) || match.customer?.country || null;
@@ -371,6 +447,11 @@ export async function claudeExtract({ subject, body, fromEmail, fromName }) {
 /** Heuristics first, then Claude's answer merged over the top where present. */
 export async function extractFromEmail(email, { useAi = true } = {}) {
   const base = heuristicExtract(email);
+  // A WhatsApp capture knows the sender's number outright; put it first so the
+  // reviewer sees it even when the message body never spells it out.
+  if (email.fromPhone && !base.contact.phones.includes(email.fromPhone)) {
+    base.contact.phones = [email.fromPhone, ...base.contact.phones];
+  }
   if (!useAi) return base;
 
   const ai = await claudeExtract(email);

@@ -5,11 +5,12 @@ import { encryptSecret, maskSecret } from '../secrets.js';
 import { notify } from '../notifications.js';
 import {
   listAccounts, testAccount, syncAccount, syncDueAccounts,
-  listRequests, getRequest, requestCounts, convertRequest,
+  listRequests, getRequest, requestCounts, convertRequest, captureMessage,
 } from '../mailbox.js';
 import { str, int, bool, oneOf, email as emailField } from '../validate.js';
 
 const REQUEST_STATUS = ['new', 'assigned', 'converted', 'dismissed'];
+const CAPTURE_CHANNELS = ['whatsapp', 'phone', 'other'];
 
 export function register(router) {
   // ============================================================== accounts
@@ -97,6 +98,25 @@ export function register(router) {
   router.post('/api/mail/sync', async ({ user }) => {
     requirePermission(user, 'mail.manage');
     return { results: await syncDueAccounts() };
+  });
+
+  // =============================================================== capture
+  /**
+   * A request that arrived somewhere the CRM cannot read — WhatsApp, a phone
+   * call, a conversation on site. Paste it in and it joins the same queue,
+   * with the same extraction and the same triage behind it.
+   */
+  router.post('/api/mail/capture', async ({ body, user }) => {
+    requirePermission(user, 'mail.view');
+    const text = str(body.text, 'text', { required: true, min: 1, max: 40_000 });
+    const { requestId, extraction } = await captureMessage({
+      text,
+      fromName: str(body.from_name, 'from_name', { max: 200 }) || null,
+      fromPhone: str(body.from_phone, 'from_phone', { max: 40 }) || null,
+      channel: oneOf(body.channel, 'channel', CAPTURE_CHANNELS, { fallback: 'whatsapp' }),
+      userId: user.id,
+    });
+    return { request: getRequest(requestId), extraction };
   });
 
   // ============================================================== requests

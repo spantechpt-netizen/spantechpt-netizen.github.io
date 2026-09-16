@@ -651,3 +651,69 @@ test('company settings carry per-country branches', async () => {
   assert.match(company.branches.SA.email, /spantechksa\.com$/i);
   assert.match(company.branches.QA.email_alt, /finance@spantec-qa\.com/i);
 });
+
+// ---------------------------------------------------------------- capture
+// Requests that arrive on WhatsApp are pasted in and join the same queue as
+// the mail, so the triage and conversion paths stay single.
+test('a pasted WhatsApp message joins the requests queue', async () => {
+  const res = await api('POST', '/api/mail/capture', {
+    channel: 'whatsapp',
+    from_name: 'م. طارق',
+    from_phone: '+966 55 123 4477',
+    text: 'السلام عليكم، محتاجين عرض سعر لأعمال البلاطات اللاحقة للشد لمشروع برج سكني بالرياض، المساحة 9,800 م2',
+  });
+  assert.equal(res.status, 201);
+
+  const request = res.body.request;
+  assert.equal(request.channel, 'whatsapp');
+  assert.equal(request.status, 'new');
+  assert.equal(request.from_phone, '+966 55 123 4477');
+  assert.match(request.subject, /عرض سعر/, 'the first line stands in for a subject');
+
+  const extraction = request.extraction;
+  assert.equal(extraction.project.area_sqm, 9800, 'the area is read out of the message');
+  assert.equal(extraction.customer.country, 'SA');
+  assert.ok(extraction.is_rfq, 'asking for a price is an RFQ whatever the channel');
+  assert.ok(
+    extraction.contact.phones.includes('+966 55 123 4477'),
+    'the sender number is kept even though the body never repeats it',
+  );
+
+  const queue = await api('GET', '/api/mail/requests?status=new');
+  assert.ok(queue.body.requests.some((r) => r.id === request.id), 'it shows in the new queue');
+});
+
+test('a capture from a known number is matched to that customer', async () => {
+  const customer = await api('POST', '/api/customers', {
+    name_en: 'Rawabi Contracting', country: 'SA', city: 'Riyadh',
+  });
+  const customerId = customer.body.customer.id;
+  await api('POST', `/api/customers/${customerId}/contacts`, {
+    name: 'Faisal Otaibi', mobile: '0551234477', is_primary: true,
+  });
+
+  // The same number, written the way WhatsApp reports it.
+  const res = await api('POST', '/api/mail/capture', {
+    channel: 'whatsapp',
+    from_phone: '+966551234477',
+    text: 'تمام، ابعتلي العرض للمشروع الجديد',
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.body.request.extraction.customer.matched_id, customerId);
+  assert.equal(res.body.request.extraction.customer.matched_by, 'contact_phone');
+  assert.equal(res.body.request.customer_id, customerId);
+});
+
+test('an empty capture is refused', async () => {
+  const res = await api('POST', '/api/mail/capture', { text: '   ' });
+  assert.equal(res.status, 400);
+});
+
+test('the capture account never shows up as a mailbox', async () => {
+  const res = await api('GET', '/api/mail/accounts');
+  assert.equal(res.status, 200);
+  assert.ok(
+    !res.body.accounts.some((a) => a.label === 'Captured requests'),
+    'it is an implementation detail, not a mailbox anyone configures',
+  );
+});

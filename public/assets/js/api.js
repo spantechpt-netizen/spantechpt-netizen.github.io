@@ -142,6 +142,7 @@ export const api = {
   syncMailAccount: (id, data) => request('POST', `/api/mail/accounts/${id}/sync`, data ?? {}),
   syncAllMail: () => request('POST', '/api/mail/sync', {}),
 
+  captureRequest: (payload) => request('POST', '/api/mail/capture', payload),
   mailRequests: (params) => request('GET', `/api/mail/requests${qs(params)}`),
   mailRequest: (id) => request('GET', `/api/mail/requests/${id}`),
   assignMailRequest: (id, data) => request('POST', `/api/mail/requests/${id}/assign`, data),

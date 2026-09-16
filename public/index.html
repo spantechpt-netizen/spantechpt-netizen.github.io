@@ -9,6 +9,7 @@
 
   <link rel="icon" href="assets/img/icon.png">
   <link rel="apple-touch-icon" href="assets/img/icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <!-- Web fonts are a progressive enhancement: the app falls back to system
@@ -21,5 +22,16 @@
     <div class="loading-page">…</div>
   </div>
   <script type="module" src="assets/js/app.js"></script>
+  <!-- Installing the app is what puts it in the phone's share sheet, so a
+       WhatsApp message can be shared straight into the requests queue. The
+       worker itself caches nothing — see sw.js. Registration needs a secure
+       context, which localhost and the deployed HTTPS host both are. -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => { /* http:// on a LAN address */ });
+      });
+    }
+  </script>
 </body>
 </html>

@@ -1,8 +1,9 @@
 /**
- * Incoming requests — email that arrived at the company mailbox and looks
- * like it needs someone. The manager triages here and hands each to an
- * engineer; converting one creates the customer and opportunity from what
- * was read out of the message.
+ * Incoming requests — anything that looks like it needs someone. Most arrive
+ * at the company mailbox on their own; a WhatsApp message or a phone call is
+ * pasted in and joins the same queue. The manager triages here and hands each
+ * to an engineer; converting one creates the customer and opportunity from
+ * what was read out of the message.
  */
 import { api } from '../api.js';
 import { t, pick, getLang, money, formatDateTime } from '../i18n.js';
@@ -10,7 +11,7 @@ import {
   el, clear, icon, field, readForm, openModal, confirmDialog,
   toast, toastError, optionsFrom, blankOption,
 } from '../ui.js';
-import { can, state } from '../app.js';
+import { can, state, shared } from '../app.js';
 import { refresh as refreshBell } from '../notify.js';
 
 const STATUS_CLASS = { new: 'amber', assigned: 'blue', converted: 'green', dismissed: 'grey' };
@@ -47,6 +48,10 @@ export async function render({ params, navigate }) {
       tab('', t('all')),
     ]),
     el('div.spacer'),
+    el('button.btn.btn-primary', {
+      type: 'button',
+      onclick: () => openCapture(load, navigate),
+    }, [icon('plus', 15), t('capture_add')]),
     can('mail.manage') ? el('button.btn.btn-secondary', {
       type: 'button',
       onclick: async (event) => {
@@ -95,6 +100,12 @@ export async function render({ params, navigate }) {
 
   await load();
   if (openId) setTimeout(() => openRequest(openId, load, navigate), 0);
+  // Arrived here from the phone's share sheet: open the capture form on it.
+  if (shared.pending) {
+    const payload = shared.pending;
+    shared.pending = null;
+    setTimeout(() => openCapture(load, navigate, payload), 0);
+  }
   return page;
 }
 
@@ -116,6 +127,8 @@ function row(request, reload, navigate) {
         el('span.badge', { class: STATUS_CLASS[request.status] || 'grey', text: t(`req_${request.status}`) }),
         extraction.is_rfq ? el('span.badge.orange', { text: t('req_is_rfq') }) : null,
         extraction.mentions_post_tension ? el('span.badge.blue', { text: 'Post-Tension' }) : null,
+        request.channel && request.channel !== 'email'
+          ? el('span.badge.green', { text: t(`channel_${request.channel}`) }) : null,
         el('span.req-subject', { text: request.subject || '—' }),
       ]),
       el('div.tiny.muted', {
@@ -318,4 +331,84 @@ function openAssign(request, reload) {
       }),
     ]),
   });
+}
+
+
+// ---------------------------------------------------------------- capture
+/**
+ * Paste a request that arrived somewhere the CRM cannot read. Pre-fills from
+ * `?text=` so the Android share sheet can hand a WhatsApp message straight in.
+ */
+export function openCapture(reload, navigate, prefill = {}) {
+  const form = el('form.form-grid');
+  form.append(
+    el('p.hint', { text: t('capture_hint'), style: { gridColumn: '1 / -1', margin: '0 0 .2rem' } }),
+    field({
+      name: 'text', label: t('capture_text'), type: 'textarea', rows: 8, required: true,
+      value: prefill.text || '', placeholder: t('capture_text_ph'),
+    }),
+    field({
+      name: 'channel', label: t('capture_channel'), type: 'select',
+      value: prefill.channel || 'whatsapp',
+      options: [
+        { value: 'whatsapp', label: t('capture_ch_whatsapp') },
+        { value: 'phone', label: t('capture_ch_phone') },
+        { value: 'other', label: t('capture_ch_other') },
+      ],
+    }),
+    field({ name: 'from_name', label: t('capture_from_name'), value: prefill.from_name || '' }),
+    field({
+      name: 'from_phone', label: t('capture_from_phone'), dir: 'ltr',
+      value: prefill.from_phone || '', hint: t('capture_from_phone_hint'),
+    }),
+  );
+  // The message is the point, so give it the full width of the grid.
+  form.firstElementChild.nextElementSibling.style.gridColumn = '1 / -1';
+
+  // The footer sits outside the form element, so the button cannot be a plain
+  // submit — it has to call the same handler the form's own submit does.
+  let submitting = false;
+  const save = el('button.btn.btn-primary', { type: 'button', text: t('capture_save') });
+
+  const { close } = openModal({
+    title: t('capture_title'),
+    body: form,
+    footer: (dismiss) => el('div.row', { style: { gap: '.5rem' } }, [
+      el('button.btn.btn-secondary', { type: 'button', text: t('cancel'), onclick: dismiss }),
+      el('div.spacer'),
+      save,
+    ]),
+  });
+
+  async function submit() {
+    if (submitting) return;
+    const values = readForm(form);
+    if (!String(values.text || '').trim()) return toast(t('capture_empty'), 'warning');
+
+    submitting = true;
+    save.disabled = true;
+    try {
+      const { request } = await api.captureRequest(values);
+      close();
+      toast(t('capture_done'), 'success');
+      await reload?.();
+      refreshBell({ silent: true });
+      if (request?.id) openRequest(request.id, reload, navigate);
+    } catch (error) {
+      toastError(error);
+      submitting = false;
+      save.disabled = false;
+    }
+  }
+
+  save.addEventListener('click', submit);
+  // Ctrl/⌘+Enter sends it without reaching for the button — the message is
+  // pasted into the textarea and the hands are already there.
+  form.addEventListener('keydown', (event) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault();
+      submit();
+    }
+  });
+  form.addEventListener('submit', (event) => { event.preventDefault(); submit(); });
 }

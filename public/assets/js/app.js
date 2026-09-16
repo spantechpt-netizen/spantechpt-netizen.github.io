@@ -357,8 +357,25 @@ setUnauthorizedHandler(() => {
 
 window.addEventListener('hashchange', render);
 
+/**
+ * Android's share sheet opens the app at /share?text=… (see the manifest's
+ * share_target). Stash what was shared, put the URL back to a normal route,
+ * and let the requests view pick it up once the session is known.
+ */
+export const shared = { pending: null };
+
+function takeSharedPayload() {
+  if (location.pathname !== '/share') return;
+  const query = new URLSearchParams(location.search);
+  const text = [query.get('title'), query.get('text'), query.get('url')]
+    .filter(Boolean).join('\n').trim();
+  if (text) shared.pending = { text, channel: 'whatsapp' };
+  history.replaceState(null, '', `/${shared.pending ? '#/requests' : ''}`);
+}
+
 (async function start() {
   applyDirection();
+  takeSharedPayload();
   try {
     const { user } = await api.me();
     if (user) {
