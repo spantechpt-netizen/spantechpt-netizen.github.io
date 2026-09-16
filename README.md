@@ -23,6 +23,9 @@ Arabic or English, with the maths done for you.
 | **Follow-ups** | المتابعات | Reminder centre bucketed into overdue / today / upcoming, with call, meeting, email, WhatsApp and site-visit types |
 | **Quotations** | عروض الأسعار | Near-fixed offer template with simple variables, automatic numbering, revisions, VAT per country, and print-ready Arabic **and** English documents |
 | **Cost calculator** | حاسبة التكلفة | Strand price/ton, kg per m², anchors per ton, ducts, grout, labour, design, overheads → cost per m², margin, and a suggested price for your target margin |
+| **Notifications** | الإشعارات | A bell with live alerts: follow-ups falling due, overdue follow-ups, customers who have gone quiet, quotations nearing expiry, records assigned to you, and quotation decisions. Optional desktop pop-ups |
+| **Messages** | الرسايل | Internal threads between engineers, optionally pinned to a customer, opportunity or quotation |
+| **Calendar** | الأجندة | Month and agenda views of every follow-up, plus a private feed URL you subscribe to in Outlook or Google Calendar |
 | **Analytics** | التحليلات | Conversion funnel, monthly trend, win rate by country and by engineer, loss-reason analysis, and an average price-per-m² benchmark |
 | **Settings** | الإعدادات | Company profile, per-country price book, editable quotation templates, and user management with roles |
 
@@ -38,6 +41,43 @@ Selecting a country on a quotation applies that market's currency, VAT rate and
 default rates automatically.
 
 ---
+
+## Reminders and the calendar
+
+A sweep runs on the server every 15 minutes (and once at start-up) and raises:
+
+| Alert | When |
+|---|---|
+| Follow-up due soon | Inside each engineer's own lead time (default 24 hours) |
+| Follow-up overdue | The moment its time passes |
+| **Missed contact** | A live customer with no activity for N days (default 30) and nothing scheduled |
+| Quotation expiring | Three days before its validity runs out |
+| Quotation expired | Validity passed — the offer is also marked expired automatically |
+
+Each alert fires once, not on every pass. Engineers set their own lead time and
+missed-contact threshold from *Calendar → Link to Outlook / Google*.
+
+### Subscribing a calendar
+
+Every engineer gets a private feed URL (`/calendar/<token>.ics`). Pasting it into
+Outlook, Google Calendar or Apple Calendar as a **subscribed calendar** makes
+their follow-ups appear there with a 30-minute alarm, and it keeps itself up to
+date — no OAuth and no third-party account.
+
+The token in that URL is the credential, so treat the link as private; if it
+leaks, generate a new one from the same dialog and the old link stops working.
+
+> For Google Calendar to poll the feed, the server has to be reachable from the
+> internet. On an intranet-only server, Outlook and Apple Calendar on the same
+> network still work, as does the per-event `.ics` download.
+
+## A note on the Arabic
+
+The **interface** is written in Egyptian business Arabic, because that is how
+the team actually talks. The **printed quotation deliberately stays in formal
+MSA**, because it goes to clients in Saudi Arabia and Qatar — that wording lives
+in `server/templates.js` and the print template, not in the UI dictionary, so the
+two can never leak into each other.
 
 ## Requirements
 

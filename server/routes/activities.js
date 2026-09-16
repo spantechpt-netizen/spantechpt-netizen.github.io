@@ -1,6 +1,7 @@
 import { all, get, insert, update, run, audit } from '../db.js';
 import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
 import { notFound } from '../http.js';
+import { notifyAssignment } from '../notifications.js';
 import { str, int, oneOf, datetime, bool, ACTIVITY_TYPES } from '../validate.js';
 
 const SELECT_ACTIVITY = `
@@ -91,7 +92,12 @@ export function register(router) {
       outcome: str(body.outcome, 'outcome', { max: 1000 }),
       created_by: user.id,
     });
-    return { activity: loadActivity(id) };
+    const created = loadActivity(id);
+    notifyAssignment({
+      actorId: user.id, userId: created.owner_id,
+      entity: 'activity', entityId: id, name: created.subject, link: 'activities',
+    });
+    return { activity: created };
   });
 
   router.patch('/api/activities/:id', ({ params, body, user }) => {

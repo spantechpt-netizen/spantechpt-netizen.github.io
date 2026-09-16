@@ -1,6 +1,7 @@
 import { all, get, insert, update, run, nextCounter, audit } from '../db.js';
 import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
 import { notFound, badRequest } from '../http.js';
+import { notifyAssignment } from '../notifications.js';
 import { str, num, int, oneOf, date, COUNTRIES, STAGES, CURRENCIES } from '../validate.js';
 
 /** Default win probability per stage, applied when the user does not set one. */
@@ -105,7 +106,12 @@ export function register(router) {
       created_by: user.id,
     });
     audit(user.id, 'opportunity', id, 'create');
-    return { opportunity: loadOpportunity(id) };
+    const created = loadOpportunity(id);
+    notifyAssignment({
+      actorId: user.id, userId: created.owner_id,
+      entity: 'opportunity', entityId: id, name: created.title, link: 'pipeline',
+    });
+    return { opportunity: created };
   });
 
   router.patch('/api/opportunities/:id', ({ params, body, user }) => {
@@ -155,7 +161,14 @@ export function register(router) {
     if (stage && stage !== existing.stage) {
       audit(user.id, 'opportunity', id, 'stage_change', { from: existing.stage, to: stage });
     }
-    return { opportunity: loadOpportunity(id) };
+    const saved = loadOpportunity(id);
+    if (fields.owner_id !== undefined && Number(fields.owner_id) !== Number(existing.owner_id)) {
+      notifyAssignment({
+        actorId: user.id, userId: saved.owner_id,
+        entity: 'opportunity', entityId: id, name: saved.title, link: 'pipeline',
+      });
+    }
+    return { opportunity: saved };
   });
 
   router.delete('/api/opportunities/:id', ({ params, user }) => {

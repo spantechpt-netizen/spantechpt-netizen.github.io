@@ -115,6 +115,24 @@ export const api = {
   breakdown: (params) => request('GET', `/api/analytics/breakdown${qs(params)}`),
   funnel: (params) => request('GET', `/api/analytics/funnel${qs(params)}`),
 
+  // --------------------------------------------------- notifications & mail
+  notifications: (params) => request('GET', `/api/notifications${qs(params)}`),
+  notificationCount: () => request('GET', '/api/notifications/count'),
+  markNotificationRead: (id) => request('POST', `/api/notifications/${id}/read`, {}),
+  markAllNotificationsRead: () => request('POST', '/api/notifications/read-all', {}),
+  deleteNotification: (id) => request('DELETE', `/api/notifications/${id}`),
+  sweepReminders: () => request('POST', '/api/notifications/sweep', {}),
+  inboxSummary: () => request('GET', '/api/inbox/summary'),
+
+  messages: (box) => request('GET', `/api/messages${qs({ box })}`),
+  messageThread: (id) => request('GET', `/api/messages/${id}`),
+  sendMessage: (data) => request('POST', '/api/messages', data),
+  deleteMessage: (id) => request('DELETE', `/api/messages/${id}`),
+
+  // ------------------------------------------------------------------ calendar
+  calendarFeed: () => request('GET', '/api/calendar/feed'),
+  rotateCalendarFeed: () => request('POST', '/api/calendar/rotate', {}),
+
   // ------------------------------------------------------- users & settings
   users: () => request('GET', '/api/users'),
   createUser: (data) => request('POST', '/api/users', data),

@@ -5,7 +5,7 @@ import {
   requireAuth,
 } from '../auth.js';
 import { setCookie, clearCookie, badRequest, unauthorized } from '../http.js';
-import { str, email as emailField, oneOf } from '../validate.js';
+import { str, int, email as emailField, oneOf } from '../validate.js';
 
 // Simple in-memory throttle: 8 failures per email+IP in 15 minutes.
 const attempts = new Map();
@@ -86,6 +86,8 @@ export function register(router) {
       title_ar: str(body.title_ar, 'title_ar', { max: 120, fallback: undefined }),
       phone: str(body.phone, 'phone', { max: 40, fallback: undefined }),
       lang: oneOf(body.lang, 'lang', ['ar', 'en'], { fallback: undefined }),
+      reminder_lead_hours: int(body.reminder_lead_hours, 'reminder_lead_hours', { min: 1, max: 168, fallback: undefined }),
+      stale_after_days: int(body.stale_after_days, 'stale_after_days', { min: 1, max: 365, fallback: undefined }),
     });
     const { password_hash, ...safe } = get('SELECT * FROM users WHERE id = ?', user.id);
     return { user: safe };

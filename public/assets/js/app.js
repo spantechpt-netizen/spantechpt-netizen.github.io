@@ -13,6 +13,10 @@ import * as quotations from './views/quotations.js';
 import * as quoteEditor from './views/quote-editor.js';
 import * as analytics from './views/analytics.js';
 import * as settings from './views/settings.js';
+import * as notificationsView from './views/notifications.js';
+import * as inbox from './views/inbox.js';
+import * as calendarView from './views/calendar.js';
+import * as bellModule from './notify.js';
 
 export const state = {
   user: null,
@@ -25,14 +29,16 @@ const ROUTES = [
   { path: 'dashboard', icon: 'dashboard', label: 'nav_dashboard', view: dashboard },
   { path: 'customers', icon: 'customers', label: 'nav_customers', view: customers },
   { path: 'pipeline', icon: 'pipeline', label: 'nav_pipeline', view: pipeline },
-  { path: 'activities', icon: 'activities', label: 'nav_activities', view: activities, badge: () => state.activitySummary.overdue },
+  { path: 'activities', icon: 'activities', label: 'nav_activities', view: activities, badge: 'activities' },
+  { path: 'calendar', icon: 'calendar', label: 'nav_calendar', view: calendarView },
+  { path: 'inbox', icon: 'mail', label: 'nav_inbox', view: inbox, badge: 'inbox' },
   { path: 'quotations', icon: 'quotations', label: 'nav_quotations', view: quotations },
   { path: 'analytics', icon: 'analytics', label: 'nav_analytics', view: analytics },
   { path: 'settings', icon: 'settings', label: 'nav_settings', view: settings, minRole: 'engineer' },
 ];
 
 // Views not shown in the sidebar, reached from inside other screens.
-const SUB_ROUTES = { quote: quoteEditor };
+const SUB_ROUTES = { quote: quoteEditor, notifications: notificationsView };
 
 const RANK = { viewer: 0, engineer: 1, manager: 2, admin: 3 };
 export const hasRole = (minimum) => (RANK[state.user?.role] ?? -1) >= (RANK[minimum] ?? 99);
@@ -142,7 +148,10 @@ function renderShell() {
       type: 'button', 'aria-label': 'Menu', onclick: toggleSidebar,
     }, [icon('menu', 18)]),
     el('h1#page-title', { text: '' }),
-    el('div.topbar-actions', {}, [languageSwitch()]),
+    el('div.topbar-actions', {}, [
+      el('div.bell-wrap', {}, [bellModule.bell(navigate)]),
+      languageSwitch(),
+    ]),
   ]);
 
   root.append(el('div.app', {}, [
@@ -185,8 +194,12 @@ export async function refreshBadges() {
   try {
     state.activitySummary = await api.activitySummary();
   } catch { return; }
+  const counts = {
+    activities: state.activitySummary.overdue,
+    inbox: bellModule.getState().unreadMail,
+  };
   for (const node of document.querySelectorAll('[data-badge]')) {
-    const count = node.dataset.badge === 'activities' ? state.activitySummary.overdue : 0;
+    const count = counts[node.dataset.badge] || 0;
     node.textContent = count > 0 ? String(count) : '';
     node.style.display = count > 0 ? '' : 'none';
   }
@@ -251,6 +264,7 @@ function openProfile() {
 }
 
 async function signOut() {
+  bellModule.stopPolling();
   try { await api.logout(); } catch { /* the cookie is cleared regardless */ }
   state.user = null;
   shellBuilt = false;
@@ -311,11 +325,15 @@ async function bootstrap() {
   const [usersResult, settingsResult] = await Promise.allSettled([api.users(), api.settings()]);
   if (usersResult.status === 'fulfilled') state.users = usersResult.value.users;
   if (settingsResult.status === 'fulfilled') state.settings = settingsResult.value.settings;
+  // `silent` on the first pass: don't fire desktop pop-ups for a backlog.
+  await bellModule.refresh({ silent: true });
+  bellModule.startPolling();
   await refreshBadges();
 }
 
 setUnauthorizedHandler(() => {
   if (!state.user) return;
+  bellModule.stopPolling();
   state.user = null;
   shellBuilt = false;
   renderLogin(t('login_title'));

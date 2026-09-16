@@ -1,6 +1,7 @@
 import { all, get, insert, update, run, transaction, nextCounter, getSetting, audit } from '../db.js';
 import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
 import { notFound, badRequest } from '../http.js';
+import { notifyAssignment, notifyQuoteStatus } from '../notifications.js';
 import { computeTotals, amountInWords, round2 } from '../pricing.js';
 import { COUNTRY_DEFAULTS, DEFAULT_ITEM, SCOPE, PAYMENT_TERMS, CONDITIONS, INTRO, PRICE_ADJUSTMENT_CLAUSE, COMPANY } from '../templates.js';
 import {
@@ -284,6 +285,11 @@ export function register(router) {
     }
     audit(user.id, 'quotation', id, 'create');
     const quote = loadQuote(id);
+    notifyAssignment({
+      actorId: user.id, userId: quote.owner_id,
+      entity: 'quotation', entityId: id, name: `${quote.number} — ${quote.project_name}`,
+      link: `quote/${id}`,
+    });
     return { quotation: hydrate(quote, loadItems(id)) };
   });
 
@@ -387,6 +393,15 @@ export function register(router) {
       }
     }
     audit(user.id, 'quotation', id, 'status', { from: quote.status, to: status });
+
+    notifyQuoteStatus({ actorId: user.id, userId: quote.owner_id, quotation: quote, status });
+    // A won or lost offer is company news: tell the managers too.
+    if (['approved', 'rejected'].includes(status)) {
+      for (const manager of all("SELECT id FROM users WHERE active = 1 AND role IN ('admin','manager')")) {
+        if (manager.id === quote.owner_id) continue;
+        notifyQuoteStatus({ actorId: user.id, userId: manager.id, quotation: quote, status });
+      }
+    }
     return { quotation: hydrate(loadQuote(id), loadItems(id)) };
   });
 

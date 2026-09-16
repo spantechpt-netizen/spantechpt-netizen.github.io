@@ -239,3 +239,53 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id);
 CREATE INDEX IF NOT EXISTS idx_audit_time   ON audit_log(created_at);
+
+-- ====================================================== notifications & inbox
+-- One row per recipient. `dedupe_key` stops the reminder sweep raising the
+-- same alert twice (a unique index enforces it per user).
+CREATE TABLE IF NOT EXISTS notifications (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actor_id    INTEGER REFERENCES users(id) ON DELETE SET NULL, -- NULL = raised by the system
+  type        TEXT    NOT NULL,   -- message | assigned | activity_due | activity_overdue
+                                  -- | stale_customer | quote_status | quote_expiring | quote_expired
+  title_ar    TEXT    NOT NULL,
+  title_en    TEXT    NOT NULL,
+  body_ar     TEXT,
+  body_en     TEXT,
+  entity      TEXT,               -- customer | opportunity | quotation | activity | message
+  entity_id   INTEGER,
+  link        TEXT,               -- client-side route, e.g. "quote/12"
+  severity    TEXT    NOT NULL DEFAULT 'info',  -- info | warning | danger
+  is_read     INTEGER NOT NULL DEFAULT 0,
+  read_at     TEXT,
+  dedupe_key  TEXT,
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_dedupe
+  ON notifications(user_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+-- Internal messages between engineers. `parent_id` threads a reply onto the
+-- message it answers; the root message carries the subject.
+CREATE TABLE IF NOT EXISTS messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  parent_id  INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+  sender_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject    TEXT,
+  body       TEXT    NOT NULL,
+  entity     TEXT,               -- optionally pinned to a customer / opportunity / quotation
+  entity_id  INTEGER,
+  created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_parent ON messages(parent_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+
+CREATE TABLE IF NOT EXISTS message_recipients (
+  message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  is_read    INTEGER NOT NULL DEFAULT 0,
+  read_at    TEXT,
+  PRIMARY KEY (message_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_msg_recipients_user ON message_recipients(user_id, is_read);

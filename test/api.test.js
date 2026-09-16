@@ -324,3 +324,162 @@ test('signing out invalidates the session', async () => {
   const res = await api('GET', '/api/customers');
   assert.equal(res.status, 401);
 });
+
+// ===================================================== notifications & inbox
+test('raises reminders for overdue follow-ups and missed contact', async () => {
+  // Admin is signed in again at this point in the file order, so re-establish.
+  await api('POST', '/api/auth/login', ADMIN);
+
+  const yesterday = new Date(Date.now() - 2 * 86400_000).toISOString();
+  await api('POST', '/api/activities', {
+    type: 'call', subject: 'Chase the tower BOQ', customer_id: 1, due_at: yesterday,
+  });
+
+  const swept = await api('POST', '/api/notifications/sweep');
+  assert.equal(swept.status, 201);
+  assert.ok(swept.body.swept.overdue >= 1, 'an overdue follow-up must raise an alert');
+
+  const list = await api('GET', '/api/notifications');
+  const overdue = list.body.notifications.find((n) => n.type === 'activity_overdue');
+  assert.ok(overdue, 'the overdue alert should be in the inbox');
+  assert.equal(overdue.severity, 'danger');
+  assert.ok(overdue.title_ar && overdue.title_en, 'alerts carry both languages');
+});
+
+test('does not raise the same reminder twice', async () => {
+  const first = await api('POST', '/api/notifications/sweep');
+  assert.equal(first.body.swept.overdue, 0, 'a second sweep must be a no-op');
+});
+
+test('marks notifications read and clears the badge', async () => {
+  const before = await api('GET', '/api/notifications/count');
+  assert.ok(before.body.unread > 0);
+
+  await api('POST', '/api/notifications/read-all');
+  const after = await api('GET', '/api/notifications/count');
+  assert.equal(after.body.unread, 0);
+});
+
+test('sends a message to a colleague and notifies them', async () => {
+  const engineer = await api('POST', '/api/users', {
+    name: 'Khaled Al-Harbi', email: 'khaled@test.local',
+    password: 'Engineer@2026', role: 'engineer', country: 'QA',
+  });
+  const khaledId = engineer.body.user.id;
+
+  const sent = await api('POST', '/api/messages', {
+    recipient_ids: [khaledId],
+    subject: 'Lusail pricing',
+    body: 'Please review the strand rate before we issue this one.',
+  });
+  assert.equal(sent.status, 201);
+  const threadId = sent.body.thread_id;
+
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'khaled@test.local', password: 'Engineer@2026' });
+
+  const inbox = await api('GET', '/api/messages?box=inbox');
+  assert.equal(inbox.body.messages.length, 1);
+  assert.equal(inbox.body.unread, 1);
+
+  const notifications = await api('GET', '/api/notifications');
+  const mail = notifications.body.notifications.find((n) => n.type === 'message');
+  assert.ok(mail, 'a message must raise a notification');
+  assert.equal(mail.link, `inbox/${threadId}`);
+
+  // Opening the thread clears the unread flag.
+  await api('GET', `/api/messages/${threadId}`);
+  const after = await api('GET', '/api/messages?box=inbox');
+  assert.equal(after.body.unread, 0);
+
+  // And a reply goes back to the original sender.
+  const reply = await api('POST', '/api/messages', {
+    parent_id: threadId, body: 'Checked — the rate is fine.',
+  });
+  assert.equal(reply.status, 201);
+
+  cookie = adminCookie;
+  const senderNotifications = await api('GET', '/api/notifications?unread=1');
+  assert.ok(
+    senderNotifications.body.notifications.some((n) => n.type === 'message'),
+    'the reply must notify the thread starter',
+  );
+});
+
+test('refuses a message with no recipients', async () => {
+  const res = await api('POST', '/api/messages', { recipient_ids: [], subject: 'x', body: 'y' });
+  assert.equal(res.status, 400);
+});
+
+test('never notifies someone about their own action', async () => {
+  await api('POST', '/api/notifications/read-all');
+  // The admin owns customer 1; editing it themselves must stay silent.
+  await api('PATCH', '/api/customers/1', { city: 'Riyadh' });
+  const after = await api('GET', '/api/notifications/count');
+  assert.equal(after.body.unread, 0);
+});
+
+// ================================================================== calendar
+test('issues a private calendar feed that serves valid iCalendar', async () => {
+  const feed = await api('GET', '/api/calendar/feed');
+  assert.equal(feed.status, 200);
+  assert.match(feed.body.url, /\/calendar\/[A-Za-z0-9_-]+\.ics$/);
+  assert.ok(feed.body.webcal_url.startsWith('webcal://'));
+
+  // The feed is fetched by Outlook/Google with no session cookie at all.
+  const res = await fetch(feed.body.url.replace(/^http:\/\/[^/]+/, BASE));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type'), /text\/calendar/);
+
+  const ics = await res.text();
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR'));
+  assert.ok(ics.trimEnd().endsWith('END:VCALENDAR'));
+  assert.equal(
+    (ics.match(/BEGIN:VEVENT/g) || []).length,
+    (ics.match(/END:VEVENT/g) || []).length,
+    'every VEVENT must be closed',
+  );
+  // RFC 5545 caps a content line at 75 octets.
+  for (const line of ics.split('\r\n')) {
+    assert.ok(Buffer.byteLength(line, 'utf8') <= 75, `line too long: ${line.slice(0, 40)}`);
+  }
+});
+
+test('rejects an unknown calendar token', async () => {
+  const res = await fetch(`${BASE}/calendar/not-a-real-token.ics`);
+  assert.equal(res.status, 404);
+});
+
+test('rotating the feed invalidates the previous link', async () => {
+  const before = await api('GET', '/api/calendar/feed');
+  const rotated = await api('POST', '/api/calendar/rotate');
+  assert.notEqual(rotated.body.token, before.body.token);
+
+  const old = await fetch(before.body.url.replace(/^http:\/\/[^/]+/, BASE));
+  assert.equal(old.status, 404, 'the old URL must stop working');
+
+  const fresh = await fetch(rotated.body.url.replace(/^http:\/\/[^/]+/, BASE));
+  assert.equal(fresh.status, 200);
+});
+
+test('downloads a single follow-up as an .ics file', async () => {
+  const list = await api('GET', '/api/activities');
+  const withDate = list.body.activities.find((a) => a.due_at);
+  assert.ok(withDate, 'need a dated follow-up for this test');
+
+  const res = await fetch(`${BASE}/api/activities/${withDate.id}/ics`, { headers: { cookie } });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-disposition'), /attachment/);
+  const ics = await res.text();
+  assert.ok(ics.includes('BEGIN:VEVENT'));
+  assert.ok(ics.includes('BEGIN:VALARM'), 'events carry a reminder alarm');
+});
+
+test('stores per-user reminder preferences', async () => {
+  const res = await api('PATCH', '/api/auth/profile', {
+    reminder_lead_hours: 48, stale_after_days: 14,
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.user.reminder_lead_hours, 48);
+  assert.equal(res.body.user.stale_after_days, 14);
+});

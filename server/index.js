@@ -15,11 +15,17 @@ import * as activityRoutes from './routes/activities.js';
 import * as quotationRoutes from './routes/quotations.js';
 import * as analyticsRoutes from './routes/analytics.js';
 import * as settingsRoutes from './routes/settings.js';
+import * as notificationRoutes from './routes/notifications.js';
+import * as calendarRoutes from './routes/calendar.js';
+
+import { runReminderSweep, purgeOldNotifications } from './notifications.js';
+import { userByCalendarToken, buildUserCalendar } from './calendar.js';
 
 const router = new Router();
 for (const module of [
   authRoutes, userRoutes, customerRoutes, opportunityRoutes,
   activityRoutes, quotationRoutes, analyticsRoutes, settingsRoutes,
+  notificationRoutes, calendarRoutes,
 ]) {
   module.register(router);
 }
@@ -35,6 +41,26 @@ const server = createServer(async (req, res) => {
   const pathname = decodeURIComponent(url.pathname);
 
   try {
+    // Calendar feed. The token in the URL *is* the credential, because
+    // Outlook and Google fetch this without any session cookie.
+    if (pathname.startsWith('/calendar/') && pathname.endsWith('.ics')) {
+      const token = pathname.slice('/calendar/'.length, -'.ics'.length);
+      const owner = token ? userByCalendarToken(token) : null;
+      if (!owner) throw notFound('Calendar not found', 'التقويم مش موجود');
+
+      const lang = url.searchParams.get('lang') === 'en' ? 'en' : (owner.lang || 'ar');
+      const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+      const body = buildUserCalendar(owner.id, lang, `${proto}://${req.headers.host || ''}`);
+      res.writeHead(200, {
+        'content-type': 'text/calendar; charset=utf-8',
+        'content-length': Buffer.byteLength(body),
+        'cache-control': 'no-cache',
+        'content-disposition': 'inline; filename="spantech-follow-ups.ics"',
+      });
+      res.end(req.method === 'HEAD' ? undefined : body);
+      return;
+    }
+
     if (pathname.startsWith('/api/')) {
       const matched = router.match(req.method, pathname);
       if (!matched) throw notFound('Unknown endpoint', 'المسار غير موجود');
@@ -66,11 +92,22 @@ const server = createServer(async (req, res) => {
   }
 });
 
-// Housekeeping: drop expired sessions hourly.
+// Housekeeping: drop expired sessions and stale notifications hourly.
 const cleanup = setInterval(() => {
-  try { purgeExpiredSessions(); } catch (error) { console.error('[cleanup]', error); }
+  try {
+    purgeExpiredSessions();
+    purgeOldNotifications();
+  } catch (error) { console.error('[cleanup]', error); }
 }, 3600_000);
 cleanup.unref();
+
+// Reminder engine: raises due / overdue / missed-contact / expiry alerts.
+// Dedupe keys make repeat passes harmless, so a short interval is cheap.
+const SWEEP_MINUTES = Number(process.env.SWEEP_MINUTES || 15);
+const sweep = setInterval(() => {
+  try { runReminderSweep(); } catch (error) { console.error('[reminders]', error); }
+}, Math.max(SWEEP_MINUTES, 1) * 60_000);
+sweep.unref();
 
 function shutdown(signal) {
   console.log(`\n${signal} received — shutting down.`);
@@ -86,6 +123,9 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 seedSettings();
 const admin = seedAdmin();
+
+// Run one sweep at boot so reminders are current even after downtime.
+try { runReminderSweep(); } catch (error) { console.error('[reminders]', error); }
 
 server.listen(config.port, config.host, () => {
   console.log('');

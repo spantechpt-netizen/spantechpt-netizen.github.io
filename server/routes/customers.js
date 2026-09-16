@@ -1,6 +1,7 @@
 import { all, get, insert, update, run, nextCounter, audit } from '../db.js';
 import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
 import { notFound, conflict } from '../http.js';
+import { notifyAssignment } from '../notifications.js';
 import {
   str, int, oneOf, email as emailField,
   COUNTRIES, CUSTOMER_TYPES, CUSTOMER_STATUS,
@@ -134,7 +135,12 @@ export function register(router) {
       created_by: user.id,
     });
     audit(user.id, 'customer', id, 'create', { name });
-    return { customer: loadCustomer(id) };
+    const created = loadCustomer(id);
+    notifyAssignment({
+      actorId: user.id, userId: created.owner_id,
+      entity: 'customer', entityId: id, name, link: 'customers',
+    });
+    return { customer: created };
   });
 
   router.patch('/api/customers/:id', ({ params, body, user }) => {
@@ -148,7 +154,14 @@ export function register(router) {
     if (fields.owner_id !== undefined && !canSeeAll(user)) delete fields.owner_id;
     update('customers', id, fields);
     audit(user.id, 'customer', id, 'update');
-    return { customer: loadCustomer(id) };
+    const saved = loadCustomer(id);
+    if (fields.owner_id !== undefined && Number(fields.owner_id) !== Number(existing.owner_id)) {
+      notifyAssignment({
+        actorId: user.id, userId: saved.owner_id,
+        entity: 'customer', entityId: id, name: saved.name_en, link: 'customers',
+      });
+    }
+    return { customer: saved };
   });
 
   router.delete('/api/customers/:id', ({ params, user }) => {

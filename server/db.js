@@ -12,6 +12,23 @@ db.exec('PRAGMA foreign_keys = ON;');
 db.exec('PRAGMA busy_timeout = 5000;');
 db.exec(readFileSync(resolve(ROOT, 'server/schema.sql'), 'utf8'));
 
+/**
+ * `CREATE TABLE IF NOT EXISTS` never alters an existing table, so columns
+ * added after a deployment went live are applied here instead. Adding a
+ * column that is already present is skipped, making this safe to re-run.
+ */
+function addColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+// Private calendar feed token, and how far ahead a follow-up reminder fires.
+addColumn('users', 'calendar_token', 'TEXT');
+addColumn('users', 'reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
+// Days of silence after which a customer counts as "missed contact".
+addColumn('users', 'stale_after_days', 'INTEGER NOT NULL DEFAULT 30');
+
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);
 
