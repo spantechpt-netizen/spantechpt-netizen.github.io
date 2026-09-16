@@ -1,5 +1,5 @@
 import { allSettings, getSetting, setSetting, audit } from '../db.js';
-import { requireAuth, requireRole } from '../auth.js';
+import { requirePermission } from '../auth.js';
 import { badRequest } from '../http.js';
 import { COMPANY, SCOPE, PAYMENT_TERMS, CONDITIONS, COUNTRY_DEFAULTS, INTRO, PRICE_ADJUSTMENT_CLAUSE } from '../templates.js';
 
@@ -18,7 +18,7 @@ const EDITABLE = Object.keys(DEFAULTS);
 
 export function register(router) {
   router.get('/api/settings', ({ user }) => {
-    requireAuth(user);
+    requirePermission(user, 'settings.view');
     const stored = allSettings();
     const out = {};
     for (const key of EDITABLE) out[key] = stored[key] ?? DEFAULTS[key];
@@ -26,7 +26,7 @@ export function register(router) {
   });
 
   router.put('/api/settings/:key', ({ params, body, user }) => {
-    requireRole(user, 'manager');
+    requirePermission(user, 'settings.edit');
     const { key } = params;
     if (!EDITABLE.includes(key)) {
       throw badRequest(`Unknown setting "${key}"`, `إعداد غير معروف "${key}"`);
@@ -40,7 +40,7 @@ export function register(router) {
   });
 
   router.post('/api/settings/:key/reset', ({ params, user }) => {
-    requireRole(user, 'admin');
+    requirePermission(user, 'settings.edit');
     const { key } = params;
     if (!EDITABLE.includes(key)) {
       throw badRequest(`Unknown setting "${key}"`, `إعداد غير معروف "${key}"`);

@@ -172,17 +172,32 @@ A nightly cron job copying that file is a complete backup strategy.
 
 ---
 
-## Roles
+## Roles and permissions
 
-| Role | الصلاحية | Can do |
+A role sets the starting point:
+
+| Role | الصلاحية | Starts with |
 |---|---|---|
 | `admin` | مدير النظام | Everything, including user management |
-| `manager` | مدير | See and edit all records, company settings, delete records, view margins |
+| `manager` | مدير | Every record and setting, deletions, margins, approving quotations |
 | `engineer` | مهندس | Create and edit **their own** customers, opportunities, follow-ups and quotations |
-| `viewer` | مشاهدة فقط | Read-only |
+| `viewer` | مشاهدة بس | Read-only |
 
-Engineers only see their own book of business by default; managers and admins see
-the whole company.
+**Then you tune it per person.** *Settings → Users → Edit* shows a capability
+matrix grouped by module — view / create / edit / delete for each area, plus
+things like *see every engineer's customers*, *see cost and margin*, *approve or
+reject quotations*, and *reassign records*. Tick or untick any line and it
+applies to that one employee, without changing their role or anyone else's.
+
+Lines you have not touched follow the role, and are labelled *default* or
+*off by default*; anything you override is highlighted and labelled *custom*, so
+it is obvious at a glance what was changed for this person. The permission set is
+recomputed from the database on every request, so a change takes effect
+immediately without signing anyone out.
+
+Two guardrails: the last active administrator cannot be demoted or disabled, and
+an administrator can never lose user management — otherwise an installation
+could be stranded with nobody able to fix it.
 
 ---
 

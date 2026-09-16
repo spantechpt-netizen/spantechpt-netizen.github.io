@@ -135,6 +135,7 @@ export const api = {
 
   // ------------------------------------------------------- users & settings
   users: () => request('GET', '/api/users'),
+  permissionCatalogue: () => request('GET', '/api/permissions'),
   createUser: (data) => request('POST', '/api/users', data),
   updateUser: (id, data) => request('PATCH', `/api/users/${id}`, data),
   deleteUser: (id) => request('DELETE', `/api/users/${id}`),

@@ -1,5 +1,5 @@
 import { all, get, insert, update, run, transaction, nextCounter, getSetting, audit } from '../db.js';
-import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
+import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '../auth.js';
 import { notFound, badRequest } from '../http.js';
 import { notifyAssignment, notifyQuoteStatus } from '../notifications.js';
 import { computeTotals, amountInWords, round2 } from '../pricing.js';
@@ -118,7 +118,7 @@ function replaceItems(quotationId, items) {
 export function register(router) {
   // ------------------------------------------------------------------ list
   router.get('/api/quotations', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'quotations.view');
     const where = [];
     const params = [];
 
@@ -158,7 +158,7 @@ export function register(router) {
 
   // ------------------------------------------------------------------- read
   router.get('/api/quotations/:id', ({ params, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'quotations.view');
     const id = Number(params.id);
     const quote = loadQuote(id);
     const items = loadItems(id);
@@ -175,7 +175,7 @@ export function register(router) {
 
   /** Everything the printable AR/EN document needs, in one payload. */
   router.get('/api/quotations/:id/document', ({ params, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'quotations.view');
     const id = Number(params.id);
     const quote = loadQuote(id);
     const items = loadItems(id);
@@ -203,7 +203,7 @@ export function register(router) {
 
   // ----------------------------------------------------------------- create
   router.post('/api/quotations', ({ body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'quotations.create');
     const customerId = int(body.customer_id, 'customer_id', { required: true, min: 1 });
     const customer = get('SELECT * FROM customers WHERE id = ?', customerId);
     if (!customer) throw notFound('Customer not found', 'العميل غير موجود');
@@ -295,11 +295,11 @@ export function register(router) {
 
   // ----------------------------------------------------------------- update
   router.patch('/api/quotations/:id', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'quotations.edit');
     const id = Number(params.id);
     const existing = loadQuote(id);
     assertCanEdit(user, existing.owner_id);
-    if (['approved', 'rejected'].includes(existing.status) && !canSeeAll(user)) {
+    if (['approved', 'rejected'].includes(existing.status) && !can(user, 'quotations.edit_closed')) {
       throw badRequest(
         'A closed quotation can only be changed by a manager — create a revision instead',
         'لا يمكن تعديل عرض سعر مغلق إلا بواسطة المدير — أنشئ مراجعة جديدة بدلاً من ذلك',
@@ -342,7 +342,7 @@ export function register(router) {
       payment_terms_json: body.payment_terms === undefined ? undefined : JSON.stringify(body.payment_terms),
       conditions_json: body.conditions === undefined ? undefined : JSON.stringify(body.conditions),
     };
-    if (canSeeAll(user) && body.owner_id !== undefined) {
+    if (can(user, 'customers.assign') && body.owner_id !== undefined) {
       fields.owner_id = int(body.owner_id, 'owner_id', { min: 1, fallback: null });
     }
 
@@ -359,11 +359,14 @@ export function register(router) {
 
   // --------------------------------------------------------- status changes
   router.post('/api/quotations/:id/status', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'quotations.view');
     const id = Number(params.id);
     const quote = loadQuote(id);
     assertCanEdit(user, quote.owner_id);
     const status = oneOf(body.status, 'status', QUOTE_STATUS, { required: true });
+    // Approving or rejecting is a separate right from merely sending an offer.
+    requirePermission(user, ['approved', 'rejected'].includes(status)
+      ? 'quotations.decide' : 'quotations.send');
 
     const fields = { status };
     if (status === 'sent' && !quote.sent_at) fields.sent_at = new Date().toISOString();
@@ -407,7 +410,7 @@ export function register(router) {
 
   // ------------------------------------------------------------- revisions
   router.post('/api/quotations/:id/revise', ({ params, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'quotations.create');
     const id = Number(params.id);
     const source = loadQuote(id);
     assertCanEdit(user, source.owner_id);
@@ -442,7 +445,7 @@ export function register(router) {
   });
 
   router.post('/api/quotations/:id/duplicate', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'quotations.create');
     const id = Number(params.id);
     const source = loadQuote(id);
     const issueDate = new Date().toISOString().slice(0, 10);
@@ -482,7 +485,7 @@ export function register(router) {
   });
 
   router.delete('/api/quotations/:id', ({ params, user }) => {
-    requireRole(user, 'manager');
+    requirePermission(user, 'quotations.delete');
     const id = Number(params.id);
     loadQuote(id);
     run('DELETE FROM quotations WHERE id = ?', id);
@@ -492,7 +495,7 @@ export function register(router) {
 
   /** Marks every sent offer whose validity window has passed as expired. */
   router.post('/api/quotations/expire-stale', ({ user }) => {
-    requireRole(user, 'manager');
+    requirePermission(user, 'quotations.edit');
     const changed = run(
       `UPDATE quotations SET status = 'expired', updated_at = datetime('now')
         WHERE status IN ('sent','under_review')

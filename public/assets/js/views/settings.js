@@ -4,7 +4,7 @@ import {
   el, clear, icon, dataTable, field, readForm, openModal, confirmDialog,
   toast, toastError, optionsFrom,
 } from '../ui.js';
-import { hasRole, state } from '../app.js';
+import { can, state } from '../app.js';
 
 const ROLES = ['admin', 'manager', 'engineer', 'viewer'];
 const COUNTRIES = ['SA', 'EG', 'QA'];
@@ -27,8 +27,8 @@ export async function render() {
     { key: 'company', label: t('company_profile'), build: () => companyPanel(settings) },
     { key: 'prices', label: t('price_book'), build: () => pricePanel(settings) },
     { key: 'templates', label: t('templates'), build: () => templatePanel(settings) },
-    { key: 'users', label: t('users'), build: () => usersPanel(), admin: true },
-  ].filter((tab) => !tab.admin || hasRole('admin'));
+    { key: 'users', label: t('users'), build: () => usersPanel(), need: 'users.manage' },
+  ].filter((tab) => !tab.need || can(tab.need));
 
   let active = TABS[0].key;
   const draw = () => {
@@ -44,7 +44,7 @@ export async function render() {
   panel.append(TABS[0].build());
   page.append(tabs, panel);
 
-  if (!hasRole('manager')) {
+  if (!can('settings.edit')) {
     page.prepend(el('div.alert.info', {
       text: getLang() === 'ar'
         ? 'لديك صلاحية عرض فقط — التعديل متاح للمدير.'
@@ -54,7 +54,7 @@ export async function render() {
   return page;
 }
 
-const readOnly = () => !hasRole('manager');
+const readOnly = () => !can('settings.edit');
 
 async function save(key, value, after) {
   try {
@@ -387,7 +387,18 @@ function usersPanel() {
                 text: t(`role_${row.role}`),
               }),
             },
-            { label: t('contact_title'), render: (row) => pick(row, 'title') || '—' },
+            {
+              label: t('permissions'), className: 'num',
+              render: (row) => {
+                const overrides = Object.keys(row.permission_overrides || {}).length;
+                return el('span', {}, [
+                  el('span.badge.grey', { text: String((row.effective_permissions || []).length) }),
+                  overrides
+                    ? el('span.badge.orange', { style: { marginInlineStart: '.25rem' }, text: `${overrides} ${t('perm_custom')}` })
+                    : null,
+                ]);
+              },
+            },
             { label: t('country'), render: (row) => t(`country_${row.country}`) },
             { label: t('last_login'), render: (row) => formatDate(row.last_login_at) },
             {
@@ -425,6 +436,81 @@ function usersPanel() {
   return host;
 }
 
+/**
+ * Renders the capability matrix. Each row shows whether the role grants it by
+ * default, and lets an administrator force it on or off for this one person.
+ */
+function permissionMatrix(catalogue, user, roleSelect) {
+  const host = el('div');
+  const overrides = { ...(user?.permission_overrides || {}) };
+  let role = user?.role || 'engineer';
+
+  const draw = () => {
+    clear(host);
+    const defaults = new Set(catalogue.role_defaults[role] || []);
+
+    host.append(el('div.alert.info', {
+      style: { marginBottom: '.6rem' },
+      text: getLang() === 'ar'
+        ? `الصلاحيات دي مبنية على دور "${t(`role_${role}`)}". شيل أو حط علامة على أي بند عشان تخصصه للشخص ده لوحده.`
+        : `These start from the "${t(`role_${role}`)}" role. Tick or untick any line to override it for this person only.`,
+    }));
+
+    for (const group of catalogue.groups) {
+      const rows = catalogue.permissions.filter((p) => p.group === group.key);
+      if (!rows.length) continue;
+
+      const body = el('div.perm-group-body');
+      for (const permission of rows) {
+        const byDefault = defaults.has(permission.key);
+        const override = overrides[permission.key];
+        const effective = override === undefined ? byDefault : override;
+
+        const box = el('input', { type: 'checkbox' });
+        box.checked = effective;
+        box.addEventListener('change', () => {
+          // Matching the role default clears the override entirely.
+          if (box.checked === byDefault) delete overrides[permission.key];
+          else overrides[permission.key] = box.checked;
+          row.classList.toggle('is-override', overrides[permission.key] !== undefined);
+          tag.textContent = overrides[permission.key] === undefined
+            ? (byDefault ? t('perm_default_on') : t('perm_default_off'))
+            : t('perm_overridden');
+        });
+
+        const tag = el('span.perm-tag', {
+          text: override === undefined
+            ? (byDefault ? t('perm_default_on') : t('perm_default_off'))
+            : t('perm_overridden'),
+        });
+
+        const row = el(`div.perm-row${override === undefined ? '' : '.is-override'}`, {}, [
+          el('label.checkbox', { style: { flex: '1' } }, [
+            box,
+            el('span', { text: getLang() === 'ar' ? permission.ar : permission.en }),
+          ]),
+          tag,
+        ]);
+        body.append(row);
+      }
+
+      host.append(el('details.perm-group', { open: true }, [
+        el('summary', { text: getLang() === 'ar' ? group.ar : group.en }),
+        body,
+      ]));
+    }
+  };
+
+  // Changing the role re-bases the matrix on that role's defaults.
+  roleSelect?.addEventListener('change', (event) => {
+    role = event.target.value;
+    draw();
+  });
+
+  draw();
+  return { node: host, values: () => overrides };
+}
+
 function openUserForm(user, onSaved) {
   const isEdit = Boolean(user);
   const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
@@ -446,6 +532,21 @@ function openUserForm(user, onSaved) {
     isEdit ? field({ name: 'active', label: t('active'), type: 'checkbox', value: Boolean(user.active) }) : null,
   ]);
 
+  const permHost = el('div', {}, [
+    el('h4.mt-2', { text: t('permissions') }),
+    el('div.muted.small', { text: t('loading') }),
+  ]);
+  form.append(permHost);
+
+  let matrix = null;
+  api.permissionCatalogue().then((catalogue) => {
+    clear(permHost).append(el('h4.mt-2', { text: t('permissions') }));
+    matrix = permissionMatrix(catalogue, user, form.querySelector('[name="role"]'));
+    permHost.append(matrix.node);
+  }).catch(() => {
+    clear(permHost).append(el('div.alert.warn', { text: t('error') }));
+  });
+
   openModal({
     title: isEdit ? `${t('edit')} — ${pick(user, 'name')}` : t('new_user'),
     size: 'wide',
@@ -460,6 +561,7 @@ function openUserForm(user, onSaved) {
           try {
             const data = readForm(form);
             if (isEdit && !data.password) delete data.password;
+            if (matrix) data.permission_overrides = matrix.values();
             if (isEdit) await api.updateUser(user.id, data);
             else await api.createUser(data);
             toast(t('saved'), 'success');

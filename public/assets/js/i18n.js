@@ -169,6 +169,11 @@ export const DICT = {
     scope_warranty: 'الضمانات', scope_schedule: 'الجدول الزمني', scope_team: 'فريق العمل',
     payment_terms: 'شروط الدفع', conditions: 'الشروط والأحكام',
     quote_prefix: 'بادئة رقم العرض', last_login: 'آخر دخول',
+    permissions: 'الصلاحيات', permission_overrides: 'صلاحيات مخصصة',
+    perm_default_on: 'افتراضي', perm_default_off: 'مقفول افتراضي',
+    perm_overridden: 'مخصص', perm_custom: 'مخصصة',
+    perm_hint: 'الصلاحيات بتبدأ من الدور، وتقدر تخصص أي بند لشخص لوحده.',
+    no_permission: 'مالكش صلاحية للإجراء ده',
 
     // --- notifications & inbox ---------------------------------------------
     notifications: 'الإشعارات', notification: 'إشعار',
@@ -367,6 +372,11 @@ export const DICT = {
     scope_warranty: 'Warranty', scope_schedule: 'Programme', scope_team: 'Project team',
     payment_terms: 'Payment terms', conditions: 'Terms & conditions',
     quote_prefix: 'Quotation number prefix', last_login: 'Last sign-in',
+    permissions: 'Permissions', permission_overrides: 'Custom permissions',
+    perm_default_on: 'default', perm_default_off: 'off by default',
+    perm_overridden: 'custom', perm_custom: 'custom',
+    perm_hint: 'Permissions start from the role; override any line for one person.',
+    no_permission: 'You do not have permission to do this',
 
     notifications: 'Notifications', notification: 'Notification',
     mark_all_read: 'Mark all read', mark_read: 'Mark read',

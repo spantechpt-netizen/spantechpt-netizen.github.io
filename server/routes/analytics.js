@@ -1,5 +1,5 @@
 import { all, get } from '../db.js';
-import { requireAuth, canSeeAll } from '../auth.js';
+import { requirePermission, canSeeAll } from '../auth.js';
 
 /**
  * Engineers see only their own numbers; managers and admins see the company.
@@ -23,7 +23,7 @@ function dateRange(query) {
 
 export function register(router) {
   router.get('/api/analytics/overview', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'analytics.view');
     const { from, to } = dateRange(query);
     const oScope = scopeFor(user, 'o', query);
     const qScope = scopeFor(user, 'q', query);
@@ -114,7 +114,7 @@ export function register(router) {
 
   /** Monthly quotation volume and won value, for the trend chart. */
   router.get('/api/analytics/monthly', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'analytics.view');
     const { from, to } = dateRange(query);
     const qScope = scopeFor(user, 'q', query);
     const oScope = scopeFor(user, 'o', query);
@@ -144,7 +144,7 @@ export function register(router) {
 
   /** Breakdown by country, engineer, source, sector and loss reason. */
   router.get('/api/analytics/breakdown', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'analytics.view');
     const { from, to } = dateRange(query);
     const oScope = scopeFor(user, 'o', query);
     const qScope = scopeFor(user, 'q', query);
@@ -218,7 +218,7 @@ export function register(router) {
 
   /** Conversion funnel: every opportunity created in the window, by furthest stage reached. */
   router.get('/api/analytics/funnel', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'analytics.view');
     const { from, to } = dateRange(query);
     const oScope = scopeFor(user, 'o', query);
     const rows = get(

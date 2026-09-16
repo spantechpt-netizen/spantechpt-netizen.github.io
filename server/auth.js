@@ -2,6 +2,7 @@ import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypt
 import { config } from './config.js';
 import { all, get, run, insert } from './db.js';
 import { forbidden, unauthorized, parseCookies } from './http.js';
+import { effectivePermissions, can as hasPermission } from './permissions.js';
 
 const SCRYPT_KEYLEN = 64;
 export const SESSION_COOKIE = 'spantech_session';
@@ -74,7 +75,7 @@ export function userFromRequest(req) {
   const row = get(
     `SELECT u.id, u.name, u.name_ar, u.email, u.role, u.title, u.title_ar, u.phone,
             u.country, u.lang, u.active, u.reminder_lead_hours, u.stale_after_days,
-            s.expires_at
+            u.permissions, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = ?`,
     id,
@@ -86,11 +87,31 @@ export function userFromRequest(req) {
   }
   if (!row.active) return null;
   const { expires_at, active, ...user } = row;
+  // Resolve the capability set once per request so handlers can just ask.
+  user.permissions = [...effectivePermissions(user)];
   return user;
 }
 
 export function purgeExpiredSessions() {
   return run("DELETE FROM sessions WHERE expires_at < datetime('now')").changes;
+}
+
+// ------------------------------------------------------------- permissions
+/** True when the signed-in user holds this capability. */
+export const can = (user, permission) =>
+  Array.isArray(user?.permissions)
+    ? user.permissions.includes(permission)
+    : hasPermission(user, permission);
+
+export function requirePermission(user, permission) {
+  requireAuth(user);
+  if (!can(user, permission)) {
+    throw forbidden(
+      `You do not have permission to do this (${permission})`,
+      'مالكش صلاحية للإجراء ده',
+    );
+  }
+  return user;
 }
 
 const RANK = { viewer: 0, engineer: 1, manager: 2, admin: 3 };
@@ -108,12 +129,16 @@ export function requireRole(user, minimum) {
   return user;
 }
 
-/** Engineers only see their own records; managers and admins see everything. */
-export const canSeeAll = (user) => hasRole(user, 'manager');
+/**
+ * Whether this user sees every engineer's records or only their own.
+ * Driven by the capability, so one engineer can be granted company-wide
+ * visibility without being promoted.
+ */
+export const canSeeAll = (user) => can(user, 'customers.view_all');
 
 /** True when `user` may edit a record owned by `ownerId`. */
 export function canEditRecord(user, ownerId) {
-  if (!user || user.role === 'viewer') return false;
+  if (!user) return false;
   if (canSeeAll(user)) return true;
   return ownerId === null || ownerId === undefined || Number(ownerId) === Number(user.id);
 }
@@ -126,7 +151,19 @@ export function assertCanEdit(user, ownerId) {
 
 export function listUsers() {
   return all(
-    `SELECT id, name, name_ar, email, role, title, title_ar, phone, country, lang, active, last_login_at, created_at
+    `SELECT id, name, name_ar, email, role, title, title_ar, phone, country, lang,
+            active, last_login_at, created_at, permissions
        FROM users ORDER BY active DESC, name`,
-  );
+  ).map((user) => ({
+    ...user,
+    // Send the resolved set so the UI can render exactly what this person can do.
+    effective_permissions: [...effectivePermissions(user)],
+    permission_overrides: safeJson(user.permissions),
+    permissions: undefined,
+  }));
+}
+
+function safeJson(value) {
+  if (!value) return {};
+  try { return JSON.parse(value); } catch { return {}; }
 }

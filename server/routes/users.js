@@ -1,16 +1,19 @@
 import { get, insert, update, run, audit } from '../db.js';
-import { requireRole, hashPassword, listUsers, destroyUserSessions } from '../auth.js';
+import {
+  requireAuth, requirePermission, hashPassword, listUsers, destroyUserSessions,
+} from '../auth.js';
 import { conflict, notFound, badRequest } from '../http.js';
+import { sanitiseOverrides, permissionCatalogue } from '../permissions.js';
 import { str, email as emailField, oneOf, bool, ROLES, COUNTRIES } from '../validate.js';
 
 export function register(router) {
   router.get('/api/users', ({ user }) => {
-    requireRole(user, 'engineer');
+    requireAuth(user);
     return { users: listUsers() };
   });
 
   router.post('/api/users', ({ body, user }) => {
-    requireRole(user, 'admin');
+    requirePermission(user, 'users.manage');
     const email = emailField(body.email, 'email', { required: true });
     if (get('SELECT id FROM users WHERE email = ? COLLATE NOCASE', email)) {
       throw conflict('A user with this email already exists', 'يوجد مستخدم بنفس البريد الإلكتروني');
@@ -28,13 +31,14 @@ export function register(router) {
       country: oneOf(body.country, 'country', COUNTRIES, { fallback: 'SA' }),
       lang: oneOf(body.lang, 'lang', ['ar', 'en'], { fallback: 'ar' }),
       active: bool(body.active, true) ? 1 : 0,
+      permissions: JSON.stringify(sanitiseOverrides(body.permission_overrides)),
     });
     audit(user.id, 'user', id, 'create', { email });
-    return { user: get('SELECT id, name, name_ar, email, role, title, title_ar, phone, country, lang, active FROM users WHERE id = ?', id) };
+    return { user: listUsers().find((u) => u.id === id) };
   });
 
   router.patch('/api/users/:id', ({ params, body, user }) => {
-    requireRole(user, 'admin');
+    requirePermission(user, 'users.manage');
     const id = Number(params.id);
     const target = get('SELECT * FROM users WHERE id = ?', id);
     if (!target) throw notFound('User not found', 'المستخدم غير موجود');
@@ -72,6 +76,9 @@ export function register(router) {
       country: oneOf(body.country, 'country', COUNTRIES, { fallback: undefined }),
       lang: oneOf(body.lang, 'lang', ['ar', 'en'], { fallback: undefined }),
       active,
+      permissions: body.permission_overrides === undefined
+        ? undefined
+        : JSON.stringify(sanitiseOverrides(body.permission_overrides)),
     });
 
     if (body.password) {
@@ -81,14 +88,23 @@ export function register(router) {
     }
     if (active === 0) destroyUserSessions(id);
 
+    // No need to end sessions for a permission or role change: the capability
+    // set is recomputed from this row on every request, so it applies at once
+    // without throwing the person out of what they were doing.
     audit(user.id, 'user', id, 'update');
-    return { user: get('SELECT id, name, name_ar, email, role, title, title_ar, phone, country, lang, active FROM users WHERE id = ?', id) };
+    return { user: listUsers().find((u) => u.id === id) };
+  });
+
+  /** Every capability, grouped, with each role's defaults. */
+  router.get('/api/permissions', ({ user }) => {
+    requireAuth(user);
+    return { ...permissionCatalogue(), mine: user.permissions };
   });
 
   router.delete('/api/users/:id', ({ params, user }) => {
-    requireRole(user, 'admin');
+    requirePermission(user, 'users.manage');
     const id = Number(params.id);
-    if (id === user.id) throw badRequest('You cannot delete your own account', 'لا يمكنك حذف حسابك الشخصي');
+    if (id === user.id) throw badRequest('You cannot delete your own account', 'مش هتقدر تمسح حسابك انت');
     const target = get('SELECT role FROM users WHERE id = ?', id);
     if (!target) throw notFound('User not found', 'المستخدم غير موجود');
     // Deactivate rather than delete so historical quotes keep their owner.

@@ -4,6 +4,7 @@ import {
   SESSION_COOKIE, createSession, destroySession, hashPassword, verifyPassword,
   requireAuth,
 } from '../auth.js';
+import { effectivePermissions } from '../permissions.js';
 import { setCookie, clearCookie, badRequest, unauthorized } from '../http.js';
 import { str, int, email as emailField, oneOf } from '../validate.js';
 
@@ -64,6 +65,7 @@ export function register(router) {
     audit(user.id, 'user', user.id, 'login');
 
     const { password_hash, ...safe } = user;
+    safe.permissions = [...effectivePermissions(user)];
     return { user: safe };
   }, { public: true });
 
@@ -89,7 +91,9 @@ export function register(router) {
       reminder_lead_hours: int(body.reminder_lead_hours, 'reminder_lead_hours', { min: 1, max: 168, fallback: undefined }),
       stale_after_days: int(body.stale_after_days, 'stale_after_days', { min: 1, max: 365, fallback: undefined }),
     });
-    const { password_hash, ...safe } = get('SELECT * FROM users WHERE id = ?', user.id);
+    const row = get('SELECT * FROM users WHERE id = ?', user.id);
+    const { password_hash, ...safe } = row;
+    safe.permissions = [...effectivePermissions(row)];
     return { user: safe };
   });
 

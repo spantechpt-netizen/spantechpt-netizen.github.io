@@ -1,5 +1,5 @@
 import { all, get, insert, update, run, audit } from '../db.js';
-import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
+import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '../auth.js';
 import { notFound } from '../http.js';
 import { notifyAssignment } from '../notifications.js';
 import { str, int, oneOf, datetime, bool, ACTIVITY_TYPES } from '../validate.js';
@@ -26,7 +26,7 @@ function loadActivity(id) {
 
 export function register(router) {
   router.get('/api/activities', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'activities.view');
     const where = [];
     const params = [];
 
@@ -76,7 +76,7 @@ export function register(router) {
   });
 
   router.post('/api/activities', ({ body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'activities.create');
     const id = insert('activities', {
       type: oneOf(body.type, 'type', ACTIVITY_TYPES, { fallback: 'call' }),
       subject: str(body.subject, 'subject', { required: true, max: 250 }),
@@ -101,7 +101,7 @@ export function register(router) {
   });
 
   router.patch('/api/activities/:id', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'activities.edit');
     const id = Number(params.id);
     const existing = loadActivity(id);
     assertCanEdit(user, existing.owner_id);
@@ -114,7 +114,7 @@ export function register(router) {
       outcome: str(body.outcome, 'outcome', { max: 1000, fallback: undefined }),
       contact_id: body.contact_id === undefined ? undefined : int(body.contact_id, 'contact_id', { min: 1, fallback: null }),
     };
-    if (canSeeAll(user) && body.owner_id !== undefined) {
+    if (can(user, 'customers.assign') && body.owner_id !== undefined) {
       fields.owner_id = int(body.owner_id, 'owner_id', { min: 1, fallback: null });
     }
     if (body.done !== undefined) {
@@ -127,7 +127,7 @@ export function register(router) {
   });
 
   router.delete('/api/activities/:id', ({ params, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'activities.delete');
     const id = Number(params.id);
     const existing = loadActivity(id);
     assertCanEdit(user, existing.owner_id);

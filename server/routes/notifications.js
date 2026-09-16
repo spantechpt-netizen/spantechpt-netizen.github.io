@@ -1,5 +1,5 @@
 import { all, get, insert, run, transaction } from '../db.js';
-import { requireAuth, requireRole } from '../auth.js';
+import { requireAuth, requirePermission } from '../auth.js';
 import { notFound, badRequest } from '../http.js';
 import {
   listNotifications, unreadCount, markRead, markAllRead,
@@ -49,7 +49,7 @@ export function register(router) {
 
   /** Runs the reminder sweep on demand; it also runs on a timer server-side. */
   router.post('/api/notifications/sweep', ({ user }) => {
-    requireRole(user, 'manager');
+    requirePermission(user, 'analytics.view');
     return { swept: runReminderSweep() };
   });
 
@@ -139,7 +139,7 @@ export function register(router) {
   });
 
   router.post('/api/messages', ({ body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'messages.send');
     const parentId = int(body.parent_id, 'parent_id', { min: 1, fallback: null });
     const text = str(body.body, 'body', { required: true, max: 4000 });
 
@@ -217,7 +217,7 @@ export function register(router) {
   });
 
   router.delete('/api/messages/:id', ({ params, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'messages.send');
     const id = Number(params.id);
     const message = get('SELECT * FROM messages WHERE id = ?', id);
     if (!message) throw notFound('Message not found', 'الرسالة مش موجودة');

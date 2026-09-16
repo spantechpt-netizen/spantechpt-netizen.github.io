@@ -27,14 +27,14 @@ export const state = {
 
 const ROUTES = [
   { path: 'dashboard', icon: 'dashboard', label: 'nav_dashboard', view: dashboard },
-  { path: 'customers', icon: 'customers', label: 'nav_customers', view: customers },
-  { path: 'pipeline', icon: 'pipeline', label: 'nav_pipeline', view: pipeline },
-  { path: 'activities', icon: 'activities', label: 'nav_activities', view: activities, badge: 'activities' },
-  { path: 'calendar', icon: 'calendar', label: 'nav_calendar', view: calendarView },
-  { path: 'inbox', icon: 'mail', label: 'nav_inbox', view: inbox, badge: 'inbox' },
-  { path: 'quotations', icon: 'quotations', label: 'nav_quotations', view: quotations },
-  { path: 'analytics', icon: 'analytics', label: 'nav_analytics', view: analytics },
-  { path: 'settings', icon: 'settings', label: 'nav_settings', view: settings, minRole: 'engineer' },
+  { path: 'customers', icon: 'customers', label: 'nav_customers', view: customers, need: 'customers.view' },
+  { path: 'pipeline', icon: 'pipeline', label: 'nav_pipeline', view: pipeline, need: 'opportunities.view' },
+  { path: 'activities', icon: 'activities', label: 'nav_activities', view: activities, badge: 'activities', need: 'activities.view' },
+  { path: 'calendar', icon: 'calendar', label: 'nav_calendar', view: calendarView, need: 'activities.view' },
+  { path: 'inbox', icon: 'mail', label: 'nav_inbox', view: inbox, badge: 'inbox', need: 'messages.send' },
+  { path: 'quotations', icon: 'quotations', label: 'nav_quotations', view: quotations, need: 'quotations.view' },
+  { path: 'analytics', icon: 'analytics', label: 'nav_analytics', view: analytics, need: 'analytics.view' },
+  { path: 'settings', icon: 'settings', label: 'nav_settings', view: settings, need: 'settings.view' },
 ];
 
 // Views not shown in the sidebar, reached from inside other screens.
@@ -42,8 +42,17 @@ const SUB_ROUTES = { quote: quoteEditor, notifications: notificationsView };
 
 const RANK = { viewer: 0, engineer: 1, manager: 2, admin: 3 };
 export const hasRole = (minimum) => (RANK[state.user?.role] ?? -1) >= (RANK[minimum] ?? 99);
-export const canEdit = () => state.user && state.user.role !== 'viewer';
-export const canSeeAll = () => hasRole('manager');
+
+/** True when the signed-in user holds this capability. */
+export const can = (permission) =>
+  Array.isArray(state.user?.permissions) && state.user.permissions.includes(permission);
+
+/** Kept for the views that only ask "may this person change anything?". */
+export const canEdit = () => can('customers.edit') || can('opportunities.edit')
+  || can('quotations.edit') || can('activities.edit');
+
+/** Whether this person sees every engineer's records or only their own. */
+export const canSeeAll = () => can('customers.view_all');
 
 const root = document.getElementById('root');
 
@@ -68,7 +77,7 @@ async function render() {
   const view = route?.view || sub;
 
   if (!view) return navigate('dashboard');
-  if (route?.minRole && !hasRole(route.minRole)) return navigate('dashboard');
+  if (route?.need && !can(route.need)) return navigate('dashboard');
 
   renderShell();
   const outlet = document.getElementById('outlet');
@@ -112,7 +121,7 @@ function renderShell() {
       ]),
     ]),
     el('nav.sidebar-nav', {}, ROUTES
-      .filter((route) => !route.minRole || hasRole(route.minRole))
+      .filter((route) => !route.need || can(route.need))
       .map((route) => el('a.nav-item', {
         href: `#/${route.path}`,
         dataset: { path: route.path },

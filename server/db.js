@@ -28,6 +28,8 @@ addColumn('users', 'calendar_token', 'TEXT');
 addColumn('users', 'reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
 // Days of silence after which a customer counts as "missed contact".
 addColumn('users', 'stale_after_days', 'INTEGER NOT NULL DEFAULT 30');
+// Per-user permission overrides on top of the role defaults, as JSON.
+addColumn('users', 'permissions', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

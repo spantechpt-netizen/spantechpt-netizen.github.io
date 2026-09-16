@@ -1,5 +1,5 @@
 import { all, get, insert, update, run, nextCounter, audit } from '../db.js';
-import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
+import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '../auth.js';
 import { notFound, conflict } from '../http.js';
 import { notifyAssignment } from '../notifications.js';
 import {
@@ -52,7 +52,7 @@ function customerFields(body, { partial = false } = {}) {
 
 export function register(router) {
   router.get('/api/customers', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'customers.view');
     const where = [];
     const params = [];
 
@@ -93,7 +93,7 @@ export function register(router) {
   });
 
   router.get('/api/customers/:id', ({ params, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'customers.view');
     const id = Number(params.id);
     const customer = loadCustomer(id);
     return {
@@ -117,7 +117,7 @@ export function register(router) {
   });
 
   router.post('/api/customers', ({ body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'customers.create');
     const fields = customerFields(body);
     delete fields.req;
     const name = fields.name_en;
@@ -144,14 +144,14 @@ export function register(router) {
   });
 
   router.patch('/api/customers/:id', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'customers.edit');
     const id = Number(params.id);
     const existing = loadCustomer(id);
     assertCanEdit(user, existing.owner_id);
     const fields = customerFields(body, { partial: true });
     delete fields.req;
     // Only managers may reassign a customer to another engineer.
-    if (fields.owner_id !== undefined && !canSeeAll(user)) delete fields.owner_id;
+    if (fields.owner_id !== undefined && !can(user, 'customers.assign')) delete fields.owner_id;
     update('customers', id, fields);
     audit(user.id, 'customer', id, 'update');
     const saved = loadCustomer(id);
@@ -165,7 +165,7 @@ export function register(router) {
   });
 
   router.delete('/api/customers/:id', ({ params, user }) => {
-    requireRole(user, 'manager');
+    requirePermission(user, 'customers.delete');
     const id = Number(params.id);
     loadCustomer(id);
     run('DELETE FROM customers WHERE id = ?', id);
@@ -175,7 +175,7 @@ export function register(router) {
 
   // ---------------------------------------------------------------- contacts
   router.post('/api/customers/:id/contacts', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'customers.edit');
     const customerId = Number(params.id);
     const customer = loadCustomer(customerId);
     assertCanEdit(user, customer.owner_id);
@@ -196,7 +196,7 @@ export function register(router) {
   });
 
   router.patch('/api/contacts/:id', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'customers.edit');
     const id = Number(params.id);
     const contact = get('SELECT * FROM contacts WHERE id = ?', id);
     if (!contact) throw notFound('Contact not found', 'جهة الاتصال غير موجودة');
@@ -217,7 +217,7 @@ export function register(router) {
   });
 
   router.delete('/api/contacts/:id', ({ params, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'customers.edit');
     const id = Number(params.id);
     const contact = get('SELECT * FROM contacts WHERE id = ?', id);
     if (!contact) throw notFound('Contact not found', 'جهة الاتصال غير موجودة');

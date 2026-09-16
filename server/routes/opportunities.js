@@ -1,5 +1,5 @@
 import { all, get, insert, update, run, nextCounter, audit } from '../db.js';
-import { requireAuth, requireRole, canSeeAll, assertCanEdit } from '../auth.js';
+import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '../auth.js';
 import { notFound, badRequest } from '../http.js';
 import { notifyAssignment } from '../notifications.js';
 import { str, num, int, oneOf, date, COUNTRIES, STAGES, CURRENCIES } from '../validate.js';
@@ -25,7 +25,7 @@ function loadOpportunity(id) {
 
 export function register(router) {
   router.get('/api/opportunities', ({ query, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'opportunities.view');
     const where = [];
     const params = [];
 
@@ -62,7 +62,7 @@ export function register(router) {
   });
 
   router.get('/api/opportunities/:id', ({ params, user }) => {
-    requireAuth(user);
+    requirePermission(user, 'opportunities.view');
     const id = Number(params.id);
     return {
       opportunity: loadOpportunity(id),
@@ -79,7 +79,7 @@ export function register(router) {
   });
 
   router.post('/api/opportunities', ({ body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'opportunities.create');
     const customerId = int(body.customer_id, 'customer_id', { required: true, min: 1 });
     const customer = get('SELECT * FROM customers WHERE id = ?', customerId);
     if (!customer) throw notFound('Customer not found', 'العميل غير موجود');
@@ -115,7 +115,7 @@ export function register(router) {
   });
 
   router.patch('/api/opportunities/:id', ({ params, body, user }) => {
-    requireRole(user, 'engineer');
+    requirePermission(user, 'opportunities.edit');
     const id = Number(params.id);
     const existing = loadOpportunity(id);
     assertCanEdit(user, existing.owner_id);
@@ -142,7 +142,7 @@ export function register(router) {
       lost_reason: str(body.lost_reason, 'lost_reason', { max: 60, fallback: undefined }),
       lost_to: str(body.lost_to, 'lost_to', { max: 200, fallback: undefined }),
     };
-    if (canSeeAll(user) && body.owner_id !== undefined) {
+    if (can(user, 'customers.assign') && body.owner_id !== undefined) {
       fields.owner_id = int(body.owner_id, 'owner_id', { min: 1, fallback: null });
     }
     // Moving stage resets probability unless the caller supplies one explicitly.
@@ -172,7 +172,7 @@ export function register(router) {
   });
 
   router.delete('/api/opportunities/:id', ({ params, user }) => {
-    requireRole(user, 'manager');
+    requirePermission(user, 'opportunities.delete');
     const id = Number(params.id);
     loadOpportunity(id);
     run('DELETE FROM opportunities WHERE id = ?', id);

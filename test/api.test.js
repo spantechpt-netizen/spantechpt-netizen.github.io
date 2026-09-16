@@ -483,3 +483,112 @@ test('stores per-user reminder preferences', async () => {
   assert.equal(res.body.user.reminder_lead_hours, 48);
   assert.equal(res.body.user.stale_after_days, 14);
 });
+
+// =============================================================== permissions
+test('serves the permission catalogue with role defaults', async () => {
+  await api('POST', '/api/auth/login', ADMIN);
+  const res = await api('GET', '/api/permissions');
+  assert.equal(res.status, 200);
+  assert.ok(res.body.permissions.length > 20);
+  assert.ok(res.body.groups.length >= 6);
+  assert.ok(res.body.role_defaults.viewer.length < res.body.role_defaults.engineer.length);
+  assert.ok(res.body.role_defaults.engineer.length < res.body.role_defaults.admin.length);
+  assert.ok(res.body.mine.includes('users.manage'), 'an admin manages users');
+  // Every permission carries both languages for the settings screen.
+  for (const permission of res.body.permissions) {
+    assert.ok(permission.ar && permission.en, `${permission.key} needs both languages`);
+  }
+});
+
+test('a viewer can read but not write', async () => {
+  await api('POST', '/api/users', {
+    name: 'Read Only', email: 'viewer@test.local',
+    password: 'Viewer@2026', role: 'viewer',
+  });
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'viewer@test.local', password: 'Viewer@2026' });
+
+  assert.equal((await api('GET', '/api/customers')).status, 200);
+  assert.equal((await api('POST', '/api/customers', { name_en: 'Nope', country: 'SA' })).status, 403);
+  assert.equal((await api('POST', '/api/activities', { subject: 'Nope' })).status, 403);
+  assert.equal((await api('POST', '/api/messages', { recipient_ids: [1], subject: 'a', body: 'b' })).status, 403);
+  assert.equal((await api('PUT', '/api/settings/quote_prefix', { value: 'X' })).status, 403);
+
+  cookie = adminCookie;
+});
+
+test('an engineer cannot delete customers by default', async () => {
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'mahmoud@test.local', password: 'Engineer@2026' });
+  const res = await api('DELETE', '/api/customers/2');
+  assert.equal(res.status, 403);
+  assert.match(res.body.error.message, /customers\.delete/);
+  cookie = adminCookie;
+});
+
+test('granting one capability to one engineer takes effect', async () => {
+  const users = await api('GET', '/api/users');
+  const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');
+  assert.ok(engineer);
+  assert.ok(!engineer.effective_permissions.includes('customers.delete'));
+
+  const updated = await api('PATCH', `/api/users/${engineer.id}`, {
+    permission_overrides: { 'customers.delete': true },
+  });
+  assert.equal(updated.status, 200);
+  assert.ok(updated.body.user.effective_permissions.includes('customers.delete'));
+  assert.equal(updated.body.user.permission_overrides['customers.delete'], true);
+
+  // It applies to the engineer's existing session immediately — no re-login.
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'mahmoud@test.local', password: 'Engineer@2026' });
+  const customer = await api('POST', '/api/customers', { name_en: 'Scratch Co', country: 'SA' });
+  assert.equal((await api('DELETE', `/api/customers/${customer.body.customer.id}`)).status, 200);
+  cookie = adminCookie;
+});
+
+test('revoking a role default also takes effect', async () => {
+  const users = await api('GET', '/api/users');
+  const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');
+
+  await api('PATCH', `/api/users/${engineer.id}`, {
+    permission_overrides: { 'quotations.create': false },
+  });
+
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'mahmoud@test.local', password: 'Engineer@2026' });
+  const blocked = await api('POST', '/api/quotations', {
+    customer_id: 1, project_name: 'Should not happen', country: 'SA', area_sqm: 10, unit_price: 70,
+  });
+  assert.equal(blocked.status, 403);
+  cookie = adminCookie;
+});
+
+test('approving a quotation is a separate right from sending one', async () => {
+  const users = await api('GET', '/api/users');
+  const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');
+  // Engineers may send, but not decide.
+  assert.ok(engineer.effective_permissions.includes('quotations.send'));
+  assert.ok(!engineer.effective_permissions.includes('quotations.decide'));
+});
+
+test('an administrator cannot lose user management', async () => {
+  const res = await api('PATCH', '/api/users/1', {
+    permission_overrides: { 'users.manage': false },
+  });
+  assert.equal(res.status, 200);
+  assert.ok(
+    res.body.user.effective_permissions.includes('users.manage'),
+    'the last admin must never be locked out',
+  );
+});
+
+test('ignores unknown permission keys', async () => {
+  const users = await api('GET', '/api/users');
+  const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');
+  const res = await api('PATCH', `/api/users/${engineer.id}`, {
+    permission_overrides: { 'not.a.real.permission': true, 'customers.view': true },
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.user.permission_overrides['not.a.real.permission'], undefined);
+});

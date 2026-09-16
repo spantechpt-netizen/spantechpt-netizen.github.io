@@ -677,3 +677,24 @@ table.data tfoot td { padding: .6rem .7rem; font-weight: 700; border-top: 2px so
   .cal-cell { min-height: 74px; }
   .cal-event .cal-time { display: none; }
 }
+
+/* ------------------------------------------------------- permission matrix */
+.perm-group { margin-bottom: .5rem; border: 1px solid var(--ink-200); border-radius: var(--radius-sm); }
+.perm-group > summary {
+  padding: .45rem .7rem; background: var(--ink-50);
+  font-size: .85rem; font-weight: 700; cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.perm-group-body { padding: .3rem .7rem .55rem; }
+.perm-row {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .28rem 0; border-bottom: 1px solid var(--ink-100);
+}
+.perm-row:last-child { border-bottom: 0; }
+.perm-row.is-override { background: var(--accent-100); border-radius: 4px; padding-inline: .3rem; }
+.perm-tag {
+  flex-shrink: 0; padding: .1rem .45rem; border-radius: 999px;
+  background: var(--ink-100); color: var(--ink-500);
+  font-size: .68rem; font-weight: 700;
+}
+.perm-row.is-override .perm-tag { background: var(--accent-600); color: var(--white); }
