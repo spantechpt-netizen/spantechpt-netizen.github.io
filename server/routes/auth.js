@@ -57,6 +57,22 @@ export function register(router) {
     }
     attempts.delete(key);
 
+    // A Secure cookie is never sent back over plain HTTP, so this combination
+    // logs the user in and then loses the session on the very next request —
+    // an endless bounce back to the sign-in screen with nothing in the log to
+    // explain it. Say what is wrong instead of letting them hunt for it.
+    const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    if (config.secureCookies && proto !== 'https') {
+      throw badRequest(
+        'The server is set to HTTPS-only cookies (SECURE_COOKIES) but this '
+        + 'request arrived over plain HTTP, so the session could not be kept. '
+        + 'Either reach the site over HTTPS, or set SECURE_COOKIES=false.',
+        'السيرفر مضبوط على كوكيز HTTPS فقط (SECURE_COOKIES) لكن الطلب وصل عبر '
+        + 'HTTP عادي، فلن تثبت الجلسة. إما تفتح الموقع بـ HTTPS، أو تضبط '
+        + 'SECURE_COOKIES=false.',
+      );
+    }
+
     const { token } = createSession(user.id, { ip, userAgent: req.headers['user-agent'] });
     setCookie(res, SESSION_COOKIE, token, {
       maxAge: config.sessionHours * 3600,

@@ -12,7 +12,7 @@ import {
   toast, toastError, optionsFrom, blankOption,
 } from '../ui.js';
 import { can, state, shared } from '../app.js';
-import { refresh as refreshBell } from '../notify.js';
+import { refresh as refreshBell, secureContext } from '../notify.js';
 
 const STATUS_CLASS = { new: 'amber', assigned: 'blue', converted: 'green', dismissed: 'grey' };
 const PROJECT_TYPES = ['tower', 'school', 'mall', 'villa', 'rest_house', 'admin', 'hospital', 'parking', 'industrial', 'other'];
@@ -343,6 +343,12 @@ export function openCapture(reload, navigate, prefill = {}) {
   const form = el('form.form-grid');
   form.append(
     el('p.hint', { text: t('capture_hint'), style: { gridColumn: '1 / -1', margin: '0 0 .2rem' } }),
+    // Sharing straight from WhatsApp needs the app installed, which browsers
+    // only allow over HTTPS. Pasting works either way.
+    secureContext() ? null : el('p.hint', {
+      text: t('capture_share_needs_https'),
+      style: { gridColumn: '1 / -1', margin: '0 0 .2rem', opacity: '.75' },
+    }),
     field({
       name: 'text', label: t('capture_text'), type: 'textarea', rows: 8, required: true,
       value: prefill.text || '', placeholder: t('capture_text_ph'),

@@ -289,6 +289,26 @@ server {
 
 Then set `SECURE_COOKIES=true` and restart, so session cookies are HTTPS-only.
 
+### Running on plain HTTP
+
+Supported, and the handover documents cover it, but know what it costs. Set
+`SECURE_COOKIES=false` — leaving it `true` over HTTP means the browser never
+returns the session cookie, so sign-in bounces straight back to the login screen
+(the server now detects that combination and says so, rather than letting you
+hunt for it).
+
+Two built-in features stop working, because browsers only allow them in a
+secure context: **sharing a WhatsApp message straight into the CRM** from
+Android's share sheet, which needs the app installable, and **desktop
+notifications**. The interface says so where each one lives rather than
+offering a control that silently does nothing. Everything else works.
+
+What travels in clear text is the part worth weighing: sign-in passwords,
+every session cookie — anyone who captures one is signed in as that person —
+and the quotations and customer data themselves. If the hostname is public and
+nginx is already in front, `certbot --nginx -d <host>` is one free,
+self-renewing command.
+
 > **Note on GitHub Pages:** this repository is a GitHub Pages repo, but Pages only
 > serves static files. It cannot run this application, because the CRM needs a
 > server process and a shared database for all engineers to see the same data.

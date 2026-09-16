@@ -23,9 +23,20 @@ const title = (n) => (getLang() === 'ar' ? n.title_ar : n.title_en) || n.title_e
 const body = (n) => (getLang() === 'ar' ? n.body_ar : n.body_en) || '';
 
 // ------------------------------------------------------------ desktop alerts
-export const desktopSupported = () => typeof Notification !== 'undefined';
+/**
+ * Browsers only hand out notification permission in a secure context, which
+ * means HTTPS (localhost counts). On a plain-HTTP deployment the API may be
+ * missing outright, or present and permanently refusing — either way the
+ * honest answer to the engineer is "this needs HTTPS", not "blocked".
+ */
+export const secureContext = () => window.isSecureContext !== false;
 
-export const desktopState = () => (desktopSupported() ? Notification.permission : 'unsupported');
+export const desktopSupported = () => typeof Notification !== 'undefined' && secureContext();
+
+export const desktopState = () => {
+  if (!secureContext()) return 'insecure';
+  return typeof Notification !== 'undefined' ? Notification.permission : 'unsupported';
+};
 
 export async function askDesktopPermission() {
   if (!desktopSupported()) return 'unsupported';

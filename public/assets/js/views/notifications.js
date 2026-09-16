@@ -23,7 +23,7 @@ export async function render({ navigate }) {
       }),
     ]),
     el('div.spacer'),
-    desktopSupported() ? desktopButton() : null,
+    desktopButton(),
     canSeeAll() ? el('button.btn.btn-secondary', {
       type: 'button', text: t('run_check_now'),
       onclick: async (event) => {
@@ -82,6 +82,12 @@ export async function render({ navigate }) {
 
 function desktopButton() {
   const status = desktopState();
+  // Plain HTTP: the browser will never grant this, so explain rather than
+  // offering a button that cannot work.
+  if (status === 'insecure') {
+    return el('span.badge.grey', { title: t('desktop_needs_https'), text: t('desktop_needs_https') });
+  }
+  if (status === 'unsupported') return null;
   if (status === 'granted') {
     return el('span.badge.green', { text: t('desktop_enabled') });
   }

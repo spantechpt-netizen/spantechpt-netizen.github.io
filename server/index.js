@@ -167,6 +167,9 @@ server.listen(config.port, config.host, () => {
   console.log('  ' + '─'.repeat(60));
   console.log(`  URL       http://${config.host === '0.0.0.0' ? 'localhost' : config.host}:${config.port}`);
   console.log(`  Database  ${config.dbPath}`);
+  console.log(`  Sessions  ${config.secureCookies
+    ? 'HTTPS-only cookies (SECURE_COOKIES=true)'
+    : 'cookies sent over plain HTTP — set SECURE_COOKIES=true once TLS is in front'}`);
   if (admin) {
     console.log('');
     console.log(`  First administrator created:`);
