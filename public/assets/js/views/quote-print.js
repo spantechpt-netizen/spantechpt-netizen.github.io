@@ -16,6 +16,16 @@ const formatDate = (value) => {
   return `${day}/${month}/${year}`;
 };
 
+/**
+ * A `content:` property takes a CSS string, so quotes and backslashes have to
+ * be escaped and a line break written as the CSS escape `\A`. Used for the
+ * running header and footer, which live in @page margin boxes.
+ */
+const cssString = (value) => String(value ?? '')
+  .replace(/\\/g, '\\\\')
+  .replace(/"/g, '\\"')
+  .replace(/\r?\n/g, '\\A ');
+
 const SCOPE_ORDER = ['design', 'supply', 'installation', 'deliverables'];
 
 const LABELS = {
@@ -44,6 +54,7 @@ const LABELS = {
     for_company: 'عن شركة سبان تك للمقاولات', for_client: 'الموافقة والاعتماد — العميل',
     name: 'الاسم', signature: 'التوقيع', stamp: 'الختم',
     page: 'صفحة', of: 'من', cr: 'سجل تجاري', vat_no: 'الرقم الضريبي',
+    page_note: 'أرقام الصفحات تظهر على النسخة المطبوعة',
     unit_price_line: 'سعر المتر المربع',
     currency_note: 'جميع القيم بعملة',
   },
@@ -72,6 +83,7 @@ const LABELS = {
     for_company: 'For Span Tech Contracting Co.', for_client: 'Client Acceptance & Approval',
     name: 'Name', signature: 'Signature', stamp: 'Stamp',
     page: 'Page', of: 'of', cr: 'CR', vat_no: 'VAT No.',
+    page_note: 'Page numbers appear on the printed copy',
     unit_price_line: 'Rate per square metre',
     currency_note: 'All values in',
   },
@@ -170,6 +182,34 @@ function buildDocument(data, lang) {
   const intro = (isAr ? data.intro?.ar : data.intro?.en) || '';
   const profile = isAr ? company.profile_ar : company.profile_en;
 
+  // ---------------------------------------------------------- page furniture
+  // The company data is split rather than repeated: the letterhead carries who
+  // we are and the legal identifiers, the running footer carries how to reach
+  // us. Both end up on every page — the footer through @page margin boxes.
+  const branchName = isAr
+    ? (branch.name_ar || company.name_ar || branch.name_en)
+    : (branch.name_en || company.name_en || branch.name_ar);
+  const branchAddress = (isAr ? branch.address_ar : branch.address_en)
+    || branch.address_en || branch.address_ar || '';
+  const quoteRef = `${q.number}${q.revision ? ` / R${q.revision}` : ''}`;
+
+  const footContact = [
+    [branchAddress].filter(Boolean).join(''),
+    [branch.phone, branch.email, branch.website].filter(Boolean).join('  ·  '),
+  ].filter(Boolean).join('\n');
+
+  // Page one already shows the letterhead, so the running header only starts
+  // on page two — see the `@page :first` rule.
+  const runHeadRef = [quoteRef, projectName].filter(Boolean).join('  —  ');
+
+  // `counter(pages)` is the real total, so the reader can tell a four-page
+  // offer from one that lost a page in the printer.
+  const pageCounter = `"${cssString(L.page)} " counter(page) " ${cssString(L.of)} " counter(pages)`;
+
+  // Margin boxes are physical, so the side they sit on flips with the script.
+  const startSide = isAr ? 'right' : 'left';
+  const endSide = isAr ? 'left' : 'right';
+
   return `<!doctype html>
 <html lang="${lang}" dir="${dir}">
 <head>
@@ -179,7 +219,59 @@ function buildDocument(data, lang) {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap">
 <style>
-  @page { size: A4; margin: 14mm 13mm 16mm; }
+  /* ----------------------------------------------------------- page frame */
+  /* The running header and footer live in @page margin boxes, so the browser
+     repeats them on every sheet and the counter is a real "3 of 5" rather than
+     a number JavaScript had to guess by measuring. The :first rule drops the
+     running header, because page one already carries the letterhead. */
+  @page {
+    size: A4;
+    margin: 20mm 13mm 19mm;
+    font-family: ${isAr ? "'Cairo','Tajawal',Tahoma,sans-serif" : "'Inter','Segoe UI',Arial,sans-serif"};
+    font-size: 7.4pt;
+    color: #5b6775;
+
+    @top-${startSide} {
+      content: "${cssString(branchName)}";
+      vertical-align: bottom; padding-bottom: 3mm;
+      border-bottom: .6pt solid #c8d3e0;
+      font-weight: 700; color: #0a2647;
+    }
+    @top-center {
+      content: "";
+      vertical-align: bottom; padding-bottom: 3mm;
+      border-bottom: .6pt solid #c8d3e0;
+    }
+    @top-${endSide} {
+      content: "${cssString(runHeadRef)}";
+      vertical-align: bottom; padding-bottom: 3mm;
+      border-bottom: .6pt solid #c8d3e0;
+    }
+
+    @bottom-${startSide} {
+      content: "${cssString(quoteRef)}  ·  ${cssString(formatDate(q.issue_date))}";
+      vertical-align: top; padding-top: 2.6mm;
+      border-top: .6pt solid #c8d3e0;
+    }
+    @bottom-center {
+      content: "${cssString(footContact)}";
+      white-space: pre-line; text-align: center;
+      vertical-align: top; padding-top: 2.6mm;
+      border-top: .6pt solid #c8d3e0;
+    }
+    @bottom-${endSide} {
+      content: ${pageCounter};
+      vertical-align: top; padding-top: 2.6mm;
+      border-top: .6pt solid #c8d3e0;
+      font-weight: 700; color: #0a2647;
+    }
+  }
+  @page :first {
+    margin-top: 14mm;
+    @top-left { content: ""; border: 0; }
+    @top-center { content: ""; border: 0; }
+    @top-right { content: ""; border: 0; }
+  }
 
   :root {
     --brand: #0a2647;
@@ -201,19 +293,41 @@ function buildDocument(data, lang) {
     line-height: 1.62;
     color: var(--ink);
     background: #f1f3f6;
+    /* Chrome drops backgrounds when printing unless asked not to, which would
+       leave the navy section bars as empty white boxes. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
+  /* position:relative makes the sheet a stacking context, which is what
+     lets the watermark sit above its white background but under the text. */
   .sheet {
+    position: relative; z-index: 0;
     width: 210mm;
     min-height: 297mm;
     margin: 0 auto;
-    padding: 14mm 13mm 16mm;
+    padding: 14mm 13mm 19mm;
     background: #fff;
   }
   @media print {
     body { background: #fff; }
     .sheet { width: auto; min-height: 0; margin: 0; padding: 0; }
-    .no-print { display: none !important; }
+    .no-print, .screen-only { display: none !important; }
+  }
+
+  /* ------------------------------------------------------------ watermark */
+  /* A fixed element repeats on every printed page. It is an <img> rather than
+     a CSS background so it survives a print with "background graphics" off,
+     and it is faint enough that text over it stays crisp. */
+  .watermark {
+    position: fixed; inset: 0; z-index: -1;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .watermark img {
+    width: 118mm; height: auto;
+    opacity: .042;
+    filter: grayscale(1);
   }
 
   /* ------------------------------------------------------------- toolbar */
@@ -357,10 +471,13 @@ function buildDocument(data, lang) {
   .regards { margin-top: 10px; font-weight: 700; color: var(--brand); }
 
   .footer {
-    margin-top: 14px; padding-top: 6px;
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-top: 16px; padding-top: 6px;
     border-top: 1px solid var(--line);
-    font-size: 7.8pt; color: var(--grey); text-align: center;
+    font-size: 7.4pt; color: var(--grey);
   }
+  .footer > div:nth-child(2) { flex: 1; text-align: center; }
+  .footer .page-note { font-style: italic; opacity: .8; }
 
   .avoid-break { break-inside: avoid; }
   .money-group { break-inside: avoid; }
@@ -377,6 +494,8 @@ function buildDocument(data, lang) {
 
 <div class="sheet">
 
+  <div class="watermark" aria-hidden="true"><img src="/assets/img/logo@2x.png" alt=""></div>
+
   <div class="letterhead">
     <img src="/assets/img/logo@2x.png" alt="Span Tech">
     <div class="who">
@@ -385,14 +504,15 @@ function buildDocument(data, lang) {
       ${company.legal_form_ar || company.legal_form_en
         ? `<div class="f">${esc(isAr ? company.legal_form_ar : company.legal_form_en)}</div>` : ''}
     </div>
+    <!-- Legal identifiers only. Address, phone, email and website belong to
+         the running footer, so no detail is printed in both places. A branch
+         with neither identifier drops the column rather than padding it. -->
+    ${branch.cr_number || branch.vat_number ? `
     <div class="meta">
       ${branch.cr_number
-        ? `${esc(isAr ? (branch.registration_label_ar || L.cr) : (branch.registration_label_en || L.cr))}: ${esc(branch.cr_number)}<br>` : ''}
-      ${branch.vat_number ? `${esc(L.vat_no)}: ${esc(branch.vat_number)}<br>` : ''}
-      ${branch.phone ? `${esc(branch.phone)}<br>` : ''}
-      ${branch.email ? `${esc(branch.email)}<br>` : ''}
-      ${branch.website ? `${esc(branch.website)}` : ''}
-    </div>
+        ? `<div>${esc(isAr ? (branch.registration_label_ar || L.cr) : (branch.registration_label_en || L.cr))}: <b>${esc(branch.cr_number)}</b></div>` : ''}
+      ${branch.vat_number ? `<div>${esc(L.vat_no)}: <b>${esc(branch.vat_number)}</b></div>` : ''}
+    </div>` : ''}
   </div>
 
   <div class="doc-title">
@@ -535,15 +655,13 @@ function buildDocument(data, lang) {
     </div>
   </div>
 
-  <div class="footer">
-    ${[
-      esc(isAr ? (branch.name_ar || company.name_ar) : (branch.name_en || company.name_en)),
-      branch.address_en || branch.address_ar ? esc(isAr ? branch.address_ar : branch.address_en) : '',
-      branch.phone ? esc(branch.phone) : '',
-      branch.email ? esc(branch.email) : '',
-      branch.website ? esc(branch.website) : '',
-    ].filter(Boolean).join(' · ')}
-    <br>${esc(q.number)}${q.revision ? ` / R${q.revision}` : ''} · ${formatDate(q.issue_date)}
+  <!-- On paper the footer comes from the @page margin boxes above, which the
+       browser repeats on every sheet. This copy exists so the preview on
+       screen shows the same thing; it is hidden when printing. -->
+  <div class="footer screen-only">
+    <div>${esc(quoteRef)} · ${formatDate(q.issue_date)}</div>
+    <div>${esc(footContact.replace('\n', ' · '))}</div>
+    <div class="page-note">${esc(L.page_note)}</div>
   </div>
 
 </div>

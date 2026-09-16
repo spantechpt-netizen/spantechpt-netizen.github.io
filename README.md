@@ -324,6 +324,23 @@ technical content and fixing the things that cost credibility:
    source of scope disputes on PT packages.
 8. **Consistent typography and structure**: numbered scope sections, proper
    letterhead, tables with repeating headers, and no half-empty pages.
+9. **A running header and footer on every page**, carrying a real
+   "Page 3 of 4" — see below.
+
+### The page frame
+
+The company details are split rather than repeated. The letterhead on page one
+carries the identity — logo, trade name, tagline and the branch's commercial
+registration and VAT number. The footer carries how to reach that branch —
+address, phone, email and website — alongside the quotation number, the issue
+date and the page count. Pages two onwards get a compact running header with
+the company name and the quotation reference, so a page that gets separated
+from the set still identifies itself.
+
+All of it lives in CSS `@page` margin boxes, which means the browser repeats it
+on every sheet and `counter(pages)` gives a true total: a client who receives
+three pages of a four-page offer can tell. A faint logo watermark sits behind
+the text on every page, light enough that it does not compete with it.
 
 The internal cost calculator (strand, anchors, ducts, grout, labour, design,
 overheads) is **never printed** — it exists so the engineer can see the margin
