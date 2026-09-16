@@ -30,6 +30,8 @@ addColumn('users', 'reminder_lead_hours', 'INTEGER NOT NULL DEFAULT 24');
 addColumn('users', 'stale_after_days', 'INTEGER NOT NULL DEFAULT 30');
 // Per-user permission overrides on top of the role defaults, as JSON.
 addColumn('users', 'permissions', 'TEXT');
+// Accept a self-signed certificate on an internal mail server.
+addColumn('mail_accounts', 'allow_self_signed', 'INTEGER NOT NULL DEFAULT 0');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

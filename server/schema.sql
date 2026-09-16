@@ -289,3 +289,76 @@ CREATE TABLE IF NOT EXISTS message_recipients (
   PRIMARY KEY (message_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_msg_recipients_user ON message_recipients(user_id, is_read);
+
+-- ================================================================ email intake
+-- Company mailboxes the CRM reads. The password is stored encrypted; see
+-- server/secrets.js. Read-only access is enough — nothing is ever sent or
+-- deleted, and messages are fetched with BODY.PEEK so the inbox stays unread.
+CREATE TABLE IF NOT EXISTS mail_accounts (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  label             TEXT    NOT NULL,
+  host              TEXT    NOT NULL,
+  port              INTEGER NOT NULL DEFAULT 993,
+  secure            INTEGER NOT NULL DEFAULT 1,   -- 1 = implicit TLS (993), 0 = STARTTLS (143)
+  username          TEXT    NOT NULL,
+  password_enc      TEXT    NOT NULL,
+  folders           TEXT    NOT NULL DEFAULT '["INBOX"]',
+  active            INTEGER NOT NULL DEFAULT 1,
+  sync_minutes      INTEGER NOT NULL DEFAULT 10,
+  last_sync_at      TEXT,
+  last_error        TEXT,
+  state_json        TEXT,    -- { "INBOX": { uidValidity, lastUid } }
+  created_by        INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS mail_messages (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id       INTEGER NOT NULL REFERENCES mail_accounts(id) ON DELETE CASCADE,
+  folder           TEXT    NOT NULL DEFAULT 'INBOX',
+  uid              INTEGER NOT NULL,
+  message_id       TEXT,
+  in_reply_to      TEXT,
+  from_email       TEXT,
+  from_name        TEXT,
+  to_emails        TEXT,
+  subject          TEXT,
+  body_text        TEXT,
+  snippet          TEXT,
+  received_at      TEXT,
+  has_attachments  INTEGER NOT NULL DEFAULT 0,
+  attachments_json TEXT,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (account_id, folder, uid)
+);
+CREATE INDEX IF NOT EXISTS idx_mail_msg_from ON mail_messages(from_email);
+CREATE INDEX IF NOT EXISTS idx_mail_msg_date ON mail_messages(received_at);
+
+-- One row per email that looks like it needs action. The manager triages these
+-- and hands each to an engineer; converting one creates the customer and the
+-- opportunity from the extracted data.
+CREATE TABLE IF NOT EXISTS mail_requests (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  message_id      INTEGER NOT NULL REFERENCES mail_messages(id) ON DELETE CASCADE,
+  status          TEXT    NOT NULL DEFAULT 'new',  -- new | assigned | converted | dismissed
+  kind            TEXT    NOT NULL DEFAULT 'rfq',  -- rfq | reply | other
+  confidence      INTEGER NOT NULL DEFAULT 0,
+  extraction_json TEXT,
+  summary_ar      TEXT,
+  summary_en      TEXT,
+  customer_id     INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  opportunity_id  INTEGER REFERENCES opportunities(id) ON DELETE SET NULL,
+  quotation_id    INTEGER REFERENCES quotations(id) ON DELETE SET NULL,
+  assigned_to     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  assigned_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  assigned_at     TEXT,
+  handled_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  handled_at      TEXT,
+  notes           TEXT,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mail_req_status ON mail_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_mail_req_assignee ON mail_requests(assigned_to);

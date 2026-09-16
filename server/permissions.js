@@ -48,6 +48,11 @@ export const PERMISSIONS = [
   // ----------------------------------------------------------------- messages
   { key: 'messages.send', group: 'messages', ar: 'إرسال رسايل للزمايل', en: 'Send messages' },
 
+  // --------------------------------------------------------------------- mail
+  { key: 'mail.view', group: 'mail', ar: 'عرض طلبات الإيميل', en: 'View email requests' },
+  { key: 'mail.triage', group: 'mail', ar: 'توزيع الطلبات على المهندسين', en: 'Triage and assign email requests' },
+  { key: 'mail.manage', group: 'mail', ar: 'إعداد حسابات البريد والذكاء الاصطناعي', en: 'Configure mailboxes and AI' },
+
   // ----------------------------------------------------------------- settings
   { key: 'settings.view', group: 'settings', ar: 'عرض الإعدادات', en: 'View settings' },
   { key: 'settings.edit', group: 'settings', ar: 'تعديل إعدادات الشركة والأسعار', en: 'Edit company settings and prices' },
@@ -63,6 +68,7 @@ export const PERMISSION_GROUPS = [
   { key: 'activities', ar: 'المتابعات', en: 'Follow-ups' },
   { key: 'analytics', ar: 'التحليلات', en: 'Analytics' },
   { key: 'messages', ar: 'الرسايل', en: 'Messages' },
+  { key: 'mail', ar: 'طلبات الإيميل', en: 'Email requests' },
   { key: 'settings', ar: 'الإعدادات', en: 'Settings' },
 ];
 
@@ -80,6 +86,7 @@ export const ROLE_DEFAULTS = {
     'activities.view', 'activities.create', 'activities.edit', 'activities.delete',
     'analytics.view',
     'messages.send',
+    'mail.view',
     'settings.view',
   ],
   manager: [

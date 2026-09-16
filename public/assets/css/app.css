@@ -698,3 +698,31 @@ table.data tfoot td { padding: .6rem .7rem; font-weight: 700; border-top: 2px so
   font-size: .68rem; font-weight: 700;
 }
 .perm-row.is-override .perm-tag { background: var(--accent-600); color: var(--white); }
+
+/* ------------------------------------------------------- incoming requests */
+.req-row {
+  display: flex; align-items: flex-start; gap: .8rem;
+  padding: .8rem .9rem; border-bottom: 1px solid var(--ink-100); cursor: pointer;
+}
+.req-row:last-child { border-bottom: 0; }
+.req-row:hover { background: var(--brand-50); }
+.req-row.is-new { background: #fffdf5; border-inline-start: 3px solid var(--accent-600); }
+.req-subject { font-size: .9rem; font-weight: 700; }
+
+.conf-ring {
+  display: grid; place-items: center;
+  width: 44px; height: 44px; margin: 0 auto .15rem;
+  border-radius: 50%; border: 3px solid var(--ink-200);
+  font-size: .74rem; font-weight: 800; font-variant-numeric: tabular-nums; direction: ltr;
+}
+.conf-ring.high { border-color: var(--ok-700); color: var(--ok-700); }
+.conf-ring.mid { border-color: var(--warn-700); color: var(--warn-700); }
+.conf-ring.low { border-color: var(--ink-300); color: var(--ink-500); }
+
+.mail-body {
+  max-height: 260px; overflow: auto; margin: 0;
+  padding: .7rem .8rem; background: var(--ink-50);
+  border: 1px solid var(--ink-200); border-radius: var(--radius-sm);
+  font-family: inherit; font-size: .84rem; line-height: 1.7;
+  white-space: pre-wrap; word-break: break-word;
+}

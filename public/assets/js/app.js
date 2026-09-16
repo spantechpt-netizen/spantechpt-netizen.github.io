@@ -16,6 +16,7 @@ import * as settings from './views/settings.js';
 import * as notificationsView from './views/notifications.js';
 import * as inbox from './views/inbox.js';
 import * as calendarView from './views/calendar.js';
+import * as requestsView from './views/requests.js';
 import * as bellModule from './notify.js';
 
 export const state = {
@@ -31,6 +32,7 @@ const ROUTES = [
   { path: 'pipeline', icon: 'pipeline', label: 'nav_pipeline', view: pipeline, need: 'opportunities.view' },
   { path: 'activities', icon: 'activities', label: 'nav_activities', view: activities, badge: 'activities', need: 'activities.view' },
   { path: 'calendar', icon: 'calendar', label: 'nav_calendar', view: calendarView, need: 'activities.view' },
+  { path: 'requests', icon: 'inbox', label: 'nav_requests', view: requestsView, badge: 'requests', need: 'mail.view' },
   { path: 'inbox', icon: 'mail', label: 'nav_inbox', view: inbox, badge: 'inbox', need: 'messages.send' },
   { path: 'quotations', icon: 'quotations', label: 'nav_quotations', view: quotations, need: 'quotations.view' },
   { path: 'analytics', icon: 'analytics', label: 'nav_analytics', view: analytics, need: 'analytics.view' },
@@ -203,9 +205,12 @@ export async function refreshBadges() {
   try {
     state.activitySummary = await api.activitySummary();
   } catch { return; }
+  const mail = await api.mailSummary().catch(() => ({ new: 0, mine: 0 }));
   const counts = {
     activities: state.activitySummary.overdue,
     inbox: bellModule.getState().unreadMail,
+    // Triagers watch the new queue; engineers watch what was handed to them.
+    requests: can('mail.triage') ? mail.new : mail.mine,
   };
   for (const node of document.querySelectorAll('[data-badge]')) {
     const count = counts[node.dataset.badge] || 0;

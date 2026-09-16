@@ -26,6 +26,7 @@ Arabic or English, with the maths done for you.
 | **Notifications** | الإشعارات | A bell with live alerts: follow-ups falling due, overdue follow-ups, customers who have gone quiet, quotations nearing expiry, records assigned to you, and quotation decisions. Optional desktop pop-ups |
 | **Messages** | الرسايل | Internal threads between engineers, optionally pinned to a customer, opportunity or quotation |
 | **Calendar** | الأجندة | Month and agenda views of every follow-up, plus a private feed URL you subscribe to in Outlook or Google Calendar |
+| **Incoming requests** | الطلبات الواردة | Reads the company mailbox, spots quotation requests and client replies, extracts the customer and project from the email, and queues them for the manager to hand to an engineer |
 | **Analytics** | التحليلات | Conversion funnel, monthly trend, win rate by country and by engineer, loss-reason analysis, and an average price-per-m² benchmark |
 | **Settings** | الإعدادات | Company profile, per-country price book, editable quotation templates, and user management with roles |
 
@@ -41,6 +42,67 @@ Selecting a country on a quotation applies that market's currency, VAT rate and
 default rates automatically.
 
 ---
+
+## Email intake
+
+Point the CRM at the company mailbox and quotation requests stop living in
+somebody's inbox.
+
+**What it does.** Every few minutes it checks the mailbox over IMAP, ignores
+newsletters, bounces and out-of-office replies, and for anything that asks for a
+price, mentions post-tensioning, or is a reply from someone already in the CRM,
+it reads out the customer, contact, project, area, country and project type and
+files it under **Incoming requests**. The manager gets a notification, assigns it
+to an engineer — who is notified in turn — and one button then creates the
+customer, the contact and the opportunity from the extracted draft.
+
+**Nothing is created automatically.** An email is a claim, not a fact. Extraction
+fills in a form that a person checks and corrects before anything enters the CRM,
+and the confidence score on each request says how much could actually be pinned
+down.
+
+### Extraction without AI, and with it
+
+Out of the box it works offline with built-in rules: it matches the sender
+against customers you already have (by contact address, then company domain,
+then name), and reads the area (`9,800 m²`, `٤٧٦ متر مربع`, `3,200 sqm` all
+work), the country, the project type, phone numbers and the project name.
+
+Adding a **Claude API key** in *Settings → Mailboxes* turns on a second pass that
+reads the whole email properly — much better with free Arabic prose — and writes
+a one-line summary in both languages. The key is stored encrypted, never sent
+back to the browser, and if the call fails the built-in rules still stand. Get a
+key from [console.anthropic.com](https://console.anthropic.com).
+
+### Importing your past email
+
+*Settings → Mailboxes → Import from past email* scans as far back as you like,
+across whichever folders you name, and puts everything it finds in the same queue
+for review. Use it once when you first connect a mailbox to pull in the clients
+and projects you have already been discussing.
+
+### Connecting a mailbox
+
+You need IMAP details and an **app password** — not the account's own password:
+
+| | Host | Port |
+|---|---|---|
+| Gmail / Google Workspace | `imap.gmail.com` | 993 |
+| Microsoft 365 / Outlook | `outlook.office365.com` | 993 |
+| cPanel / most hosts | `mail.yourdomain.com` | 993 |
+
+Gmail app passwords are created under Google Account → Security → 2-Step
+Verification → App passwords.
+
+> **Microsoft 365:** Microsoft has been switching tenants off basic
+> authentication, so an app password may not work on yours. If the connection
+> test fails with an authentication error, check with whoever administers your
+> tenant whether IMAP with app passwords is still permitted.
+
+The CRM only ever **reads**. It never sends, never deletes, and fetches with
+`BODY.PEEK`, so messages are not marked as read behind anyone's back. The
+password is encrypted with a key derived from `SESSION_SECRET` — which means
+rotating that secret requires re-entering mailbox passwords.
 
 ## Reminders and the calendar
 

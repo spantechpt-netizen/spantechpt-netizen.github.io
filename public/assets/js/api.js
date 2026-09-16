@@ -133,6 +133,26 @@ export const api = {
   calendarFeed: () => request('GET', '/api/calendar/feed'),
   rotateCalendarFeed: () => request('POST', '/api/calendar/rotate', {}),
 
+  // ------------------------------------------------------------ email intake
+  mailAccounts: () => request('GET', '/api/mail/accounts'),
+  createMailAccount: (data) => request('POST', '/api/mail/accounts', data),
+  updateMailAccount: (id, data) => request('PATCH', `/api/mail/accounts/${id}`, data),
+  deleteMailAccount: (id) => request('DELETE', `/api/mail/accounts/${id}`),
+  testMailAccount: (id) => request('POST', `/api/mail/accounts/${id}/test`, {}),
+  syncMailAccount: (id, data) => request('POST', `/api/mail/accounts/${id}/sync`, data ?? {}),
+  syncAllMail: () => request('POST', '/api/mail/sync', {}),
+
+  mailRequests: (params) => request('GET', `/api/mail/requests${qs(params)}`),
+  mailRequest: (id) => request('GET', `/api/mail/requests/${id}`),
+  assignMailRequest: (id, data) => request('POST', `/api/mail/requests/${id}/assign`, data),
+  convertMailRequest: (id, data) => request('POST', `/api/mail/requests/${id}/convert`, data ?? {}),
+  setMailRequestStatus: (id, status, notes) => request('POST', `/api/mail/requests/${id}/status`, { status, notes }),
+  reExtractMailRequest: (id) => request('POST', `/api/mail/requests/${id}/re-extract`, {}),
+  mailSummary: () => request('GET', '/api/mail/summary'),
+
+  aiSettings: () => request('GET', '/api/mail/ai'),
+  saveAiSettings: (data) => request('PUT', '/api/mail/ai', data),
+
   // ------------------------------------------------------- users & settings
   users: () => request('GET', '/api/users'),
   permissionCatalogue: () => request('GET', '/api/permissions'),

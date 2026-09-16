@@ -17,15 +17,17 @@ import * as analyticsRoutes from './routes/analytics.js';
 import * as settingsRoutes from './routes/settings.js';
 import * as notificationRoutes from './routes/notifications.js';
 import * as calendarRoutes from './routes/calendar.js';
+import * as mailRoutes from './routes/mail.js';
 
 import { runReminderSweep, purgeOldNotifications } from './notifications.js';
 import { userByCalendarToken, buildUserCalendar } from './calendar.js';
+import { syncDueAccounts } from './mailbox.js';
 
 const router = new Router();
 for (const module of [
   authRoutes, userRoutes, customerRoutes, opportunityRoutes,
   activityRoutes, quotationRoutes, analyticsRoutes, settingsRoutes,
-  notificationRoutes, calendarRoutes,
+  notificationRoutes, calendarRoutes, mailRoutes,
 ]) {
   module.register(router);
 }
@@ -100,6 +102,14 @@ const cleanup = setInterval(() => {
   } catch (error) { console.error('[cleanup]', error); }
 }, 3600_000);
 cleanup.unref();
+
+// Mailbox polling. Each account has its own interval; this pass just asks
+// which are due, so a tight timer here costs nothing.
+const MAIL_POLL_MINUTES = Number(process.env.MAIL_POLL_MINUTES || 5);
+const mailTimer = setInterval(() => {
+  syncDueAccounts().catch((error) => console.error('[mail]', error));
+}, Math.max(MAIL_POLL_MINUTES, 1) * 60_000);
+mailTimer.unref();
 
 // Reminder engine: raises due / overdue / missed-contact / expiry alerts.
 // Dedupe keys make repeat passes harmless, so a short interval is cheap.

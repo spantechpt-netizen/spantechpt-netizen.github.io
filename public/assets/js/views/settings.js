@@ -27,6 +27,7 @@ export async function render() {
     { key: 'company', label: t('company_profile'), build: () => companyPanel(settings) },
     { key: 'prices', label: t('price_book'), build: () => pricePanel(settings) },
     { key: 'templates', label: t('templates'), build: () => templatePanel(settings) },
+    { key: 'mail', label: t('mailboxes'), build: () => mailPanel(), need: 'mail.manage' },
     { key: 'users', label: t('users'), build: () => usersPanel(), need: 'users.manage' },
   ].filter((tab) => !tab.need || can(tab.need));
 
@@ -571,6 +572,309 @@ function openUserForm(user, onSaved) {
             toastError(error);
             button.disabled = false;
           }
+        },
+      }),
+    ]),
+  });
+}
+
+
+// ================================================================= mailboxes
+/**
+ * Company mailboxes the CRM reads, plus the optional Claude key that powers
+ * the richer extraction. Passwords go in but never come back out.
+ */
+function mailPanel() {
+  const host = el('div');
+
+  host.append(el('div.alert.info', {
+    text: getLang() === 'ar'
+      ? 'النظام بيقرا البريد بس — عمره ما بيبعت ولا بيمسح، والرسايل بتتقرا من غير ما تتعلّم كمقروءة. استخدم "كلمة مرور تطبيق" مش كلمة سر الإيميل الأصلية.'
+      : 'The CRM only reads mail — it never sends or deletes, and messages are fetched without marking them read. Use an app password, not the account’s main password.',
+  }));
+
+  const accountsHost = el('div');
+  const aiHost = el('div');
+  host.append(accountsHost, aiHost);
+
+  async function loadAccounts() {
+    clear(accountsHost).append(el('div.loading-page', { text: t('loading') }));
+    try {
+      const { accounts } = await api.mailAccounts();
+      clear(accountsHost).append(el('div.card', {}, [
+        el('div.card-header', {}, [
+          el('h3', { text: t('mailboxes') }),
+          el('div.spacer'),
+          el('button.btn.btn-sm', {
+            type: 'button', onclick: () => openMailAccountForm(null, loadAccounts),
+          }, [icon('plus', 14), t('add_mailbox')]),
+        ]),
+        el('div.card-body.flush', {}, [
+          accounts.length
+            ? dataTable({
+              rows: accounts,
+              columns: [
+                {
+                  label: t('mailbox_label'),
+                  render: (row) => el('div', {}, [
+                    el('div.bold', { text: row.label }),
+                    el('div.tiny.muted', { text: `${row.username} · ${row.host}:${row.port}` }),
+                  ]),
+                },
+                { label: t('mail_folders'), render: (row) => (row.folders || []).join(', ') },
+                { label: t('sync_every'), className: 'num', render: (row) => `${row.sync_minutes} ${t('minutes')}` },
+                {
+                  label: t('last_sync'),
+                  render: (row) => el('div', {}, [
+                    el('div.tiny', { text: row.last_sync_at ? formatDate(row.last_sync_at) : '—' }),
+                    row.last_error
+                      ? el('div.tiny', { style: { color: 'var(--danger-700)' }, text: String(row.last_error).slice(0, 60) })
+                      : null,
+                  ]),
+                },
+                {
+                  label: t('status'),
+                  render: (row) => el('span.badge', {
+                    class: row.active ? 'green' : 'grey',
+                    text: row.active ? t('active') : t('inactive'),
+                  }),
+                },
+                {
+                  label: '', className: 'end',
+                  render: (row) => el('div.row', {}, [
+                    el('button.btn.btn-sm.btn-secondary', {
+                      type: 'button', text: t('test_connection'),
+                      onclick: async (event) => {
+                        const button = event.currentTarget;
+                        button.disabled = true;
+                        try {
+                          const result = await api.testMailAccount(row.id);
+                          if (result.ok) toast(`${t('connection_ok')} — ${result.folders.length} ${t('mail_folders')}`, 'success');
+                          else toast(result.error, 'error', 7000);
+                        } catch (error) { toastError(error); }
+                        button.disabled = false;
+                        loadAccounts();
+                      },
+                    }),
+                    el('button.btn.btn-sm.btn-secondary', {
+                      type: 'button', text: t('fetch_mail_now'),
+                      onclick: async (event) => {
+                        const button = event.currentTarget;
+                        button.disabled = true;
+                        try {
+                          const { summary } = await api.syncMailAccount(row.id, { since_days: 30 });
+                          toast(`${summary.stored} ${t('mail_stored')} · ${summary.queued} ${t('req_new')}`, 'success');
+                        } catch (error) { toastError(error); }
+                        button.disabled = false;
+                        loadAccounts();
+                      },
+                    }),
+                    el('button.btn.btn-sm.btn-secondary', {
+                      type: 'button', text: t('backfill'),
+                      title: t('backfill_hint'),
+                      onclick: () => openBackfill(row, loadAccounts),
+                    }),
+                    el('button.btn.btn-sm.btn-secondary', {
+                      type: 'button', text: t('edit'),
+                      onclick: () => openMailAccountForm(row, loadAccounts),
+                    }),
+                    el('button.btn.btn-sm.btn-danger', {
+                      type: 'button', title: t('delete'),
+                      onclick: async () => {
+                        if (!await confirmDialog(t('confirm_delete'))) return;
+                        try { await api.deleteMailAccount(row.id); loadAccounts(); }
+                        catch (error) { toastError(error); }
+                      },
+                    }, [icon('trash', 13)]),
+                  ]),
+                },
+              ],
+            })
+            : el('div.empty', {}, [icon('mail', 40), el('div', { text: t('no_mailboxes') })]),
+        ]),
+      ]));
+    } catch (error) {
+      clear(accountsHost).append(el('div.alert.danger', { text: error.localised || error.message }));
+    }
+  }
+
+  async function loadAi() {
+    clear(aiHost).append(el('div.loading-page', { text: t('loading') }));
+    try {
+      const { ai } = await api.aiSettings();
+      const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+        el('div.grid.grid-2', {}, [
+          field({
+            name: 'api_key', label: t('ai_key'), type: 'password',
+            placeholder: ai.has_key ? ai.key_hint : 'sk-ant-…', dir: 'ltr',
+            hint: ai.has_key ? t('ai_key_set') : t('ai_key_hint'),
+          }),
+          field({
+            name: 'model', label: t('ai_model'), type: 'select', value: ai.model,
+            options: [
+              { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+              { value: 'claude-opus-5', label: 'Claude Opus 5' },
+              { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+            ],
+          }),
+        ]),
+        field({ name: 'enabled', label: t('ai_enabled'), type: 'checkbox', value: ai.enabled }),
+      ]);
+
+      clear(aiHost).append(el('div.card', {}, [
+        el('div.card-header', {}, [
+          el('h3', { text: t('ai_extraction') }),
+          el('div.spacer'),
+          ai.has_key ? el('span.badge.green', { text: t('ai_key_set') }) : el('span.badge.grey', { text: t('ai_off') }),
+        ]),
+        el('div.card-body', {}, [
+          el('p.small.muted', { text: t('ai_explain') }),
+          form,
+          el('div.row', {}, [
+            el('button.btn', {
+              type: 'button', text: t('save'),
+              onclick: async () => {
+                try {
+                  const data = readForm(form);
+                  await api.saveAiSettings(data);
+                  toast(t('saved'), 'success');
+                  loadAi();
+                } catch (error) { toastError(error); }
+              },
+            }),
+            ai.has_key ? el('button.btn.btn-secondary', {
+              type: 'button', text: t('ai_clear_key'),
+              onclick: async () => {
+                if (!await confirmDialog(t('confirm_delete'))) return;
+                try { await api.saveAiSettings({ clear_key: true }); loadAi(); }
+                catch (error) { toastError(error); }
+              },
+            }) : null,
+          ]),
+        ]),
+      ]));
+    } catch (error) {
+      clear(aiHost).append(el('div.alert.danger', { text: error.localised || error.message }));
+    }
+  }
+
+  loadAccounts();
+  loadAi();
+  return host;
+}
+
+function openMailAccountForm(account, onSaved) {
+  const isEdit = Boolean(account);
+  const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'label', label: t('mailbox_label'), value: account?.label || '', required: true }),
+      field({ name: 'username', label: t('mailbox_user'), value: account?.username || '', required: true, dir: 'ltr' }),
+      field({ name: 'host', label: t('imap_host'), value: account?.host || '', required: true, dir: 'ltr', hint: 'imap.gmail.com · outlook.office365.com' }),
+      field({ name: 'port', label: t('imap_port'), type: 'number', value: account?.port ?? 993, min: 1, max: 65535 }),
+      field({
+        name: 'password', label: t('mailbox_password'), type: 'password',
+        placeholder: isEdit ? '••••••••' : '', dir: 'ltr',
+        hint: isEdit ? t('password_unchanged') : t('use_app_password'),
+      }),
+      field({ name: 'folders', label: t('mail_folders'), value: (account?.folders || ['INBOX']).join(', '), hint: 'INBOX, Archive' }),
+      field({ name: 'sync_minutes', label: t('sync_every'), type: 'number', value: account?.sync_minutes ?? 10, min: 1, max: 1440 }),
+    ]),
+    field({ name: 'secure', label: t('imap_tls'), type: 'checkbox', value: account ? Boolean(account.secure) : true, hint: t('imap_tls_hint') }),
+    field({ name: 'allow_self_signed', label: t('allow_self_signed'), type: 'checkbox', value: Boolean(account?.allow_self_signed), hint: t('allow_self_signed_hint') }),
+    isEdit ? field({ name: 'active', label: t('active'), type: 'checkbox', value: Boolean(account.active) }) : null,
+  ]);
+
+  openModal({
+    title: isEdit ? `${t('edit')} — ${account.label}` : t('add_mailbox'),
+    size: 'wide',
+    body: form,
+    footer: (close) => el('div.row', {}, [
+      el('button.btn.btn-secondary', { type: 'button', text: t('cancel'), onclick: close }),
+      el('button.btn', {
+        type: 'button', text: t('save'),
+        onclick: async (event) => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          try {
+            const data = readForm(form);
+            data.folders = String(data.folders || 'INBOX').split(',').map((f) => f.trim()).filter(Boolean);
+            if (isEdit && !data.password) delete data.password;
+            if (isEdit) await api.updateMailAccount(account.id, data);
+            else await api.createMailAccount(data);
+            toast(t('saved'), 'success');
+            close();
+            onSaved?.();
+          } catch (error) {
+            toastError(error);
+            button.disabled = false;
+          }
+        },
+      }),
+    ]),
+  });
+}
+
+
+/**
+ * Scans older mail to find customers and projects already discussed by email.
+ * It is the same sync, told to ignore the stored position and reach further
+ * back, so nothing is imported twice.
+ */
+function openBackfill(account, onDone) {
+  const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('p.small', { text: t('backfill_explain') }),
+    el('div.grid.grid-2', {}, [
+      field({
+        name: 'since_days', label: t('backfill_period'), type: 'select', value: '365',
+        options: [
+          { value: '90', label: t('backfill_3m') },
+          { value: '180', label: t('backfill_6m') },
+          { value: '365', label: t('backfill_1y') },
+          { value: '1095', label: t('backfill_3y') },
+          { value: '3650', label: t('backfill_all') },
+        ],
+      }),
+      field({ name: 'limit', label: t('backfill_limit'), type: 'number', value: 300, min: 1, max: 1000 }),
+    ]),
+    field({
+      name: 'folders', label: t('mail_folders'),
+      value: (account.folders || ['INBOX']).join(', '),
+      hint: t('backfill_folders_hint'),
+    }),
+  ]);
+
+  const progress = el('div');
+
+  openModal({
+    title: `${t('backfill')} — ${account.label}`,
+    body: el('div', {}, [form, progress]),
+    footer: (close) => el('div.row', {}, [
+      el('button.btn.btn-secondary', { type: 'button', text: t('cancel'), onclick: close }),
+      el('button.btn', {
+        type: 'button', text: t('backfill_start'),
+        onclick: async (event) => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          const data = readForm(form);
+          clear(progress).append(el('div.alert.info', { text: t('backfill_running') }));
+          try {
+            // Widen the folder list first if the person added any.
+            const folders = String(data.folders || 'INBOX').split(',').map((f) => f.trim()).filter(Boolean);
+            await api.updateMailAccount(account.id, { folders });
+
+            const { summary } = await api.syncMailAccount(account.id, {
+              since_days: Number(data.since_days),
+              limit: Number(data.limit),
+              backfill: true,
+            });
+            clear(progress).append(el('div.alert.ok', {
+              text: `${summary.fetched} ${t('mail_read')} · ${summary.stored} ${t('mail_stored')} · ${summary.queued} ${t('req_new')}`,
+            }));
+            onDone?.();
+          } catch (error) {
+            clear(progress).append(el('div.alert.danger', { text: error.localised || error.message }));
+          }
+          button.disabled = false;
         },
       }),
     ]),
