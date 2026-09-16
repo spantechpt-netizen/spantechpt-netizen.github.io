@@ -224,8 +224,14 @@ line to `"8080:8080"` temporarily and open `http://<server-ip>:8080`.
 
 ```bash
 cp .env.example .env     # then edit SESSION_SECRET and the admin password
+npm run check            # Node version, port free, data dir writable, secret set
 npm start
 ```
+
+`npm run check` matters most when the CRM is going onto a server that already
+runs something else: it catches a Node too old for `node:sqlite`, a port another
+application already holds, and a data directory the service account cannot write
+to — each of which otherwise fails at start-up with a less obvious message.
 
 Open `http://localhost:8080`.
 

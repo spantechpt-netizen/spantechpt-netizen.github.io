@@ -10,10 +10,11 @@
   "scripts": {
     "start": "node --no-warnings server/index.js",
     "dev": "node --no-warnings --watch server/index.js",
+    "check": "node --no-warnings scripts/check.mjs",
     "seed": "node --no-warnings server/seed.js",
     "reset": "node --no-warnings server/seed.js --reset",
-    "test": "node --no-warnings --test test/*.test.js",
-    "backup": "node --no-warnings scripts/backup.mjs"
+    "backup": "node --no-warnings scripts/backup.mjs",
+    "test": "node --no-warnings --test test/*.test.js"
   },
   "dependencies": {},
   "license": "UNLICENSED"

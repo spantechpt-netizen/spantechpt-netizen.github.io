@@ -130,6 +130,108 @@ curl -s http://127.0.0.1:8080/api/health
 
 ---
 
+## السيرفر عليه تطبيقات أخرى خلف nginx؟
+
+هذه هي الحالة الفعلية عندنا: السيرفر يشغّل تطبيقاً بـ **Next.js** وآخر بـ **.NET**،
+و**nginx** أمامهما يستقبل الطلبات ويوزّعها. هذا وضع مثالي — لا نحتاج تنصيب
+بروكسي جديد ولا تغيير أي شيء في الإعداد القائم. نضيف فقط `server` block واحداً
+لنطاقنا.
+
+**ثلاثة أشياء تُتفق عليها قبل البدء:**
+
+### 1) منفذ حر
+
+المنفذ 8080 من أكثر المنافذ استخداماً، وقد يكون محجوزاً بالفعل لأحد التطبيقين.
+اختر منفذاً حراً (8090 مثلاً) وضعه في `.env`، وتأكد بالأمر المرفق:
+
+```bash
+cd /opt/spantech-crm
+npm run check
+```
+
+يفحص الأمر إصدار Node، وأن المنفذ حر فعلاً، وأن مجلد البيانات قابل للكتابة، وأن
+مفتاح الجلسات ليس القيمة الافتراضية — ويعطي رمز خروج غير صفري لو وجد مشكلة.
+
+### 2) إصدار Node مستقل
+
+النظام يحتاج **Node 22.5 أو أحدث** لأنه يستخدم وحدة `node:sqlite` المدمجة.
+تطبيق Next.js على السيرفر قد يكون مثبَّتاً على إصدار أقدم.
+
+> **لا تُرقِّ إصدار Node العام على السيرفر لأجلنا.** ذلك يخاطر بتطبيق يعمل
+> بالفعل. نصّب Node 22 بجانبه ووجّه خدمتنا إلى مساره الكامل:
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.nvm/nvm.sh
+nvm install 22
+
+nvm which 22        # انسخ هذا المسار إلى ملف الخدمة
+```
+
+في ملف `systemd` استخدم المسار الكامل، لأن الخدمة لا ترث بيئة المستخدم:
+
+```ini
+[Service]
+WorkingDirectory=/opt/spantech-crm
+EnvironmentFile=/opt/spantech-crm/.env
+ExecStart=/root/.nvm/versions/node/v22.x.y/bin/node --no-warnings server/index.js
+Restart=always
+```
+
+التطبيقان الآخران يبقيان على إصدارهما بلا مساس.
+
+### 3) قالب nginx للنطاق الجديد
+
+ملف جديد في `/etc/nginx/sites-available/crm.spantechpt.com` — **لا تُعدّل ملفات
+المواقع القائمة**:
+
+```nginx
+server {
+    listen 80;
+    server_name crm.spantechpt.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name crm.spantechpt.com;
+
+    ssl_certificate     /etc/letsencrypt/live/crm.spantechpt.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/crm.spantechpt.com/privkey.pem;
+
+    client_max_body_size 20m;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8090;   # المنفذ المتفق عليه
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+sudo ln -s /etc/nginx/sites-available/crm.spantechpt.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+`nginx -t` يفحص الإعداد كله قبل التطبيق، و`reload` لا يقطع الاتصالات القائمة —
+التطبيقان الآخران لا يتأثران.
+
+الشهادة تُضاف للنطاق الجديد وحده، وcertbot على الأرجح منصَّب بالفعل للنطاقات
+الأخرى:
+
+```bash
+sudo certbot --nginx -d crm.spantechpt.com
+```
+
+> **ما لا يلمسه هذا التنصيب:** قواعد بيانات التطبيقين الآخرين، ملفات مواقعهما في
+> nginx، إصدار Node الذي يستخدمانه، ولا .NET بأي شكل. نظامنا عملية واحدة تستمع
+> على منفذ محلي، وقاعدة بياناته ملف واحد داخل مجلده.
+
+---
+
 ## خامساً: HTTPS والبروكسي العكسي
 
 **لا تُنفّذ هذه الخطوة قبل أن يعمل `dig +short crm.spantechpt.com` ويُرجع عنوان
