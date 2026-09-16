@@ -196,7 +196,9 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 docker compose up -d
 ```
 
-Open `http://<server-ip>:8080`.
+`docker-compose.yml` binds the container to `127.0.0.1:8080`, so the CRM is only
+reachable through the TLS proxy. To try it before the proxy exists, change that
+line to `"8080:8080"` temporarily and open `http://<server-ip>:8080`.
 
 ### Option B — directly with Node
 
@@ -228,15 +230,19 @@ later with `npm run reset`.
 
 ## Putting it on the network properly
 
+> **Handing this to a server administrator?** `docs/DEPLOYMENT.md` is a complete
+> Arabic handover document for `crm.spantechpt.com` — DNS records, server specs,
+> ports, TLS, firewall, backups and a sign-off checklist.
+
 The app speaks plain HTTP. Put a reverse proxy in front of it for TLS:
 
 ```nginx
 server {
     listen 443 ssl;
-    server_name crm.spantechksa.com;
+    server_name crm.spantechpt.com;
 
-    ssl_certificate     /etc/letsencrypt/live/crm.spantechksa.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/crm.spantechksa.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/crm.spantechpt.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/crm.spantechpt.com/privkey.pem;
 
     location / {
         proxy_pass         http://127.0.0.1:8080;
