@@ -216,9 +216,9 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 docker compose up -d
 ```
 
-`docker-compose.yml` binds the container to `127.0.0.1:8080`, so the CRM is only
+`docker-compose.yml` binds the container to `127.0.0.1:8090`, so the CRM is only
 reachable through the TLS proxy. To try it before the proxy exists, change that
-line to `"8080:8080"` temporarily and open `http://<server-ip>:8080`.
+line to `"8090:8090"` temporarily and open `http://<server-ip>:8090`.
 
 ### Option B — directly with Node
 
@@ -233,7 +233,7 @@ runs something else: it catches a Node too old for `node:sqlite`, a port another
 application already holds, and a data directory the service account cannot write
 to — each of which otherwise fails at start-up with a less obvious message.
 
-Open `http://localhost:8080`.
+Open `http://localhost:8090`.
 
 ### First sign-in
 
@@ -264,6 +264,10 @@ later with `npm run reset`.
 > Server (NSSM, IIS + ARR, win-acme). The DNS records and server specs are the
 > same in both; only the service, proxy and certificate tooling differ.
 
+The app listens on **port 8090** by default (`PORT` in `.env` to change it).
+It is 8090 rather than the more usual 8080 because the server it is going on
+already has 8080 taken by another application — see the handover documents.
+
 The app speaks plain HTTP. Put a reverse proxy in front of it for TLS:
 
 ```nginx
@@ -275,7 +279,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/crm.spantechpt.com/privkey.pem;
 
     location / {
-        proxy_pass         http://127.0.0.1:8080;
+        proxy_pass         http://127.0.0.1:8090;
         proxy_set_header   Host $host;
         proxy_set_header   X-Real-IP $remote_addr;
         proxy_set_header   X-Forwarded-Proto $scheme;

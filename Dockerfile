@@ -22,15 +22,15 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
 # Starts as root so the entrypoint can chown the mounted volume, then runs the
 # server as the unprivileged "app" user.
 ENV NODE_ENV=production \
-    PORT=8080 \
+    PORT=8090 \
     HOST=0.0.0.0 \
     DB_PATH=/app/data/spantech.db
 
-EXPOSE 8080
+EXPOSE 8090
 VOLUME ["/app/data"]
 
 HEALTHCHECK --interval=30s --timeout=4s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:8080/api/health >/dev/null 2>&1 || exit 1
+  CMD wget -qO- http://127.0.0.1:8090/api/health >/dev/null 2>&1 || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 CMD ["node", "--no-warnings", "server/index.js"]

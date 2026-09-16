@@ -7,10 +7,10 @@ services:
     ports:
       # Bound to the loopback interface, so the only way in from outside is
       # through the TLS reverse proxy. Without this the CRM would also answer
-      # on http://<server-ip>:8080, handing out session cookies in clear text.
-      # To try it before the proxy is up, change this to "8080:8080"
+      # on http://<server-ip>:8090, handing out session cookies in clear text.
+      # To try it before the proxy is up, change this to "8090:8090"
       # temporarily, then put it back.
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8090:8090"
     environment:
       # Generate with:
       #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"

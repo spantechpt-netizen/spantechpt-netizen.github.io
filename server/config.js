@@ -31,7 +31,7 @@ const bool = (value, fallback) =>
   value === undefined ? fallback : ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 
 export const config = {
-  port: Number(process.env.PORT || 8080),
+  port: Number(process.env.PORT || 8090),
   host: process.env.HOST || '0.0.0.0',
   dbPath: resolve(ROOT, process.env.DB_PATH || './data/spantech.db'),
   publicDir: resolve(ROOT, 'public'),

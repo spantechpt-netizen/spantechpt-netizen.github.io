@@ -49,7 +49,7 @@ Resolve-DnsName crm.spantechpt.com -Type A
 |---|---|---|
 | 80 | وارد، عام | تحويل إلى HTTPS وتجديد الشهادة |
 | 443 | وارد، عام | واجهة النظام |
-| 8080 | محلي فقط | التطبيق خلف البروكسي — **لا يُفتح للخارج** |
+| 8090 | محلي فقط | التطبيق خلف البروكسي — **لا يُفتح للخارج** |
 | 993 | صادر | قراءة بريد الشركة عبر IMAP |
 
 > المهندسون في السعودية ومصر وقطر يدخلون على النظام، فيجب أن يكون السيرفر
@@ -92,7 +92,7 @@ cd C:\spantech-crm
 أنشئ ملف `C:\spantech-crm\.env` بهذا المحتوى:
 
 ```ini
-PORT=8080
+PORT=8090
 HOST=127.0.0.1
 SESSION_SECRET=<المفتاح المولَّد أدناه>
 SESSION_HOURS=72
@@ -125,7 +125,7 @@ npm start
 ومن نافذة PowerShell أخرى:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8080/api/health
+Invoke-RestMethod http://127.0.0.1:8090/api/health
 ```
 
 المتوقع: `ok : True`. أوقف التجربة بـ `Ctrl+C` قبل المتابعة.
@@ -210,8 +210,8 @@ NSSM أفضل لأنه يعطي سجلات مرتبة وإعادة تشغيل أ
 
 ويبقى شيئان خاصان بنا مهما كان البروكسي:
 
-**منفذ حر.** المنفذ 8080 من أكثر المنافذ استخداماً وقد يكون محجوزاً لأحد
-التطبيقين. اختر منفذاً آخر (8090 مثلاً)، ضعه في `.env`، وتأكد:
+**المنفذ.** **المتفق عليه لهذا السيرفر هو `8090`**، لأن `8080` محجوز بالفعل
+لأحد التطبيقين القائمة. وهو الافتراضي في المستودع الآن — تأكّد منه قبل التشغيل:
 
 ```powershell
 cd C:\spantech-crm
@@ -274,7 +274,7 @@ Settings → ✔ Enable proxy → Apply*
         </rule>
         <rule name="ToNode" stopProcessing="true">
           <match url="(.*)" />
-          <action type="Rewrite" url="http://127.0.0.1:8080/{R:1}" />
+          <action type="Rewrite" url="http://127.0.0.1:8090/{R:1}" />
         </rule>
       </rules>
       <outboundRules>
@@ -319,7 +319,7 @@ winget install CaddyServer.Caddy
 
 ```
 crm.spantechpt.com {
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy 127.0.0.1:8090
 }
 ```
 
@@ -335,7 +335,7 @@ New-NetFirewallRule -DisplayName "HTTP"  -Direction Inbound -Protocol TCP -Local
 New-NetFirewallRule -DisplayName "HTTPS" -Direction Inbound -Protocol TCP -LocalPort 443 -Action Allow
 ```
 
-المنفذ 8080 لا يُفتح إطلاقاً — التطبيق مربوط بـ `127.0.0.1` فلن يستجيب من
+المنفذ 8090 لا يُفتح إطلاقاً — التطبيق مربوط بـ `127.0.0.1` فلن يستجيب من
 الخارج على أي حال.
 
 ---
@@ -395,7 +395,7 @@ nssm start SpanTechCRM
 - [ ] `Resolve-DnsName crm.spantechpt.com` يُرجع عنوان السيرفر
 - [ ] `https://crm.spantechpt.com` يفتح شاشة الدخول بشهادة صحيحة
 - [ ] `http://crm.spantechpt.com` يحوّل تلقائياً إلى HTTPS
-- [ ] `http://<server-ip>:8080` **لا** يستجيب من خارج السيرفر
+- [ ] `http://<server-ip>:8090` **لا** يستجيب من خارج السيرفر
 - [ ] `SESSION_SECRET` ليس القيمة الافتراضية، ومحفوظ في مكان آمن
 - [ ] `SECURE_COOKIES=true` في ملف `.env`
 - [ ] تم الدخول بحساب المدير وتغيير كلمة السر
