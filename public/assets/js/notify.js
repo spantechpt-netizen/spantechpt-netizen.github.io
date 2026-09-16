@@ -44,7 +44,7 @@ function showDesktop(item) {
     const note = new Notification(title(item), {
       body: body(item),
       tag: `spantech-${item.id}`,
-      icon: '/assets/img/logo.png',
+      icon: '/assets/img/icon.png',
       lang: getLang(),
       dir: getLang() === 'ar' ? 'rtl' : 'ltr',
     });

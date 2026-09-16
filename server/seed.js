@@ -13,7 +13,36 @@ import { COMPANY, SCOPE, PAYMENT_TERMS, CONDITIONS, COUNTRY_DEFAULTS, INTRO, PRI
 import { round2, computeTotals } from './pricing.js';
 
 export function seedSettings() {
-  if (!getSetting('company')) setSetting('company', COMPANY);
+  const company = getSetting('company');
+  if (!company) {
+    setSetting('company', COMPANY);
+  } else if (!company.branches) {
+    // An installation created before per-country branches existed: fold the
+    // old single contact block into the default branch and add the rest,
+    // without touching anything the company has already edited.
+    const legacy = {
+      cr_number: company.cr_number || '',
+      vat_number: company.vat_number || '',
+      phone: company.phone || '',
+      email: company.email || '',
+      website: company.website || '',
+      address_en: company.address_en || '',
+      address_ar: company.address_ar || '',
+    };
+    const branches = JSON.parse(JSON.stringify(COMPANY.branches));
+    const fallbackKey = COMPANY.default_branch || 'SA';
+    for (const [key, value] of Object.entries(legacy)) {
+      if (value) branches[fallbackKey][key] = value;
+    }
+    setSetting('company', {
+      ...COMPANY,
+      ...company,
+      legal_form_ar: company.legal_form_ar || COMPANY.legal_form_ar,
+      legal_form_en: company.legal_form_en || COMPANY.legal_form_en,
+      default_branch: company.default_branch || fallbackKey,
+      branches,
+    });
+  }
   if (!getSetting('scope')) setSetting('scope', SCOPE);
   if (!getSetting('payment_terms')) setSetting('payment_terms', PAYMENT_TERMS);
   if (!getSetting('conditions')) setSetting('conditions', CONDITIONS);
@@ -48,9 +77,9 @@ function seedDemo() {
   const owner = get("SELECT id FROM users ORDER BY id LIMIT 1")?.id ?? null;
 
   const engineers = [
-    { name: 'Ahmed Mostafa', name_ar: 'أحمد مصطفى', email: 'ahmed@spantech-pt.com', role: 'manager', title: 'Technical Office Manager', title_ar: 'مدير المكتب الفني', country: 'SA' },
-    { name: 'Mahmoud Saleh', name_ar: 'محمود صالح', email: 'mahmoud@spantech-pt.com', role: 'engineer', title: 'Project Engineer', title_ar: 'مهندس مشاريع', country: 'EG' },
-    { name: 'Khaled Al-Harbi', name_ar: 'خالد الحربي', email: 'khaled@spantech-pt.com', role: 'engineer', title: 'Sales Engineer', title_ar: 'مهندس مبيعات', country: 'QA' },
+    { name: 'Ahmed Mostafa', name_ar: 'أحمد مصطفى', email: 'ahmed@spantechksa.com', role: 'manager', title: 'Technical Office Manager', title_ar: 'مدير المكتب الفني', country: 'SA' },
+    { name: 'Mahmoud Saleh', name_ar: 'محمود صالح', email: 'mahmoud@spantechksa.com', role: 'engineer', title: 'Project Engineer', title_ar: 'مهندس مشاريع', country: 'EG' },
+    { name: 'Khaled Al-Harbi', name_ar: 'خالد الحربي', email: 'khaled@spantechksa.com', role: 'engineer', title: 'Sales Engineer', title_ar: 'مهندس مبيعات', country: 'QA' },
   ];
   const engineerIds = engineers.map((e) =>
     insert('users', { ...e, password_hash: hashPassword('SpanTech@2026'), lang: 'ar' }),

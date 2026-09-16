@@ -98,6 +98,9 @@ function buildDocument(data, lang) {
   const L = LABELS[lang];
   const q = data.quotation;
   const company = data.company || {};
+  // The office issuing this offer — Saudi details on a Saudi quote, Cairo on
+  // an Egyptian one. The server picks it from the quotation's country.
+  const branch = data.branch || company;
   const dir = isAr ? 'rtl' : 'ltr';
 
   const pickText = (entry) => (isAr ? entry.ar : entry.en) || entry.en || entry.ar || '';
@@ -232,10 +235,12 @@ function buildDocument(data, lang) {
     padding-bottom: 9px; margin-bottom: 12px;
     border-bottom: 2.5px solid var(--brand);
   }
-  .letterhead img { height: 46px; width: auto; }
+  /* The mark sits above the wordmark, so it needs height rather than width. */
+  .letterhead img { height: 62px; width: auto; }
   .letterhead .who { flex: 1; }
   .letterhead .who .n { font-size: 14pt; font-weight: 800; color: var(--brand); line-height: 1.25; }
   .letterhead .who .t { font-size: 8.6pt; color: var(--grey); letter-spacing: .02em; }
+  .letterhead .who .f { font-size: 7.8pt; color: var(--grey); }
   .letterhead .meta { text-align: ${isAr ? 'left' : 'right'}; font-size: 8.2pt; color: var(--grey); line-height: 1.5; direction: ltr; }
 
   .doc-title {
@@ -373,16 +378,20 @@ function buildDocument(data, lang) {
 <div class="sheet">
 
   <div class="letterhead">
-    <img src="/assets/img/logo.png" alt="Span Tech">
+    <img src="/assets/img/logo@2x.png" alt="Span Tech">
     <div class="who">
-      <div class="n">${esc(isAr ? company.name_ar : company.name_en)}</div>
+      <div class="n">${esc(isAr ? (branch.name_ar || company.name_ar) : (branch.name_en || company.name_en))}</div>
       <div class="t">${esc(isAr ? company.tagline_ar : company.tagline_en)}</div>
+      ${company.legal_form_ar || company.legal_form_en
+        ? `<div class="f">${esc(isAr ? company.legal_form_ar : company.legal_form_en)}</div>` : ''}
     </div>
     <div class="meta">
-      ${company.cr_number ? `${esc(L.cr)}: ${esc(company.cr_number)}<br>` : ''}
-      ${company.vat_number ? `${esc(L.vat_no)}: ${esc(company.vat_number)}<br>` : ''}
-      ${company.phone ? `${esc(company.phone)}<br>` : ''}
-      ${company.email ? `${esc(company.email)}` : ''}
+      ${branch.cr_number
+        ? `${esc(isAr ? (branch.registration_label_ar || L.cr) : (branch.registration_label_en || L.cr))}: ${esc(branch.cr_number)}<br>` : ''}
+      ${branch.vat_number ? `${esc(L.vat_no)}: ${esc(branch.vat_number)}<br>` : ''}
+      ${branch.phone ? `${esc(branch.phone)}<br>` : ''}
+      ${branch.email ? `${esc(branch.email)}<br>` : ''}
+      ${branch.website ? `${esc(branch.website)}` : ''}
     </div>
   </div>
 
@@ -527,10 +536,13 @@ function buildDocument(data, lang) {
   </div>
 
   <div class="footer">
-    ${esc(isAr ? company.name_ar : company.name_en)}
-    ${company.address_en || company.address_ar ? ` · ${esc(isAr ? company.address_ar : company.address_en)}` : ''}
-    ${company.phone ? ` · ${esc(company.phone)}` : ''}
-    ${company.email ? ` · ${esc(company.email)}` : ''}
+    ${[
+      esc(isAr ? (branch.name_ar || company.name_ar) : (branch.name_en || company.name_en)),
+      branch.address_en || branch.address_ar ? esc(isAr ? branch.address_ar : branch.address_en) : '',
+      branch.phone ? esc(branch.phone) : '',
+      branch.email ? esc(branch.email) : '',
+      branch.website ? esc(branch.website) : '',
+    ].filter(Boolean).join(' · ')}
     <br>${esc(q.number)}${q.revision ? ` / R${q.revision}` : ''} · ${formatDate(q.issue_date)}
   </div>
 

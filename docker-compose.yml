@@ -13,7 +13,7 @@ services:
       SESSION_HOURS: "72"
       # Set to "true" once the CRM is behind HTTPS.
       SECURE_COOKIES: "false"
-      ADMIN_EMAIL: "admin@spantech-pt.com"
+      ADMIN_EMAIL: "admin@spantechksa.com"
       ADMIN_PASSWORD: "SpanTech@2026"
       ADMIN_NAME: "System Administrator"
     volumes:

@@ -3,7 +3,7 @@ import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '.
 import { notFound, badRequest } from '../http.js';
 import { notifyAssignment, notifyQuoteStatus } from '../notifications.js';
 import { computeTotals, amountInWords, round2 } from '../pricing.js';
-import { COUNTRY_DEFAULTS, DEFAULT_ITEM, SCOPE, PAYMENT_TERMS, CONDITIONS, INTRO, PRICE_ADJUSTMENT_CLAUSE, COMPANY } from '../templates.js';
+import { COUNTRY_DEFAULTS, DEFAULT_ITEM, SCOPE, PAYMENT_TERMS, CONDITIONS, INTRO, PRICE_ADJUSTMENT_CLAUSE, COMPANY, branchFor } from '../templates.js';
 import {
   str, num, int, oneOf, date, bool, jsonField,
   COUNTRIES, CURRENCIES, QUOTE_STATUS,
@@ -187,9 +187,12 @@ export function register(router) {
       .replace('{currency}', quote.currency)
       .replace('{variance}', quote.price_variance);
 
+    const company = getSetting('company', COMPANY);
     return {
       quotation: hydrate(quote, items),
-      company: getSetting('company', COMPANY),
+      company,
+      // The letterhead shows the office that issues this offer.
+      branch: branchFor(company, quote.country),
       country,
       intro: {
         en: (safeParse(quote.intro_en, null) || quote.intro_en || getSetting('intro', INTRO).en || '')

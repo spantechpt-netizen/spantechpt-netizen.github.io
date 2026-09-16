@@ -39,7 +39,7 @@ export const config = {
   sessionHours: Number(process.env.SESSION_HOURS || 72),
   secureCookies: bool(process.env.SECURE_COOKIES, false),
   admin: {
-    email: process.env.ADMIN_EMAIL || 'admin@spantech-pt.com',
+    email: process.env.ADMIN_EMAIL || 'admin@spantechksa.com',
     password: process.env.ADMIN_PASSWORD || 'SpanTech@2026',
     name: process.env.ADMIN_NAME || 'System Administrator',
   },

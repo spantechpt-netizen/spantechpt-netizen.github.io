@@ -68,21 +68,23 @@ async function save(key, value, after) {
 
 // ------------------------------------------------------------------ company
 function companyPanel(settings) {
-  const company = { ...settings.company };
+  const company = JSON.parse(JSON.stringify(settings.company));
+  if (!company.branches) company.branches = {};
+
   const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
     el('div.grid.grid-2', {}, [
       field({ name: 'name_en', label: t('company_name_en'), value: company.name_en, dir: 'ltr', disabled: readOnly() }),
       field({ name: 'name_ar', label: t('company_name_ar'), value: company.name_ar, dir: 'rtl', disabled: readOnly() }),
       field({ name: 'tagline_en', label: 'Tagline (EN)', value: company.tagline_en, dir: 'ltr', disabled: readOnly() }),
       field({ name: 'tagline_ar', label: 'الوصف (AR)', value: company.tagline_ar, dir: 'rtl', disabled: readOnly() }),
-      field({ name: 'cr_number', label: t('cr_number'), value: company.cr_number, dir: 'ltr', disabled: readOnly() }),
-      field({ name: 'vat_number', label: t('tax_number'), value: company.vat_number, dir: 'ltr', disabled: readOnly() }),
-      field({ name: 'phone', label: t('phone'), value: company.phone, dir: 'ltr', disabled: readOnly() }),
-      field({ name: 'email', label: t('email'), value: company.email, dir: 'ltr', disabled: readOnly() }),
-      field({ name: 'website', label: t('website'), value: company.website, dir: 'ltr', disabled: readOnly() }),
-      field({ name: 'address_en', label: `${t('address')} (EN)`, value: company.address_en, dir: 'ltr', disabled: readOnly() }),
-      field({ name: 'address_ar', label: `${t('address')} (AR)`, value: company.address_ar, dir: 'rtl', disabled: readOnly() }),
+      field({ name: 'legal_form_en', label: 'Legal form (EN)', value: company.legal_form_en || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'legal_form_ar', label: 'الكيان القانوني (AR)', value: company.legal_form_ar || '', dir: 'rtl', disabled: readOnly() }),
       field({ name: 'quote_prefix', label: t('quote_prefix'), value: settings.quote_prefix, dir: 'ltr', disabled: readOnly() }),
+      field({
+        name: 'default_branch', label: t('default_branch'), type: 'select',
+        value: company.default_branch || 'SA', disabled: readOnly(),
+        options: ['SA', 'EG', 'QA'].map((c) => ({ value: c, label: t(`country_${c}`) })),
+      }),
     ]),
     field({ name: 'vision_ar', label: `${t('company_profile')} — رؤيتنا`, value: company.vision_ar, dir: 'rtl', disabled: readOnly() }),
     field({ name: 'vision_en', label: 'Our vision', value: company.vision_en, dir: 'ltr', disabled: readOnly() }),
@@ -92,11 +94,15 @@ function companyPanel(settings) {
 
   const bulletsAr = listEditor(company.profile_ar || [], 'rtl');
   const bulletsEn = listEditor(company.profile_en || [], 'ltr');
+  const branches = branchEditor(company.branches);
 
   return el('div.card', {}, [
     el('div.card-header', {}, [el('h3', { text: t('company_profile') })]),
     el('div.card-body', {}, [
       form,
+      el('h4.mt-2', { text: t('branches') }),
+      el('div.small.muted', { text: t('branches_hint') }),
+      branches.node,
       el('h4.mt-2', { text: 'نقاط التعريف بالشركة (عربي)' }),
       bulletsAr.node,
       el('h4.mt-2', { text: 'Company profile bullets (English)' }),
@@ -109,6 +115,7 @@ function companyPanel(settings) {
             const { quote_prefix, ...companyFields } = data;
             save('company', {
               ...company, ...companyFields,
+              branches: branches.values(),
               profile_ar: bulletsAr.values(), profile_en: bulletsEn.values(),
             });
             if (quote_prefix) save('quote_prefix', quote_prefix);
@@ -879,4 +886,58 @@ function openBackfill(account, onDone) {
       }),
     ]),
   });
+}
+
+
+/**
+ * Per-country office details. A quotation prints the branch matching its own
+ * country, so the Saudi CR and the Cairo address never appear on the same
+ * document.
+ */
+function branchEditor(initial) {
+  const COUNTRIES = ['SA', 'EG', 'QA'];
+  const values = JSON.parse(JSON.stringify(initial || {}));
+  const node = el('div');
+
+  for (const code of COUNTRIES) {
+    const branch = values[code] || (values[code] = {});
+    const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+      el('div.grid.grid-2', {}, [
+        field({ name: 'name_en', label: t('company_name_en'), value: branch.name_en || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'name_ar', label: t('company_name_ar'), value: branch.name_ar || '', dir: 'rtl', disabled: readOnly() }),
+        field({ name: 'cr_number', label: t('cr_number'), value: branch.cr_number || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'vat_number', label: t('tax_number'), value: branch.vat_number || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'phone', label: t('phone'), value: branch.phone || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'email', label: t('email'), value: branch.email || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'website', label: t('website'), value: branch.website || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'address_en', label: `${t('address')} (EN)`, value: branch.address_en || '', dir: 'ltr', disabled: readOnly() }),
+        field({ name: 'address_ar', label: `${t('address')} (AR)`, value: branch.address_ar || '', dir: 'rtl', disabled: readOnly() }),
+      ]),
+    ]);
+
+    // Read straight off the inputs on save, so nothing needs re-binding.
+    branch._form = form;
+
+    node.append(el('details.perm-group', { open: code === 'SA' }, [
+      el('summary', { text: `${t(`country_${code}`)} — ${branch.email || branch.phone || t('none')}` }),
+      el('div.perm-group-body', {}, [form]),
+    ]));
+  }
+
+  return {
+    node,
+    values: () => {
+      const out = {};
+      for (const code of COUNTRIES) {
+        const branch = values[code];
+        const data = readForm(branch._form);
+        out[code] = {
+          ...branch,
+          ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v ?? ''])),
+        };
+        delete out[code]._form;
+      }
+      return out;
+    },
+  };
 }

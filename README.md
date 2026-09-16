@@ -133,6 +133,30 @@ leaks, generate a new one from the same dialog and the old link stops working.
 > internet. On an intranet-only server, Outlook and Apple Calendar on the same
 > network still work, as does the per-event `.ics` download.
 
+## Branch details
+
+The company operates in more than one country, and a quotation must carry the
+office that issues it. *Settings → Company profile → Branch details* holds a
+block per country:
+
+| | Saudi Arabia | Egypt |
+|---|---|---|
+| Phone | 0504291572 | +20 100 9896731 |
+| Email | Info@spantechksa.com | Info@spantechpt.com |
+| Website | www.spantechksa.com | www.spantechpt.com |
+| Registration | CR 1010981534 | — |
+| Address | Riyadh | Villa 119, Al Banafseg, M. Naguib St., New Cairo |
+
+A quotation prints the branch matching **its own country**, so a Saudi offer
+carries the Saudi commercial registration and Riyadh address while an Egyptian
+one carries the Cairo office — from one set of settings, with no separate
+templates to keep in step.
+
+A branch you have not filled in yet borrows the default branch's contact details
+rather than printing blanks, **except for the commercial registration and VAT
+number**: those are country-specific legal identifiers and never inherit, so a
+Saudi CR can never appear on an Egyptian document.
+
 ## A note on the Arabic
 
 The **interface** is written in Egyptian business Arabic, because that is how
@@ -177,7 +201,7 @@ Open `http://localhost:8080`.
 ### First sign-in
 
 On an empty database the first administrator is created from your `.env`
-(defaults: `admin@spantech-pt.com` / `SpanTech@2026`).
+(defaults: `admin@spantechksa.com` / `SpanTech@2026`).
 **Change that password immediately**, then add your engineers under
 *Settings → Users*.
 
@@ -200,10 +224,10 @@ The app speaks plain HTTP. Put a reverse proxy in front of it for TLS:
 ```nginx
 server {
     listen 443 ssl;
-    server_name crm.spantech-pt.com;
+    server_name crm.spantechksa.com;
 
-    ssl_certificate     /etc/letsencrypt/live/crm.spantech-pt.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/crm.spantech-pt.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/crm.spantechksa.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/crm.spantechksa.com/privkey.pem;
 
     location / {
         proxy_pass         http://127.0.0.1:8080;

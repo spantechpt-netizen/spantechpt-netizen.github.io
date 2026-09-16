@@ -116,7 +116,9 @@ function renderShell() {
 
   const sidebar = el('aside.sidebar#sidebar', {}, [
     el('div.sidebar-brand', {}, [
-      el('img', { src: 'assets/img/logo.png', alt: 'Span Tech' }),
+      // The mark alone, not the full lockup: the wordmark is illegible at
+      // sidebar size and the company name sits beside it anyway.
+      el('img', { src: 'assets/img/icon.png', alt: 'Span Tech' }),
       el('div', {}, [
         el('div.name', { text: t('app_name') }),
         el('div.sub', { text: t('app_subtitle') }),
@@ -289,7 +291,7 @@ async function signOut() {
 function renderLogin(message) {
   clear(root);
   const form = el('form', {}, [
-    field({ name: 'email', label: t('email'), type: 'email', required: true, placeholder: 'name@spantech-pt.com' }),
+    field({ name: 'email', label: t('email'), type: 'email', required: true, placeholder: 'name@spantechksa.com' }),
     field({ name: 'password', label: t('password'), type: 'password', required: true }),
   ]);
   const error = el('div.alert.danger', { class: message ? '' : 'hidden', text: message || '' });

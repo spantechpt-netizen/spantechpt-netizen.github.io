@@ -147,7 +147,12 @@ select { cursor: pointer; }
   display: flex; align-items: center; gap: .6rem;
   padding: 1rem 1.1rem; border-bottom: 1px solid rgba(255, 255, 255, .08);
 }
-.sidebar-brand img { height: 30px; width: auto; filter: brightness(0) invert(1); opacity: .95; }
+/* The brand mark is full colour, so it sits on a light chip rather than
+   being flattened to white against the navy sidebar. */
+.sidebar-brand img {
+  height: 40px; width: 40px; padding: 3px; flex-shrink: 0;
+  object-fit: contain; background: var(--white); border-radius: 8px;
+}
 .sidebar-brand .name { font-size: 1rem; font-weight: 700; color: var(--white); letter-spacing: .01em; }
 .sidebar-brand .sub { font-size: .7rem; color: #8fa6c4; }
 
@@ -506,7 +511,7 @@ table.data tfoot td { padding: .6rem .7rem; font-weight: 700; border-top: 2px so
   width: 100%; max-width: 400px; padding: 2rem;
   background: var(--white); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg);
 }
-.login-card .logo { display: block; height: 52px; margin: 0 auto 1rem; }
+.login-card .logo { display: block; height: 92px; width: auto; margin: 0 auto 1rem; }
 .login-card h1 { text-align: center; font-size: 1.25rem; margin-bottom: .2rem; }
 .login-card .sub { text-align: center; color: var(--ink-500); font-size: .85rem; margin-bottom: 1.4rem; }
 .login-card .lang-switch { margin: 0 auto 1.2rem; display: flex; width: fit-content; }

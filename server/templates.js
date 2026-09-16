@@ -8,18 +8,63 @@
 
 // ------------------------------------------------------------ company profile
 export const COMPANY = {
-  name_en: 'Span Tech Contracting Co.',
+  // --- brand, shared across every country -----------------------------------
+  name_en: 'SPAN TECH Contracting & Post Tensioning',
   name_ar: 'شركة سبان تك للمقاولات',
-  tagline_en: 'Post-Tensioned Concrete Specialists',
-  tagline_ar: 'متخصصون في الخرسانة اللاحقة للشد',
-  cr_number: '1010981534',
-  vat_number: '',
-  phone: '',
-  mobile: '',
-  email: '',
-  website: '',
-  address_en: 'Riyadh, Kingdom of Saudi Arabia',
-  address_ar: 'الرياض، المملكة العربية السعودية',
+  legal_form_ar: 'شركة ذات مسؤولية محدودة',
+  legal_form_en: 'Limited Liability Company',
+  tagline_en: 'General Contracting & Post-Tensioned Slabs',
+  tagline_ar: 'للمقاولات العامة والأسقف سابقة الإجهاد',
+
+  /**
+   * Per-country details. A quotation prints the branch matching its own
+   * country, so a Saudi offer carries the Saudi CR and address while an
+   * Egyptian one carries the Cairo office — from a single set of settings.
+   * A country with nothing filled in falls back to `default_branch`.
+   */
+  default_branch: 'SA',
+  branches: {
+    SA: {
+      name_en: 'SPAN TECH Contracting & Post Tensioning',
+      name_ar: 'شركة سبان تك للمقاولات',
+      registration_label_ar: 'سجل تجاري',
+      registration_label_en: 'CR',
+      cr_number: '1010981534',
+      vat_number: '',
+      phone: '0504291572',
+      email: 'Info@spantechksa.com',
+      website: 'www.spantechksa.com',
+      address_en: 'Riyadh, Kingdom of Saudi Arabia',
+      address_ar: 'الرياض، المملكة العربية السعودية',
+    },
+    EG: {
+      name_en: 'SPAN TECH Contracting & Post Tensioning',
+      name_ar: 'شركة سبان تك للمقاولات',
+      registration_label_ar: 'سجل تجاري',
+      registration_label_en: 'CR',
+      cr_number: '',
+      vat_number: '',
+      phone: '+20 100 9896731',
+      email: 'Info@spantechpt.com',
+      website: 'www.spantechpt.com',
+      address_en: 'Villa 119, Al Banafseg, M. Naguib St., New Cairo',
+      address_ar: 'فيلا 119، البنفسج، شارع محمد نجيب، القاهرة الجديدة',
+    },
+    QA: {
+      name_en: 'SPAN TECH Contracting & Post Tensioning',
+      name_ar: 'شركة سبان تك للمقاولات',
+      registration_label_ar: 'سجل تجاري',
+      registration_label_en: 'CR',
+      cr_number: '',
+      vat_number: '',
+      phone: '',
+      email: '',
+      website: '',
+      address_en: 'Doha, State of Qatar',
+      address_ar: 'الدوحة، دولة قطر',
+    },
+  },
+
   vision_en: 'Leadership in the contracting sector through quality and commitment.',
   vision_ar: 'الريادة في قطاع المقاولات من خلال الجودة والالتزام.',
   mission_en: 'To deliver projects that satisfy our clients and add real value to the community.',
@@ -37,6 +82,30 @@ export const COMPANY = {
     'كوادر هندسية وفنية مؤهلة ومعدات شد وحقن معتمدة.',
   ],
 };
+
+/** The branch to print on a document for `country`, with sensible fallbacks. */
+export function branchFor(company, country) {
+  const branches = company?.branches || COMPANY.branches;
+  const fallbackKey = company?.default_branch || COMPANY.default_branch || 'SA';
+  const branch = branches?.[country];
+  const fallback = branches?.[fallbackKey] || COMPANY.branches.SA;
+  // Legal identifiers are country-specific: a Saudi commercial registration
+  // must never appear on an Egyptian document, so these never inherit.
+  const NEVER_INHERIT = ['cr_number', 'vat_number'];
+  if (!branch) {
+    const blank = { ...fallback };
+    for (const key of NEVER_INHERIT) blank[key] = '';
+    return blank;
+  }
+  // Everything else falls back, so a branch with no phone yet still prints a
+  // usable letterhead instead of a blank.
+  const merged = { ...fallback };
+  for (const key of NEVER_INHERIT) merged[key] = '';
+  for (const [key, value] of Object.entries(branch)) {
+    if (value !== null && value !== undefined && value !== '') merged[key] = value;
+  }
+  return merged;
+}
 
 // ------------------------------------------------------------- scope of work
 export const SCOPE = {

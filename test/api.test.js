@@ -592,3 +592,58 @@ test('ignores unknown permission keys', async () => {
   assert.equal(res.status, 200);
   assert.equal(res.body.user.permission_overrides['not.a.real.permission'], undefined);
 });
+
+// ========================================================= company branches
+test('a quotation prints the branch matching its own country', async () => {
+  await api('POST', '/api/auth/login', ADMIN);
+
+  const saQuote = await api('GET', `/api/quotations/${quotationId}/document`);
+  assert.equal(saQuote.status, 200);
+  assert.ok(saQuote.body.branch, 'the document must carry a branch');
+  assert.equal(saQuote.body.quotation.country, 'SA');
+  assert.ok(saQuote.body.branch.phone, 'the Saudi office needs a phone');
+  assert.ok(saQuote.body.branch.cr_number, 'the Saudi office has a commercial registration');
+
+  // Egypt was quoted earlier in this file; find it and check it differs.
+  const list = await api('GET', '/api/quotations?country=EG');
+  const egyptian = list.body.quotations[0];
+  assert.ok(egyptian, 'need an Egyptian quotation for this test');
+
+  const egDoc = await api('GET', `/api/quotations/${egyptian.id}/document`);
+  assert.equal(egDoc.body.quotation.country, 'EG');
+  assert.notEqual(
+    egDoc.body.branch.phone, saQuote.body.branch.phone,
+    'the Cairo office must not print the Saudi phone number',
+  );
+  assert.equal(
+    egDoc.body.branch.cr_number, '',
+    'a Saudi commercial registration must never appear on an Egyptian document',
+  );
+});
+
+test('a branch with nothing filled in still prints a usable letterhead', async () => {
+  const qa = await api('POST', '/api/customers', { name_en: 'Qatar Branch Test', country: 'QA' });
+  const quote = await api('POST', '/api/quotations', {
+    customer_id: qa.body.customer.id, project_name: 'Branch fallback check',
+    country: 'QA', area_sqm: 100, unit_price: 75,
+  });
+
+  const doc = await api('GET', `/api/quotations/${quote.body.quotation.id}/document`);
+  const branch = doc.body.branch;
+  assert.ok(branch.name_en, 'the company name always prints');
+  assert.ok(branch.phone, 'a blank branch borrows the default contact details');
+  assert.equal(branch.cr_number, '', 'but never another country’s registration');
+  assert.match(branch.address_en, /Qatar/, 'its own address is kept');
+});
+
+test('company settings carry per-country branches', async () => {
+  const res = await api('GET', '/api/settings');
+  const company = res.body.settings.company;
+  assert.ok(company.branches, 'branches must be present');
+  for (const code of ['SA', 'EG', 'QA']) {
+    assert.ok(company.branches[code], `${code} branch missing`);
+  }
+  assert.equal(company.branches.SA.cr_number, '1010981534');
+  assert.match(company.branches.EG.email, /spantechpt\.com$/i);
+  assert.match(company.branches.SA.email, /spantechksa\.com$/i);
+});
