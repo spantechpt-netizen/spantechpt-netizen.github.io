@@ -139,7 +139,7 @@ export function openNewQuotation(navigate, presetOpportunityId) {
       field({ name: 'country', label: t('country'), type: 'select', value: 'SA', options: COUNTRIES.map((c) => ({ value: c, label: t(`country_${c}`) })) }),
       field({ name: 'location', label: t('location') }),
       field({ name: 'attention', label: t('attention'), dir: 'ltr' }),
-      field({ name: 'attention_ar', label: `${t('attention')} (AR)`, dir: 'rtl' }),
+      field({ name: 'attention_ar', label: t('attention_ar'), dir: 'rtl' }),
       field({ name: 'area_sqm', label: t('area_sqm'), type: 'number', min: 0, step: 1, required: true }),
       field({ name: 'unit_price', label: t('unit_price'), type: 'number', min: 0, step: 0.01, hint: t('default_price') }),
     ]),

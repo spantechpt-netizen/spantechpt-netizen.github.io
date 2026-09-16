@@ -78,9 +78,9 @@ function editor(data, navigate) {
       field({ name: 'project_name', label: t('project_name'), value: quote.project_name, required: true, dir: 'ltr', disabled: readOnly }),
       field({ name: 'project_name_ar', label: t('project_name_ar'), value: quote.project_name_ar || '', dir: 'rtl', disabled: readOnly }),
       field({ name: 'attention', label: t('attention'), value: quote.attention || '', dir: 'ltr', disabled: readOnly }),
-      field({ name: 'attention_ar', label: `${t('attention')} (AR)`, value: quote.attention_ar || '', dir: 'rtl', disabled: readOnly }),
+      field({ name: 'attention_ar', label: t('attention_ar'), value: quote.attention_ar || '', dir: 'rtl', disabled: readOnly }),
       field({ name: 'location', label: t('location'), value: quote.location || '', disabled: readOnly }),
-      field({ name: 'location_ar', label: `${t('location')} (AR)`, value: quote.location_ar || '', dir: 'rtl', disabled: readOnly }),
+      field({ name: 'location_ar', label: t('location_ar'), value: quote.location_ar || '', dir: 'rtl', disabled: readOnly }),
       field({ name: 'issue_date', label: t('issue_date'), type: 'date', value: quote.issue_date, disabled: readOnly }),
       field({ name: 'valid_days', label: t('valid_days'), type: 'number', value: quote.valid_days, min: 1, max: 365, disabled: readOnly }),
       field({
