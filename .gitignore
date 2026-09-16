@@ -6,3 +6,4 @@ data/backups/
 .env
 .DS_Store
 *.log
+backups/

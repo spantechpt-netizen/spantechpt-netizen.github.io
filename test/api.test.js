@@ -7,6 +7,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { connect } from 'node:net';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -34,6 +35,21 @@ async function api(method, path, body) {
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
   return { status: res.status, body: json, text };
+}
+
+/** Sends bytes a fetch client refuses to send, and returns the status code. */
+function rawRequest(raw) {
+  return new Promise((resolve, reject) => {
+    const socket = connect(PORT, '127.0.0.1', () => socket.write(raw));
+    let response = '';
+    socket.setTimeout(5000, () => { socket.destroy(); reject(new Error('timed out')); });
+    socket.on('data', (chunk) => { response += chunk; });
+    socket.on('error', reject);
+    socket.on('close', () => {
+      const match = /^HTTP\/1\.[01] (\d{3})/.exec(response);
+      resolve(match ? Number(match[1]) : 0);
+    });
+  });
 }
 
 before(async () => {
@@ -716,4 +732,43 @@ test('the capture account never shows up as a mailbox', async () => {
     !res.body.accounts.some((a) => a.label === 'Captured requests'),
     'it is an implementation detail, not a mailbox anyone configures',
   );
+});
+
+// ------------------------------------------------------------- robustness
+// A malformed path or Host header used to throw outside the request handler's
+// try block, which takes a Node server down with it: one request from any
+// scanner and the CRM was gone for everybody until someone restarted it.
+test('a malformed URL is refused, and the server survives it', async () => {
+  for (const path of ['/%zz', '/%E0%A4%A', '/api/%zz']) {
+    const res = await fetch(`${BASE}${path}`, { headers: { cookie } });
+    assert.equal(res.status, 400, `${path} should be a bad request, not a crash`);
+  }
+
+  // A stray % in the query string is not malformed — URLSearchParams takes it
+  // literally — so it must still be served normally.
+  const query = await fetch(`${BASE}/api/customers?x=%`, { headers: { cookie } });
+  assert.equal(query.status, 200);
+
+  // fetch() silently drops a Host header, so this one needs a raw socket.
+  const status = await rawRequest('GET /api/health HTTP/1.1\r\nHost: [\r\nConnection: close\r\n\r\n');
+  assert.equal(status, 400, 'an unparseable Host header is the client’s problem');
+
+  // The point of the test: everything above left the process running.
+  const health = await api('GET', '/api/health');
+  assert.equal(health.status, 200);
+  assert.equal(health.body.ok, true);
+});
+
+test('a path cannot escape the public directory', async () => {
+  const attempts = [
+    '/assets/../../server/config.js',
+    '/%2e%2e%2f%2e%2e%2fserver%2fconfig.js',
+    '/..%5c..%5cserver%5cconfig.js',           // backslashes, which separate on Windows
+  ];
+  for (const path of attempts) {
+    const res = await fetch(`${BASE}${path}`, { headers: { cookie } });
+    const text = await res.text();
+    assert.ok(!text.includes('sessionSecret'), `${path} must not reach server source`);
+    assert.match(text, /<!doctype html>/i, 'it falls through to the app shell');
+  }
 });

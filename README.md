@@ -196,6 +196,9 @@ two can never leak into each other.
 * **Node.js 22.5 or newer** (it uses the built-in `node:sqlite` module), **or** Docker.
 * Nothing else. **There are no npm dependencies** — no `npm install`, no build step.
 
+Linux, Windows and macOS all work — it is plain Node with no native modules and
+no shell scripts in the runtime path.
+
 ---
 
 ## Running it
@@ -247,9 +250,13 @@ later with `npm run reset`.
 
 ## Putting it on the network properly
 
-> **Handing this to a server administrator?** `docs/DEPLOYMENT.md` is a complete
-> Arabic handover document for `crm.spantechpt.com` — DNS records, server specs,
-> ports, TLS, firewall, backups and a sign-off checklist.
+> **Handing this to a server administrator?** There is a complete Arabic handover
+> document for `crm.spantechpt.com` — DNS records, server specs, ports, TLS,
+> firewall, backups and a sign-off checklist — in two versions:
+> [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for Linux (systemd, nginx, certbot)
+> and [`docs/DEPLOYMENT-WINDOWS.md`](docs/DEPLOYMENT-WINDOWS.md) for Windows
+> Server (NSSM, IIS + ARR, win-acme). The DNS records and server specs are the
+> same in both; only the service, proxy and certificate tooling differ.
 
 The app speaks plain HTTP. Put a reverse proxy in front of it for TLS:
 
@@ -282,11 +289,19 @@ Then set `SECURE_COOKIES=true` and restart, so session cookies are HTTPS-only.
 Everything lives in one file: `data/spantech.db`.
 
 ```bash
-# safe hot copy while the server is running
-sqlite3 data/spantech.db ".backup '/backups/spantech-$(date +%F).db'"
+npm run backup                  # -> ./backups/spantech-YYYY-MM-DD.db
+npm run backup -- /backups      # or somewhere else
 ```
 
-A nightly cron job copying that file is a complete backup strategy.
+This is safe while the server is running and needs no `sqlite3` command-line
+tool, so it works the same on Windows: `VACUUM INTO` writes a complete,
+compacted snapshot at a single point in time. Copying the file with `cp` or
+`copy` is **not** safe, because recent transactions are still in the `-wal`
+file. Snapshots older than 30 days are pruned (`BACKUP_KEEP_DAYS` to change
+that).
+
+A nightly cron job or scheduled task running that is a complete backup
+strategy — but test a restore once before you rely on it.
 
 ---
 

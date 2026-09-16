@@ -12,7 +12,8 @@
     "dev": "node --no-warnings --watch server/index.js",
     "seed": "node --no-warnings server/seed.js",
     "reset": "node --no-warnings server/seed.js --reset",
-    "test": "node --no-warnings --test test/*.test.js"
+    "test": "node --no-warnings --test test/*.test.js",
+    "backup": "node --no-warnings scripts/backup.mjs"
   },
   "dependencies": {},
   "license": "UNLICENSED"

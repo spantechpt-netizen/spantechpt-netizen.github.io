@@ -39,8 +39,19 @@ router.get('/api/health', () => ({
 }), { public: true });
 
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = decodeURIComponent(url.pathname);
+  // Both of these throw on input a client fully controls — `%zz` in the path,
+  // or a Host header that is not a valid authority — and they used to sit
+  // outside the try below, so one malformed request from any scanner took the
+  // whole server down for everybody.
+  let url;
+  let pathname;
+  try {
+    url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    pathname = decodeURIComponent(url.pathname);
+  } catch {
+    sendError(res, new HttpError(400, 'Malformed URL', 'المسار غير صالح'));
+    return;
+  }
 
   try {
     // Calendar feed. The token in the URL *is* the credential, because
@@ -130,6 +141,18 @@ function shutdown(signal) {
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// A last line of defence. Every request is already wrapped, and SQLite rolls
+// back a failed transaction on its own, so the safe state after an unexpected
+// throw is "keep serving": one odd request must never take the CRM away from
+// everybody. Anything landing here is a bug — it is logged loudly so it gets
+// fixed rather than quietly absorbed.
+process.on('uncaughtException', (error) => {
+  console.error('[uncaught] the server survived this, but it is a bug:', error);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandled rejection] the server survived this, but it is a bug:', reason);
+});
 
 seedSettings();
 reconcileCounters();
