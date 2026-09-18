@@ -4,7 +4,7 @@ import {
   el, clear, icon, field, readForm, openModal, confirmDialog,
   toast, toastError, quoteStatusBadge, optionsFrom,
 } from '../ui.js';
-import { canEdit, canSeeAll, state } from '../app.js';
+import { can, canSeeAll, canSeeCost, state } from '../app.js';
 import { openNewQuotation } from './quotations.js';
 import { printQuotation } from './quote-print.js';
 
@@ -45,7 +45,7 @@ function editor(data, navigate) {
   let dirty = false;
 
   const page = el('div');
-  const readOnly = !canEdit();
+  const readOnly = !can('quotations.edit');
 
   // ---------------------------------------------------------------- header
   const statusHost = el('div.row.wrap');
@@ -232,8 +232,11 @@ function editor(data, navigate) {
     totalsHost,
   ]));
 
+  // The cost calculator is the cost permission, not a manager's screen: an
+  // engineer whose "sees cost and margin" is unticked does not get the card,
+  // and the server does not send the numbers behind it either.
   const calcHost = el('div.card-body');
-  if (canSeeAll() || !readOnly) {
+  if (canSeeCost()) {
     right.append(el('div.card', {}, [
       el('div.card-header', {}, [
         el('h3', { text: t('cost_calculator') }),
@@ -498,15 +501,19 @@ function editor(data, navigate) {
       strand_price_ton: quote.strand_price_ton,
       strand_kg_sqm: quote.strand_kg_sqm,
       anchors_per_ton: quote.anchors_per_ton,
-      anchor_cost: quote.anchor_cost,
-      duct_cost_sqm: quote.duct_cost_sqm,
-      grout_cost_sqm: quote.grout_cost_sqm,
-      labour_cost_sqm: quote.labour_cost_sqm,
-      design_cost_sqm: quote.design_cost_sqm,
-      overhead_pct: quote.overhead_pct,
-      target_margin: quote.target_margin,
       notes_en: quote.notes_en,
       notes_ar: quote.notes_ar,
+      // The cost model is only sent by someone who was shown it; otherwise the
+      // rates already on the quotation would be saved back as blanks.
+      ...(canSeeCost() ? {
+        anchor_cost: quote.anchor_cost,
+        duct_cost_sqm: quote.duct_cost_sqm,
+        grout_cost_sqm: quote.grout_cost_sqm,
+        labour_cost_sqm: quote.labour_cost_sqm,
+        design_cost_sqm: quote.design_cost_sqm,
+        overhead_pct: quote.overhead_pct,
+        target_margin: quote.target_margin,
+      } : {}),
     };
     try {
       const result = await api.updateQuotation(quote.id, payload);

@@ -555,6 +555,95 @@ test('an engineer cannot delete customers by default', async () => {
   cookie = adminCookie;
 });
 
+// Taking "sees cost and margin" away has to take the numbers away, not just
+// the card on the screen: the engineer's own browser can read the response.
+test('without quotations.view_cost the cost model never leaves the server', async () => {
+  const adminCookie = cookie;
+
+  const users = await api('GET', '/api/users');
+  const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');
+  await api('PATCH', `/api/users/${engineer.id}`, {
+    permission_overrides: { 'quotations.view_cost': false, 'quotations.edit': true },
+  });
+
+  const customer = await api('POST', '/api/customers', { name_en: 'Cost Test Co', country: 'SA' });
+  const quote = await api('POST', '/api/quotations', {
+    customer_id: customer.body.customer.id, project_name: 'Cost visibility check',
+    country: 'SA', area_sqm: 1000, unit_price: 70,
+    labour_cost_sqm: 17, design_cost_sqm: 3, overhead_pct: 8, target_margin: 20,
+  });
+  const id = quote.body.quotation.id;
+  assert.equal(quote.body.quotation.labour_cost_sqm, 17, 'the admin does see it');
+  await api('PATCH', `/api/quotations/${id}`, { owner_id: engineer.id });
+
+  await api('POST', '/api/auth/login', { email: 'mahmoud@test.local', password: 'Engineer@2026' });
+
+  const detail = await api('GET', `/api/quotations/${id}`);
+  assert.equal(detail.status, 200);
+  for (const field of ['labour_cost_sqm', 'design_cost_sqm', 'overhead_pct', 'target_margin',
+    'cost_total', 'margin_amount', 'margin_pct']) {
+    assert.equal(detail.body.quotation[field], undefined, `${field} must not be sent`);
+  }
+  assert.equal(detail.body.breakdown, undefined, 'nor the cost breakdown');
+
+  const list = await api('GET', '/api/quotations');
+  assert.ok(list.body.quotations.every((row) => row.margin_pct === undefined), 'nor in the list');
+
+  const document = await api('GET', `/api/quotations/${id}/document`);
+  assert.equal(document.body.quotation.labour_cost_sqm, undefined, 'nor in the print payload');
+
+  // And a save from a screen that never showed the rates must not blank them.
+  const saved = await api('PATCH', `/api/quotations/${id}`, {
+    project_name: 'Cost visibility check — edited',
+    labour_cost_sqm: 0, overhead_pct: 0, target_margin: 0,
+  });
+  assert.equal(saved.status, 200);
+
+  const analytics = await api('GET', '/api/analytics/overview');
+  assert.equal(analytics.body.quotations.avg_margin, undefined, 'nor as an average');
+
+  cookie = adminCookie;
+  const after = await api('GET', `/api/quotations/${id}`);
+  assert.equal(after.body.quotation.project_name, 'Cost visibility check — edited', 'the edit went through');
+  assert.equal(after.body.quotation.labour_cost_sqm, 17, 'and the rates are untouched');
+  assert.equal(after.body.quotation.target_margin, 20);
+});
+
+// The company-wide analytics tick did nothing at all: the scope was read from
+// the customers permission instead.
+test('analytics.view_all decides whose numbers the analytics show', async () => {
+  const adminCookie = cookie;
+  const users = await api('GET', '/api/users');
+  const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');
+
+  await api('PATCH', `/api/users/${engineer.id}`, {
+    permission_overrides: { 'customers.view_all': true, 'analytics.view_all': false },
+  });
+  await api('POST', '/api/auth/login', { email: 'mahmoud@test.local', password: 'Engineer@2026' });
+  const own = await api('GET', '/api/analytics/overview');
+  assert.equal(own.status, 200);
+
+  cookie = adminCookie;
+  await api('PATCH', `/api/users/${engineer.id}`, {
+    permission_overrides: { 'customers.view_all': false, 'analytics.view_all': true },
+  });
+  await api('POST', '/api/auth/login', { email: 'mahmoud@test.local', password: 'Engineer@2026' });
+  const everyone = await api('GET', '/api/analytics/overview');
+  assert.equal(everyone.status, 200);
+
+  assert.ok(
+    everyone.body.quotations.count >= own.body.quotations.count,
+    'the company view is never smaller than the engineer’s own',
+  );
+  assert.ok(
+    everyone.body.quotations.count > own.body.quotations.count,
+    'and here it is bigger, because the other quotations belong to someone else',
+  );
+
+  cookie = adminCookie;
+  await api('PATCH', `/api/users/${engineer.id}`, { permission_overrides: {} });
+});
+
 test('granting one capability to one engineer takes effect', async () => {
   const users = await api('GET', '/api/users');
   const engineer = users.body.users.find((u) => u.email === 'mahmoud@test.local');

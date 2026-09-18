@@ -50,12 +50,10 @@ export const hasRole = (minimum) => (RANK[state.user?.role] ?? -1) >= (RANK[mini
 export const can = (permission) =>
   Array.isArray(state.user?.permissions) && state.user.permissions.includes(permission);
 
-/** Kept for the views that only ask "may this person change anything?". */
-export const canEdit = () => can('customers.edit') || can('opportunities.edit')
-  || can('quotations.edit') || can('activities.edit');
-
 /** Whether this person sees every engineer's records or only their own. */
 export const canSeeAll = () => can('customers.view_all');
+/** The cost model behind a quotation — rates, overheads, margin. */
+export const canSeeCost = () => can('quotations.view_cost');
 
 const root = document.getElementById('root');
 

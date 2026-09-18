@@ -4,7 +4,7 @@ import {
   el, clear, icon, dataTable, openModal, field, readForm,
   toast, toastError, quoteStatusBadge, blankOption, optionsFrom,
 } from '../ui.js';
-import { canEdit, canSeeAll, state } from '../app.js';
+import { can, canSeeAll, canSeeCost, state } from '../app.js';
 
 const STATUSES = ['draft', 'sent', 'under_review', 'approved', 'rejected', 'expired', 'cancelled'];
 const COUNTRIES = ['SA', 'EG', 'QA'];
@@ -49,7 +49,7 @@ export async function render({ navigate }) {
         } catch (error) { toastError(error); }
       },
     }) : null,
-    canEdit() ? el('button.btn', {
+    can('quotations.create') ? el('button.btn', {
       type: 'button', onclick: () => openNewQuotation(navigate),
     }, [icon('plus', 16), t('new_quotation')]) : null,
   ]));
@@ -96,7 +96,7 @@ export async function render({ navigate }) {
             label: t('grand_total'), className: 'num',
             render: (row) => el('span.bold', { text: `${money(row.total)} ${row.currency}` }),
           },
-          canSeeAll() ? {
+          canSeeCost() ? {
             label: t('margin'), className: 'num',
             render: (row) => {
               const value = Number(row.margin_pct || 0);

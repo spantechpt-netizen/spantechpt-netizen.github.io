@@ -10,7 +10,7 @@ import { api } from '../api.js';
 import { t, pick, getLang, money, formatDateTime } from '../i18n.js';
 import { el, clear, icon, field, readForm, toast, toastError, confirmDialog } from '../ui.js';
 import { barChart } from '../charts.js';
-import { canEdit } from '../app.js';
+import { can } from '../app.js';
 import { printStudy } from './study-print.js';
 
 const KINDS = ['original', 'post_tension'];
@@ -50,7 +50,7 @@ export async function render({ params, navigate }) {
     return page;
   }
 
-  const readOnly = !canEdit();
+  const readOnly = !can('quotations.edit');
   const currency = quote.currency;
   const fmt = (value) => `${money(value)} ${currency}`;
 

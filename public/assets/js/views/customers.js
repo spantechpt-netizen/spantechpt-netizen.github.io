@@ -5,7 +5,7 @@ import {
   toast, toastError, customerStatusBadge, stars, optionsFrom, blankOption,
   stageBadge, quoteStatusBadge,
 } from '../ui.js';
-import { canEdit, canSeeAll, state } from '../app.js';
+import { can, canSeeAll, state } from '../app.js';
 
 const TYPES = ['main_contractor', 'consultant', 'developer', 'owner', 'subcontractor', 'government', 'other'];
 const STATUSES = ['target', 'prospect', 'active', 'dormant', 'blacklisted'];
@@ -48,7 +48,7 @@ export async function render({ navigate }) {
       }),
     ]) : null,
     el('div.spacer'),
-    canEdit() ? el('button.btn', {
+    can('customers.create') ? el('button.btn', {
       type: 'button', onclick: () => openCustomerForm(null, refresh),
     }, [icon('plus', 16), t('new_customer')]) : null,
   ]));
@@ -174,7 +174,7 @@ export async function openCustomerDetail(id, onChange, navigate) {
       }) : null,
       el('div.spacer'),
       el('button.btn.btn-secondary', { type: 'button', text: t('close'), onclick: dismiss }),
-      canEdit() ? el('button.btn', {
+      can('customers.edit') ? el('button.btn', {
         type: 'button', text: t('edit'),
         onclick: () => { dismiss(); openCustomerForm(customer, onChange); },
       }) : null,
@@ -221,7 +221,7 @@ function contactsPanel(customer, contacts, reload) {
   const host = el('div');
   host.append(el('div.row.mb-1', {}, [
     el('div.spacer'),
-    canEdit() ? el('button.btn.btn-sm', {
+    can('customers.edit') ? el('button.btn.btn-sm', {
       type: 'button', text: t('new_contact'),
       onclick: () => openContactForm(customer.id, null, reload),
     }, [icon('plus', 14)]) : null,
@@ -253,7 +253,7 @@ function contactsPanel(customer, contacts, reload) {
       },
       {
         label: '', className: 'end',
-        render: (row) => canEdit() ? el('div.row', {}, [
+        render: (row) => can('customers.edit') ? el('div.row', {}, [
           el('button.btn.btn-sm.btn-secondary', {
             type: 'button', text: t('edit'),
             onclick: () => openContactForm(customer.id, row, reload),

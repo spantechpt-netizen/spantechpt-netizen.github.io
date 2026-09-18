@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { t, pick, money, moneyShort } from '../i18n.js';
 import { el, clear, dataTable, blankOption } from '../ui.js';
-import { canSeeAll, state } from '../app.js';
+import { can, canSeeCost, state } from '../app.js';
 import { barChart, funnelChart, columnChart, donutChart, PALETTE } from '../charts.js';
 
 const CURRENCY_BY_COUNTRY = { SA: 'SAR', EG: 'EGP', QA: 'QAR' };
@@ -58,7 +58,7 @@ export async function render() {
         if (option.value === filters.country) node.selected = true;
         return node;
       })),
-    canSeeAll() ? el('select', {
+    can('analytics.view_all') ? el('select', {
       onchange: (event) => { filters.owner_id = event.target.value; refresh(); },
     }, [blankOption(t('by_engineer')), ...state.users.filter((u) => u.active).map((u) => ({ value: u.id, label: pick(u, 'name') }))]
       .map((option) => {
@@ -100,7 +100,7 @@ function build(overview, monthly, breakdown, funnel) {
       `${closed.won_count || 0} / ${(closed.won_count || 0) + (closed.lost_count || 0)}`),
     kpi('ok', t('value_won'), moneyShort(closed.won_value), `${money(closed.won_area || 0, 0)} m²`),
     kpi('', t('quotes_issued'), overview.quotations?.count || 0, moneyShort(overview.quotations?.value)),
-    kpi('', t('margin'), `${Number(overview.quotations?.avg_margin || 0).toFixed(1)}%`),
+    canSeeCost() ? kpi('', t('margin'), `${Number(overview.quotations?.avg_margin || 0).toFixed(1)}%`) : null,
   ]));
 
   // ------------------------------------------------- funnel + monthly trend

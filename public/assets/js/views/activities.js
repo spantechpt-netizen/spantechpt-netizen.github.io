@@ -4,7 +4,7 @@ import {
   el, clear, icon, field, readForm, openModal, confirmDialog,
   toast, toastError, optionsFrom, blankOption,
 } from '../ui.js';
-import { canEdit, canSeeAll, state, refreshBadges } from '../app.js';
+import { can, canSeeAll, state, refreshBadges } from '../app.js';
 
 const TYPES = ['call', 'meeting', 'email', 'whatsapp', 'site_visit', 'task', 'note'];
 const view = { bucket: '', type: '', owner: '', showDone: false };
@@ -59,7 +59,7 @@ export async function render() {
       el('span', { text: t('done') }),
     ]),
     el('div.spacer'),
-    canEdit() ? el('button.btn', {
+    can('activities.create') ? el('button.btn', {
       type: 'button', onclick: () => openActivityForm(null, refresh),
     }, [icon('plus', 16), t('new_activity')]) : null,
   ]));
@@ -137,7 +137,7 @@ function renderList(activities, refresh) {
           el('a', { href: `tel:${item.contact_mobile}`, text: `${item.contact_name || ''} ${item.contact_mobile}`, dir: 'ltr' }),
         ]) : null,
       ]),
-      canEdit() ? el('div.row', {}, [
+      can('activities.edit') ? el('div.row', {}, [
         el('button.btn.btn-sm.btn-secondary', {
           type: 'button', title: t('edit'),
           onclick: () => openActivityForm(item, refresh),

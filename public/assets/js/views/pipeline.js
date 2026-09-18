@@ -4,7 +4,7 @@ import {
   el, clear, icon, dataTable, field, readForm, openModal, confirmDialog,
   toast, toastError, stageBadge, optionsFrom, blankOption,
 } from '../ui.js';
-import { canEdit, canSeeAll, state } from '../app.js';
+import { can, canSeeAll, state } from '../app.js';
 
 const STAGES = ['new', 'qualified', 'quoted', 'negotiation', 'won', 'lost'];
 const PROJECT_TYPES = ['tower', 'school', 'mall', 'villa', 'rest_house', 'admin', 'hospital', 'parking', 'industrial', 'other'];
@@ -51,7 +51,7 @@ export async function render({ navigate }) {
       }),
     ]),
     el('div.spacer'),
-    canEdit() ? el('button.btn', {
+    can('opportunities.create') ? el('button.btn', {
       type: 'button', onclick: () => openOpportunityForm(null, refresh),
     }, [icon('plus', 16), t('new_opportunity')]) : null,
   ]));
@@ -106,7 +106,7 @@ function board(opportunities, refresh, navigate) {
 
     // Drag and drop between stages.
     column.addEventListener('dragover', (event) => {
-      if (!canEdit()) return;
+      if (!can('opportunities.edit')) return;
       event.preventDefault();
       column.classList.add('drag-over');
     });
@@ -114,7 +114,7 @@ function board(opportunities, refresh, navigate) {
     column.addEventListener('drop', async (event) => {
       event.preventDefault();
       column.classList.remove('drag-over');
-      if (!canEdit()) return;
+      if (!can('opportunities.edit')) return;
       const id = Number(event.dataTransfer.getData('text/plain'));
       const moved = opportunities.find((o) => o.id === id);
       if (!moved || moved.stage === stage) return;
@@ -134,7 +134,7 @@ function board(opportunities, refresh, navigate) {
 }
 
 function card(item, refresh, navigate) {
-  const node = el('div.deal', { draggable: canEdit() ? 'true' : 'false' }, [
+  const node = el('div.deal', { draggable: can('opportunities.edit') ? 'true' : 'false' }, [
     el('div.title', { text: pick(item, 'title') }),
     el('div.customer', { text: pick(item, 'customer_name') }),
     el('div.row', {}, [
@@ -261,14 +261,14 @@ async function openOpportunityDetail(id, onChange, navigate) {
       }) : null,
       el('div.spacer'),
       el('button.btn.btn-secondary', { type: 'button', text: t('close'), onclick: dismiss }),
-      canEdit() ? el('button.btn.btn-secondary', {
+      can('quotations.create') ? el('button.btn.btn-secondary', {
         type: 'button', text: t('new_quotation'),
         onclick: () => {
           dismiss();
           navigate(`quote/new?opportunity=${opportunity.id}`);
         },
       }) : null,
-      canEdit() ? el('button.btn', {
+      can('opportunities.edit') ? el('button.btn', {
         type: 'button', text: t('edit'),
         onclick: () => { dismiss(); openOpportunityForm(opportunity, onChange); },
       }) : null,

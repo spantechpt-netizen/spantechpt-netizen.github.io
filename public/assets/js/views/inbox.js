@@ -4,7 +4,7 @@ import {
   el, clear, icon, field, readForm, openModal, confirmDialog,
   toast, toastError, initials,
 } from '../ui.js';
-import { canEdit, state } from '../app.js';
+import { can, state } from '../app.js';
 import { refresh as refreshBell } from '../notify.js';
 
 const view = { box: 'inbox' };
@@ -26,7 +26,7 @@ export async function render({ params, navigate }) {
       }),
     ]),
     el('div.spacer'),
-    canEdit() ? el('button.btn', {
+    can('messages.send') ? el('button.btn', {
       type: 'button', onclick: () => openCompose(null, load),
     }, [icon('plus', 16), t('new_message')]) : null,
   ]));
@@ -144,7 +144,7 @@ async function openThread(id, reload, navigate) {
       }) : null,
       el('div.spacer'),
       el('button.btn.btn-secondary', { type: 'button', text: t('close'), onclick: dismiss }),
-      canEdit() ? el('button.btn', {
+      can('messages.send') ? el('button.btn', {
         type: 'button', text: t('send'),
         onclick: async (event) => {
           const text = replyBox.value.trim();

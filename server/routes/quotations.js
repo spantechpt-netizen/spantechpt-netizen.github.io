@@ -37,6 +37,35 @@ const SELECT_QUOTE = `
 
 const countrySettings = () => ({ ...COUNTRY_DEFAULTS, ...(getSetting('countries') || {}) });
 
+/**
+ * What the work costs us, and what we make on it.
+ *
+ * `quotations.view_cost` is a permission, not a screen: an engineer who is not
+ * allowed the cost model must not receive it, or hiding the calculator is
+ * decoration over an API that hands the numbers to anyone who asks.
+ *
+ * Inputs are the rates the estimate is built from; derived figures come out of
+ * the pricing engine and are stored on the row.
+ */
+const COST_INPUTS = [
+  'anchor_cost', 'duct_cost_sqm', 'grout_cost_sqm', 'labour_cost_sqm',
+  'design_cost_sqm', 'overhead_pct', 'target_margin',
+];
+const COST_DERIVED = ['cost_total', 'margin_amount', 'margin_pct'];
+
+const seesCost = (user) => can(user, 'quotations.view_cost');
+
+/** The same row with the cost model taken out, unless the reader may see it. */
+function stripCost(row, user) {
+  if (!row || seesCost(user)) return row;
+  const safe = { ...row };
+  for (const field of [...COST_INPUTS, ...COST_DERIVED]) delete safe[field];
+  return safe;
+}
+
+/** The pricing breakdown is nothing but cost, so it is all or nothing. */
+const breakdownFor = (totals, user) => (seesCost(user) ? totals.breakdown : undefined);
+
 function loadQuote(id) {
   const row = get(`${SELECT_QUOTE} WHERE q.id = ?`, id);
   if (!row) throw notFound('Quotation not found', 'عرض السعر غير موجود');
@@ -164,7 +193,7 @@ export function register(router) {
         LIMIT 500`,
       ...params,
     );
-    return { quotations: rows };
+    return { quotations: rows.map((row) => stripCost(row, user)) };
   });
 
   // ------------------------------------------------------------------- read
@@ -175,8 +204,8 @@ export function register(router) {
     const items = loadItems(id);
     const totals = computeTotals(quote, items);
     return {
-      quotation: hydrate(quote, items),
-      breakdown: totals.breakdown,
+      quotation: stripCost(hydrate(quote, items), user),
+      breakdown: breakdownFor(totals, user),
       revisions: all(
         'SELECT id, number, revision, status, issue_date, total FROM quotations WHERE number = ? ORDER BY revision',
         quote.number,
@@ -200,7 +229,7 @@ export function register(router) {
 
     const company = getSetting('company', COMPANY);
     return {
-      quotation: hydrate(quote, items),
+      quotation: stripCost(hydrate(quote, items), user),
       company,
       // The letterhead shows the office that issues this offer.
       branch: branchFor(company, quote.country),
@@ -433,7 +462,7 @@ export function register(router) {
     });
 
     const id = transaction(() => {
-      const quotationId = insert('quotations', {
+      const row = {
         number: generateNumber(issueDate),
         revision: 0,
         opportunity_id: opportunityId,
@@ -479,7 +508,11 @@ export function register(router) {
         notes_ar: str(body.notes_ar, 'notes_ar', { max: 4000 }),
         owner_id: int(body.owner_id, 'owner_id', { min: 1, fallback: user.id }),
         created_by: user.id,
-      });
+      };
+      // Someone who cannot see the cost model cannot set it either: the rates
+      // stay at their defaults rather than at whatever the request carried.
+      if (!seesCost(user)) for (const key of COST_INPUTS) delete row[key];
+      const quotationId = insert('quotations', row);
 
       const items = normaliseItems(body.items) || [{
         sort_order: 0,
@@ -507,7 +540,7 @@ export function register(router) {
       entity: 'quotation', entityId: id, name: `${quote.number} — ${quote.project_name}`,
       link: `quote/${id}`,
     });
-    return { quotation: hydrate(quote, loadItems(id)) };
+    return { quotation: stripCost(hydrate(quote, loadItems(id)), user) };
   });
 
   // ----------------------------------------------------------------- update
@@ -564,6 +597,10 @@ export function register(router) {
     if (can(user, 'customers.assign') && body.owner_id !== undefined) {
       fields.owner_id = int(body.owner_id, 'owner_id', { min: 1, fallback: null });
     }
+    // Same rule on the way in: an engineer without the cost permission leaves
+    // the rates exactly as they were, rather than blanking them by saving a
+    // form that never showed them.
+    if (!seesCost(user)) for (const key of COST_INPUTS) delete fields[key];
 
     // Switching the duct material rewrites the duct line, and switching who
     // supplies the labour moves the labour line to the other section, so the
@@ -590,7 +627,10 @@ export function register(router) {
     audit(user.id, 'quotation', id, 'update');
     const quote = loadQuote(id);
     const fresh = loadItems(id);
-    return { quotation: hydrate(quote, fresh), breakdown: computeTotals(quote, fresh).breakdown };
+    return {
+      quotation: stripCost(hydrate(quote, fresh), user),
+      breakdown: breakdownFor(computeTotals(quote, fresh), user),
+    };
   });
 
   // --------------------------------------------------------- status changes
@@ -641,7 +681,7 @@ export function register(router) {
         notifyQuoteStatus({ actorId: user.id, userId: manager.id, quotation: quote, status });
       }
     }
-    return { quotation: hydrate(loadQuote(id), loadItems(id)) };
+    return { quotation: stripCost(hydrate(loadQuote(id), loadItems(id)), user) };
   });
 
   // ------------------------------------------------------------- revisions
@@ -677,7 +717,7 @@ export function register(router) {
 
     recalculate(newId);
     audit(user.id, 'quotation', newId, 'revise', { from: id });
-    return { quotation: hydrate(loadQuote(newId), loadItems(newId)) };
+    return { quotation: stripCost(hydrate(loadQuote(newId), loadItems(newId)), user) };
   });
 
   router.post('/api/quotations/:id/duplicate', ({ params, body, user }) => {
@@ -717,7 +757,7 @@ export function register(router) {
 
     recalculate(newId);
     audit(user.id, 'quotation', newId, 'duplicate', { from: id });
-    return { quotation: hydrate(loadQuote(newId), loadItems(newId)) };
+    return { quotation: stripCost(hydrate(loadQuote(newId), loadItems(newId)), user) };
   });
 
   router.delete('/api/quotations/:id', ({ params, user }) => {

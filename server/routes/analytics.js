@@ -1,15 +1,28 @@
 import { all, get } from '../db.js';
-import { requirePermission, canSeeAll } from '../auth.js';
+import { requirePermission, can } from '../auth.js';
 
 /**
- * Engineers see only their own numbers; managers and admins see the company.
- * Returns a SQL fragment plus the parameters it needs.
+ * Engineers see only their own numbers; whoever holds `analytics.view_all`
+ * sees the company, and may narrow it to one engineer. Returns a SQL fragment
+ * plus the parameters it needs.
+ *
+ * This asks the analytics permission rather than the customers one, so that
+ * unticking "company-wide analytics" for a person actually does something.
  */
+const seesEveryone = (user) => can(user, 'analytics.view_all');
+
 function scopeFor(user, alias, query) {
-  if (canSeeAll(user) && query.owner_id) return { sql: `AND ${alias}.owner_id = ?`, params: [Number(query.owner_id)] };
-  if (canSeeAll(user)) return { sql: '', params: [] };
+  if (seesEveryone(user) && query.owner_id) return { sql: `AND ${alias}.owner_id = ?`, params: [Number(query.owner_id)] };
+  if (seesEveryone(user)) return { sql: '', params: [] };
   return { sql: `AND ${alias}.owner_id = ?`, params: [user.id] };
 }
+
+/** Margin is the cost model in one number, so it follows the same permission. */
+const withMargin = (row, user) => {
+  if (can(user, 'quotations.view_cost')) return row;
+  const { avg_margin: _dropped, ...rest } = row;
+  return rest;
+};
 
 function dateRange(query) {
   const to = query.to || new Date().toISOString().slice(0, 10);
@@ -100,14 +113,14 @@ export function register(router) {
         won_area: closed.won_area || 0,
         win_rate: decided ? Math.round((wonCount / decided) * 100) : 0,
       },
-      quotations: { ...quotes, by_status: quoteStatus },
+      quotations: { ...withMargin(quotes, user), by_status: quoteStatus },
       customers: get(
         `SELECT COUNT(*) AS total,
                 SUM(CASE WHEN status = 'target'   THEN 1 ELSE 0 END) AS targets,
                 SUM(CASE WHEN status = 'active'   THEN 1 ELSE 0 END) AS active,
                 SUM(CASE WHEN status = 'prospect' THEN 1 ELSE 0 END) AS prospects
-           FROM customers c WHERE 1=1 ${canSeeAll(user) ? '' : 'AND c.owner_id = ?'}`,
-        ...(canSeeAll(user) ? [] : [user.id]),
+           FROM customers c WHERE 1=1 ${seesEveryone(user) ? '' : 'AND c.owner_id = ?'}`,
+        ...(seesEveryone(user) ? [] : [user.id]),
       ),
     };
   });
