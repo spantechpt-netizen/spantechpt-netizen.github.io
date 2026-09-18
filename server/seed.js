@@ -9,8 +9,13 @@
 import { config } from './config.js';
 import { db, all, get, run, insert, getSetting, setSetting, transaction } from './db.js';
 import { hashPassword } from './auth.js';
-import { COMPANY, SCOPE, PAYMENT_TERMS, CONDITIONS, COUNTRY_DEFAULTS, INTRO, PRICE_ADJUSTMENT_CLAUSE, DEFAULT_ITEM } from './templates.js';
+import {
+  COMPANY, SCOPE, PAYMENT_TERMS, CONDITIONS, COUNTRY_DEFAULTS, INTRO,
+  PRICE_ADJUSTMENT_CLAUSE, DEFAULT_ITEM,
+  applyDuctMaterial, defaultDuctType, applyLabourScope,
+} from './templates.js';
 import { round2, computeTotals } from './pricing.js';
+import { defaultStudy } from './study.js';
 
 export function seedSettings() {
   const company = getSetting('company');
@@ -208,6 +213,13 @@ function seedDemo() {
       location: 'Jeddah', attention: 'Omar Fathy', area: 9800, price: 66,
       status: 'under_review', owner_id: engineerIds[0], issue: iso(-15),
       costs: { labour_cost_sqm: 15, duct_cost_sqm: 3.5, grout_cost_sqm: 1.8, design_cost_sqm: 2, anchor_cost: 20, overhead_pct: 7 },
+      study: {
+        system: 'solid', floors: 7, area_sqm: 1400,
+        concrete_rate_m3: 260, rebar_rate_ton: 3100, formwork_rate_sqm: 45,
+        foundation_saving_sqm: 9, day_value: 4500,
+        notes_ar: 'الأسعار مبنية على عروض موردين جدة، وقابلة للمراجعة مع المالك.',
+        notes_en: 'Rates are based on Jeddah supplier quotes and are open to review with the owner.',
+      },
     },
     {
       opportunity_id: 6, customer_id: 6, country: 'SA', currency: 'SAR', vat_rate: 15,
@@ -222,6 +234,12 @@ function seedDemo() {
       location: 'Lusail', attention: 'Ali Al-Kuwari', area: 12500, price: 75,
       status: 'approved', owner_id: engineerIds[2], issue: iso(-22),
       costs: { labour_cost_sqm: 18, duct_cost_sqm: 4.5, grout_cost_sqm: 2.2, design_cost_sqm: 3, anchor_cost: 24, overhead_pct: 9 },
+      labour_scope: 'client',
+      study: {
+        system: 'hollow_block', floors: 10, area_sqm: 1250,
+        concrete_rate_m3: 300, rebar_rate_ton: 3400, formwork_rate_sqm: 55,
+        foundation_saving_sqm: 12, day_value: 6000,
+      },
     },
     {
       opportunity_id: 3, customer_id: 4, country: 'EG', currency: 'EGP', vat_rate: 14,
@@ -240,6 +258,12 @@ function seedDemo() {
     const book = COUNTRY_DEFAULTS[quote.country];
     const subtotal = round2(quote.area * quote.price);
     const vat = round2(subtotal * (quote.vat_rate / 100));
+    const ductType = quote.duct_type || defaultDuctType(quote.country);
+    const labourScope = quote.labour_scope || 'spantech';
+    const quoteScope = applyLabourScope(
+      applyDuctMaterial(JSON.parse(JSON.stringify(scope)), ductType),
+      labourScope,
+    );
     const quotationId = insert('quotations', {
       number: `SPAN TECH P.T - ${quote.issue.slice(2, 4)} - ${String(index + 1).padStart(3, '0')}`,
       revision: 0,
@@ -267,7 +291,12 @@ function seedDemo() {
       net_amount: subtotal,
       vat_amount: vat,
       total: round2(subtotal + vat),
-      scope_json: JSON.stringify(scope),
+      duct_type: ductType,
+      labour_scope: labourScope,
+      scope_json: JSON.stringify(quoteScope),
+      study_json: quote.study
+        ? JSON.stringify({ ...defaultStudy({ area_sqm: quote.area, unit_price: quote.price }), ...quote.study })
+        : null,
       payment_terms_json: JSON.stringify(terms),
       conditions_json: JSON.stringify(conditions),
       owner_id: quote.owner_id,
