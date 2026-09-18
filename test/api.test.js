@@ -37,6 +37,19 @@ async function api(method, path, body) {
   return { status: res.status, body: json, text };
 }
 
+/** Posts a file as the raw request body, the way the drawing upload does. */
+async function upload(path, contentType, bytes) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': contentType, ...(cookie ? { cookie } : {}) },
+    body: bytes,
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON body */ }
+  return { status: res.status, body: json };
+}
+
 /** Sends bytes a fetch client refuses to send, and returns the status code. */
 function rawRequest(raw) {
   return new Promise((resolve, reject) => {
@@ -867,4 +880,64 @@ test('who supplies the labour moves the bullet between sections', async () => {
     labour_scope: 'somebody_else',
   });
   assert.equal(rejected.status, 400, 'an unknown option is refused rather than guessed');
+});
+
+// ------------------------------------------------------- study and drawings
+// The study is what goes to the owner, and the drawings are the engineer's own
+// — attaching one and captioning it has to work end to end.
+test('a study takes figures, drawings and captions', async () => {
+  const customer = await api('POST', '/api/customers', { name_en: 'Study Test Co', country: 'SA' });
+  const created = await api('POST', '/api/quotations', {
+    customer_id: customer.body.customer.id,
+    project_name: 'Study drawings check', country: 'SA', area_sqm: 5000, unit_price: 72,
+  });
+  const id = created.body.quotation.id;
+
+  const saved = await api('PUT', `/api/quotations/${id}/study`, {
+    study: {
+      system: 'solid', floors: 7, area_sqm: 5000,
+      conv_thickness_mm: 270, conv_rebar_kg_m3: 125,
+      pt_thickness_mm: 220, pt_rebar_kg_m3: 50, pt_rate_sqm: 72,
+      concrete_rate_m3: 260, rebar_rate_ton: 3100, formwork_rate_sqm: 45,
+    },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.study.complete, true, 'every rate is filled in');
+  assert.equal(saved.body.study.conventional.concrete_m3, 9450);
+
+  // A 1×1 PNG is a real PNG as far as the upload is concerned.
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const uploaded = await upload(`/api/quotations/${id}/study/drawings?kind=original`, 'image/png', png);
+  assert.equal(uploaded.status, 201);
+  assert.equal(uploaded.body.drawings.length, 1);
+  const drawing = uploaded.body.drawings[0];
+  assert.equal(drawing.kind, 'original');
+
+  // A PDF cannot be shown inside the printed study, so it is refused with a
+  // reason rather than stored and silently dropped from the document.
+  const pdf = await upload(`/api/quotations/${id}/study/drawings?kind=original`, 'application/pdf', png);
+  assert.equal(pdf.status, 400);
+  assert.match(pdf.body.error.message_ar, /PDF/);
+
+  // Captioning writes through the generic update helper, which sets
+  // updated_at on every row it touches.
+  const captioned = await api('PATCH', `/api/quotations/${id}/study/drawings/${drawing.id}`, {
+    caption_ar: 'المخطط الأصلي قبل التحويل',
+    caption_en: 'Original layout before conversion',
+  });
+  assert.equal(captioned.status, 200, captioned.text);
+  assert.equal(captioned.body.drawings[0].caption_ar, 'المخطط الأصلي قبل التحويل');
+
+  const file = await fetch(`${BASE}/api/quotations/${id}/study/drawings/${drawing.id}/file`, {
+    headers: { cookie },
+  });
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get('content-type'), 'image/png');
+
+  const removed = await api('DELETE', `/api/quotations/${id}/study/drawings/${drawing.id}`);
+  assert.equal(removed.status, 200);
+  assert.equal(removed.body.drawings.length, 0);
 });

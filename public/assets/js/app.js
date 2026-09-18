@@ -84,7 +84,9 @@ async function render() {
 
   renderShell();
   const outlet = document.getElementById('outlet');
-  const title = route ? t(route.label) : t('quotation');
+  // Sub-routes name themselves; anything else without a title is a quotation.
+  const SUB_TITLES = { study: 'study', notifications: 'notifications' };
+  const title = route ? t(route.label) : t(SUB_TITLES[path] || 'quotation');
   document.getElementById('page-title').textContent = title;
   setTitle(title);
   markActiveNav(path);

@@ -378,6 +378,9 @@ CREATE TABLE IF NOT EXISTS study_drawings (
   bytes         INTEGER NOT NULL DEFAULT 0,
   sort_order    INTEGER NOT NULL DEFAULT 0,
   uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
-  created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+  -- Every table carries this: the generic update() helper writes it on any row
+  -- it touches, and without it captioning a drawing fails outright.
+  updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_study_drawings_quote ON study_drawings(quotation_id, kind, sort_order);

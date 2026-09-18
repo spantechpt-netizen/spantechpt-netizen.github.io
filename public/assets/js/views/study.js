@@ -29,8 +29,11 @@ export async function render({ params, navigate }) {
   if (!quotationId) return el('div.empty', { text: t('not_found') });
 
   const page = el('div');
+  // The toolbar is mounted first so it stays at the top of the screen; it is
+  // filled in once the study has loaded.
+  const toolbarHost = el('div');
   const host = el('div');
-  page.append(host);
+  page.append(toolbarHost, host);
   clear(host).append(el('div.loading-page', { text: t('loading') }));
 
   let quote;
@@ -56,7 +59,7 @@ export async function render({ params, navigate }) {
   const form = el('form', { onsubmit: (event) => event.preventDefault() });
   const drawingsHost = el('div');
 
-  page.append(el('div.toolbar', {}, [
+  toolbarHost.append(el('div.toolbar', {}, [
     el('button.btn.btn-secondary', {
       type: 'button', onclick: () => navigate(`quote/${quotationId}`),
     }, [icon('back', 15), t('back_to_quote')]),

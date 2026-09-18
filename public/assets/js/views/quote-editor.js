@@ -392,6 +392,10 @@ function editor(data, navigate) {
       el('button.btn.btn-secondary', {
         type: 'button', onclick: () => doPrint('en'),
       }, [icon('print', 15), t('print_en')]),
+      // The cost comparison study that goes to the owner behind this offer.
+      el('button.btn.btn-secondary', {
+        type: 'button', onclick: () => navigate(`study/${quote.id}`),
+      }, [icon('analytics', 15), t('study')]),
     );
 
     if (!readOnly) statusHost.append(actionsMenu());
