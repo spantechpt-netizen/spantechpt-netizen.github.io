@@ -38,6 +38,10 @@ addColumn('mail_accounts', 'allow_self_signed', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('mail_accounts', 'channel', "TEXT NOT NULL DEFAULT 'imap'");
 addColumn('mail_messages', 'channel', "TEXT NOT NULL DEFAULT 'email'");
 addColumn('mail_messages', 'from_phone', 'TEXT');
+// Ducts are galvanized steel in most markets and corrugated plastic in Egypt.
+addColumn('quotations', 'duct_type', "TEXT NOT NULL DEFAULT 'steel'");
+// The cost comparison study sent to the owner, and the drawings attached to it.
+addColumn('quotations', 'study_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

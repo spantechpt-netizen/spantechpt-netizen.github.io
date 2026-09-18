@@ -91,6 +91,11 @@ function editor(data, navigate) {
         name: 'currency', label: t('currency'), type: 'select', value: quote.currency,
         options: ['SAR', 'EGP', 'QAR', 'USD'].map((c) => ({ value: c, label: c })), disabled: readOnly,
       }),
+      field({
+        name: 'duct_type', label: t('duct_type'), type: 'select', value: quote.duct_type || 'steel',
+        options: ['steel', 'plastic'].map((d) => ({ value: d, label: t(`duct_${d}`) })),
+        hint: t('duct_hint'), disabled: readOnly,
+      }),
       field({ name: 'vat_rate', label: t('vat_rate'), type: 'number', value: quote.vat_rate, min: 0, max: 100, step: 0.5, disabled: readOnly }),
       field({ name: 'price_variance', label: t('price_variance'), type: 'number', value: quote.price_variance, min: 0, max: 100, step: 0.5, disabled: readOnly }),
     ]),

@@ -772,3 +772,44 @@ test('a path cannot escape the public directory', async () => {
     assert.match(text, /<!doctype html>/i, 'it falls through to the app shell');
   }
 });
+
+// ------------------------------------------------------------ duct material
+// Egypt works in plastic duct and the other markets in galvanized steel, and
+// the printed scope of work has to say which — quoting one and supplying the
+// other is a dispute on site.
+test('duct material follows the country and rewrites the scope line', async () => {
+  const customer = await api('POST', '/api/customers', { name_en: 'Duct Test Co', country: 'EG' });
+  const eg = await api('POST', '/api/quotations', {
+    customer_id: customer.body.customer.id,
+    project_name: 'Cairo duct check', country: 'EG', area_sqm: 500, unit_price: 900,
+  });
+  assert.equal(eg.status, 201);
+  assert.equal(eg.body.quotation.duct_type, 'plastic', 'Egypt defaults to plastic');
+
+  const ductLine = (quote) => quote.scope.supply.items.find((i) => i.key === 'ducts');
+  assert.match(ductLine(eg.body.quotation).ar, /بلاستيك/);
+  assert.match(ductLine(eg.body.quotation).en, /polyethylene/i);
+
+  const sa = await api('POST', '/api/quotations', {
+    customer_id: customer.body.customer.id,
+    project_name: 'Riyadh duct check', country: 'SA', area_sqm: 500, unit_price: 70,
+  });
+  assert.equal(sa.body.quotation.duct_type, 'steel', 'everywhere else defaults to steel');
+  assert.match(ductLine(sa.body.quotation).ar, /صاج/);
+
+  // Switching the material rewrites that one line and leaves the rest alone.
+  const edited = [...sa.body.quotation.scope.supply.items];
+  const strand = edited.find((i) => /Strands/.test(i.en));
+  strand.ar = 'الكابلات: مواصفة خاصة بالمشروع';
+
+  const patched = await api('PATCH', `/api/quotations/${sa.body.quotation.id}`, {
+    duct_type: 'plastic',
+    scope: { ...sa.body.quotation.scope, supply: { ...sa.body.quotation.scope.supply, items: edited } },
+  });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.quotation.duct_type, 'plastic');
+  assert.match(ductLine(patched.body.quotation).ar, /بلاستيك/, 'the duct line followed the change');
+
+  const keptEdit = patched.body.quotation.scope.supply.items.find((i) => /Strands/.test(i.en));
+  assert.equal(keptEdit.ar, 'الكابلات: مواصفة خاصة بالمشروع', 'an edited line is not overwritten');
+});

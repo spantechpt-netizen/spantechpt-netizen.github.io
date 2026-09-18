@@ -414,7 +414,7 @@ New-NetFirewallRule -DisplayName "HTTPS" -Direction Inbound -Protocol TCP -Local
 
 ## ثامناً: النسخ الاحتياطي
 
-كل بيانات النظام في ملف واحد: `C:\spantech-crm\data\spantech.db`.
+كل بيانات النظام في ملف واحد: `C:\spantech-crm\data\spantech.db` — **ما عدا** مخططات دراسات فرق التكلفة، دي ملفات في مجلد `data\uploads`. الأمر المرفق بياخد الاتنين مع بعض.
 
 **لا تنسخ الملف بأمر `copy` أثناء عمل النظام** — المعاملات الأخيرة تكون في ملف
 `-wal` منفصل، فالنسخة قد تخرج ناقصة. استخدم الأمر المرفق، الذي يأخذ لقطة

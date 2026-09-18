@@ -362,3 +362,22 @@ CREATE TABLE IF NOT EXISTS mail_requests (
 );
 CREATE INDEX IF NOT EXISTS idx_mail_req_status ON mail_requests(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_mail_req_assignee ON mail_requests(assigned_to);
+
+-- Drawings attached to a cost study: the original design the owner already has,
+-- and the post-tensioned tender drawings we produced from it. Files live on
+-- disk under data/uploads; this table is the index.
+CREATE TABLE IF NOT EXISTS study_drawings (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  quotation_id  INTEGER NOT NULL REFERENCES quotations(id) ON DELETE CASCADE,
+  kind          TEXT    NOT NULL DEFAULT 'original', -- original | post_tension
+  caption_ar    TEXT,
+  caption_en    TEXT,
+  filename      TEXT    NOT NULL,   -- as stored on disk, never client-supplied
+  original_name TEXT,
+  content_type  TEXT    NOT NULL,
+  bytes         INTEGER NOT NULL DEFAULT 0,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_study_drawings_quote ON study_drawings(quotation_id, kind, sort_order);

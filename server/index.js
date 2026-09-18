@@ -86,7 +86,9 @@ const server = createServer(async (req, res) => {
         throw new HttpError(401, 'Not signed in', 'لم يتم تسجيل الدخول');
       }
 
-      const body = await readJsonBody(req);
+      // A route that takes a file reads the request stream itself; consuming
+      // it here as JSON would leave the handler with nothing to save.
+      const body = matched.route.options.rawBody ? {} : await readJsonBody(req);
       const query = Object.fromEntries(url.searchParams);
       const result = await matched.route.handler({
         req, res, body, query, user, params: matched.params,

@@ -91,6 +91,48 @@ export const COMPANY = {
   ],
 };
 
+// ------------------------------------------------------------ duct material
+/**
+ * Ducts come in galvanized steel or corrugated plastic. Egypt works mostly in
+ * plastic and the other markets mostly in steel, so the choice follows the
+ * country by default and the engineer can override it per quotation.
+ */
+export const DUCT_MATERIALS = {
+  steel: {
+    label_en: 'Galvanized steel', label_ar: 'صاج مجلفن',
+    scope_en: 'Ducts: high quality corrugated galvanized sheet.',
+    scope_ar: 'الجرابات (Ducts): صاج مشرشر عالي الجودة.',
+  },
+  plastic: {
+    label_en: 'Corrugated plastic (HDPE)', label_ar: 'بلاستيك مشرشر (HDPE)',
+    scope_en: 'Ducts: high density polyethylene (HDPE) corrugated plastic duct.',
+    scope_ar: 'الجرابات (Ducts): بلاستيك مشرشر من البولي إيثيلين عالي الكثافة (HDPE).',
+  },
+};
+
+export const DUCT_TYPES = Object.keys(DUCT_MATERIALS);
+
+/** The material a country works in unless the engineer says otherwise. */
+export const defaultDuctType = (country) => (country === 'EG' ? 'plastic' : 'steel');
+
+/**
+ * Rewrites the duct line in a stored scope to match the chosen material.
+ * Only the line carrying `key: 'ducts'` is touched, so an engineer's edits to
+ * every other line survive.
+ */
+export function applyDuctMaterial(scope, ductType) {
+  const material = DUCT_MATERIALS[ductType] || DUCT_MATERIALS.steel;
+  const items = scope?.supply?.items;
+  if (!Array.isArray(items)) return scope;
+
+  for (const item of items) {
+    if (item?.key !== 'ducts') continue;
+    item.en = material.scope_en;
+    item.ar = material.scope_ar;
+  }
+  return scope;
+}
+
 /** The branch to print on a document for `country`, with sensible fallbacks. */
 export function branchFor(company, country) {
   const branches = company?.branches || COMPANY.branches;
@@ -138,7 +180,9 @@ export const SCOPE = {
     items: [
       { en: 'Strands: 12.70 mm diameter, 1860 MPa ultimate tensile strength, conforming to ASTM A416.', ar: 'الكابلات (Strands): قطر 12.70 مم، مقاومة شد 1860 ميجا باسكال، مطابقة لمعيار ASTM A416.' },
       { en: 'Anchorages and wedges: European SARI system.', ar: 'الأنكورات والرؤوس (Anchorages): نظام SARI الأوروبي.' },
-      { en: 'Ducts: high quality corrugated galvanized sheet.', ar: 'الجرابات (Ducts): صاج مشرشر عالي الجودة.' },
+      // `key` lets the duct material be rewritten later without guessing which
+      // line it is — see DUCT_MATERIALS below.
+      { key: 'ducts', en: 'Ducts: high quality corrugated galvanized sheet.', ar: 'الجرابات (Ducts): صاج مشرشر عالي الجودة.' },
       { en: 'Grouting materials: conforming to ASTM C1107 requirements.', ar: 'مستلزمات الحقن (Grouting Materials): مطابقة لمتطلبات ASTM C1107.' },
       { en: 'Stressing and grouting equipment: certified hydraulic equipment, complete with calibrated gauges and recording devices.', ar: 'معدات الشد والحقن: هيدروليكية معتمدة، كاملة بأجهزة القياس والتسجيل المعايرة.' },
     ],

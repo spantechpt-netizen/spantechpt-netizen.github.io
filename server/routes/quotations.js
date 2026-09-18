@@ -3,11 +3,18 @@ import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '.
 import { notFound, badRequest } from '../http.js';
 import { notifyAssignment, notifyQuoteStatus } from '../notifications.js';
 import { computeTotals, amountInWords, round2 } from '../pricing.js';
-import { COUNTRY_DEFAULTS, DEFAULT_ITEM, SCOPE, PAYMENT_TERMS, CONDITIONS, INTRO, PRICE_ADJUSTMENT_CLAUSE, COMPANY, branchFor } from '../templates.js';
+import {
+  COUNTRY_DEFAULTS, DEFAULT_ITEM, SCOPE, PAYMENT_TERMS, CONDITIONS, INTRO,
+  PRICE_ADJUSTMENT_CLAUSE, COMPANY, branchFor,
+  DUCT_MATERIALS, DUCT_TYPES, defaultDuctType, applyDuctMaterial,
+} from '../templates.js';
 import {
   str, num, int, oneOf, date, bool, jsonField,
   COUNTRIES, CURRENCIES, QUOTE_STATUS,
 } from '../validate.js';
+import { readFileSync } from 'node:fs';
+import { computeStudy, defaultStudy, CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS } from '../study.js';
+import { saveDrawing, deleteDrawingFile, drawingPath, DRAWING_KINDS } from '../uploads.js';
 
 const SELECT_QUOTE = `
   SELECT q.*,
@@ -204,6 +211,173 @@ export function register(router) {
     };
   });
 
+  // ------------------------------------------------------------------ study
+  // The cost comparison sent to the owner. It hangs off the quotation because
+  // it argues for that quotation's price, and it reuses its area and rate.
+
+  const loadStudy = (quote) => {
+    const saved = safeParse(quote.study_json, null);
+    return computeStudy(saved || defaultStudy(quote));
+  };
+
+  const drawingsFor = (quotationId) => all(
+    `SELECT id, kind, caption_ar, caption_en, original_name, content_type, bytes,
+            sort_order, created_at
+       FROM study_drawings WHERE quotation_id = ?
+      ORDER BY kind, sort_order, id`,
+    quotationId,
+  ).map((row) => ({ ...row, url: `/api/quotations/${quotationId}/study/drawings/${row.id}/file` }));
+
+  router.get('/api/quotations/:id/study', ({ params, user }) => {
+    requirePermission(user, 'quotations.view');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    return {
+      study: loadStudy(quote),
+      drawings: drawingsFor(id),
+      systems: CONVENTIONAL_KEYS.map((key) => ({
+        key,
+        label_en: CONVENTIONAL_SYSTEMS[key].label_en,
+        label_ar: CONVENTIONAL_SYSTEMS[key].label_ar,
+      })),
+    };
+  });
+
+  router.put('/api/quotations/:id/study', ({ params, body, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+
+    const incoming = body?.study;
+    if (!incoming || typeof incoming !== 'object') {
+      throw badRequest('A study is required', 'بيانات الدراسة مطلوبة');
+    }
+    const system = oneOf(incoming.system, 'system', CONVENTIONAL_KEYS, { fallback: 'solid' });
+
+    // Numbers only, and never negative — a negative thickness would produce a
+    // saving that looks impressive and means nothing.
+    const numeric = (key, { max = 1e9 } = {}) =>
+      num(incoming[key], key, { min: 0, max, fallback: defaultStudy(quote, system)[key] });
+
+    const study = {
+      system,
+      floors: int(incoming.floors, 'floors', { min: 1, max: 200, fallback: 1 }),
+      area_sqm: numeric('area_sqm'),
+      conv_thickness_mm: numeric('conv_thickness_mm', { max: 3000 }),
+      conv_rebar_kg_sqm: numeric('conv_rebar_kg_sqm', { max: 1000 }),
+      pt_thickness_mm: numeric('pt_thickness_mm', { max: 3000 }),
+      pt_rebar_kg_sqm: numeric('pt_rebar_kg_sqm', { max: 1000 }),
+      pt_rate_sqm: numeric('pt_rate_sqm'),
+      concrete_rate_m3: numeric('concrete_rate_m3'),
+      rebar_rate_ton: numeric('rebar_rate_ton'),
+      formwork_rate_sqm: numeric('formwork_rate_sqm'),
+      conv_cycle_days: numeric('conv_cycle_days', { max: 3650 }),
+      pt_cycle_days: numeric('pt_cycle_days', { max: 3650 }),
+      foundation_saving_sqm: numeric('foundation_saving_sqm'),
+      day_value: numeric('day_value'),
+      storey_height_saving_mm: numeric('storey_height_saving_mm', { max: 10_000 }),
+      notes_ar: str(incoming.notes_ar, 'notes_ar', { max: 4000 }) || '',
+      notes_en: str(incoming.notes_en, 'notes_en', { max: 4000 }) || '',
+    };
+
+    update('quotations', id, { study_json: JSON.stringify(study) });
+    audit(user.id, 'quotation', id, 'study');
+    return { study: computeStudy(study), drawings: drawingsFor(id) };
+  });
+
+  // --------------------------------------------------------- study drawings
+  // The original design the owner already has, and the post-tensioned tender
+  // drawings produced from it. Shown side by side, they are the strongest part
+  // of the argument.
+
+  router.post('/api/quotations/:id/study/drawings', async ({ req, params, query, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+
+    const kind = oneOf(query.kind, 'kind', DRAWING_KINDS, { fallback: 'original' });
+    const saved = await saveDrawing(req, id);
+
+    const next = get(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM study_drawings WHERE quotation_id = ? AND kind = ?',
+      id, kind,
+    ).n;
+
+    const drawingId = insert('study_drawings', {
+      quotation_id: id,
+      kind,
+      filename: saved.filename,
+      original_name: str(query.name, 'name', { max: 250 }) || null,
+      caption_ar: str(query.caption_ar, 'caption_ar', { max: 250 }) || null,
+      caption_en: str(query.caption_en, 'caption_en', { max: 250 }) || null,
+      content_type: saved.contentType,
+      bytes: saved.bytes,
+      sort_order: next,
+      uploaded_by: user.id,
+    });
+    audit(user.id, 'quotation', id, 'drawing_add', { kind, bytes: saved.bytes });
+    return { drawings: drawingsFor(id), id: drawingId };
+  }, { rawBody: true });
+
+  router.get('/api/quotations/:id/study/drawings/:drawingId/file', ({ params, res, user }) => {
+    requirePermission(user, 'quotations.view');
+    const id = Number(params.id);
+    const row = get(
+      'SELECT * FROM study_drawings WHERE id = ? AND quotation_id = ?',
+      Number(params.drawingId), id,
+    );
+    if (!row) throw notFound('Drawing not found', 'المخطط مش موجود');
+
+    let file;
+    try {
+      file = readFileSync(drawingPath(id, row.filename));
+    } catch {
+      throw notFound('Drawing file is missing', 'ملف المخطط مش موجود على السيرفر');
+    }
+    res.writeHead(200, {
+      'content-type': row.content_type,
+      'content-length': file.length,
+      'cache-control': 'private, max-age=3600',
+      'x-content-type-options': 'nosniff',
+    });
+    res.end(file);
+  });
+
+  router.patch('/api/quotations/:id/study/drawings/:drawingId', ({ params, body, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+
+    const row = get('SELECT * FROM study_drawings WHERE id = ? AND quotation_id = ?', Number(params.drawingId), id);
+    if (!row) throw notFound('Drawing not found', 'المخطط مش موجود');
+
+    update('study_drawings', row.id, {
+      caption_ar: str(body.caption_ar, 'caption_ar', { max: 250, fallback: undefined }),
+      caption_en: str(body.caption_en, 'caption_en', { max: 250, fallback: undefined }),
+      kind: oneOf(body.kind, 'kind', DRAWING_KINDS, { fallback: undefined }),
+      sort_order: int(body.sort_order, 'sort_order', { min: 0, max: 999, fallback: undefined }),
+    });
+    return { drawings: drawingsFor(id) };
+  });
+
+  router.delete('/api/quotations/:id/study/drawings/:drawingId', async ({ params, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+
+    const row = get('SELECT * FROM study_drawings WHERE id = ? AND quotation_id = ?', Number(params.drawingId), id);
+    if (!row) throw notFound('Drawing not found', 'المخطط مش موجود');
+
+    run('DELETE FROM study_drawings WHERE id = ?', row.id);
+    await deleteDrawingFile(id, row.filename);
+    audit(user.id, 'quotation', id, 'drawing_remove');
+    return { drawings: drawingsFor(id) };
+  });
+
   // ----------------------------------------------------------------- create
   router.post('/api/quotations', ({ body, user }) => {
     requirePermission(user, 'quotations.create');
@@ -242,6 +416,9 @@ export function register(router) {
         currency: oneOf(body.currency, 'currency', CURRENCIES, { fallback: defaults.currency }),
         vat_rate: num(body.vat_rate, 'vat_rate', { min: 0, max: 100, fallback: defaults.vat_rate }),
         vat_included: bool(body.vat_included) ? 1 : 0,
+        duct_type: oneOf(body.duct_type, 'duct_type', DUCT_TYPES, {
+          fallback: defaultDuctType(countryCode),
+        }),
         issue_date: issueDate,
         valid_days: int(body.valid_days, 'valid_days', { min: 1, max: 365, fallback: defaults.valid_days }),
         status: 'draft',
@@ -258,7 +435,10 @@ export function register(router) {
         price_variance: num(body.price_variance, 'price_variance', { min: 0, max: 100, fallback: 5 }),
         discount_type: oneOf(body.discount_type, 'discount_type', ['none', 'percent', 'amount'], { fallback: 'none' }),
         discount_value: num(body.discount_value, 'discount_value', { min: 0, fallback: 0 }),
-        scope_json: JSON.stringify(jsonField(body.scope, 'scope', getSetting('scope', SCOPE))),
+        scope_json: JSON.stringify(applyDuctMaterial(
+          jsonField(body.scope, 'scope', getSetting('scope', SCOPE)),
+          oneOf(body.duct_type, 'duct_type', DUCT_TYPES, { fallback: defaultDuctType(countryCode) }),
+        )),
         payment_terms_json: JSON.stringify(jsonField(body.payment_terms, 'payment_terms', getSetting('payment_terms', PAYMENT_TERMS))),
         conditions_json: JSON.stringify(jsonField(body.conditions, 'conditions', getSetting('conditions', CONDITIONS))),
         notes_en: str(body.notes_en, 'notes_en', { max: 4000 }),
@@ -324,6 +504,7 @@ export function register(router) {
       currency: oneOf(body.currency, 'currency', CURRENCIES, { fallback: undefined }),
       vat_rate: num(body.vat_rate, 'vat_rate', { min: 0, max: 100, fallback: undefined }),
       vat_included: body.vat_included === undefined ? undefined : (bool(body.vat_included) ? 1 : 0),
+      duct_type: oneOf(body.duct_type, 'duct_type', DUCT_TYPES, { fallback: undefined }),
       issue_date: body.issue_date === undefined ? undefined : date(body.issue_date, 'issue_date'),
       valid_days: int(body.valid_days, 'valid_days', { min: 1, max: 365, fallback: undefined }),
       strand_price_ton: num(body.strand_price_ton, 'strand_price_ton', { min: 0, fallback: undefined }),
@@ -347,6 +528,16 @@ export function register(router) {
     };
     if (can(user, 'customers.assign') && body.owner_id !== undefined) {
       fields.owner_id = int(body.owner_id, 'owner_id', { min: 1, fallback: null });
+    }
+
+    // Switching the duct material rewrites the duct line in the scope, so the
+    // printed offer never promises steel while the price is for plastic. Only
+    // that line changes; everything the engineer has edited stays.
+    if (fields.duct_type !== undefined && fields.duct_type !== existing.duct_type) {
+      const scope = fields.scope_json !== undefined
+        ? JSON.parse(fields.scope_json)
+        : safeParse(existing.scope_json, getSetting('scope', SCOPE));
+      fields.scope_json = JSON.stringify(applyDuctMaterial(scope, fields.duct_type));
     }
 
     update('quotations', id, fields);
