@@ -154,20 +154,33 @@ export function openModal({ title, body, footer, size = '', onClose }) {
 
 export function confirmDialog(message, { danger = true, confirmLabel } = {}) {
   return new Promise((resolve) => {
-    const { close } = openModal({
-      title: t('confirm_delete').split('.')[0],
+    // The answer is recorded before the modal closes. Closing runs onClose,
+    // which answers "no" for the Escape key, the backdrop and the ✕ — and a
+    // promise keeps its first answer, so dismissing first made every
+    // confirmation resolve false and nothing was ever deleted.
+    let answered = false;
+    const settle = (value) => {
+      if (answered) return;
+      answered = true;
+      resolve(value);
+    };
+
+    openModal({
+      title: t('confirm_title'),
       size: 'narrow',
       body: el('p', { text: message || t('confirm_delete') }),
       footer: (dismiss) => el('div.row', {}, [
-        el('button.btn.btn-secondary', { type: 'button', text: t('cancel'), onclick: () => { dismiss(); resolve(false); } }),
+        el('button.btn.btn-secondary', {
+          type: 'button', text: t('cancel'),
+          onclick: () => { settle(false); dismiss(); },
+        }),
         el(`button.btn${danger ? '.btn-danger' : ''}`, {
           type: 'button', text: confirmLabel || t('delete'),
-          onclick: () => { dismiss(); resolve(true); },
+          onclick: () => { settle(true); dismiss(); },
         }),
       ]),
-      onClose: () => resolve(false),
+      onClose: () => settle(false),
     });
-    void close;
   });
 }
 
