@@ -11,6 +11,7 @@ import * as pipeline from './views/pipeline.js';
 import * as activities from './views/activities.js';
 import * as quotations from './views/quotations.js';
 import * as quoteEditor from './views/quote-editor.js';
+import * as studyView from './views/study.js';
 import * as analytics from './views/analytics.js';
 import * as settings from './views/settings.js';
 import * as notificationsView from './views/notifications.js';
@@ -40,7 +41,7 @@ const ROUTES = [
 ];
 
 // Views not shown in the sidebar, reached from inside other screens.
-const SUB_ROUTES = { quote: quoteEditor, notifications: notificationsView };
+const SUB_ROUTES = { quote: quoteEditor, study: studyView, notifications: notificationsView };
 
 const RANK = { viewer: 0, engineer: 1, manager: 2, admin: 3 };
 export const hasRole = (minimum) => (RANK[state.user?.role] ?? -1) >= (RANK[minimum] ?? 99);

@@ -16,7 +16,7 @@ const project = {
   floors: 6,
   area_sqm: 2500,
   pt_thickness_mm: 220,
-  pt_rebar_kg_sqm: 8,
+  pt_rebar_kg_m3: 50,
   pt_rate_sqm: 70,
   concrete_rate_m3: 950,
   rebar_rate_ton: 3800,
@@ -26,23 +26,39 @@ const project = {
 };
 
 test('the per-square-metre build-up is the sum of its parts', () => {
-  const r = computeStudy({ ...project, system: 'solid', conv_thickness_mm: 250, conv_rebar_kg_sqm: 22 });
+  const r = computeStudy({ ...project, system: 'solid', conv_thickness_mm: 270, conv_rebar_kg_m3: 125 });
 
-  // Conventional: 0.25 m³ × 950 + 22 kg × 3.80 + 55 formwork.
-  assert.equal(r.conventional.concrete, 237.5);
-  assert.equal(r.conventional.rebar, 83.6);
+  // Conventional: 0.27 m³ of concrete at 950, carrying 125 kg/m³ of steel at
+  // 3,800 a tonne, plus 55 of formwork.
+  assert.equal(r.conventional.concrete_m3_sqm, 0.27);
+  assert.equal(r.conventional.rebar_kg_sqm, 33.75, '0.27 m³ × 125 kg/m³');
+  assert.equal(r.conventional.concrete, 256.5);
+  assert.equal(r.conventional.rebar, 128.25);
   assert.equal(r.conventional.formwork, 55);
-  assert.equal(r.conventional.per_sqm, 376.1);
+  assert.equal(r.conventional.per_sqm, 439.75);
   assert.equal(r.conventional.post_tension, 0, 'the conventional option carries no PT cost');
 
-  // Post-tensioned: thinner slab, a third of the passive steel, plus our rate.
+  // Post-tensioned: thinner slab, far less passive steel, plus our rate.
   assert.equal(r.post_tension.concrete, 209);
-  assert.equal(r.post_tension.rebar, 30.4);
+  assert.equal(r.post_tension.rebar_kg_sqm, 11, '0.22 m³ × 50 kg/m³');
+  assert.equal(r.post_tension.rebar, 41.8);
   assert.equal(r.post_tension.post_tension, 70);
-  assert.equal(r.post_tension.per_sqm, 364.4);
+  assert.equal(r.post_tension.per_sqm, 375.8);
 
   assert.equal(r.total_area_sqm, 15000, '2,500 m² over six floors');
-  assert.equal(r.conventional.total, 376.1 * 15000);
+  assert.equal(r.conventional.total, 439.75 * 15000);
+});
+
+test('steel follows the concrete, because density is per cubic metre', () => {
+  // A hollow block slab pours a third less concrete, so at the same density it
+  // carries a third less steel — quoting steel per m² would miss that entirely.
+  const r = computeStudy({
+    ...project, system: 'hollow_block', conv_thickness_mm: 320, conv_rebar_kg_m3: 145,
+  });
+  const volume = 0.32 * CONVENTIONAL_SYSTEMS.hollow_block.concrete_factor;
+  assert.equal(r.conventional.concrete_m3_sqm, Math.round(volume * 1000) / 1000);
+  assert.equal(r.conventional.rebar_kg_sqm, Math.round(volume * 145 * 100) / 100);
+  assert.equal(r.conventional.rebar_ton, Math.round(volume * 145 * 15000 / 10) / 100);
 });
 
 test('a hollow block slab pours less concrete than its depth suggests', () => {
@@ -61,7 +77,7 @@ test('a hollow block slab pours less concrete than its depth suggests', () => {
 test('the study says so when post-tensioning loses on slab cost alone', () => {
   // Against hollow block, a post-tensioned slab often costs more per m² — and
   // a study that hid that would be caught out in the first technical meeting.
-  const r = computeStudy({ ...project, system: 'hollow_block', conv_thickness_mm: 300, conv_rebar_kg_sqm: 18 });
+  const r = computeStudy({ ...project, system: 'hollow_block', conv_thickness_mm: 320, conv_rebar_kg_m3: 145 });
 
   assert.ok(r.saving.slab_per_sqm < 0, 'the slab comparison is genuinely negative here');
   assert.equal(r.saving.favours_pt_on_slab_alone, false);
@@ -69,7 +85,7 @@ test('the study says so when post-tensioning loses on slab cost alone', () => {
 });
 
 test('foundations and programme are credited separately, not folded in silently', () => {
-  const base = { ...project, system: 'hollow_block', conv_thickness_mm: 300, conv_rebar_kg_sqm: 18 };
+  const base = { ...project, system: 'hollow_block', conv_thickness_mm: 320, conv_rebar_kg_m3: 145 };
   const slabOnly = computeStudy(base);
   const full = computeStudy({ ...base, foundation_saving_sqm: 45, day_value: 9000 });
 
@@ -85,16 +101,18 @@ test('foundations and programme are credited separately, not folded in silently'
 });
 
 test('the consequences of a thinner, lighter slab are counted', () => {
-  const r = computeStudy({ ...project, system: 'solid', conv_thickness_mm: 250, conv_rebar_kg_sqm: 22 });
+  const r = computeStudy({ ...project, system: 'solid', conv_thickness_mm: 270, conv_rebar_kg_m3: 125 });
 
-  assert.equal(r.benefits.thickness_saved_mm, 30);
-  assert.equal(r.benefits.concrete_saved_m3, (0.25 - 0.22) * 15000);
-  assert.equal(r.benefits.rebar_saved_ton, ((22 - 8) / 1000) * 15000);
+  assert.equal(r.benefits.thickness_saved_mm, 50);
+  assert.equal(r.benefits.concrete_saved_m3, 750, '50 mm over 15,000 m²');
+  // 0.27 m³ × 125 kg/m³ against 0.22 × 50, over 15,000 m².
+  assert.equal(r.benefits.rebar_saved_ton, 341.25);
   // 30 mm less concrete over 15,000 m² at 2.5 t/m³. Written out rather than as
   // (0.625 - 0.55) * 15000, which floating point makes 1124.9999999999993.
-  assert.equal(r.benefits.weight_saved_ton, 1125);
+  // 50 mm less concrete over 15,000 m² at 2.5 t/m³.
+  assert.equal(r.benefits.weight_saved_ton, 1875);
   assert.equal(r.benefits.days_saved, (21 - 12) * 6);
-  assert.equal(r.benefits.height_saved_mm, 30 * 6, 'over six floors that is 180 mm of building');
+  assert.equal(r.benefits.height_saved_mm, 300, 'over six floors that is 300 mm of building');
 });
 
 test('an unfilled study reports what is missing instead of a saving from zeros', () => {

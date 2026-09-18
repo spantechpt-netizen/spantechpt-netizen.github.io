@@ -19,31 +19,31 @@ import { round2 } from './pricing.js';
  * a great deal of hollow block, the Gulf mostly solid flat slabs, so the
  * engineer picks rather than the system assuming.
  *
- * `thickness_mm` and `rebar_kg_sqm` are starting points for a typical span,
+ * `thickness_mm` and `rebar_kg_m3` are starting points for a typical span,
  * meant to be edited against the real design.
  */
 export const CONVENTIONAL_SYSTEMS = {
   solid: {
     label_en: 'Conventional solid slab',
     label_ar: 'سقف خرساني مصمت تقليدي',
-    thickness_mm: 250,
-    rebar_kg_sqm: 22,
+    thickness_mm: 270,
+    rebar_kg_m3: 125,
     // Solid slabs are poured over the whole soffit.
     concrete_factor: 1,
   },
   hollow_block: {
     label_en: 'Hollow block slab',
     label_ar: 'سقف هوردي (بلوك)',
-    thickness_mm: 300,
-    rebar_kg_sqm: 18,
+    thickness_mm: 320,
+    rebar_kg_m3: 145,
     // Blocks displace roughly a third of the depth; the rest is ribs and topping.
     concrete_factor: 0.65,
   },
   ribbed: {
     label_en: 'Ribbed / waffle slab',
     label_ar: 'سقف أعصاب / وافل',
-    thickness_mm: 320,
-    rebar_kg_sqm: 17,
+    thickness_mm: 350,
+    rebar_kg_m3: 150,
     concrete_factor: 0.6,
   },
 };
@@ -67,12 +67,12 @@ export function defaultStudy(quote = {}, system = 'solid') {
 
     // What it would have been built as.
     conv_thickness_mm: base.thickness_mm,
-    conv_rebar_kg_sqm: base.rebar_kg_sqm,
+    conv_rebar_kg_m3: base.rebar_kg_m3,
 
     // What we are proposing. A post-tensioned slab is thinner and carries far
     // less passive steel.
     pt_thickness_mm: 220,
-    pt_rebar_kg_sqm: 8,
+    pt_rebar_kg_m3: 50,
     // The quoted rate per m² — the post-tensioning package itself.
     pt_rate_sqm: Number(quote.unit_price) || 0,
 
@@ -136,15 +136,22 @@ export function computeStudy(input = {}) {
   const convVolume = convThickness * (system.concrete_factor ?? 1);
   const ptVolume = ptThickness;   // post-tensioned slabs are solid
 
-  const side = (label, volumeM3PerSqm, rebarKgSqm, rateSqm) => {
+  const side = (label, volumeM3PerSqm, rebarKgPerM3, rateSqm) => {
+    // Steel is quoted per cubic metre of concrete, so the tonnage follows the
+    // volume: a slab that pours less concrete carries less steel at the same
+    // density. This is also how the company's own comparison states it.
+    const rebarKgPerSqm = volumeM3PerSqm * rebarKgPerM3;
     const concrete = volumeM3PerSqm * concreteRate;
-    const rebar = (rebarKgSqm / 1000) * rebarRate;
+    const rebar = (rebarKgPerSqm / 1000) * rebarRate;
     const formwork = formworkRate;
     const post = rateSqm;
     return {
       label,
       concrete_m3_sqm: round3(volumeM3PerSqm),
-      rebar_kg_sqm: round2(rebarKgSqm),
+      concrete_m3: round2(volumeM3PerSqm * totalArea),
+      rebar_kg_m3: round2(rebarKgPerM3),
+      rebar_kg_sqm: round2(rebarKgPerSqm),
+      rebar_ton: round2((rebarKgPerSqm * totalArea) / 1000),
       concrete: round2(concrete),
       rebar: round2(rebar),
       formwork: round2(formwork),
@@ -156,8 +163,8 @@ export function computeStudy(input = {}) {
     };
   };
 
-  const conventional = side('conventional', convVolume, n(study.conv_rebar_kg_sqm), 0);
-  const postTension = side('post_tension', ptVolume, n(study.pt_rebar_kg_sqm), n(study.pt_rate_sqm));
+  const conventional = side('conventional', convVolume, n(study.conv_rebar_kg_m3), 0);
+  const postTension = side('post_tension', ptVolume, n(study.pt_rebar_kg_m3), n(study.pt_rate_sqm));
 
   // ---------------------------------------------------------------- savings
   // The slab on its own, which is the comparison an owner checks first.
@@ -166,7 +173,7 @@ export function computeStudy(input = {}) {
 
   // ------------------------------------------------------------ consequences
   const concreteSavedM3 = round2((convVolume - ptVolume) * totalArea);
-  const rebarSavedTon = round2(((n(study.conv_rebar_kg_sqm) - n(study.pt_rebar_kg_sqm)) / 1000) * totalArea);
+  const rebarSavedTon = round2(conventional.rebar_ton - postTension.rebar_ton);
   // From the raw volumes: multiplying a rounded per-m² weight by fifteen
   // thousand square metres turns a hundredth into seventy-five tonnes.
   const weightSavedTon = round2((convVolume - ptVolume) * CONCRETE_DENSITY_T_M3 * totalArea);

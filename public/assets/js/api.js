@@ -137,6 +137,25 @@ export const api = {
   quotations: (params) => request('GET', `/api/quotations${qs(params)}`),
   quotation: (id) => request('GET', `/api/quotations/${id}`),
   quotationDocument: (id) => request('GET', `/api/quotations/${id}/document`),
+  study: (id) => request('GET', `/api/quotations/${id}/study`),
+  saveStudy: (id, study) => request('PUT', `/api/quotations/${id}/study`, { study }),
+  updateDrawing: (id, drawingId, payload) =>
+    request('PATCH', `/api/quotations/${id}/study/drawings/${drawingId}`, payload),
+  deleteDrawing: (id, drawingId) =>
+    request('DELETE', `/api/quotations/${id}/study/drawings/${drawingId}`),
+  /** The file is the request body; see server/uploads.js for why not multipart. */
+  uploadDrawing: async (id, kind, file) => {
+    const url = `/api/quotations/${id}/study/drawings${qs({ kind, name: file.name })}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, payload);
+    return payload;
+  },
   createQuotation: (data) => request('POST', '/api/quotations', data),
   updateQuotation: (id, data) => request('PATCH', `/api/quotations/${id}`, data),
   setQuotationStatus: (id, status, reason) => request('POST', `/api/quotations/${id}/status`, { status, reason }),
