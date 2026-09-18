@@ -350,6 +350,94 @@ test('the AI key is stored but never read back', async () => {
   assert.equal(cleared.body.ai.has_key, false);
 });
 
+// The filter decides what reaches the queue, not what is kept: the newsletter
+// and the bounce are still in the mailbox, and a person can still find them.
+test('the whole mailbox is browsable, not only the queued requests', async () => {
+  const all = await api('GET', '/api/mail/messages');
+  assert.equal(all.status, 200);
+  const counts = all.body.counts;
+  assert.equal(counts.total, counts.queued + counts.other, 'every message is one or the other');
+  assert.equal(counts.other, 2, 'the newsletter and the bounce are kept, just not queued');
+  assert.ok(counts.queued >= 3, 'and the enquiries are in the queue');
+
+  const other = await api('GET', '/api/mail/messages?only=other');
+  assert.equal(other.body.messages.length, 2);
+  assert.ok(other.body.messages.every((m) => !m.request_id));
+
+  const queued = await api('GET', '/api/mail/messages?only=queued');
+  assert.ok(queued.body.messages.every((m) => m.request_id));
+
+  const search = await api('GET', '/api/mail/messages?q=%D8%A8%D8%B1%D8%AC');
+  assert.ok(search.body.messages.length >= 1, 'searching in Arabic finds the tower enquiry');
+  assert.ok(search.body.messages.some((m) => String(m.subject).includes('برج سكني')));
+
+  const one = await api('GET', `/api/mail/messages/${other.body.messages[0].id}`);
+  assert.equal(one.status, 200);
+  assert.ok(one.body.message.body_text, 'the reader gets the whole message');
+});
+
+test('a message the filter passed over can be put into the queue by hand', async () => {
+  const other = await api('GET', '/api/mail/messages?only=other');
+  const message = other.body.messages[0];
+
+  const queued = await api('POST', `/api/mail/messages/${message.id}/queue`);
+  assert.equal(queued.status, 201, queued.text);
+  assert.ok(queued.body.request.id > 0, 'a request row comes back');
+  assert.equal(queued.body.request.subject, message.subject, 'for that same message');
+  assert.equal(queued.body.request.status, 'new', 'and it lands at the top of the queue');
+
+  const again = await api('POST', `/api/mail/messages/${message.id}/queue`);
+  assert.equal(again.status, 400, 'and not twice');
+
+  const after = await api('GET', '/api/mail/messages');
+  assert.equal(after.body.counts.other, 1, 'one fewer message outside the queue');
+});
+
+// A mailbox with more history than one run can carry has to be reachable in
+// several runs, rather than handing back the same newest few every time.
+test('a second import run reaches further back instead of repeating itself', async () => {
+  // A second account against the same mailbox, so this starts from nothing.
+  const created = await api('POST', '/api/mail/accounts', {
+    label: 'History import', host: '127.0.0.1', port: imap.port, secure: true,
+    allow_self_signed: true, username: 'crm@spantech-pt.com', password: 'mailbox-secret',
+    folders: ['INBOX'],
+  });
+  const historyId = created.body.account.id;
+
+  const first = await api('POST', `/api/mail/accounts/${historyId}/sync`, {
+    since_days: 3650, limit: 2, backfill: true,
+  });
+  assert.equal(first.status, 201);
+  assert.equal(first.body.summary.fetched, 2, 'the run carries only what it was asked for');
+  assert.equal(first.body.summary.remaining, 3, 'and says how many are still waiting');
+
+  const second = await api('POST', `/api/mail/accounts/${historyId}/sync`, {
+    since_days: 3650, limit: 2, backfill: true,
+  });
+  assert.equal(second.body.summary.fetched, 2, 'the next run fetches the next two');
+  assert.equal(second.body.summary.skipped, 0, 'not the same two again');
+  assert.equal(second.body.summary.remaining, 1);
+
+  const third = await api('POST', `/api/mail/accounts/${historyId}/sync`, {
+    since_days: 3650, limit: 2, backfill: true,
+  });
+  assert.equal(third.body.summary.fetched, 1, 'and the last one');
+  assert.equal(third.body.summary.remaining, 0, 'with nothing left behind');
+
+  const mailbox = await api('GET', `/api/mail/messages?account_id=${historyId}`);
+  assert.equal(mailbox.body.messages.length, 5, 'the whole folder arrived, two runs at a time');
+
+  await api('DELETE', `/api/mail/accounts/${historyId}`);
+});
+
+test('browsing the whole mailbox is its own permission', async () => {
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'mahmoud@mail.test', password: 'Engineer@2026' });
+  assert.equal((await api('GET', '/api/mail/requests')).status, 200, 'the queue is still theirs');
+  assert.equal((await api('GET', '/api/mail/messages')).status, 403, 'the mailbox is not');
+  cookie = adminCookie;
+});
+
 test('mail permissions are enforced', async () => {
   const adminCookie = cookie;
   await api('POST', '/api/auth/login', { email: 'mahmoud@mail.test', password: 'Engineer@2026' });

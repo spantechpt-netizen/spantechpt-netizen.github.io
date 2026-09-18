@@ -877,6 +877,14 @@ function openBackfill(account, onDone) {
             clear(progress).append(el('div.alert.ok', {
               text: `${summary.fetched} ${t('mail_read')} · ${summary.stored} ${t('mail_stored')} · ${summary.queued} ${t('req_new')}`,
             }));
+            // A big mailbox takes more than one run; say so rather than
+            // leaving the impression that everything came in.
+            if (summary.remaining) {
+              progress.append(el('div.alert.info', {
+                style: { marginTop: '.5rem' },
+                text: `${t('backfill_remaining')} ${summary.remaining} — ${t('backfill_again')}`,
+              }));
+            }
             onDone?.();
           } catch (error) {
             clear(progress).append(el('div.alert.danger', { text: error.localised || error.message }));

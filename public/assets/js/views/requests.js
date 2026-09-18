@@ -18,7 +18,7 @@ const STATUS_CLASS = { new: 'amber', assigned: 'blue', converted: 'green', dismi
 const PROJECT_TYPES = ['tower', 'school', 'mall', 'villa', 'rest_house', 'admin', 'hospital', 'parking', 'industrial', 'other'];
 const COUNTRIES = ['SA', 'EG', 'QA'];
 
-const view = { status: '' };
+const view = { status: '', mode: 'requests', only: 'all', q: '', offset: 0 };
 
 export async function render({ params, navigate }) {
   const page = el('div');
@@ -26,6 +26,32 @@ export async function render({ params, navigate }) {
   const openId = params[0] ? Number(params[0]) : null;
 
   const tiles = el('div.kpi-grid');
+
+  // Two ways to look at the same mail: the queue the filter built, and the
+  // mailbox as it actually arrived.
+  const modeButton = (mode, label) => el('button', {
+    type: 'button',
+    class: view.mode === mode ? 'active' : '',
+    text: label,
+    onclick: (event) => {
+      view.mode = mode;
+      for (const sibling of event.currentTarget.parentElement.children) sibling.classList.remove('active');
+      event.currentTarget.classList.add('active');
+      setMode();
+    },
+  });
+
+  if (can('mail.view_all')) {
+    page.append(el('div.toolbar', {}, [
+      el('div.segmented', {}, [
+        modeButton('requests', t('mailbox_tab_requests')),
+        modeButton('mailbox', t('mailbox_tab_all')),
+      ]),
+    ]));
+  } else {
+    view.mode = 'requests';
+  }
+
   page.append(tiles);
 
   const tab = (status, label) => el('button', {
@@ -40,7 +66,7 @@ export async function render({ params, navigate }) {
     },
   });
 
-  page.append(el('div.toolbar', {}, [
+  const requestsBar = el('div.toolbar', {}, [
     el('div.segmented', {}, [
       tab('new', t('req_new')),
       tab('assigned', t('req_assigned')),
@@ -67,7 +93,56 @@ export async function render({ params, navigate }) {
         button.disabled = false;
       },
     }, [icon('refresh', 15), t('fetch_mail_now')]) : null,
-  ]));
+  ]);
+  page.append(requestsBar);
+
+  // ------------------------------------------------------ the whole mailbox
+  const searchBox = el('input.input', {
+    type: 'search', placeholder: t('mailbox_search'), value: view.q,
+    style: { maxWidth: '260px' },
+  });
+  let searchTimer;
+  searchBox.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { view.q = searchBox.value.trim(); view.offset = 0; load(); }, 350);
+  });
+
+  const onlyButton = (only, label) => el('button', {
+    type: 'button',
+    class: view.only === only ? 'active' : '',
+    text: label,
+    onclick: (event) => {
+      view.only = only;
+      view.offset = 0;
+      for (const sibling of event.currentTarget.parentElement.children) sibling.classList.remove('active');
+      event.currentTarget.classList.add('active');
+      load();
+    },
+  });
+
+  const mailboxBar = el('div.toolbar', {}, [
+    el('div.segmented', {}, [
+      onlyButton('all', t('mailbox_all')),
+      onlyButton('other', t('mailbox_other')),
+      onlyButton('queued', t('mailbox_queued')),
+    ]),
+    el('div.spacer'),
+    searchBox,
+  ]);
+  mailboxBar.style.display = 'none';
+  page.append(mailboxBar);
+
+  const hint = el('p.hint', { text: t('mailbox_hint'), style: { display: 'none' } });
+  page.append(hint);
+
+  function setMode() {
+    const mailbox = view.mode === 'mailbox';
+    requestsBar.style.display = mailbox ? 'none' : '';
+    mailboxBar.style.display = mailbox ? '' : 'none';
+    hint.style.display = mailbox ? '' : 'none';
+    view.offset = 0;
+    load();
+  }
 
   page.append(el('div.card', {}, [el('div.card-body.flush', {}, [host])]));
 
@@ -75,6 +150,7 @@ export async function render({ params, navigate }) {
   if (!view.status) view.status = can('mail.triage') ? 'new' : 'assigned';
 
   async function load() {
+    if (view.mode === 'mailbox') return loadMailbox();
     clear(host).append(el('div.loading-page', { text: t('loading') }));
     try {
       const { requests, counts } = await api.mailRequests({ status: view.status || undefined });
@@ -90,6 +166,40 @@ export async function render({ params, navigate }) {
     }
   }
 
+  /** The mailbox as it arrived, with what the filter did to it. */
+  async function loadMailbox() {
+    if (!view.offset) clear(host).append(el('div.loading-page', { text: t('loading') }));
+    try {
+      const { messages, total, counts } = await api.mailMessages({
+        only: view.only, q: view.q || undefined, offset: view.offset, limit: 60,
+      });
+      clear(tiles).append(
+        kpi('', t('mailbox_total'), counts.total),
+        kpi('ok', t('mailbox_queued'), counts.queued),
+        kpi('', t('mailbox_other'), counts.other),
+      );
+      if (!view.offset) clear(host);
+      if (!messages.length && !view.offset) {
+        host.append(el('div.empty', {}, [icon('mail', 40), el('div', { text: t('mailbox_empty') })]));
+        return;
+      }
+      for (const message of messages) host.append(messageRow(message, load, navigate));
+
+      const shown = view.offset + messages.length;
+      if (shown < total) {
+        host.append(el('div', { style: { padding: '.7rem', textAlign: 'center' } }, [
+          el('button.btn.btn-secondary', {
+            type: 'button',
+            text: `${t('mailbox_more')} (${shown} / ${total})`,
+            onclick: (event) => { event.currentTarget.closest('div').remove(); view.offset = shown; loadMailbox(); },
+          }),
+        ]));
+      }
+    } catch (error) {
+      clear(host).append(el('div.alert.danger', { text: error.localised || error.message }));
+    }
+  }
+
   function drawTiles(counts) {
     clear(tiles).append(
       kpi(counts.new ? 'warn' : 'ok', t('req_new'), counts.new),
@@ -98,7 +208,7 @@ export async function render({ params, navigate }) {
     );
   }
 
-  await load();
+  setMode();
   if (openId) setTimeout(() => openRequest(openId, load, navigate), 0);
   // Arrived here from the phone's share sheet: open the capture form on it.
   if (shared.pending) {
@@ -153,6 +263,97 @@ function row(request, reload, navigate) {
       el('div.tiny.muted', { text: t('req_confidence') }),
     ]),
   ]);
+}
+
+// ----------------------------------------------------------------- mailbox
+/** One stored message, whether or not the filter thought it was a request. */
+function messageRow(message, reload, navigate) {
+  const queued = Boolean(message.request_id);
+
+  const queueButton = el('button.btn.btn-sm.btn-secondary', {
+    type: 'button',
+    text: t('mailbox_queue'),
+    onclick: async (event) => {
+      event.stopPropagation();
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        await api.queueMailMessage(message.id);
+        toast(t('mailbox_queued_ok'), 'success');
+        reload();
+      } catch (error) { toastError(error); button.disabled = false; }
+    },
+  });
+
+  return el('div.req-row', {
+    onclick: () => openMessage(message.id, reload, navigate),
+  }, [
+    el('div', { style: { flex: '1', minWidth: '0' } }, [
+      el('div.row', { style: { gap: '.4rem', flexWrap: 'wrap' } }, [
+        queued
+          ? el('span.badge.green', { text: t('mailbox_queued_badge') })
+          : el('span.badge.grey', { text: t('mailbox_other') }),
+        message.account_label ? el('span.badge.grey', { text: message.account_label }) : null,
+        el('span.req-subject', { text: message.subject || '—' }),
+      ]),
+      el('div.tiny.muted', {
+        text: `${message.from_name || ''} <${message.from_email || message.from_phone || ''}> · ${formatDateTime(message.received_at)}`,
+      }),
+      el('div.small.muted.truncate', { text: message.snippet || '' }),
+    ]),
+    !queued && can('mail.triage') ? queueButton : null,
+  ]);
+}
+
+async function openMessage(id, reload, navigate) {
+  let message;
+  try { message = (await api.mailMessage(id)).message; } catch (error) { return toastError(error); }
+
+  const body = el('div', {}, [
+    el('div.tiny.muted', {
+      text: `${message.from_name || ''} <${message.from_email || message.from_phone || ''}> · ${formatDateTime(message.received_at)}`,
+    }),
+    message.to_emails ? el('div.tiny.muted', { text: `→ ${message.to_emails}` }) : null,
+    el('div.row', { style: { gap: '.35rem', margin: '.5rem 0', flexWrap: 'wrap' } }, [
+      message.account_label ? el('span.badge.grey', { text: message.account_label }) : null,
+      message.folder ? el('span.badge.grey', { text: message.folder }) : null,
+      message.request_id ? el('span.badge.green', { text: t('mailbox_queued_badge') }) : null,
+      ...(message.attachments || []).map((file) => el('span.badge.grey', { text: `📎 ${file.filename || file.name || ''}` })),
+    ].filter(Boolean)),
+    el('pre', {
+      style: {
+        whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0, fontFamily: 'inherit',
+        fontSize: '13px', lineHeight: '1.7', maxHeight: '52vh', overflow: 'auto',
+      },
+      text: message.body_text || message.snippet || '',
+    }),
+  ].filter(Boolean));
+
+  openModal({
+    title: message.subject || '—',
+    body,
+    footer: (close) => el('div.row', {}, [
+      message.request_id
+        ? el('button.btn.btn-secondary', {
+          type: 'button', text: t('mailbox_open'),
+          onclick: () => { close(); openRequest(message.request_id, reload, navigate); },
+        })
+        : (can('mail.triage') ? el('button.btn.btn-primary', {
+          type: 'button', text: t('mailbox_queue'),
+          onclick: async (event) => {
+            event.currentTarget.disabled = true;
+            try {
+              await api.queueMailMessage(message.id);
+              toast(t('mailbox_queued_ok'), 'success');
+              close();
+              reload();
+            } catch (error) { toastError(error); event.currentTarget.disabled = false; }
+          },
+        }) : null),
+      el('div.spacer'),
+      el('button.btn.btn-secondary', { type: 'button', text: t('close'), onclick: () => close() }),
+    ].filter(Boolean)),
+  });
 }
 
 // ------------------------------------------------------------------ detail

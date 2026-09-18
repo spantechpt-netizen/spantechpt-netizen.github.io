@@ -284,7 +284,21 @@ export const DICT = {
     backfill_3y: 'آخر 3 سنين', backfill_all: 'كل اللي موجود',
     backfill_folders_hint: 'تقدر تزوّد مجلدات تانية زي Archive أو Sent',
     backfill_start: 'ابدأ الفحص', backfill_running: 'بيفحص… ممكن ياخد شوية',
+    backfill_remaining: 'لسه فاضل', backfill_again: 'شغّل الاستيراد تاني عشان تكمّل',
     mail_read: 'رسالة اتقرت',
+
+    // --- the whole mailbox ---------------------------------------------------
+    mailbox_tab_requests: 'الطلبات', mailbox_tab_all: 'كل الرسايل',
+    mailbox_all: 'كل الرسايل', mailbox_queued: 'في الطلبات', mailbox_other: 'مش في الطلبات',
+    mailbox_search: 'دوّر في الرسايل…',
+    mailbox_empty: 'مفيش رسايل هنا',
+    mailbox_queue: 'ضيفه للطلبات',
+    mailbox_queued_badge: 'في الطلبات',
+    mailbox_queued_ok: 'اتضاف للطلبات',
+    mailbox_more: 'كمان رسايل',
+    mailbox_total: 'إجمالي الرسايل',
+    mailbox_hint: 'دي كل الرسايل اللي النظام سحبها من صندوق الوارد — اللي اتحسبت طلب سعر واللي لأ. لو لقيت رسالة مهمة، ضيفها للطلبات.',
+    mailbox_open: 'افتح الرسالة',
 
     // --- cost comparison study ---------------------------------------------
     study: 'دراسة فرق التكلفة', back_to_quote: 'رجوع لعرض السعر',
@@ -591,7 +605,21 @@ export const DICT = {
     backfill_3y: 'Last 3 years', backfill_all: 'Everything',
     backfill_folders_hint: 'Add other folders such as Archive or Sent',
     backfill_start: 'Start the scan', backfill_running: 'Scanning… this can take a moment',
+    backfill_remaining: 'Still to import:', backfill_again: 'run the import again to continue',
     mail_read: 'messages read',
+
+    // --- the whole mailbox ---------------------------------------------------
+    mailbox_tab_requests: 'Requests', mailbox_tab_all: 'All mail',
+    mailbox_all: 'Everything', mailbox_queued: 'In the queue', mailbox_other: 'Not queued',
+    mailbox_search: 'Search the mail…',
+    mailbox_empty: 'No messages here',
+    mailbox_queue: 'Add to requests',
+    mailbox_queued_badge: 'Queued',
+    mailbox_queued_ok: 'Added to the requests queue',
+    mailbox_more: 'More messages',
+    mailbox_total: 'Messages stored',
+    mailbox_hint: 'Everything the system pulled from the mailbox — what it read as a price request and what it did not. If a message matters, add it to the requests.',
+    mailbox_open: 'Open the message',
 
     // --- cost comparison study ---------------------------------------------
     study: 'Cost study', back_to_quote: 'Back to the quotation',

@@ -120,8 +120,25 @@ export async function syncAccount(accountId, { sinceDays = 30, limit = 200, back
       let uids = await client.search(criteria);
       // "N:*" always returns at least the last UID even when nothing is new.
       if (continuing) uids = uids.filter((uid) => uid > saved.lastUid);
+
+      // Importing history, one run does not reach a mailbox of ten thousand
+      // messages. Skipping what is already stored means the next run picks up
+      // where this one stopped and walks backwards through the folder,
+      // instead of fetching the same newest few hundred every time.
+      let remaining = 0;
+      if (backfill) {
+        const have = new Set(
+          all('SELECT uid FROM mail_messages WHERE account_id = ? AND folder = ?', account.id, folder)
+            .map((row) => row.uid),
+        );
+        uids = uids.filter((uid) => !have.has(uid));
+      }
+
       uids.sort((a, b) => a - b);
-      if (uids.length > limit) uids = uids.slice(-limit);
+      if (uids.length > limit) {
+        remaining = uids.length - limit;
+        uids = uids.slice(-limit);
+      }
 
       if (!uids.length) {
         summary.folders[folder] = { fetched: 0 };
@@ -142,7 +159,8 @@ export async function syncAccount(accountId, { sinceDays = 30, limit = 200, back
       }
 
       state[folder] = { uidValidity: box.uidValidity, lastUid: highest };
-      summary.folders[folder] = { fetched: messages.length };
+      summary.folders[folder] = { fetched: messages.length, remaining };
+      summary.remaining = (summary.remaining || 0) + remaining;
     }
   });
 
@@ -420,6 +438,118 @@ const REQUEST_SELECT = `
     LEFT JOIN quotations q ON q.id = r.quotation_id
     LEFT JOIN users u ON u.id = r.assigned_to
     LEFT JOIN users ab ON ab.id = r.assigned_by`;
+
+// ---------------------------------------------------------- the whole mailbox
+// Every message the sync fetched is stored, whether or not it looked like a
+// price request — the filter only decides what reaches the triage queue. This
+// is the rest of it: the inbox as it actually arrived, so nothing is lost
+// behind a rule about what counts as a request.
+
+const MESSAGE_SELECT = `
+  SELECT m.id, m.account_id, m.channel, m.folder, m.subject, m.from_email, m.from_name,
+         m.from_phone, m.to_emails, m.snippet, m.received_at, m.has_attachments,
+         m.attachments_json,
+         a.label AS account_label,
+         r.id AS request_id, r.status AS request_status
+    FROM mail_messages m
+    JOIN mail_accounts a ON a.id = m.account_id
+    LEFT JOIN mail_requests r ON r.message_id = m.id`;
+
+/**
+ * `only`: 'all' (everything), 'queued' (already a request) or 'other' (the
+ * mail the filter passed over, which is what this screen is really for).
+ */
+export function listMessages({
+  accountId, folder, search, only = 'all', limit = 60, offset = 0,
+} = {}) {
+  const where = [];
+  const params = [];
+  if (accountId) { where.push('m.account_id = ?'); params.push(accountId); }
+  if (folder) { where.push('m.folder = ?'); params.push(folder); }
+  if (search) {
+    const like = `%${String(search).trim()}%`;
+    where.push('(m.subject LIKE ? OR m.from_email LIKE ? OR m.from_name LIKE ? OR m.snippet LIKE ? OR m.body_text LIKE ?)');
+    params.push(like, like, like, like, like);
+  }
+  if (only === 'queued') where.push('r.id IS NOT NULL');
+  if (only === 'other') where.push('r.id IS NULL');
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+  const rows = all(
+    `${MESSAGE_SELECT} ${clause}
+      ORDER BY m.received_at DESC, m.id DESC
+      LIMIT ? OFFSET ?`,
+    ...params, Math.min(Number(limit) || 60, 200), Math.max(Number(offset) || 0, 0),
+  );
+
+  const total = get(
+    `SELECT COUNT(*) AS n
+       FROM mail_messages m
+       JOIN mail_accounts a ON a.id = m.account_id
+       LEFT JOIN mail_requests r ON r.message_id = m.id ${clause}`,
+    ...params,
+  ).n;
+
+  return { messages: rows.map(hydrateMessage), total };
+}
+
+export function getMessage(id) {
+  const row = get(`${MESSAGE_SELECT} WHERE m.id = ?`, id);
+  if (!row) return null;
+  const body = get('SELECT body_text FROM mail_messages WHERE id = ?', id);
+  return { ...hydrateMessage(row), body_text: body?.body_text || '' };
+}
+
+function hydrateMessage(row) {
+  return {
+    ...row,
+    attachments: safeJson(row.attachments_json, []),
+    attachments_json: undefined,
+  };
+}
+
+/** How much mail is here, and how much of it the filter passed over. */
+export const mailboxCounts = () => ({
+  total: get('SELECT COUNT(*) AS n FROM mail_messages').n,
+  queued: get('SELECT COUNT(*) AS n FROM mail_messages m JOIN mail_requests r ON r.message_id = m.id').n,
+  other: get('SELECT COUNT(*) AS n FROM mail_messages m LEFT JOIN mail_requests r ON r.message_id = m.id WHERE r.id IS NULL').n,
+});
+
+/**
+ * Puts a stored message into the triage queue by hand — for the ones the
+ * filter passed over and a person can see are worth answering.
+ */
+export async function queueMessage(id, { userId = null } = {}) {
+  const message = get('SELECT * FROM mail_messages WHERE id = ?', id);
+  if (!message) return null;
+  const already = get('SELECT id FROM mail_requests WHERE message_id = ?', id);
+  if (already) return { requestId: already.id, alreadyQueued: true };
+
+  const body = stripQuotedReply(message.body_text || '');
+  const settings = getSetting('ai', {}) || {};
+  const extraction = await extractFromEmail({
+    fromEmail: message.from_email,
+    fromName: message.from_name,
+    fromPhone: message.from_phone,
+    subject: message.subject || '',
+    body,
+    receivedAt: message.received_at,
+  }, { useAi: Boolean(settings.api_key) && settings.enabled !== false });
+
+  const requestId = insert('mail_requests', {
+    message_id: message.id,
+    status: 'new',
+    kind: extraction.is_rfq ? 'rfq' : 'other',
+    confidence: extraction.confidence || 0,
+    extraction_json: JSON.stringify(extraction),
+    summary_ar: extraction.summary_ar || null,
+    summary_en: extraction.summary_en || null,
+    customer_id: extraction.customer?.matched_id || null,
+  });
+
+  audit(userId, 'mail_request', requestId, 'queue_by_hand', { message_id: message.id });
+  return { requestId, alreadyQueued: false };
+}
 
 export function listRequests({ status, assignedTo, limit = 100 } = {}) {
   const where = [];

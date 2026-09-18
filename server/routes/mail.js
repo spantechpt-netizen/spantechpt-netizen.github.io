@@ -6,6 +6,7 @@ import { notify } from '../notifications.js';
 import {
   listAccounts, testAccount, syncAccount, syncDueAccounts,
   listRequests, getRequest, requestCounts, convertRequest, captureMessage,
+  listMessages, getMessage, mailboxCounts, queueMessage,
 } from '../mailbox.js';
 import { str, int, bool, oneOf, email as emailField } from '../validate.js';
 
@@ -284,6 +285,46 @@ export function register(router) {
         key_hint: next.api_key ? maskSecret(next.api_key) : '',
       },
     };
+  });
+
+  // ============================================================== mailbox
+  // The requests queue is what the filter let through. This is everything the
+  // sync stored, so a message the filter passed over can still be found — and
+  // put into the queue by hand if it turns out to matter.
+
+  router.get('/api/mail/messages', ({ query, user }) => {
+    requirePermission(user, 'mail.view_all');
+    const { messages, total } = listMessages({
+      accountId: int(query.account_id, 'account_id', { min: 1, fallback: undefined }),
+      folder: str(query.folder, 'folder', { max: 200, fallback: undefined }) || undefined,
+      search: str(query.q, 'q', { max: 200, fallback: undefined }) || undefined,
+      only: oneOf(query.only, 'only', ['all', 'queued', 'other'], { fallback: 'all' }),
+      limit: int(query.limit, 'limit', { min: 1, max: 200, fallback: 60 }),
+      offset: int(query.offset, 'offset', { min: 0, max: 100000, fallback: 0 }),
+    });
+    return { messages, total, counts: mailboxCounts() };
+  });
+
+  router.get('/api/mail/messages/:id', ({ params, user }) => {
+    requirePermission(user, 'mail.view_all');
+    const message = getMessage(Number(params.id));
+    if (!message) throw notFound('Message not found', 'الرسالة مش موجودة');
+    return { message };
+  });
+
+  /** "This one is a request after all." */
+  router.post('/api/mail/messages/:id/queue', async ({ params, user }) => {
+    requirePermission(user, 'mail.view_all');
+    requirePermission(user, 'mail.triage');
+    const result = await queueMessage(Number(params.id), { userId: user.id });
+    if (!result) throw notFound('Message not found', 'الرسالة مش موجودة');
+    if (result.alreadyQueued) {
+      throw badRequest(
+        'That message is already in the requests queue.',
+        'الرسالة دي موجودة في الطلبات بالفعل.',
+      );
+    }
+    return { request: getRequest(result.requestId) };
   });
 
   /** Badge counts for the sidebar. */

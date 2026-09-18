@@ -51,6 +51,7 @@ export const PERMISSIONS = [
   // --------------------------------------------------------------------- mail
   { key: 'mail.view', group: 'mail', ar: 'عرض طلبات الإيميل', en: 'View email requests' },
   { key: 'mail.triage', group: 'mail', ar: 'توزيع الطلبات على المهندسين', en: 'Triage and assign email requests' },
+  { key: 'mail.view_all', group: 'mail', ar: 'يشوف كل رسايل صندوق الوارد', en: 'Browse the whole mailbox' },
   { key: 'mail.manage', group: 'mail', ar: 'إعداد حسابات البريد والذكاء الاصطناعي', en: 'Configure mailboxes and AI' },
 
   // ----------------------------------------------------------------- settings
