@@ -6,7 +6,8 @@ import { computeTotals, amountInWords, round2 } from '../pricing.js';
 import {
   COUNTRY_DEFAULTS, DEFAULT_ITEM, SCOPE, PAYMENT_TERMS, CONDITIONS, INTRO,
   PRICE_ADJUSTMENT_CLAUSE, COMPANY, branchFor,
-  DUCT_MATERIALS, DUCT_TYPES, defaultDuctType, applyDuctMaterial,
+  DUCT_TYPES, defaultDuctType, applyDuctMaterial,
+  LABOUR_SCOPE_KEYS, applyLabourScope,
 } from '../templates.js';
 import {
   str, num, int, oneOf, date, bool, jsonField,
@@ -397,6 +398,14 @@ export function register(router) {
     const area = num(body.area_sqm, 'area_sqm', { min: 0, fallback: opportunity?.area_sqm || 0 });
     const unitPrice = num(body.unit_price, 'unit_price', { min: 0, fallback: defaults.default_price_sqm });
 
+    // Decided once: both the stored column and the printed scope have to agree.
+    const ductType = oneOf(body.duct_type, 'duct_type', DUCT_TYPES, {
+      fallback: defaultDuctType(countryCode),
+    });
+    const labourScope = oneOf(body.labour_scope, 'labour_scope', LABOUR_SCOPE_KEYS, {
+      fallback: 'spantech',
+    });
+
     const id = transaction(() => {
       const quotationId = insert('quotations', {
         number: generateNumber(issueDate),
@@ -416,9 +425,8 @@ export function register(router) {
         currency: oneOf(body.currency, 'currency', CURRENCIES, { fallback: defaults.currency }),
         vat_rate: num(body.vat_rate, 'vat_rate', { min: 0, max: 100, fallback: defaults.vat_rate }),
         vat_included: bool(body.vat_included) ? 1 : 0,
-        duct_type: oneOf(body.duct_type, 'duct_type', DUCT_TYPES, {
-          fallback: defaultDuctType(countryCode),
-        }),
+        duct_type: ductType,
+        labour_scope: labourScope,
         issue_date: issueDate,
         valid_days: int(body.valid_days, 'valid_days', { min: 1, max: 365, fallback: defaults.valid_days }),
         status: 'draft',
@@ -435,9 +443,9 @@ export function register(router) {
         price_variance: num(body.price_variance, 'price_variance', { min: 0, max: 100, fallback: 5 }),
         discount_type: oneOf(body.discount_type, 'discount_type', ['none', 'percent', 'amount'], { fallback: 'none' }),
         discount_value: num(body.discount_value, 'discount_value', { min: 0, fallback: 0 }),
-        scope_json: JSON.stringify(applyDuctMaterial(
-          jsonField(body.scope, 'scope', getSetting('scope', SCOPE)),
-          oneOf(body.duct_type, 'duct_type', DUCT_TYPES, { fallback: defaultDuctType(countryCode) }),
+        scope_json: JSON.stringify(applyLabourScope(
+          applyDuctMaterial(jsonField(body.scope, 'scope', getSetting('scope', SCOPE)), ductType),
+          labourScope,
         )),
         payment_terms_json: JSON.stringify(jsonField(body.payment_terms, 'payment_terms', getSetting('payment_terms', PAYMENT_TERMS))),
         conditions_json: JSON.stringify(jsonField(body.conditions, 'conditions', getSetting('conditions', CONDITIONS))),
@@ -505,6 +513,7 @@ export function register(router) {
       vat_rate: num(body.vat_rate, 'vat_rate', { min: 0, max: 100, fallback: undefined }),
       vat_included: body.vat_included === undefined ? undefined : (bool(body.vat_included) ? 1 : 0),
       duct_type: oneOf(body.duct_type, 'duct_type', DUCT_TYPES, { fallback: undefined }),
+      labour_scope: oneOf(body.labour_scope, 'labour_scope', LABOUR_SCOPE_KEYS, { fallback: undefined }),
       issue_date: body.issue_date === undefined ? undefined : date(body.issue_date, 'issue_date'),
       valid_days: int(body.valid_days, 'valid_days', { min: 1, max: 365, fallback: undefined }),
       strand_price_ton: num(body.strand_price_ton, 'strand_price_ton', { min: 0, fallback: undefined }),
@@ -530,14 +539,21 @@ export function register(router) {
       fields.owner_id = int(body.owner_id, 'owner_id', { min: 1, fallback: null });
     }
 
-    // Switching the duct material rewrites the duct line in the scope, so the
-    // printed offer never promises steel while the price is for plastic. Only
-    // that line changes; everything the engineer has edited stays.
-    if (fields.duct_type !== undefined && fields.duct_type !== existing.duct_type) {
-      const scope = fields.scope_json !== undefined
+    // Switching the duct material rewrites the duct line, and switching who
+    // supplies the labour moves the labour line to the other section, so the
+    // printed offer never promises steel while the price is for plastic, nor
+    // offers labour the client is being asked to provide. Only those lines
+    // change; everything the engineer has edited stays.
+    const ductChanged = fields.duct_type !== undefined && fields.duct_type !== existing.duct_type;
+    const labourChanged = fields.labour_scope !== undefined
+      && fields.labour_scope !== existing.labour_scope;
+    if (ductChanged || labourChanged) {
+      let scope = fields.scope_json !== undefined
         ? JSON.parse(fields.scope_json)
         : safeParse(existing.scope_json, getSetting('scope', SCOPE));
-      fields.scope_json = JSON.stringify(applyDuctMaterial(scope, fields.duct_type));
+      if (ductChanged) scope = applyDuctMaterial(scope, fields.duct_type);
+      if (labourChanged) scope = applyLabourScope(scope, fields.labour_scope);
+      fields.scope_json = JSON.stringify(scope);
     }
 
     update('quotations', id, fields);

@@ -133,6 +133,60 @@ export function applyDuctMaterial(scope, ductType) {
   return scope;
 }
 
+// ------------------------------------------------------------- labour scope
+/**
+ * Who supplies the men who lay and stress the tendons. Sometimes it is us,
+ * sometimes the main contractor gives us a crew and we supervise it — and the
+ * price differs accordingly, so the engineer decides per quotation.
+ *
+ * The bullet is the same work either way; what changes is which section of the
+ * offer it is printed under, our scope or what we need from the contractor.
+ */
+export const LABOUR_SCOPES = {
+  spantech: {
+    label_en: 'Span Tech supplies the labour',
+    label_ar: 'العمالة علينا (سبان تك)',
+    section: 'installation',
+    at: 'start',
+    scope_en: 'Supply of the labour required for installation, working under the supervision of Span Tech’s technicians and engineers.',
+    scope_ar: 'توريد العمالة اللازمة للتركيب تحت إشراف فنيين ومهندسين سبان تك.',
+  },
+  client: {
+    label_en: 'The client supplies the labour',
+    label_ar: 'العمالة على العميل',
+    section: 'requirements',
+    at: 'end',
+    scope_en: 'Supply of the labour required for the installation works, to work under the supervision of Span Tech’s technicians and engineers.',
+    scope_ar: 'توريد العمالة اللازمة لأعمال التركيب، على أن تعمل تحت إشراف فنيين ومهندسين سبان تك.',
+  },
+};
+
+export const LABOUR_SCOPE_KEYS = Object.keys(LABOUR_SCOPES);
+
+/**
+ * Moves the labour line to the section the choice puts it in, rewording it to
+ * suit. It is lifted out of wherever it currently sits first, so the bullet is
+ * never printed in both sections and never left behind in the old one.
+ */
+export function applyLabourScope(scope, labourScope) {
+  const choice = LABOUR_SCOPES[labourScope] || LABOUR_SCOPES.spantech;
+  if (!scope || typeof scope !== 'object') return scope;
+
+  for (const section of Object.values(scope)) {
+    if (!Array.isArray(section?.items)) continue;
+    section.items = section.items.filter((item) => item?.key !== 'labour');
+  }
+
+  const target = scope[choice.section];
+  // If the engineer has deleted the whole section, say nothing rather than
+  // inventing it back.
+  if (!Array.isArray(target?.items)) return scope;
+  const line = { key: 'labour', en: choice.scope_en, ar: choice.scope_ar };
+  if (choice.at === 'start') target.items.unshift(line);
+  else target.items.push(line);
+  return scope;
+}
+
 /** The branch to print on a document for `country`, with sensible fallbacks. */
 export function branchFor(company, country) {
   const branches = company?.branches || COMPANY.branches;
@@ -191,6 +245,13 @@ export const SCOPE = {
     title_en: 'Installation & Testing',
     title_ar: 'التركيب والاختبارات',
     items: [
+      // `key` lets this line move between our scope and the main contractor's
+      // requirements without guessing which line it is — see LABOUR_SCOPES.
+      {
+        key: 'labour',
+        en: 'Supply of the labour required for installation, working under the supervision of Span Tech’s technicians and engineers.',
+        ar: 'توريد العمالة اللازمة للتركيب تحت إشراف فنيين ومهندسين سبان تك.',
+      },
       { en: 'Setting out of tendon positions and marking of profiles after completion of slab formwork.', ar: 'تحديد مواقع الكابلات ووضع علامات المسارات بعد الانتهاء من أعمال نجارة السقف.' },
       { en: 'Laying and installation of tendons per the approved shop drawings, after completion of the bottom reinforcement layer.', ar: 'فرد وتركيب الكابلات حسب المخططات التنفيذية المعتمدة بعد الانتهاء من طبقة الحديد السفلية.' },
       { en: 'Stressing of tendons to the required forces with accurate recording of elongations, once the concrete reaches 75% of the specified strength.', ar: 'شد الكابلات بالقوى المطلوبة وتسجيل قراءات الاستطالة بدقة بعد وصول الخرسانة إلى 75% من الإجهاد التصميمي.' },

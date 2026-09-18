@@ -96,6 +96,15 @@ function editor(data, navigate) {
         options: ['steel', 'plastic'].map((d) => ({ value: d, label: t(`duct_${d}`) })),
         hint: t('duct_hint'), disabled: readOnly,
       }),
+      field({
+        name: 'labour_scope', label: t('labour_scope'), type: 'select',
+        value: quote.labour_scope || 'spantech',
+        options: [
+          { value: 'spantech', label: t('labour_spantech') },
+          { value: 'client', label: t('labour_client') },
+        ],
+        hint: t('labour_scope_hint'), disabled: readOnly,
+      }),
       field({ name: 'vat_rate', label: t('vat_rate'), type: 'number', value: quote.vat_rate, min: 0, max: 100, step: 0.5, disabled: readOnly }),
       field({ name: 'price_variance', label: t('price_variance'), type: 'number', value: quote.price_variance, min: 0, max: 100, step: 0.5, disabled: readOnly }),
     ]),
@@ -207,7 +216,13 @@ function editor(data, navigate) {
   drawItems();
 
   // ---- scope & terms (accordion) ----------------------------------------
-  left.append(scopeCard());
+  // Held in a host of its own: changing the duct material or who supplies the
+  // labour rewrites the scope on the server, and the list has to show what the
+  // offer will actually print rather than what it printed a minute ago.
+  const scopeHost = el('div');
+  const drawScope = () => { clear(scopeHost); scopeHost.append(scopeCard()); };
+  drawScope();
+  left.append(scopeHost);
   left.append(termsCard());
 
   // ---- totals panel ------------------------------------------------------
@@ -327,6 +342,14 @@ function editor(data, navigate) {
       stat(t('margin_amount'), money(marginAmount, 0)),
       stat(t('margin'), `${marginPct.toFixed(1)}%`),
     ])]));
+
+    // Labour the client is supplying should not also be in our cost, or the
+    // offer quietly carries a price for men we are not paying.
+    if (quote.labour_scope === 'client' && value('labour_cost_sqm') > 0) {
+      calcHost.append(el('div.alert.warn.mt-1', {
+        style: { marginBottom: 0 }, text: t('labour_priced_warning'),
+      }));
+    }
 
     if (net > 0 && marginAmount < 0) {
       calcHost.append(el('div.alert.danger.mt-1', { style: { marginBottom: 0 }, text: t('below_cost_warning') }));
@@ -488,6 +511,12 @@ function editor(data, navigate) {
       items = quote.items.map((item) => ({ ...item }));
       dirty = false;
       toast(t('saved'), 'success');
+      // Only when it really changed, so a redraw does not close the sections
+      // the engineer had opened.
+      if (JSON.stringify(result.quotation.scope) !== JSON.stringify(scope)) {
+        scope = result.quotation.scope;
+        drawScope();
+      }
       drawItems();
       drawStatusBar();
       recalcLocal();

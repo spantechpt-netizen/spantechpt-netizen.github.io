@@ -813,3 +813,58 @@ test('duct material follows the country and rewrites the scope line', async () =
   const keptEdit = patched.body.quotation.scope.supply.items.find((i) => /Strands/.test(i.en));
   assert.equal(keptEdit.ar, 'الكابلات: مواصفة خاصة بالمشروع', 'an edited line is not overwritten');
 });
+
+// -------------------------------------------------------------- labour scope
+// On some projects we bring the crew, on others the main contractor does and we
+// only supervise. The same bullet has to move between our scope of work and
+// what we require from the contractor — and never appear in both.
+test('who supplies the labour moves the bullet between sections', async () => {
+  const customer = await api('POST', '/api/customers', { name_en: 'Labour Test Co', country: 'SA' });
+  const created = await api('POST', '/api/quotations', {
+    customer_id: customer.body.customer.id,
+    project_name: 'Labour scope check', country: 'SA', area_sqm: 900, unit_price: 72,
+  });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.quotation.labour_scope, 'spantech', 'the labour is ours unless said otherwise');
+
+  const labourLines = (quote) => Object.entries(quote.scope)
+    .flatMap(([key, section]) => (section.items || [])
+      .filter((item) => item.key === 'labour')
+      .map((item) => [key, item]));
+
+  const first = labourLines(created.body.quotation);
+  assert.equal(first.length, 1, 'the labour line appears exactly once');
+  assert.equal(first[0][0], 'installation', 'and under our own scope of work');
+  assert.match(first[0][1].ar, /توريد العمالة/);
+
+  // Hand the labour to the client: the line leaves our scope for the list of
+  // what the main contractor has to provide.
+  const patched = await api('PATCH', `/api/quotations/${created.body.quotation.id}`, {
+    labour_scope: 'client',
+  });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.quotation.labour_scope, 'client');
+
+  const moved = labourLines(patched.body.quotation);
+  assert.equal(moved.length, 1, 'still exactly once, never in both sections');
+  assert.equal(moved[0][0], 'requirements');
+  assert.match(moved[0][1].ar, /تحت إشراف/, 'we still supervise the crew');
+
+  // And back again, without disturbing the rest of the installation scope.
+  const back = await api('PATCH', `/api/quotations/${created.body.quotation.id}`, {
+    labour_scope: 'spantech',
+  });
+  const returned = labourLines(back.body.quotation);
+  assert.equal(returned.length, 1);
+  assert.equal(returned[0][0], 'installation');
+  assert.equal(
+    back.body.quotation.scope.installation.items.length,
+    created.body.quotation.scope.installation.items.length,
+    'the installation scope is the length it started at',
+  );
+
+  const rejected = await api('PATCH', `/api/quotations/${created.body.quotation.id}`, {
+    labour_scope: 'somebody_else',
+  });
+  assert.equal(rejected.status, 400, 'an unknown option is refused rather than guessed');
+});

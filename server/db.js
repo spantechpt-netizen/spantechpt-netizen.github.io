@@ -40,6 +40,8 @@ addColumn('mail_messages', 'channel', "TEXT NOT NULL DEFAULT 'email'");
 addColumn('mail_messages', 'from_phone', 'TEXT');
 // Ducts are galvanized steel in most markets and corrugated plastic in Egypt.
 addColumn('quotations', 'duct_type', "TEXT NOT NULL DEFAULT 'steel'");
+// Labour is ours on some projects and the main contractor's on others.
+addColumn('quotations', 'labour_scope', "TEXT NOT NULL DEFAULT 'spantech'");
 // The cost comparison study sent to the owner, and the drawings attached to it.
 addColumn('quotations', 'study_json', 'TEXT');
 
