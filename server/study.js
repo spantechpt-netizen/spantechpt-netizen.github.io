@@ -97,7 +97,49 @@ export function defaultStudy(quote = {}, system = 'solid') {
 
     notes_ar: '',
     notes_en: '',
+
+    // Wording the engineer changed on the printed deck itself, and slides they
+    // dropped for this owner. Empty means the deck reads exactly as generated.
+    deck: { text: {}, hidden: {} },
   };
+}
+
+/**
+ * The deck's edits, cleaned before they are stored.
+ *
+ * They arrive from a contenteditable document, which means arbitrary keys and
+ * arbitrary length unless someone says otherwise. Text is kept as text — the
+ * deck escapes it on the way out — and both the number of keys and the length
+ * of each one are capped so a slide cannot become a payload.
+ */
+export const DECK_TEXT_LIMIT = 1500;
+export const DECK_MAX_KEYS = 200;
+const DECK_KEY = /^[a-z0-9_.:-]{1,64}$/i;
+
+export function sanitizeDeck(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const text = {};
+  const hidden = {};
+
+  for (const [key, value] of Object.entries(source.text || {})) {
+    if (!DECK_KEY.test(key) || typeof value !== 'string') continue;
+    if (Object.keys(text).length >= DECK_MAX_KEYS) break;
+    const clean = value
+      .replace(/\r/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .slice(0, DECK_TEXT_LIMIT);
+    if (clean) text[key] = clean;
+  }
+
+  for (const [key, value] of Object.entries(source.hidden || {})) {
+    if (!DECK_KEY.test(key)) continue;
+    if (Object.keys(hidden).length >= DECK_MAX_KEYS) break;
+    if (value) hidden[key] = true;
+  }
+
+  return { text, hidden };
 }
 
 const n = (value) => {

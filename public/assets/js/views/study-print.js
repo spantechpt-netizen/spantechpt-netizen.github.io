@@ -192,6 +192,13 @@ const LABELS = {
     months: 'شهر تقريباً',
     present: 'وضع العرض', print_btn: 'طباعة / حفظ PDF', close_btn: 'إغلاق',
     hint_keys: 'الأسهم للتنقل · Esc للخروج',
+    edit_btn: 'تعديل الشرائح', edit_save: 'حفظ التعديلات', edit_reset: 'رجوع للنص الأصلي',
+    edit_done: 'إنهاء التعديل',
+    edit_hint: 'دوس على أي نص وغيّره · وتقدر تخفي أي شريحة',
+    edit_hide: 'إخفاء الشريحة', edit_show: 'إظهار الشريحة',
+    edit_saved: 'التعديلات اتحفظت', edit_failed: 'التعديلات ماتحفظتش',
+    edit_unsaved: 'في تعديلات لسه ما اتحفظتش. تقفل برضه؟',
+    edit_reset_ask: 'هترجّع كل النصوص لأصلها. تمام؟',
     closing_h: 'شكراً لثقتكم',
     closing_sub: 'يسعدنا مناقشة الدراسة مع فريقكم الفني وتقديم تصميم مبدئي للمشروع.',
   },
@@ -288,6 +295,13 @@ const LABELS = {
     months: 'months approx.',
     present: 'Present', print_btn: 'Print / Save as PDF', close_btn: 'Close',
     hint_keys: 'Arrow keys to move · Esc to exit',
+    edit_btn: 'Edit slides', edit_save: 'Save changes', edit_reset: 'Restore original text',
+    edit_done: 'Done',
+    edit_hint: 'Click any text to change it · and hide any slide you do not want',
+    edit_hide: 'Hide this slide', edit_show: 'Show this slide',
+    edit_saved: 'Changes saved', edit_failed: 'Could not save the changes',
+    edit_unsaved: 'You have unsaved changes. Close anyway?',
+    edit_reset_ask: 'This puts every sentence back as it was generated. Go ahead?',
     closing_h: 'Thank you',
     closing_sub: 'We would be glad to walk your technical team through this study and issue a preliminary design for the project.',
   },
@@ -578,6 +592,33 @@ function buildStudyDeck(data, lang) {
   const cash = (value) => `${money(value)} ${currency}`;
   const plain2 = (value) => money(value, 2);
 
+  // ------------------------------------------------------- edited wording
+  // Anything marked editable is rendered through `txt`, which prefers what the
+  // engineer last wrote on the deck over what the system generated. The
+  // generated wording is kept alongside so "back to the original" can restore
+  // it in place rather than reopening the document.
+  const edits = (study.input && study.input.deck) || {};
+  const overrides = edits.text || {};
+  const hidden = edits.hidden || {};
+  const generated = {};
+
+  // Saving the edits needs an absolute URL: this document is opened blank and
+  // written into, so it has no base of its own to resolve a relative one.
+  const apiBase = String(data.origin || '').replace(/\/+$/, '');
+  const canSave = Boolean(apiBase && data.quotation_id);
+  const apiUrl = canSave ? `${apiBase}/api/quotations/${Number(data.quotation_id)}/study/deck` : '';
+  /** JSON for a script block: a closing tag inside a string would end it. */
+  const json = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+
+  const mark = (key) => `data-e="${key}"`;
+  const txt = (key, value) => {
+    const source = value == null ? '' : String(value);
+    generated[key] = source;
+    return esc(overrides[key] == null ? source : overrides[key]);
+  };
+  // Prose keeps the line breaks a person typed into it.
+  const prose = (key, value) => txt(key, value).replace(/\n/g, '<br>');
+
   // ------------------------------------------------------------- fragments
   const spec = (label, value) => `
     <div class="spec-row"><span class="k">${esc(label)}</span><span class="v">${value}</span></div>`;
@@ -599,12 +640,12 @@ function buildStudyDeck(data, lang) {
       </div>
     </div>`;
 
-  const advCard = (index, name, heading, text) => `
+  const advCard = (index, name, heading, body) => `
     <div class="card adv">
       <span class="card-n">${String(index).padStart(2, '0')}</span>
       <div class="card-ico">${icon(name, 26)}</div>
-      <div class="card-h">${esc(heading)}</div>
-      <p>${esc(text)}</p>
+      <div class="card-h" ${mark(`adv.${index}.h`)}>${txt(`adv.${index}.h`, heading)}</div>
+      <p ${mark(`adv.${index}.p`)}>${txt(`adv.${index}.p`, body)}</p>
     </div>`;
 
   const drawings = (kind) => (data.drawings || []).filter((d) => d.kind === kind);
@@ -612,7 +653,7 @@ function buildStudyDeck(data, lang) {
     const list = drawings(kind);
     return `
       <div class="draw-col">
-        <div class="draw-h ${tone}">${esc(heading)}</div>
+        <div class="draw-h ${tone}" ${mark(`draw.${kind}`)}>${txt(`draw.${kind}`, heading)}</div>
         ${list.length ? list.map((d) => `
           <figure>
             <img src="${esc(d.url)}" alt="${esc((isAr ? d.caption_ar : d.caption_en) || heading)}">
@@ -645,17 +686,17 @@ function buildStudyDeck(data, lang) {
     <div class="cover-in">
       <div class="cover-plate"><img src="${logo}" alt=""></div>
       <div class="cover-rule"></div>
-      <h1>${esc(L.doc_title)}</h1>
-      <div class="cover-sub">${esc(L.doc_sub)}</div>
+      <h1 ${mark('cover.title')}>${txt('cover.title', L.doc_title)}</h1>
+      <div class="cover-sub" ${mark('cover.sub')}>${txt('cover.sub', L.doc_sub)}</div>
     </div>
     <div class="cover-strip">
-      ${projectName ? `<div class="cm"><span>${esc(L.project)}</span><b>${esc(projectName)}</b></div>` : ''}
-      ${customerName ? `<div class="cm"><span>${esc(L.prepared_for)}</span><b>${esc(customerName)}</b></div>` : ''}
-      ${location ? `<div class="cm"><span>${esc(L.location)}</span><b>${esc(location)}</b></div>` : ''}
-      <div class="cm"><span>${esc(L.prepared_by)}</span><b>${esc(branchName)}</b></div>
+      ${projectName ? `<div class="cm"><span>${esc(L.project)}</span><b ${mark('cover.project')}>${txt('cover.project', projectName)}</b></div>` : ''}
+      ${customerName ? `<div class="cm"><span>${esc(L.prepared_for)}</span><b ${mark('cover.customer')}>${txt('cover.customer', customerName)}</b></div>` : ''}
+      ${location ? `<div class="cm"><span>${esc(L.location)}</span><b ${mark('cover.location')}>${txt('cover.location', location)}</b></div>` : ''}
+      <div class="cm"><span>${esc(L.prepared_by)}</span><b ${mark('cover.by')}>${txt('cover.by', branchName)}</b></div>
       <div class="cm"><span>${esc(L.ref)}</span><b><bdi>${esc(q.number || '—')}</bdi></b></div>
       <div class="cm"><span>${esc(L.date)}</span><b><bdi>${esc(data.generated_at || '')}</bdi></b></div>
-    </div>`, { className: 'cover', bare: true });
+    </div>`, { key: 'cover', className: 'cover', bare: true });
 
   // 2 — who is asking to be believed
   slide(L.profile_h, `
@@ -663,13 +704,13 @@ function buildStudyDeck(data, lang) {
       ${profile.map((line, index) => `
         <div class="card">
           <div class="card-ico">${icon(['shield', 'layers', 'span', 'weight'][index % 4], 26)}</div>
-          <p>${esc(line)}</p>
+          <p ${mark(`company.p${index + 1}`)}>${txt(`company.p${index + 1}`, line)}</p>
         </div>`).join('')}
     </div>
     <div class="band">
-      <div class="band-col"><span>${esc(L.vision)}</span>${esc(isAr ? company.vision_ar : company.vision_en)}</div>
-      <div class="band-col"><span>${esc(L.mission)}</span>${esc(isAr ? company.mission_ar : company.mission_en)}</div>
-    </div>`, { kicker: L.profile_sub, section: L.sec_company });
+      <div class="band-col"><span>${esc(L.vision)}</span><span ${mark('company.vision')}>${txt('company.vision', isAr ? company.vision_ar : company.vision_en)}</span></div>
+      <div class="band-col"><span>${esc(L.mission)}</span><span ${mark('company.mission')}>${txt('company.mission', isAr ? company.mission_ar : company.mission_en)}</span></div>
+    </div>`, { key: 'company', kicker: L.profile_sub, section: L.sec_company });
 
   // 3 — the ground rules, then the quantities they produce
   slide(L.basis_h, `
@@ -694,7 +735,7 @@ function buildStudyDeck(data, lang) {
           study.conventional.rebar_ton, L.pt, study.post_tension.rebar_ton)}</div>
         ${!study.complete ? `<div class="note"><b>${esc(L.incomplete_h)}</b> ${esc(L.incomplete)}</div>` : ''}
       </div>
-    </div>`, { kicker: L.basis_sub, section: L.sec_basis });
+    </div>`, { key: 'basis', kicker: L.basis_sub, section: L.sec_basis });
 
   // 4 — the comparison, chart first
   slide(L.compare_h, `
@@ -734,7 +775,7 @@ function buildStudyDeck(data, lang) {
           </tr>
         </tbody>
       </table>
-    </div>`, { kicker: L.compare_sub, section: L.sec_cost });
+    </div>`, { key: 'cost', kicker: L.compare_sub, section: L.sec_cost });
 
   // 5 — the number the meeting is about
   slide(L.saving_h, `
@@ -754,8 +795,8 @@ function buildStudyDeck(data, lang) {
     </div>
     <div class="chart grow">${waterfall(study, L, currency, isAr)}</div>
     ${!study.saving.favours_pt_on_slab_alone ? `
-    <div class="note"><b>${esc(L.slab_negative_h)}</b> ${esc(L.slab_negative)}</div>` : ''}`,
-  { kicker: L.saving_sub, section: L.sec_saving });
+    <div class="note"><b>${esc(L.slab_negative_h)}</b> <span ${mark('saving.note')}>${txt('saving.note', L.slab_negative)}</span></div>` : ''}`,
+  { key: 'saving', kicker: L.saving_sub, section: L.sec_saving });
 
   // 6 — time and weight
   slide(L.programme_h, `
@@ -769,7 +810,7 @@ function buildStudyDeck(data, lang) {
       ${statTile('cube', L.b_concrete, money(study.benefits.concrete_saved_m3), L.unit_m3)}
       ${statTile('steel', L.b_rebar, money(study.benefits.rebar_saved_ton, 1), L.unit_t)}
       ${statTile('ruler', L.b_height, money(study.benefits.height_saved_mm), L.unit_mm)}
-    </div>`, { kicker: L.programme_sub, section: L.sec_time });
+    </div>`, { key: 'time', kicker: L.programme_sub, section: L.sec_time });
 
   // 7 — the case that is not about money
   slide(L.adv_h, `
@@ -778,7 +819,7 @@ function buildStudyDeck(data, lang) {
       ${advCard(2, 'weight', L.adv2_h, L.adv2)}
       ${advCard(3, 'clock', L.adv3_h, L.adv3)}
       ${advCard(4, 'shield', L.adv4_h, L.adv4)}
-    </div>`, { kicker: L.adv_sub, section: L.sec_adv });
+    </div>`, { key: 'adv', kicker: L.adv_sub, section: L.sec_adv });
 
   // 8 — the engineer's own drawings
   if (hasDrawings) {
@@ -786,15 +827,15 @@ function buildStudyDeck(data, lang) {
       <div class="draws">
         ${drawingColumn('original', L.drawings_original, 'grey')}
         ${drawingColumn('post_tension', L.drawings_pt, 'gold')}
-      </div>`, { kicker: L.drawings_sub, section: L.sec_drawings });
+      </div>`, { key: 'drawings', kicker: L.drawings_sub, section: L.sec_drawings });
   }
 
   // 9 — what the study does not claim
   slide(L.assumptions_h, `
     <div class="cols mid ${notes ? 'g6-6' : 'g12'}">
-      <div class="panel"><div class="panel-h">${esc(L.assumptions_h)}</div><div class="prose">${esc(L.assumptions)}</div></div>
-      ${notes ? `<div class="panel"><div class="panel-h">${esc(L.notes_h)}</div><div class="prose">${esc(notes)}</div></div>` : ''}
-    </div>`, { section: L.sec_limits });
+      <div class="panel"><div class="panel-h">${esc(L.assumptions_h)}</div><div class="prose" ${mark('limits.body')}>${prose('limits.body', L.assumptions)}</div></div>
+      ${notes ? `<div class="panel"><div class="panel-h">${esc(L.notes_h)}</div><div class="prose" ${mark('limits.notes')}>${prose('limits.notes', notes)}</div></div>` : ''}
+    </div>`, { key: 'limits', section: L.sec_limits });
 
   // 10 — close
   slide('', `
@@ -802,8 +843,8 @@ function buildStudyDeck(data, lang) {
     <div class="cover-in close">
       <div class="cover-plate"><img src="${logo}" alt=""></div>
       <div class="cover-rule"></div>
-      <h1>${esc(L.closing_h)}</h1>
-      <div class="cover-sub">${esc(L.closing_sub)}</div>
+      <h1 ${mark('close.title')}>${txt('close.title', L.closing_h)}</h1>
+      <div class="cover-sub" ${mark('close.sub')}>${txt('close.sub', L.closing_sub)}</div>
     </div>
     <div class="cover-strip contact">
         <div class="ct">${icon('layers', 20, C.goldLight)}<span>${esc(branchName)}</span></div>
@@ -812,20 +853,20 @@ function buildStudyDeck(data, lang) {
         ${branch.phone ? `<div class="ct">${icon('phone', 20, C.goldLight)}<span><bdi>${esc(branch.phone)}</bdi></span></div>` : ''}
         ${branch.email ? `<div class="ct">${icon('mail', 20, C.goldLight)}<span><bdi>${esc(branch.email)}</bdi></span></div>` : ''}
       ${branch.website ? `<div class="ct">${icon('globe', 20, C.goldLight)}<span><bdi>${esc(branch.website)}</bdi></span></div>` : ''}
-    </div>`, { className: 'cover', bare: true });
+    </div>`, { key: 'close', className: 'cover', bare: true });
 
   // --------------------------------------------------------------- markup
-  const total = slides.length;
-  const deck = slides.map((item, index) => {
-    const n = index + 1;
-    const pct = (n / total) * 100;
-    return `
-  <section class="slide ${item.className || ''}" data-n="${n}">
+  // Numbering happens inside the document, not here: hiding a slide has to
+  // renumber every slide after it.
+  const deck = slides.map((item) => `
+  <section class="slide ${item.className || ''} ${hidden[item.key] ? 'is-off' : ''}" data-slide="${item.key}">
+    ${item.key === 'cover' ? '' : `
+    <button type="button" class="ui slide-toggle" data-toggle="${item.key}"></button>`}
     ${item.bare ? '' : `
     <header class="s-head">
       <div class="s-title">
-        <h2>${esc(item.title)}</h2>
-        ${item.kicker ? `<div class="kick">${esc(item.kicker)}</div>` : ''}
+        <h2 ${mark(`${item.key}.title`)}>${txt(`${item.key}.title`, item.title)}</h2>
+        ${item.kicker ? `<div class="kick" ${mark(`${item.key}.kick`)}>${txt(`${item.key}.kick`, item.kicker)}</div>` : ''}
       </div>
       <div class="s-mark">
         ${item.section ? `<span class="chip">${esc(item.section)}</span>` : ''}
@@ -837,11 +878,10 @@ function buildStudyDeck(data, lang) {
     ${item.bare ? '' : `
     <footer class="s-foot">
       <span class="who">${esc(projectName || branchName)}</span>
-      <span class="bar"><i style="width:${pct.toFixed(1)}%"></i></span>
-      <span class="pg">${String(n).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
+      <span class="bar"><i></i></span>
+      <span class="pg"></span>
     </footer>`}
-  </section>`;
-  }).join('');
+  </section>`).join('');
 
   return `<!doctype html>
 <html lang="${lang}" dir="${dir}">
@@ -1029,6 +1069,32 @@ function buildStudyDeck(data, lang) {
   }
   .bar-top button.gold { background: var(--gold); color: var(--navy-deep); }
   .bar-top button.ghost { background: transparent; color: #fff; box-shadow: inset 0 0 0 1px rgba(255,255,255,.45); }
+  .bar-top .grp { display: flex; align-items: center; gap: .5rem; }
+  .bar-top .hint { color: #b9cbe4; font-size: 12.5px; }
+  .bar-top .flash { color: var(--gold-l); font-size: 12.5px; font-weight: 700; }
+  .bar-edit { display: none; }
+  body.editing .bar-edit { display: flex; }
+  body.editing .bar-view { display: none; }
+
+  /* ---------------------------------------------------------- editing text */
+  body.editing [data-e] {
+    outline: 1px dashed #a9bfd8; outline-offset: 3px; border-radius: 1mm; cursor: text;
+  }
+  body.editing [data-e]:hover { background: rgba(201,162,39,.12); }
+  body.editing [data-e]:focus { outline: 2px solid var(--gold); background: rgba(201,162,39,.10); }
+  body.editing .slide.cover [data-e] { outline-color: rgba(255,255,255,.45); }
+
+  .slide-toggle {
+    display: none; position: absolute; z-index: 6; top: 4mm; inset-inline-start: 7mm;
+    padding: 1.5mm 4mm; border: 0; border-radius: 6mm; background: var(--navy); color: #fff;
+    font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+  }
+  body.editing .slide-toggle { display: block; }
+  /* A dropped slide stays in the document while editing, so it can be brought
+     back; everywhere else it simply is not there. */
+  .slide.is-off { display: none; }
+  body.editing .slide.is-off { display: flex; opacity: .4; filter: grayscale(1); }
+  body.editing .slide.is-off .slide-toggle { background: var(--gold); color: var(--navy-deep); }
 
   /* On a projector the slide is scaled to the screen rather than reflowed, so
      what the room sees is exactly what prints. */
@@ -1056,6 +1122,7 @@ function buildStudyDeck(data, lang) {
   .hud button { padding: 4px 12px; font-size: 12px; }
 
   @media print {
+    .slide.is-off { display: none !important; }
     body.present { overflow: visible; background: #fff; }
     body.present .slide { visibility: visible !important; position: static !important; transform: none !important; margin: 0 !important; box-shadow: none; }
     .hud { display: none !important; }
@@ -1065,44 +1132,107 @@ function buildStudyDeck(data, lang) {
 <body>
 
 <div class="ui bar-top">
-  <button type="button" class="gold" id="btn-present">${esc(L.present)}</button>
-  <button type="button" onclick="window.print()">${esc(L.print_btn)}</button>
-  <button type="button" class="ghost" onclick="window.close()">${esc(L.close_btn)}</button>
+  <span class="grp bar-view">
+    ${canSave ? `<button type="button" id="btn-edit">${esc(L.edit_btn)}</button>` : ''}
+    <button type="button" class="gold" id="btn-present">${esc(L.present)}</button>
+    <button type="button" id="btn-print">${esc(L.print_btn)}</button>
+    <button type="button" class="ghost" id="btn-close">${esc(L.close_btn)}</button>
+  </span>
+  <span class="grp bar-edit">
+    <button type="button" class="gold" id="btn-save">${esc(L.edit_save)}</button>
+    <button type="button" class="ghost" id="btn-reset">${esc(L.edit_reset)}</button>
+    <button type="button" class="ghost" id="btn-done">${esc(L.edit_done)}</button>
+    <span class="hint">${esc(L.edit_hint)}</span>
+    <span class="flash" id="flash"></span>
+  </span>
 </div>
 ${deck}
 <div class="ui hud" id="hud">
   <button type="button" id="btn-prev">‹</button>
-  <span class="n" id="hud-n">1 / ${total}</span>
+  <span class="n" id="hud-n">1</span>
   <button type="button" id="btn-next">›</button>
   <span class="hint">${esc(L.hint_keys)}</span>
   <button type="button" id="btn-exit">${esc(L.close_btn)}</button>
 </div>
 
 <script>
+window.SPAN = {
+  api: ${json(apiUrl)},
+  generated: ${json(generated)},
+  hidden: ${json(hidden)},
+  words: {
+    hide: ${json(L.edit_hide)}, show: ${json(L.edit_show)},
+    saved: ${json(L.edit_saved)}, failed: ${json(L.edit_failed)},
+    unsaved: ${json(L.edit_unsaved)}, resetAsk: ${json(L.edit_reset_ask)}
+  }
+};
+</script>
+<script>
 (function () {
-  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var API = SPAN.api;
+  var GENERATED = SPAN.generated;
+  var WORDS = SPAN.words;
+  var hiddenState = SPAN.hidden || {};
+
+  var all = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var fields = Array.prototype.slice.call(document.querySelectorAll('[data-e]'));
+  var counter = document.getElementById('hud-n');
+  var flash = document.getElementById('flash');
   var index = 0;
   var live = false;
-  var counter = document.getElementById('hud-n');
+  var editing = false;
+  var dirty = false;
 
+  /** The slides that are actually in the deck right now. */
+  function shown() {
+    return all.filter(function (slide) { return !slide.classList.contains('is-off'); });
+  }
+
+  /** Page numbers and the progress bar, recomputed whenever the deck changes. */
+  function renumber() {
+    var list = shown();
+    list.forEach(function (slide, i) {
+      var page = slide.querySelector('.pg');
+      var bar = slide.querySelector('.s-foot .bar i');
+      var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+      if (page) page.textContent = pad(i + 1) + ' / ' + pad(list.length);
+      if (bar) bar.style.width = (((i + 1) / list.length) * 100).toFixed(1) + '%';
+    });
+    all.forEach(function (slide) {
+      var button = slide.querySelector('.slide-toggle');
+      if (!button) return;
+      button.textContent = slide.classList.contains('is-off') ? WORDS.show : WORDS.hide;
+    });
+  }
+
+  function say(message) {
+    if (!flash) return;
+    flash.textContent = message;
+    setTimeout(function () { if (flash.textContent === message) flash.textContent = ''; }, 3000);
+  }
+
+  // ------------------------------------------------------------- presenting
   function fit() {
-    var slide = slides[index];
+    var slide = shown()[index];
     if (!slide) return;
     var k = Math.min(window.innerWidth / slide.offsetWidth, window.innerHeight / slide.offsetHeight);
     document.documentElement.style.setProperty('--k', k);
   }
 
   function show(next) {
+    var list = shown();
+    if (!list.length) return;
     if (next < 0) next = 0;
-    if (next > slides.length - 1) next = slides.length - 1;
-    slides[index].classList.remove('on');
+    if (next > list.length - 1) next = list.length - 1;
+    list.forEach(function (slide) { slide.classList.remove('on'); });
     index = next;
-    slides[index].classList.add('on');
-    counter.textContent = (index + 1) + ' / ' + slides.length;
+    list[index].classList.add('on');
+    counter.textContent = (index + 1) + ' / ' + list.length;
     fit();
   }
 
   function start() {
+    if (editing) setEdit(false);
     live = true;
     document.body.classList.add('present');
     show(index);
@@ -1114,19 +1244,104 @@ ${deck}
   function stop() {
     live = false;
     document.body.classList.remove('present');
-    slides.forEach(function (slide) { slide.classList.remove('on'); });
+    all.forEach(function (slide) { slide.classList.remove('on'); });
     if (document.fullscreenElement && document.exitFullscreen) {
       document.exitFullscreen().catch(function () {});
     }
-    slides[index].scrollIntoView({ block: 'center' });
+    var current = shown()[index];
+    if (current) current.scrollIntoView({ block: 'center' });
   }
 
+  // ---------------------------------------------------------------- editing
+  function setEdit(on) {
+    editing = on;
+    document.body.classList.toggle('editing', on);
+    fields.forEach(function (field) {
+      if (on) field.setAttribute('contenteditable', 'true');
+      else field.removeAttribute('contenteditable');
+    });
+    if (on) window.scrollTo({ top: 0 });
+  }
+
+  function collect() {
+    var text = {};
+    fields.forEach(function (field) {
+      var key = field.getAttribute('data-e');
+      var value = field.innerText.replace(/\u00a0/g, ' ').trim();
+      // Only what was actually changed is stored, so improving the generated
+      // wording later still reaches the decks nobody has touched.
+      if (value && value !== String(GENERATED[key] || '').trim()) text[key] = value;
+    });
+    return { text: text, hidden: hiddenState };
+  }
+
+  function save() {
+    var payload = collect();
+    fetch(API, {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(function (response) {
+      if (!response.ok) throw new Error(response.status);
+      dirty = false;
+      say(WORDS.saved);
+    }).catch(function () { say(WORDS.failed); });
+  }
+
+  function reset() {
+    if (!window.confirm(WORDS.resetAsk)) return;
+    fields.forEach(function (field) {
+      var key = field.getAttribute('data-e');
+      if (GENERATED[key] != null) field.innerText = GENERATED[key];
+    });
+    Object.keys(hiddenState).forEach(function (key) { delete hiddenState[key]; });
+    all.forEach(function (slide) { slide.classList.remove('is-off'); });
+    dirty = true;
+    renumber();
+  }
+
+  // ---------------------------------------------------------------- wiring
+  var editButton = document.getElementById('btn-edit');
+  if (editButton) editButton.addEventListener('click', function () { setEdit(true); });
+  document.getElementById('btn-save').addEventListener('click', save);
+  document.getElementById('btn-reset').addEventListener('click', reset);
+  document.getElementById('btn-done').addEventListener('click', function () { setEdit(false); });
   document.getElementById('btn-present').addEventListener('click', start);
+  document.getElementById('btn-print').addEventListener('click', function () { window.print(); });
+  document.getElementById('btn-close').addEventListener('click', function () {
+    if (dirty && !window.confirm(WORDS.unsaved)) return;
+    dirty = false;
+    window.close();
+  });
   document.getElementById('btn-exit').addEventListener('click', stop);
   document.getElementById('btn-next').addEventListener('click', function () { show(index + 1); });
   document.getElementById('btn-prev').addEventListener('click', function () { show(index - 1); });
 
+  document.addEventListener('input', function (event) {
+    if (event.target.hasAttribute && event.target.hasAttribute('data-e')) dirty = true;
+  });
+
+  document.addEventListener('click', function (event) {
+    var toggle = event.target.closest && event.target.closest('.slide-toggle');
+    if (toggle) {
+      var slide = toggle.closest('.slide');
+      var key = toggle.getAttribute('data-toggle');
+      var off = slide.classList.toggle('is-off');
+      if (off) hiddenState[key] = true; else delete hiddenState[key];
+      dirty = true;
+      renumber();
+      return;
+    }
+    // A click advances the deck the way a clicker does — except on the
+    // controls, and never while a sentence is being edited.
+    if (!live || editing) return;
+    if (event.target.closest && event.target.closest('.hud')) return;
+    show(index + 1);
+  });
+
   document.addEventListener('keydown', function (event) {
+    if (editing && !live) return;
     if (!live) {
       if (event.key === 'p' || event.key === 'P') start();
       return;
@@ -1135,18 +1350,19 @@ ${deck}
     if (key === 'ArrowRight' || key === 'ArrowDown' || key === ' ' || key === 'PageDown') { show(index + 1); event.preventDefault(); }
     else if (key === 'ArrowLeft' || key === 'ArrowUp' || key === 'PageUp') { show(index - 1); event.preventDefault(); }
     else if (key === 'Home') { show(0); }
-    else if (key === 'End') { show(slides.length - 1); }
+    else if (key === 'End') { show(shown().length - 1); }
     else if (key === 'Escape') { stop(); }
   });
 
-  // A click advances, the way a clicker does — except on the controls.
-  document.addEventListener('click', function (event) {
-    if (!live) return;
-    if (event.target.closest && event.target.closest('.hud')) return;
-    show(index + 1);
+  window.addEventListener('beforeunload', function (event) {
+    if (!dirty) return undefined;
+    event.preventDefault();
+    event.returnValue = '';
+    return '';
   });
 
   window.addEventListener('resize', fit);
+  renumber();
 })();
 </script>
 </body>

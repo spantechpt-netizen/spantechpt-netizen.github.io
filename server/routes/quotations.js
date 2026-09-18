@@ -14,7 +14,10 @@ import {
   COUNTRIES, CURRENCIES, QUOTE_STATUS,
 } from '../validate.js';
 import { readFileSync } from 'node:fs';
-import { computeStudy, defaultStudy, CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS } from '../study.js';
+import {
+  computeStudy, defaultStudy, sanitizeDeck,
+  CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS,
+} from '../study.js';
 import { saveDrawing, deleteDrawingFile, drawingPath, DRAWING_KINDS } from '../uploads.js';
 
 const SELECT_QUOTE = `
@@ -280,11 +283,34 @@ export function register(router) {
       storey_height_saving_mm: numeric('storey_height_saving_mm', { max: 10_000 }),
       notes_ar: str(incoming.notes_ar, 'notes_ar', { max: 4000 }) || '',
       notes_en: str(incoming.notes_en, 'notes_en', { max: 4000 }) || '',
+      // The deck's own wording is edited on the deck, not on this form, so a
+      // save from the form keeps whatever is already there.
+      deck: sanitizeDeck(incoming.deck ?? safeParse(quote.study_json, {})?.deck),
     };
 
     update('quotations', id, { study_json: JSON.stringify(study) });
     audit(user.id, 'quotation', id, 'study');
     return { study: computeStudy(study), drawings: drawingsFor(id) };
+  });
+
+  /**
+   * Wording changed on the deck, and slides dropped from it.
+   *
+   * This is saved from the printed deck rather than from the study form: the
+   * engineer reads the slide, changes the sentence in front of them, and the
+   * next time that deck is opened it says what they left it saying.
+   */
+  router.put('/api/quotations/:id/study/deck', ({ params, body, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+
+    const stored = safeParse(quote.study_json, null) || defaultStudy(quote);
+    const study = { ...stored, deck: sanitizeDeck(body) };
+    update('quotations', id, { study_json: JSON.stringify(study) });
+    audit(user.id, 'quotation', id, 'study_deck');
+    return { deck: study.deck };
   });
 
   // --------------------------------------------------------- study drawings

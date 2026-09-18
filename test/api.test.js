@@ -941,3 +941,46 @@ test('a study takes figures, drawings and captions', async () => {
   assert.equal(removed.status, 200);
   assert.equal(removed.body.drawings.length, 0);
 });
+
+// The deck is edited on the deck itself — the engineer rewrites a sentence in
+// front of the owner's name and it has to still be there next time.
+test('wording edited on the deck is kept, and kept clean', async () => {
+  const customer = await api('POST', '/api/customers', { name_en: 'Deck Test Co', country: 'SA' });
+  const created = await api('POST', '/api/quotations', {
+    customer_id: customer.body.customer.id,
+    project_name: 'Deck edits check', country: 'SA', area_sqm: 3000, unit_price: 70,
+  });
+  const id = created.body.quotation.id;
+
+  const saved = await api('PUT', `/api/quotations/${id}/study/deck`, {
+    text: {
+      'cover.title': '  دراسة   تكلفة مشروع النخيل  ',
+      'adv.1.h': 'بحور أكبر ومواقف أكتر',
+      'bad key!': 'dropped',
+      'adv.2.h': 42,
+      'long.one': 'x'.repeat(4000),
+    },
+    hidden: { company: true, basis: false },
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.deck.text['cover.title'], 'دراسة تكلفة مشروع النخيل', 'whitespace is tidied');
+  assert.equal(saved.body.deck.text['bad key!'], undefined, 'a key that is not a key is dropped');
+  assert.equal(saved.body.deck.text['adv.2.h'], undefined, 'a number is not wording');
+  assert.equal(saved.body.deck.text['long.one'].length, 1500, 'and text is capped');
+  assert.deepEqual(saved.body.deck.hidden, { company: true }, 'only the slides actually dropped');
+
+  const reopened = await api('GET', `/api/quotations/${id}/study`);
+  assert.equal(reopened.body.study.input.deck.text['adv.1.h'], 'بحور أكبر ومواقف أكتر');
+
+  // Saving the figures from the study form must not wipe the wording.
+  const figures = await api('PUT', `/api/quotations/${id}/study`, {
+    study: { system: 'solid', floors: 3, area_sqm: 3000, concrete_rate_m3: 250 },
+  });
+  assert.equal(figures.status, 200);
+  assert.equal(
+    figures.body.study.input.deck.text['cover.title'],
+    'دراسة تكلفة مشروع النخيل',
+    'the deck survives a save from the study form',
+  );
+  assert.deepEqual(figures.body.study.input.deck.hidden, { company: true });
+});

@@ -322,6 +322,10 @@ export async function render({ params, navigate }) {
     return {
       study: data.study,
       drawings: data.drawings,
+      // The deck saves the wording the engineer edits on it straight back to
+      // this quotation, so it needs to know which one it is and where to send.
+      quotation_id: quotationId,
+      origin: window.location.origin,
       quotation: doc.quotation,
       company: doc.company,
       branch: doc.branch,
