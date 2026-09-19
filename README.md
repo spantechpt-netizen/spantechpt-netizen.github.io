@@ -346,7 +346,9 @@ later with `npm run reset`.
 > document for `crm.spantechpt.com` — DNS records, server specs, ports, TLS,
 > firewall, backups and a sign-off checklist — in two versions:
 > [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for Linux (systemd, nginx, certbot)
-> and [`docs/DEPLOYMENT-WINDOWS.md`](docs/DEPLOYMENT-WINDOWS.md) for Windows
+> and [`docs/DEPLOYMENT-WINDOWS.md`](docs/DEPLOYMENT-WINDOWS.md) for Windows,
+> or [`docs/DEPLOYMENT-COMPANY-SERVER.md`](docs/DEPLOYMENT-COMPANY-SERVER.md) for the
+> company's own Windows Server 2022, beside the application already running there
 > Server (NSSM, IIS + ARR, win-acme). The DNS records and server specs are the
 > same in both; only the service, proxy and certificate tooling differ.
 
