@@ -16,6 +16,7 @@ import {
 } from './templates.js';
 import { round2, computeTotals } from './pricing.js';
 import { defaultStudy } from './study.js';
+import { heuristicExtract } from './extract.js';
 
 export function seedSettings() {
   const company = getSetting('company');
@@ -335,12 +336,127 @@ function seedDemo() {
   ];
   activities.forEach((activity) => insert('activities', { ...activity, created_by: owner }));
 
+  seedDemoMail(owner, engineerIds);
+
   // The rows above are numbered by hand, so hand the sequences back in step
   // before anyone adds a customer of their own.
   reconcileCounters();
 
   console.log(`  demo data: ${customers.length} customers, ${opportunities.length} opportunities, ${activities.length} activities`);
   console.log('  demo engineer logins use password: SpanTech@2026');
+}
+
+/**
+ * A demo mailbox, so the incoming-requests screen has something in it before
+ * anyone has configured IMAP: a few genuine enquiries that reached the queue,
+ * and the newsletters and invoices the filter passed over — which is the point
+ * of the "all mail" view.
+ */
+function seedDemoMail(owner, engineerIds) {
+  const accountId = insert('mail_accounts', {
+    label: 'info@spantechksa.com',
+    host: 'imap.demo.local', port: 993, secure: 1,
+    username: 'info@spantechksa.com', password_enc: '',
+    folders: JSON.stringify(['INBOX']),
+    // Inert: the sync loop only visits active accounts, and this one has
+    // nowhere to connect to.
+    active: 0, sync_minutes: 0,
+    created_by: owner,
+  });
+
+  const hoursAgo = (hours) => new Date(Date.now() - hours * 3600_000).toISOString();
+
+  const mail = [
+    {
+      queue: 'new',
+      from: 'eng.sami@alhabib.com.sa', name: 'م. سامي الحبيب',
+      subject: 'طلب عرض سعر — مدرسة بنات بالدمام 4,500 م²',
+      body: 'السلام عليكم ورحمة الله،\n\nمطلوب عرض سعر لتنفيذ أسقف لاحقة الشد (Post-Tension) لمشروع مدرسة بنات '
+        + 'بمدينة الدمام، إجمالي المساحة 4,500 م² على ثلاثة أدوار.\n\nبرجاء موافاتنا بالعرض خلال أسبوع.\n\n'
+        + 'وتفضلوا بقبول فائق الاحترام،\nم. سامي الحبيب — شركة الحبيب للمقاولات\n0551234477',
+      hours: 5,
+    },
+    {
+      queue: 'new',
+      from: 'procurement@mekano4.com', name: 'Mekano4 Procurement',
+      subject: 'RFQ — Post-tensioned slabs, New Capital Mall (21,000 m2)',
+      body: 'Dear Span Tech,\n\nPlease quote for the design, supply and installation of post-tensioned slabs '
+        + 'for our New Capital Mall project in Egypt. Total slab area is approximately 21,000 m2 over five levels.\n\n'
+        + 'Drawings are attached. We would appreciate your offer by the end of the month.\n\nBest regards,\n'
+        + 'Procurement Department, Mekano4',
+      hours: 28,
+    },
+    {
+      queue: 'assigned',
+      from: 'omar@nesma-contracting.com.sa', name: 'عمر فتحي',
+      subject: 'Re: برج سكني أ — جدة',
+      body: 'شكراً على العرض. المالك عنده استفسار عن مدة التنفيذ وإمكانية تقليل سُمك السقف. '
+        + 'ممكن نحدد اجتماع الأسبوع الجاي؟',
+      hours: 50,
+    },
+    { from: 'news@constructionweekly.com', name: 'Construction Weekly',
+      subject: 'نشرة أخبار المقاولات — عدد سبتمبر',
+      body: 'أهم أخبار القطاع هذا الشهر: مشاريع جديدة في نيوم، واستقرار أسعار حديد التسليح، '
+        + 'وتقرير عن سوق الخرسانة سابقة الإجهاد في الخليج.',
+      hours: 9 },
+    { from: 'billing@alrajhi-steel.com', name: 'Al Rajhi Steel — Billing',
+      subject: 'Invoice #4471 — due 30/09/2026',
+      body: 'Dear customer, please find attached invoice 4471 for materials delivered on 12/09/2026. '
+        + 'Payment is due on 30/09/2026.',
+      hours: 33 },
+    { from: 'events@saudibuild.com', name: 'Saudi Build',
+      subject: 'دعوة لحضور معرض البناء السعودي 2026',
+      body: 'يسعدنا دعوتكم لحضور معرض البناء السعودي في الرياض خلال نوفمبر 2026. '
+        + 'التسجيل مفتوح للشركات العارضة.',
+      hours: 72 },
+    { from: 'ops@convert-qa.com', name: 'Convert Qatar — Operations',
+      subject: 'Re: Delivery schedule for Lusail',
+      body: 'Confirming the delivery slot for next Tuesday as agreed on site. No changes from our side.',
+      hours: 96 },
+  ];
+
+  let uid = 1000;
+  mail.forEach((item) => {
+    uid += 1;
+    const body = item.body.replace(/\\n/g, '\n');
+    const messageId = insert('mail_messages', {
+      account_id: accountId,
+      folder: 'INBOX',
+      uid,
+      message_id: `<demo-${uid}@spantechksa.com>`,
+      from_email: item.from,
+      from_name: item.name,
+      to_emails: 'info@spantechksa.com',
+      subject: item.subject,
+      body_text: body,
+      snippet: body.replace(/\s+/g, ' ').slice(0, 300),
+      received_at: hoursAgo(item.hours),
+    });
+
+    if (!item.queue) return;
+
+    // The real extractor, so the demo shows what it actually reads out of a
+    // message rather than figures typed in by hand.
+    const extraction = heuristicExtract({
+      fromEmail: item.from,
+      fromName: item.name,
+      subject: item.subject,
+      body,
+      receivedAt: hoursAgo(item.hours),
+    });
+
+    insert('mail_requests', {
+      message_id: messageId,
+      status: item.queue,
+      kind: extraction.is_rfq ? 'rfq' : 'reply',
+      confidence: extraction.confidence || 0,
+      extraction_json: JSON.stringify(extraction),
+      summary_ar: extraction.summary_ar || null,
+      summary_en: extraction.summary_en || null,
+      customer_id: extraction.customer?.matched_id || null,
+      assigned_to: item.queue === 'assigned' ? engineerIds[0] : null,
+    });
+  });
 }
 
 function resetBusinessData() {
