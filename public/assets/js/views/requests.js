@@ -54,6 +54,11 @@ export async function render({ params, navigate }) {
 
   page.append(tiles);
 
+  // The default tab depends on the job: triagers start on the new queue. It is
+  // chosen before the tabs are built, or the highlighted tab is not the one
+  // being shown.
+  if (!view.status) view.status = can('mail.triage') ? 'new' : 'assigned';
+
   const tab = (status, label) => el('button', {
     type: 'button',
     class: view.status === status ? 'active' : '',
@@ -146,8 +151,6 @@ export async function render({ params, navigate }) {
 
   page.append(el('div.card', {}, [el('div.card-body.flush', {}, [host])]));
 
-  // The default tab depends on the job: triagers start on the new queue.
-  if (!view.status) view.status = can('mail.triage') ? 'new' : 'assigned';
 
   async function load() {
     if (view.mode === 'mailbox') return loadMailbox();
