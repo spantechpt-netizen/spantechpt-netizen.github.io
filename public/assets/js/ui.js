@@ -79,6 +79,14 @@ const ICONS = {
   bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
   inbox: 'M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
   back: 'M19 12H5M12 19l-7-7 7-7',
+  download: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3',
+  file: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6',
+  grip: 'M9 5h.01M9 12h.01M9 19h.01M15 5h.01M15 12h.01M15 19h.01',
+  eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  eyeOff: 'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24M1 1l22 22',
+  sun: 'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42',
+  moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+  settings2: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6',
 };
 
 export function icon(name, size = 18) {
@@ -311,6 +319,21 @@ export function dataTable({ columns, rows, onRowClick, empty, footer }) {
   const table = el('table.data', {}, [el('thead', {}, [head]), body]);
   if (footer) table.append(el('tfoot', {}, [footer]));
   return el('div.table-wrap', {}, [table]);
+}
+
+/**
+ * exportMenu({ href: (format) => url, onPdf })
+ * Three small buttons — Excel, CSV, PDF — the first two download from the
+ * server with the screen's filters, the third opens the printable report.
+ */
+export function exportMenu({ href, onPdf }) {
+  return el('div.export-menu', { title: t('export_hint') }, [
+    icon('download', 14),
+    el('span.export-label', { text: t('export_title') }),
+    el('a.btn.btn-sm.btn-secondary', { href: href('xlsx'), download: '', text: t('export_excel') }),
+    el('a.btn.btn-sm.btn-secondary', { href: href('csv'), download: '', text: t('export_csv') }),
+    onPdf ? el('button.btn.btn-sm.btn-secondary', { type: 'button', text: t('export_pdf'), onclick: onPdf }) : null,
+  ]);
 }
 
 export const loadingBlock = () => el('div.loading-page', { text: t('loading') });

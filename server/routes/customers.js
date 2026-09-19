@@ -2,6 +2,7 @@ import { all, get, insert, update, run, nextCounter, audit } from '../db.js';
 import { requireAuth, requirePermission, canSeeAll, assertCanEdit, can } from '../auth.js';
 import { notFound, conflict } from '../http.js';
 import { notifyAssignment } from '../notifications.js';
+import { listCustomerMail, customerMailCount, getMessage, backfillCustomerLinks } from '../mailbox.js';
 import {
   str, int, oneOf, email as emailField,
   COUNTRIES, CUSTOMER_TYPES, CUSTOMER_STATUS,
@@ -113,7 +114,32 @@ export function register(router) {
          LEFT JOIN users u ON u.id = a.owner_id
          WHERE a.customer_id = ? ORDER BY a.done, a.due_at DESC LIMIT 50`, id,
       ),
+      // Correspondence is filed here by address; only those who may read the
+      // mailbox get the count, let alone the messages.
+      mail_count: can(user, 'mail.view') ? customerMailCount(id) : null,
     };
+  });
+
+  // ------------------------------------------------------------- their mail
+  // Every message from or to this customer's addresses, filed automatically
+  // as the mailbox syncs. Reading it needs the mail permission as well as the
+  // customer one: the archive is the mailbox, seen from the customer's side.
+  router.get('/api/customers/:id/mail', ({ params, user }) => {
+    requirePermission(user, 'customers.view');
+    requirePermission(user, 'mail.view');
+    const id = Number(params.id);
+    loadCustomer(id);
+    return { messages: listCustomerMail(id), total: customerMailCount(id) };
+  });
+
+  router.get('/api/customers/:id/mail/:messageId', ({ params, user }) => {
+    requirePermission(user, 'customers.view');
+    requirePermission(user, 'mail.view');
+    const id = Number(params.id);
+    loadCustomer(id);
+    const message = getMessage(Number(params.messageId));
+    if (!message || Number(message.customer_id) !== id) throw notFound('Message not found', 'الرسالة مش موجودة');
+    return { message };
   });
 
   router.post('/api/customers', ({ body, user }) => {
@@ -192,6 +218,8 @@ export function register(router) {
       is_primary: isPrimary,
       notes: str(body.notes, 'notes', { max: 2000 }),
     });
+    // A new address may claim mail that arrived before the contact existed.
+    if (body.email) backfillCustomerLinks({ limit: 2000 });
     return { contact: get('SELECT * FROM contacts WHERE id = ?', id) };
   });
 
@@ -213,6 +241,7 @@ export function register(router) {
       is_primary: body.is_primary === undefined ? undefined : (body.is_primary ? 1 : 0),
       notes: str(body.notes, 'notes', { max: 2000, fallback: undefined }),
     });
+    if (body.email) backfillCustomerLinks({ limit: 2000 });
     return { contact: get('SELECT * FROM contacts WHERE id = ?', id) };
   });
 

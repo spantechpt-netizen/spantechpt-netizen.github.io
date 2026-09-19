@@ -115,6 +115,9 @@ export const api = {
   createCustomer: (data) => request('POST', '/api/customers', data),
   updateCustomer: (id, data) => request('PATCH', `/api/customers/${id}`, data),
   deleteCustomer: (id) => request('DELETE', `/api/customers/${id}`),
+  // The customer's correspondence, filed from the mailbox by address.
+  customerMail: (id) => request('GET', `/api/customers/${id}/mail`),
+  customerMailMessage: (id, messageId) => request('GET', `/api/customers/${id}/mail/${messageId}`),
   createContact: (customerId, data) => request('POST', `/api/customers/${customerId}/contacts`, data),
   updateContact: (id, data) => request('PATCH', `/api/contacts/${id}`, data),
   deleteContact: (id) => request('DELETE', `/api/contacts/${id}`),

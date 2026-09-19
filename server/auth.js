@@ -75,7 +75,7 @@ export function userFromRequest(req) {
   const row = get(
     `SELECT u.id, u.name, u.name_ar, u.email, u.role, u.title, u.title_ar, u.phone,
             u.country, u.lang, u.active, u.reminder_lead_hours, u.stale_after_days,
-            u.permissions, s.expires_at
+            u.permissions, u.dashboard_json, s.expires_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token = ?`,
     id,

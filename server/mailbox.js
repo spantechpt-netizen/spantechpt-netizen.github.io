@@ -12,9 +12,12 @@
 import { all, get, insert, run, update, getSetting, transaction, audit } from './db.js';
 import { withImap, imapDate } from './imap.js';
 import { parseMessage, decodeWords, parseAddresses, stripQuotedReply } from './mime.js';
-import { extractFromEmail, looksLikeRfq, mentionsPostTension } from './extract.js';
+import {
+  extractFromEmail, looksLikeRfq, mentionsPostTension, domainOf, isPublicDomain, matchByPhone,
+} from './extract.js';
 import { decryptSecret } from './secrets.js';
 import { notify } from './notifications.js';
+import { broadcast } from './events.js';
 
 /** Mail that is never worth a human's attention. */
 const NOISE_PATTERNS = [
@@ -26,6 +29,87 @@ const NOISE_SUBJECTS = [
   /undeliverable/i, /mail delivery failed/i, /read receipt/i,
   /رسالة تلقائية/, /خارج المكتب/, /فشل تسليم/,
 ];
+
+// ----------------------------------------------------------- customer link
+/**
+ * The customer a message belongs to, by address alone.
+ *
+ * An exact contact or company address wins; failing that, the company's own
+ * domain (never a public one such as gmail.com, which would file half the
+ * mailbox under one customer); failing that, a WhatsApp number. Names in the
+ * text are not used here — a name is a guess, an address is a fact — so a
+ * message is never filed under the wrong customer, only left unfiled.
+ */
+export function linkCustomer({ fromEmail, toEmails = [], fromPhone = null } = {}) {
+  const addresses = [fromEmail, ...[].concat(toEmails || [])]
+    .map((a) => String(a || '').trim().toLowerCase()).filter(Boolean);
+
+  for (const address of addresses) {
+    const hit = get(
+      `SELECT c.id FROM contacts ct JOIN customers c ON c.id = ct.customer_id WHERE lower(ct.email) = ?
+       UNION SELECT id FROM customers WHERE lower(email) = ?`,
+      address, address,
+    );
+    if (hit) return hit.id;
+  }
+
+  for (const address of addresses) {
+    const domain = domainOf(address);
+    if (!domain || isPublicDomain(domain)) continue;
+    const hit = get(
+      `SELECT id FROM customers WHERE lower(email) LIKE ? OR lower(website) LIKE ?
+       UNION SELECT c.id FROM contacts ct JOIN customers c ON c.id = ct.customer_id WHERE lower(ct.email) LIKE ?
+       LIMIT 1`,
+      `%@${domain}`, `%${domain}%`, `%@${domain}`,
+    );
+    if (hit) return hit.id;
+  }
+
+  if (fromPhone) {
+    const byPhone = matchByPhone(fromPhone);
+    if (byPhone.customer) return byPhone.customer.id;
+  }
+  return null;
+}
+
+/**
+ * Files the messages that arrived before their sender was in the CRM. Runs
+ * at start-up and whenever a contact gains an address, so adding a contact
+ * pulls their past mail onto the customer's record.
+ */
+export function backfillCustomerLinks({ limit = 5000 } = {}) {
+  const rows = all(
+    `SELECT id, from_email, to_emails, from_phone FROM mail_messages
+      WHERE customer_id IS NULL ORDER BY id DESC LIMIT ?`,
+    limit,
+  );
+  let linked = 0;
+  transaction(() => {
+    for (const row of rows) {
+      const customerId = linkCustomer({
+        fromEmail: row.from_email,
+        toEmails: String(row.to_emails || '').split(',').map((a) => a.trim()).filter(Boolean),
+        fromPhone: row.from_phone,
+      });
+      if (!customerId) continue;
+      run('UPDATE mail_messages SET customer_id = ? WHERE id = ?', customerId, row.id);
+      linked += 1;
+    }
+  });
+  return linked;
+}
+
+/** A customer's correspondence, newest first, with whether each became a request. */
+export function listCustomerMail(customerId, { limit = 100 } = {}) {
+  return all(
+    `${MESSAGE_SELECT} WHERE m.customer_id = ?
+      ORDER BY m.received_at DESC, m.id DESC LIMIT ?`,
+    customerId, Math.min(Number(limit) || 100, 500),
+  ).map(hydrateMessage);
+}
+
+export const customerMailCount = (customerId) =>
+  get('SELECT COUNT(*) AS n FROM mail_messages WHERE customer_id = ?', customerId).n;
 
 export const isNoise = (fromEmail, subject, headers = {}) => {
   if (headers['auto-submitted'] && headers['auto-submitted'] !== 'no') return true;
@@ -199,6 +283,7 @@ async function storeMessage(account, folder, fetched) {
     account_id: account.id,
     folder,
     uid: fetched.uid,
+    customer_id: linkCustomer({ fromEmail: from.email, toEmails: toList }),
     message_id: (headers['message-id'] || '').trim() || null,
     in_reply_to: (headers['in-reply-to'] || '').trim() || null,
     from_email: from.email || null,
@@ -211,6 +296,8 @@ async function storeMessage(account, folder, fetched) {
     has_attachments: parsed.attachments.length ? 1 : 0,
     attachments_json: parsed.attachments.length ? JSON.stringify(parsed.attachments) : null,
   });
+
+  broadcast('mail', { id: messageRowId, customer_id: null, queued: false });
 
   // Filter out automated mail before spending anything on extraction.
   if (isNoise(from.email, subject, headers)) return 'stored';
@@ -252,6 +339,7 @@ async function storeMessage(account, folder, fetched) {
   });
 
   notifyTriagers({ subject, from, extraction, requestId });
+  broadcast('mail', { id: messageRowId, request_id: requestId, queued: true });
   return 'queued';
 }
 
@@ -302,6 +390,7 @@ export async function captureMessage({
     channel,
     folder,
     uid: Number(last?.uid || 0) + 1,
+    customer_id: linkCustomer({ fromPhone }),
     from_name: fromName,
     from_phone: fromPhone,
     subject: subject || null,
@@ -341,6 +430,7 @@ export async function captureMessage({
     channel,
   });
   audit(userId, 'mail_request', requestId, 'capture', { channel, from: fromPhone || fromName });
+  broadcast('mail', { id: messageRowId, request_id: requestId, queued: true, channel });
 
   return { requestId, extraction };
 }
@@ -450,10 +540,12 @@ const MESSAGE_SELECT = `
          m.from_phone, m.to_emails, m.snippet, m.received_at, m.has_attachments,
          m.attachments_json,
          a.label AS account_label,
-         r.id AS request_id, r.status AS request_status
+         r.id AS request_id, r.status AS request_status,
+         m.customer_id, cu.name_en AS customer_name, cu.name_ar AS customer_name_ar
     FROM mail_messages m
     JOIN mail_accounts a ON a.id = m.account_id
-    LEFT JOIN mail_requests r ON r.message_id = m.id`;
+    LEFT JOIN mail_requests r ON r.message_id = m.id
+    LEFT JOIN customers cu ON cu.id = m.customer_id`;
 
 /**
  * `only`: 'all' (everything), 'queued' (already a request) or 'other' (the

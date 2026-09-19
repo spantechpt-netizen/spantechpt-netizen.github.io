@@ -11,6 +11,7 @@
  * on every pass.
  */
 import { all, get, run, insert } from './db.js';
+import { publish } from './events.js';
 
 /** Inserts a notification, silently skipping duplicates of the same dedupe key. */
 export function notify({
@@ -22,7 +23,7 @@ export function notify({
   // Never notify someone about their own action.
   if (actorId && Number(actorId) === Number(userId)) return null;
   try {
-    return insert('notifications', {
+    const id = insert('notifications', {
       user_id: userId,
       actor_id: actorId,
       type,
@@ -36,6 +37,9 @@ export function notify({
       severity,
       dedupe_key: dedupeKey,
     });
+    // The bell in that person's open tabs learns of it now, not on the next poll.
+    publish(userId, 'notification', { id, type, entity, entity_id: entityId, link, severity });
+    return id;
   } catch (error) {
     // The unique index on (user_id, dedupe_key) rejects a repeat reminder.
     if (String(error.message || '').includes('UNIQUE')) return null;

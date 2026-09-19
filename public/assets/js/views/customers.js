@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { t, pick, money, formatDate, relativeDays } from '../i18n.js';
+import { t, pick, money, formatDate, formatDateTime, relativeDays } from '../i18n.js';
 import {
   el, clear, icon, dataTable, field, readForm, openModal, confirmDialog,
   toast, toastError, customerStatusBadge, stars, optionsFrom, blankOption,
@@ -139,7 +139,10 @@ export async function openCustomerDetail(id, onChange, navigate) {
     { key: 'opportunities', label: `${t('pipeline')} (${opportunities.length})`, build: () => opportunitiesPanel(opportunities) },
     { key: 'quotations', label: `${t('quotations')} (${quotations.length})`, build: () => quotationsPanel(quotations, navigate, close) },
     { key: 'activities', label: `${t('activities')} (${activities.length})`, build: () => activitiesPanel(activities) },
-  ];
+    can('mail.view') ? {
+      key: 'mail', label: `${t('customer_mail')} (${data.mail_count || 0})`, build: () => mailPanel(customer),
+    } : null,
+  ].filter(Boolean);
 
   let active = 'info';
   const drawTabs = () => {
@@ -270,6 +273,65 @@ function contactsPanel(customer, contacts, reload) {
     ],
   }));
   return host;
+}
+
+/**
+ * The customer's correspondence. Loaded when the tab opens, not with the
+ * customer, because most visits never come here and the list can be long.
+ */
+function mailPanel(customer) {
+  const host = el('div');
+  host.append(el('p.hint', { text: t('customer_mail_hint') }));
+  const list = el('div.loading-page', { text: t('loading') });
+  host.append(list);
+
+  api.customerMail(customer.id).then(({ messages }) => {
+    clear(list).classList.remove('loading-page');
+    if (!messages.length) {
+      list.append(el('div.empty', {}, [icon('mail', 36), el('div', { text: t('customer_mail_none') })]));
+      return;
+    }
+    for (const message of messages) list.append(mailRow(customer, message));
+  }).catch((error) => {
+    clear(list).append(el('div.alert.danger', { text: error.localised || error.message }));
+  });
+  return host;
+}
+
+function mailRow(customer, message) {
+  const body = el('pre.mail-body', { style: { display: 'none' } });
+  let loaded = false;
+  const toggle = el('button.btn.btn-sm.btn-ghost', {
+    type: 'button', text: t('mail_show_body'),
+    onclick: async () => {
+      const open = body.style.display !== 'none';
+      if (open) { body.style.display = 'none'; toggle.textContent = t('mail_show_body'); return; }
+      if (!loaded) {
+        try {
+          const { message: full } = await api.customerMailMessage(customer.id, message.id);
+          body.textContent = full.body_text || full.snippet || '';
+          loaded = true;
+        } catch (error) { return toastError(error); }
+      }
+      body.style.display = '';
+      toggle.textContent = t('mail_hide_body');
+    },
+  });
+  const sender = message.from_name || message.from_email || message.from_phone || '—';
+  const address = message.from_email && message.from_name ? ` <${message.from_email}>` : '';
+  return el('div.mail-row', {}, [
+    el('div.row.wrap', {}, [
+      el('b', { text: message.subject || '—' }),
+      message.request_id ? el('span.badge.blue', { text: t('mail_in_requests') }) : null,
+      message.has_attachments ? el('span.badge.grey', { text: t('mail_attachments') }) : null,
+      el('div.spacer'),
+      el('span.tiny.muted', { text: formatDateTime(message.received_at) }),
+    ]),
+    el('div.tiny.muted', { text: `${sender}${address} · ${message.account_label || message.channel || ''}` }),
+    message.snippet ? el('div.small', { text: message.snippet }) : null,
+    toggle,
+    body,
+  ]);
 }
 
 function opportunitiesPanel(opportunities) {

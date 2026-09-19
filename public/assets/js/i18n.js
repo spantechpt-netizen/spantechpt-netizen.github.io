@@ -337,6 +337,29 @@ export const DICT = {
     study_kind_original: 'المخططات الأصلية قبل التحويل', study_kind_post_tension: 'مخططات البوست تنشن',
     study_caption: 'تعليق على المخطط', study_no_drawings: 'مفيش مخططات مرفوعة', study_upload: 'ارفع مخطط',
 
+    // --- export ------------------------------------------------------------
+    export_excel: 'Excel', export_csv: 'CSV', export_pdf: 'PDF',
+    export_title: 'تصدير', export_hint: 'بنفس الفلاتر المختارة على الشاشة',
+    report_analytics: 'تقرير التحليلات', report_quotations: 'قايمة عروض الأسعار',
+    report_period: 'الفترة', report_filters: 'الفلاتر', report_count: 'العدد',
+    report_kpis: 'المؤشرات الرئيسية', report_pipeline_stage: 'الفرص حسب المرحلة',
+    report_all: 'الكل',
+
+    // --- mail filed under a customer ------------------------------------------
+    customer_mail: 'الإيميلات', customer_mail_none: 'مفيش رسايل مربوطة بالعميل ده لسه.',
+    customer_mail_hint: 'كل رسالة بتوصل من أو لعناوين العميل بتتأرشف هنا لوحدها أول ما البريد يتزامن. ضيف إيميل جهة الاتصال وهتتجمّع رسايله القديمة كمان.',
+    mail_in_requests: 'في الطلبات', mail_show_body: 'اعرض الرسالة', mail_hide_body: 'اخفي',
+    mail_attachments: 'مرفقات', mail_linked_customer: 'العميل',
+    live_connected: 'متصل — التحديثات لحظية', live_reconnecting: 'بيحاول يتصل تاني…',
+
+    // --- dashboard widgets + theme ------------------------------------------
+    dash_customise: 'تخصيص اللوحة', dash_done: 'تم', dash_hide: 'اخفي', dash_hidden: 'مخفي:',
+    dash_hint: 'اسحب أي بلوك من شريطه العلوي عشان تغيّر ترتيبه، أو اخفيه من زرار العين. الترتيب بيتحفظ لحسابك لوحده.',
+    widget_kpis: 'المؤشرات', widget_followups: 'المتابعات', widget_deals: 'أهم الفرص',
+    widget_quotes: 'آخر عروض الأسعار', widget_country: 'حسب الدولة',
+    theme_dark: 'الوضع المظلم', theme_light: 'الوضع الفاتح',
+    api_docs: 'توثيق الـ API',
+
     // --- countries ---------------------------------------------------------
     country_SA: 'السعودية', country_EG: 'مصر', country_QA: 'قطر',
   },
@@ -657,6 +680,29 @@ export const DICT = {
     study_drawings_hint: 'Attach the project’s original drawings and our post-tensioned tender drawings — they appear inside the printed study. PNG, JPG or WebP images.',
     study_kind_original: 'Original drawings before conversion', study_kind_post_tension: 'Post-tensioned drawings',
     study_caption: 'Caption', study_no_drawings: 'No drawings attached yet', study_upload: 'Attach a drawing',
+
+    // --- export ------------------------------------------------------------
+    export_excel: 'Excel', export_csv: 'CSV', export_pdf: 'PDF',
+    export_title: 'Export', export_hint: 'With the filters currently applied',
+    report_analytics: 'Analytics report', report_quotations: 'Quotations list',
+    report_period: 'Period', report_filters: 'Filters', report_count: 'Count',
+    report_kpis: 'Key figures', report_pipeline_stage: 'Pipeline by stage',
+    report_all: 'All',
+
+    // --- mail filed under a customer ------------------------------------------
+    customer_mail: 'Emails', customer_mail_none: 'No messages are linked to this customer yet.',
+    customer_mail_hint: 'Every message from or to this customer’s addresses is filed here on its own as the mailbox syncs. Add a contact’s email and their past mail is collected too.',
+    mail_in_requests: 'In requests', mail_show_body: 'Show message', mail_hide_body: 'Hide',
+    mail_attachments: 'Attachments', mail_linked_customer: 'Customer',
+    live_connected: 'Connected — updates arrive live', live_reconnecting: 'Reconnecting…',
+
+    // --- dashboard widgets + theme ------------------------------------------
+    dash_customise: 'Customise', dash_done: 'Done', dash_hide: 'Hide', dash_hidden: 'Hidden:',
+    dash_hint: 'Drag a block by its title bar to reorder it, or hide it with the eye button. The arrangement is saved to your account only.',
+    widget_kpis: 'Key figures', widget_followups: 'Follow-ups', widget_deals: 'Top opportunities',
+    widget_quotes: 'Recent quotations', widget_country: 'By country',
+    theme_dark: 'Dark mode', theme_light: 'Light mode',
+    api_docs: 'API documentation',
 
     country_SA: 'Saudi Arabia', country_EG: 'Egypt', country_QA: 'Qatar',
   },

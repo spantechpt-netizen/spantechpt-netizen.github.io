@@ -29,6 +29,9 @@ Arabic or English, with the maths done for you.
 | **Incoming requests** | الطلبات الواردة | Reads the company mailbox, spots quotation requests and client replies, extracts the customer and project from the email, and queues them for the manager to hand to an engineer |
 | **Analytics** | التحليلات | Conversion funnel, monthly trend, win rate by country and by engineer, loss-reason analysis, and an average price-per-m² benchmark |
 | **Settings** | الإعدادات | Company profile, per-country price book, editable quotation templates, and user management with roles |
+| **Export** | التصدير | Quotations and every analytics table as Excel or CSV with the screen's filters, and a printable A4 report for PDF |
+| **Dark mode** | الوضع المظلم | A full dark theme, one click in the top bar, following the operating system until chosen |
+| **API reference** | توثيق الـ API | OpenAPI 3 generated from the running routes, with a self-hosted reference page |
 
 ### Multi-country out of the box
 
@@ -182,6 +185,78 @@ A branch you have not filled in yet borrows the default branch's contact details
 rather than printing blanks, **except for the commercial registration and VAT
 number**: those are country-specific legal identifiers and never inherit, so a
 Saudi CR can never appear on an Egyptian document.
+
+## Exporting
+
+Both the **Quotations** list and **Analytics** carry an export row in their
+toolbar: **Excel**, **CSV** and **PDF**. The spreadsheet exports run on the
+server with exactly the filters on screen (search, status, country, dates,
+engineer) and the reader's own permission scope, so an engineer exports what
+they can see and the margin column appears only for those allowed the cost
+model. The analytics workbook has a sheet per table — KPIs, pipeline by stage,
+monthly trend, by country, by engineer, sources, project types, loss reasons,
+price per m² — with typed number and date cells, a bold frozen header and a
+right-to-left layout when exported in Arabic. Files are written without any
+dependency (`server/export.js` builds the .xlsx zip itself), and the CSV
+carries a byte-order mark so Excel opens Arabic correctly.
+
+**PDF** opens the same figures as an A4 report in a new window and hands over
+to the browser's print dialogue, the way the quotation and the cost study
+already print: that is what keeps Arabic shaping and the company fonts without
+a rendering library on the server.
+
+## Mail filed under the customer
+
+Every message the mailbox sync stores is filed under a customer by its
+addresses: an exact contact or company address first, then the company's own
+domain (never a public one such as gmail.com), then a WhatsApp number. Names in
+the text are deliberately not used, so a message is never filed under the
+wrong customer, only left unfiled. Adding a contact with an email or a number
+claims the mail that arrived before they existed, and a start-up pass files
+whatever an earlier version stored.
+
+The customer record gains an **Emails** tab with the correspondence, whether
+each message became a request, and the full text on demand. Reading it needs
+the mail permission as well as the customer one.
+
+## Live updates
+
+Each open tab holds one Server-Sent Events stream at `/api/events`. When a
+notification is raised for that person, mail arrives, or a quotation changes
+status, the server writes a small event down the stream and the page refreshes
+the part concerned: the bell and badges at once, the requests and quotations
+screens if they are the ones open. Nothing travels on the stream but what
+happened and to whom; the page fetches the record through the ordinary,
+permission-checked API. A green dot beside the bell shows the stream is up;
+the browser reconnects on its own, and a slow poll remains as a safety net
+for a proxy that refuses long connections.
+
+## A dashboard of your own
+
+The dashboard is five widgets — key figures, follow-ups, top opportunities,
+recent quotations, by country. **Customise** turns on drag handles and hide
+buttons: drag a block by its title bar to reorder, hide the ones you do not
+use, bring them back from the chips underneath. The arrangement saves as it
+changes, on your own profile, so a sales engineer can lead with follow-ups
+while a manager leads with the pipeline.
+
+## Dark mode
+
+The moon in the top bar switches the whole interface to a dark theme; the sun
+switches back. Until you choose, the CRM follows the operating system's
+setting, and the choice is applied before the page paints so a dark screen
+never flashes white. Printed documents are unaffected — a quotation prints on
+white whatever the screen.
+
+## API reference
+
+`GET /api/openapi.json` describes the API in OpenAPI 3.0, generated from the
+router's own registered routes, so it cannot drift from what the server
+answers. Each operation carries a summary in English and Arabic and the
+permission it asks for. `GET /api/docs` renders it as a reference page with a
+filter and a "try it" button on the GET endpoints — one self-contained page
+that loads nothing from the internet. Administrators find the link in
+*Settings*.
 
 ## A note on the Arabic
 
@@ -453,9 +528,16 @@ public/
   assets/js/      Vanilla ES modules — no framework, no build
     i18n.js       Full Arabic/English dictionary and formatting
     charts.js     Dependency-free SVG charts
-    views/        One module per screen
+    theme.js      Light / dark theme
+    notify.js     Notification bell, live event stream
+    views/        One module per screen (report-print.js prints any screen as A4)
+  export.js       CSV and .xlsx writers, no dependency
+  events.js       Server-Sent Events streams
+  openapi.js      The API described from the router, and the docs page
 test/
   api.test.js     End-to-end API tests against a throwaway database
+  export.test.js  The spreadsheet writers against the zip and XML formats
+  openapi.test.js The generated description
 ```
 
 ## Tests

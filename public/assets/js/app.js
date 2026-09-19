@@ -19,6 +19,7 @@ import * as inbox from './views/inbox.js';
 import * as calendarView from './views/calendar.js';
 import * as requestsView from './views/requests.js';
 import * as bellModule from './notify.js';
+import { currentTheme, toggleTheme } from './theme.js';
 
 export const state = {
   user: null,
@@ -163,6 +164,8 @@ function renderShell() {
     }, [icon('menu', 18)]),
     el('h1#page-title', { text: '' }),
     el('div.topbar-actions', {}, [
+      el('span.live-dot', { title: t('live_reconnecting') }),
+      themeButton(),
       el('div.bell-wrap', {}, [bellModule.bell(navigate)]),
       languageSwitch(),
     ]),
@@ -173,6 +176,21 @@ function renderShell() {
     el('div.main', {}, [topbar, el('main.content#outlet')]),
   ]));
   shellBuilt = true;
+}
+
+/** Sun in the dark, moon in the light: the button shows what it switches to. */
+function themeButton() {
+  const button = el('button.btn.btn-secondary.btn-icon.theme-toggle', { type: 'button' });
+  const paint = () => {
+    const dark = currentTheme() === 'dark';
+    clear(button).append(icon(dark ? 'sun' : 'moon', 16));
+    button.title = t(dark ? 'theme_light' : 'theme_dark');
+    button.setAttribute('aria-label', button.title);
+  };
+  button.addEventListener('click', () => { toggleTheme(); paint(); });
+  window.addEventListener('spantech:theme', paint);
+  paint();
+  return button;
 }
 
 function languageSwitch() {
@@ -204,7 +222,26 @@ const closeSidebar = () => {
   document.getElementById('scrim')?.remove();
 };
 
+// A screen that shows what just changed re-renders itself; the rest ignore it.
+const LIVE_ROUTES = { mail: ['requests', 'inbox'], quote_status: ['quotations', 'quote', 'dashboard', 'pipeline'] };
+bellModule.onLive((kind, detail) => {
+  const { path } = currentRoute();
+  if (kind === 'mail' || kind === 'quote_status') refreshBadges();
+  if ((LIVE_ROUTES[kind] || []).includes(path)) {
+    // Never interrupt someone mid-edit: a form with focus keeps its page.
+    if (document.activeElement?.closest?.('form, .modal')) return;
+    if (kind === 'quote_status' && path === 'quote' && String(currentRoute().params[0]) !== String(detail.id)) return;
+    render();
+  }
+});
+
 export async function refreshBadges() {
+  const dot = document.querySelector('.live-dot');
+  if (dot) {
+    const live = bellModule.getState().live;
+    dot.classList.toggle('on', live);
+    dot.title = live ? t('live_connected') : t('live_reconnecting');
+  }
   try {
     state.activitySummary = await api.activitySummary();
   } catch { return; }
@@ -327,7 +364,7 @@ function renderLogin(message) {
       el('img.logo', { src: 'assets/img/logo.png', alt: 'Span Tech' }),
       el('h1', { text: t('login_title') }),
       el('div.sub', { text: t('login_welcome') }),
-      languageSwitch(),
+      el('div.row', { style: { justifyContent: 'center', gap: '.5rem' } }, [languageSwitch(), themeButton()]),
       error,
       form,
     ]),

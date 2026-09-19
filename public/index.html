@@ -15,6 +15,17 @@
   <!-- Web fonts are a progressive enhancement: the app falls back to system
        Arabic/Latin faces when the server has no internet access. -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+  <!-- The theme is applied before the stylesheet paints, so a dark screen
+       never flashes white. The choice lives in this browser; unset follows
+       the operating system. -->
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('spantech_theme'); } catch (e) {}
+      var dark = saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    }());
+  </script>
   <link rel="stylesheet" href="assets/css/app.css">
 </head>
 <body>

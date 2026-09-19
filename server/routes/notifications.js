@@ -6,6 +6,7 @@ import {
   deleteNotification, notify, runReminderSweep,
 } from '../notifications.js';
 import { str, int, bool, oneOf } from '../validate.js';
+import { subscribe, connections } from '../events.js';
 
 const ENTITIES = ['customer', 'opportunity', 'quotation', 'activity'];
 
@@ -20,6 +21,21 @@ export function register(router) {
       }),
       unread: unreadCount(user.id),
     };
+  });
+
+  /**
+   * The live stream. The handler writes the response itself and keeps it
+   * open; the router sees headers already sent and leaves it alone.
+   */
+  router.get('/api/events', ({ req, res, user }) => {
+    requireAuth(user);
+    subscribe(user.id, req, res);
+  }, { stream: true });
+
+  /** How many browsers are listening, for a quick health check. */
+  router.get('/api/events/status', ({ user }) => {
+    requireAuth(user);
+    return { connections: connections() };
   });
 
   /** Cheap endpoint the bell polls; returns just the badge number. */
