@@ -22,8 +22,8 @@
 | مجلد النظام | `C:\Apps\SpanTechCRM` |
 | nginx | `C:\nginx` (الملف الرئيسي `C:\nginx\conf\nginx.conf`) |
 | win-acme | `C:\win-acme\wacs.exe` |
-| مجلد تحقق الشهادات | `C:\Apps\acme-webroot` |
-| مجلد الشهادات بصيغة PEM | `C:\Apps\certs\crm.spantechpt.com` |
+| مجلد تحقق الشهادات (القائم لـ win-acme) | `C:\win-acme\wwwroot` |
+| مجلد الشهادات بصيغة PEM (القائم) | `C:\nginx\ssl` |
 
 النطاق: **`crm.spantechpt.com`**. المنفذ المحلي للنظام: **`8090`** (يُغيَّر إن كان
 مستخدماً — الخطوة 1 تكشف ذلك).
@@ -257,9 +257,18 @@ Resolve-DnsName crm.spantechpt.com -Type A
     include conf.d/*.conf;
 ```
 
+وسطراً ثانياً بجانب سطرَي `limit_req_zone` القائمين، حتى يكون لنظامنا حد معدل
+مستقل لا يتقاسمه مع الموقع الآخر:
+
+```nginx
+    limit_req_zone $binary_remote_addr zone=crm:10m rate=30r/s;
+```
+
+نسخة `nginx.conf` الفعلية بهذين السطرين مضافَين لا غير في `docs/nginx/nginx.conf`
+بالمستودع، للمقارنة.
+
 ```powershell
 New-Item -ItemType Directory -Force C:\nginx\conf\conf.d | Out-Null
-New-Item -ItemType Directory -Force C:\Apps\acme-webroot | Out-Null
 ```
 
 ### 8.2 المرحلة الأولى: منفذ 80 فقط (لإصدار الشهادة)
@@ -273,7 +282,7 @@ server {
 
     # تحقق Let's Encrypt عبر win-acme (http-01)
     location ^~ /.well-known/acme-challenge/ {
-        root C:/Apps/acme-webroot;
+        root C:/win-acme/wwwroot;   # نفس مجلد التحقق القائم لـ app.spantechpt.com
         default_type text/plain;
     }
 
@@ -299,11 +308,11 @@ cd C:\nginx
 ```nginx
 server {
     listen 443 ssl;
-    http2 on;
+    http2 off;      # كما في app.spantechpt.com؛ التحديثات الفورية تعمل على HTTP/1.1
     server_name crm.spantechpt.com;
 
-    ssl_certificate     C:/Apps/certs/crm.spantechpt.com/crm.spantechpt.com-chain.pem;
-    ssl_certificate_key C:/Apps/certs/crm.spantechpt.com/crm.spantechpt.com-key.pem;
+    ssl_certificate     C:/nginx/ssl/crm.spantechpt.com-chain.pem;
+    ssl_certificate_key C:/nginx/ssl/crm.spantechpt.com-key.pem;
 
     client_max_body_size 20m;      # رفع مخططات الدراسات حتى 20 ميجا
 
@@ -318,6 +327,9 @@ server {
         proxy_buffering     off;
         proxy_cache         off;
         proxy_read_timeout  1h;
+        proxy_send_timeout  1h;
+        send_timeout        1h;     # الإعداد العام 10 ثوانٍ كان سيقطع البث قبل نبضة الـ 25 ثانية
+        gzip                off;
     }
 
     location / {
@@ -331,8 +343,8 @@ server {
 }
 ```
 
-لو كان إصدار nginx أقدم من 1.25.1 فسطر `http2 on;` غير معروف له؛ احذفه واكتب
-`listen 443 ssl http2;` بدله. ثم:
+الإعداد الكامل المطابق لملف nginx الفعلي على السيرفر (بحدود المعدل ورؤوس الأمان
+نفسها) في `docs/nginx/crm.spantechpt.com.conf` بالمستودع.
 
 ```powershell
 cd C:\nginx
@@ -348,7 +360,6 @@ cd C:\nginx
 (SAN) على شهادة البرنامج الآخر، حتى لا يترتّب على نظامنا إعادة إصدار شهادتهم.
 
 ```powershell
-New-Item -ItemType Directory -Force C:\Apps\certs | Out-Null
 cd C:\win-acme
 .\wacs.exe
 ```
@@ -358,9 +369,9 @@ cd C:\win-acme
 1. `M` — Create certificate (full options)
 2. Source: **Manual input** → اكتب `crm.spantechpt.com`
 3. Validation: **[http] Save verification files on (network) path** → المسار
-   `C:\Apps\acme-webroot` → لا تُنشئ `web.config` (هذا ليس IIS)
-4. Store: **PEM encoded files (Apache, nginx, etc.)** → المسار `C:\Apps\certs`
-   (الأداة تُنشئ الملفات باسم النطاق داخله)
+   `C:\win-acme\wwwroot` (نفس مجلد التحقق القائم) → لا تُنشئ `web.config` (هذا ليس IIS)
+4. Store: **PEM encoded files (Apache, nginx, etc.)** → المسار `C:\nginx\ssl`
+   (حيث شهادة app.spantechpt.com الآن)
 5. Store ثانٍ: لا شيء (`No (additional) store steps`)
 6. Installation: **Start external script or program** →
    البرنامج `C:\nginx\nginx.exe` والوسائط `-p C:\nginx -s reload`
@@ -369,12 +380,11 @@ cd C:\win-acme
 ثم تأكد من الملفات:
 
 ```powershell
-Get-ChildItem C:\Apps\certs
+Get-ChildItem C:\nginx\ssl
 ```
 
 المتوقع ملفات باسم `crm.spantechpt.com-chain.pem` و`crm.spantechpt.com-key.pem`
-(وغيرها). لو خرجت في `C:\Apps\certs` مباشرة لا في مجلد فرعي، عدّل مساري
-`ssl_certificate` و`ssl_certificate_key` في الخطوة 8.3 بما يطابق.
+بجانب ملفات app.spantechpt.com، بنفس نمط التسمية.
 
 **التجديد التلقائي:** مهمة win-acme المجدولة القائمة على السيرفر تجدّد **كل**
 التجديدات المسجّلة، فتشمل الجديد بلا أي ضبط إضافي. للتأكد:
@@ -486,6 +496,6 @@ Remove-LocalUser svc_spantechcrm
 | الدخول لا يثبت وتُطرد بعد كل صفحة | الموقع مفتوح عبر `http://` مع `SECURE_COOKIES=true`؛ افتحه عبر `https://` |
 | `SQLITE_BUSY` أو `EBUSY` في السجل | Kaspersky يفحص ملفات `data\`؛ راجع الخطوة 4 |
 | النقطة الخضراء لا تظهر / الإشعارات تتأخر | `proxy_buffering off` غير موجود على `/api/events`، أو مهلة `proxy_read_timeout` قصيرة |
-| win-acme يفشل في التحقق | سجل DNS لم ينتشر، أو مسار `acme-webroot` في nginx يختلف عن المسار المعطى للأداة |
+| win-acme يفشل في التحقق | سجل DNS لم ينتشر، أو مسار التحقق في nginx (`C:/win-acme/wwwroot`) يختلف عن المسار المعطى للأداة |
 | `nginx -t` يشتكي من `http2 on` | إصدار nginx أقدم؛ استخدم `listen 443 ssl http2;` |
 | رفع مخطط يفشل بـ `413` | `client_max_body_size 20m;` ناقص في الـ block |
