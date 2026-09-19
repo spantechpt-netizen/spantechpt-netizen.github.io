@@ -142,6 +142,10 @@ export const api = {
   quotationDocument: (id) => request('GET', `/api/quotations/${id}/document`),
   study: (id) => request('GET', `/api/quotations/${id}/study`),
   saveStudy: (id, study) => request('PUT', `/api/quotations/${id}/study`, { study }),
+  /** Which design the study prints in, with the wording rewritten on it. */
+  saveDeck: (id, deck) => request('PUT', `/api/quotations/${id}/study/deck`, deck),
+  /** Which design the quotation prints in, with the wording rewritten on it. */
+  savePrint: (id, print) => request('PUT', `/api/quotations/${id}/print`, print),
   updateDrawing: (id, drawingId, payload) =>
     request('PATCH', `/api/quotations/${id}/study/drawings/${drawingId}`, payload),
   deleteDrawing: (id, drawingId) =>

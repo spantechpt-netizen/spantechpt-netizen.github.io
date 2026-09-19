@@ -11,7 +11,7 @@ import { t, pick, getLang, money, formatDateTime } from '../i18n.js';
 import { el, clear, icon, field, readForm, toast, toastError, confirmDialog } from '../ui.js';
 import { barChart } from '../charts.js';
 import { can } from '../app.js';
-import { printStudy } from './study-print.js';
+import { printStudyDesign, STUDY_DESIGNS } from './study-designs.js';
 
 const KINDS = ['original', 'post_tension'];
 
@@ -64,13 +64,47 @@ export async function render({ params, navigate }) {
       type: 'button', onclick: () => navigate(`quote/${quotationId}`),
     }, [icon('back', 15), t('back_to_quote')]),
     el('div.spacer'),
+    designSelect(),
     el('button.btn.btn-secondary', {
-      type: 'button', onclick: async () => { try { printStudy(await documentPayload(), 'ar'); } catch (e) { toastError(e); } },
+      type: 'button', onclick: () => printDesign('ar'),
     }, [icon('print', 15), t('print_ar')]),
     el('button.btn.btn-primary', {
-      type: 'button', onclick: async () => { try { printStudy(await documentPayload(), 'en'); } catch (e) { toastError(e); } },
+      type: 'button', onclick: () => printDesign('en'),
     }, [icon('print', 15), t('print_en')]),
   ]));
+
+  /** Which of the six designs the study prints in; saved at once, on its own. */
+  function designSelect() {
+    const lang = getLang();
+    const current = ((data.study.input && data.study.input.deck) || {}).template || 'deck';
+    const select = el('select', {
+      title: t('design_hint'),
+      style: { width: 'auto', minWidth: '11rem' },
+      disabled: readOnly,
+      onchange: async () => {
+        const template = select.value;
+        try {
+          // Only the choice travels: the wording saved from the document stays as it is.
+          const { deck: saved } = await api.saveDeck(quotationId, { template });
+          data.study.input.deck = saved;
+          toast(t('saved'));
+        } catch (error) {
+          select.value = current;
+          toastError(error);
+        }
+      },
+    }, STUDY_DESIGNS.map((design) => el('option', {
+      value: design.id, text: `${t('design_style')}: ${design[lang] || design.en}`, selected: design.id === current,
+    })));
+    return select;
+  }
+
+  async function printDesign(lang) {
+    try {
+      const payload = await documentPayload();
+      printStudyDesign(payload, lang, (payload.study.input.deck && payload.study.input.deck.template) || 'deck');
+    } catch (e) { toastError(e); }
+  }
 
   clear(host).append(
     el('div.grid.grid-2', { style: { alignItems: 'start', gap: '1rem' } }, [

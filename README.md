@@ -465,6 +465,33 @@ conditions all come from a company-wide template (editable in
 Each quotation prints in **Arabic (RTL)** and **English (LTR)** from the same data,
 via your browser's Print → *Save as PDF*.
 
+### Six layouts for the offer, six for the study
+
+The same quotation prints in any of six designs, chosen from the **Layout**
+list next to the print buttons and remembered per quotation:
+
+| Layout | For |
+|---|---|
+| **Formal letter** | The default: letterhead, introduction, scope, table, terms, running "Page 3 of 4" |
+| **Compact** | A two-column first page with the figures in a navy rail; the detail on page two |
+| **Commercial proposal** | A cover and five numbered chapters, for tenders and large projects |
+| **Bill of quantities** | The priced table first, with item codes and optional items; for the technical office comparing offers |
+| **One-page summary** | The total, includes / excludes and three facts; for WhatsApp and the decision-maker |
+| **Premium** | A dark cover, a company page, then the offer on white; for developers and high-end projects |
+
+The cost study has its own six: the executive deck, a formal report, a
+side-by-side comparison, an infographic, an owner's dashboard and a narrative
+story deck. The figures come from the same study whichever design is chosen.
+
+Every design is **editable on the document itself**: *Edit text* turns each
+sentence into a field, every section gets a hide button, and *Save* keeps the
+result on the quotation. Only the sentences someone actually changed are
+stored, keyed by design, so switching designs loses nothing and an improved
+generated wording still reaches the documents nobody touched. The slide
+designs also have a presentation mode (arrow keys, Esc to leave). The edits
+are cleaned server-side in `server/study.js` and stored in `print_json`
+(quotation) and `study_json.deck` (study).
+
 ### What changed versus the previous offer document
 
 The template was rebuilt from the existing Span Tech offer, keeping all the

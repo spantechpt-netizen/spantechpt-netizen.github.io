@@ -6,7 +6,7 @@ import {
 } from '../ui.js';
 import { can, canSeeAll, canSeeCost, state } from '../app.js';
 import { openNewQuotation } from './quotations.js';
-import { printQuotation } from './quote-print.js';
+import { printQuoteDesign, QUOTE_DESIGNS } from './quote-designs.js';
 
 const SCOPE_SECTIONS = [
   ['design', 'scope_design'],
@@ -389,6 +389,7 @@ function editor(data, navigate) {
     }
 
     statusHost.append(
+      designSelect(),
       el('button.btn.btn-secondary', {
         type: 'button', onclick: () => doPrint('ar'),
       }, [icon('print', 15), t('print_ar')]),
@@ -534,6 +535,35 @@ function editor(data, navigate) {
     } catch (error) { toastError(error); }
   }
 
+  /**
+   * Which of the six designs this offer prints in. The choice is saved at
+   * once, on its own, so it never waits on — or is lost with — the form.
+   */
+  function designSelect() {
+    const lang = getLang();
+    const current = (quote.print && quote.print.template) || 'letter';
+    const select = el('select', {
+      title: t('design_hint'),
+      style: { width: 'auto', minWidth: '11rem' },
+      disabled: readOnly,
+      onchange: async () => {
+        const template = select.value;
+        try {
+          // Only the choice travels: the wording saved from the document stays as it is.
+          const { print } = await api.savePrint(quote.id, { template });
+          quote.print = print;
+          toast(t('saved'));
+        } catch (error) {
+          select.value = current;
+          toastError(error);
+        }
+      },
+    }, QUOTE_DESIGNS.map((design) => el('option', {
+      value: design.id, text: `${t('design_style')}: ${design[lang] || design.en}`, selected: design.id === current,
+    })));
+    return select;
+  }
+
   async function doPrint(lang) {
     if (dirty && !await confirmDialog(
       getLang() === 'ar'
@@ -547,7 +577,8 @@ function editor(data, navigate) {
     }
     try {
       const document = await api.quotationDocument(quote.id);
-      printQuotation(document, lang);
+      quote.print = document.quotation.print;
+      printQuoteDesign(document, lang, (quote.print && quote.print.template) || 'letter');
     } catch (error) { toastError(error); }
   }
 

@@ -52,6 +52,8 @@ addColumn('mail_messages', 'customer_id', 'INTEGER REFERENCES customers(id) ON D
 db.exec('CREATE INDEX IF NOT EXISTS idx_mail_msg_customer ON mail_messages(customer_id, received_at)');
 // How each person arranged the dashboard, as JSON.
 addColumn('users', 'dashboard_json', 'TEXT');
+// Which layout a quotation prints in, and the wording edited on that print.
+addColumn('quotations', 'print_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

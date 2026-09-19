@@ -249,6 +249,60 @@ test('serves a complete bilingual print document', async () => {
   assert.equal(d.country.vat_rate, 15);
 });
 
+test('stores which design the offer prints in, and what was rewritten on it', async () => {
+  let res = await api('GET', `/api/quotations/${quotationId}`);
+  assert.equal(res.body.quotation.print.template, 'letter', 'the formal letter is the default');
+  assert.deepEqual(res.body.quotation.print_templates, ['letter', 'compact', 'proposal', 'boq', 'summary', 'premium']);
+
+  res = await api('PUT', `/api/quotations/${quotationId}/print`, {
+    template: 'premium',
+    text: {
+      'premium.title': '  برج   الراجحي ',
+      'letter.intro': 'kept for the other design',
+      'premium.empty': '   ',
+      'bad key!': 'dropped',
+      'premium.number': 42,
+    },
+    hidden: { 'premium.profile': true, 'premium.cover': false, 'nope!': true },
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.print, {
+    template: 'premium',
+    text: { 'premium.title': 'برج الراجحي', 'letter.intro': 'kept for the other design' },
+    hidden: { 'premium.profile': true },
+  });
+
+  res = await api('GET', `/api/quotations/${quotationId}/document`);
+  assert.equal(res.body.quotation.print.template, 'premium', 'the print document carries the choice');
+  assert.equal(res.body.quotation.print.text['premium.title'], 'برج الراجحي');
+
+  res = await api('PUT', `/api/quotations/${quotationId}/print`, { template: 'boq' });
+  assert.equal(res.body.print.template, 'boq');
+  assert.equal(res.body.print.text['premium.title'], 'برج الراجحي', 'choosing a design keeps the wording saved on the others');
+  assert.deepEqual(res.body.print.hidden, { 'premium.profile': true });
+
+  res = await api('PUT', `/api/quotations/${quotationId}/print`, { template: 'not-a-design', text: {}, hidden: {} });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.print.template, 'letter', 'an unknown design falls back to the letter');
+  assert.deepEqual(res.body.print.text, {}, 'and a full body replaces the edits');
+});
+
+test('the study remembers its design the same way', async () => {
+  let res = await api('PUT', `/api/quotations/${quotationId}/study/deck`, {
+    template: 'infographic', text: { 'infographic.title': 'دراسة' }, hidden: {},
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.deck.template, 'infographic');
+
+  res = await api('GET', `/api/quotations/${quotationId}/study`);
+  assert.equal(res.body.study.input.deck.template, 'infographic');
+  assert.deepEqual(res.body.templates, ['deck', 'report', 'compare', 'infographic', 'dashboard', 'story']);
+
+  res = await api('PUT', `/api/quotations/${quotationId}/study/deck`, { template: 'letter' });
+  assert.equal(res.body.deck.template, 'deck', 'a quotation design is not a study design');
+  assert.equal(res.body.deck.text['infographic.title'], 'دراسة', 'and the wording survives the change of design');
+});
+
 test('applies the right VAT and currency for Egypt and Qatar', async () => {
   const eg = await api('POST', '/api/customers', { name_en: 'Hassan Allam', country: 'EG', city: 'Cairo' });
   const egQuote = await api('POST', '/api/quotations', {

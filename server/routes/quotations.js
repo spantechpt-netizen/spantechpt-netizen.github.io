@@ -15,8 +15,8 @@ import {
 } from '../validate.js';
 import { readFileSync } from 'node:fs';
 import {
-  computeStudy, defaultStudy, sanitizeDeck,
-  CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS,
+  computeStudy, defaultStudy, sanitizeDeck, sanitizePrint,
+  CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS, STUDY_TEMPLATES, QUOTE_TEMPLATES,
 } from '../study.js';
 import { saveDrawing, deleteDrawingFile, drawingPath, DRAWING_KINDS } from '../uploads.js';
 import { sendDownload, FORMATS } from '../export.js';
@@ -111,6 +111,9 @@ function hydrate(quote, items) {
     total_words_ar: amountInWords(quote.total, quote.currency, 'ar'),
     total_words_en: amountInWords(quote.total, quote.currency, 'en'),
     valid_until: addDays(quote.issue_date, quote.valid_days),
+    // The layout this offer prints in, and what was rewritten on it.
+    print: sanitizePrint(safeParse(quote.print_json, null)),
+    print_templates: QUOTE_TEMPLATES,
   };
 }
 
@@ -361,6 +364,7 @@ export function register(router) {
         label_en: CONVENTIONAL_SYSTEMS[key].label_en,
         label_ar: CONVENTIONAL_SYSTEMS[key].label_ar,
       })),
+      templates: STUDY_TEMPLATES,
     };
   });
 
@@ -411,6 +415,24 @@ export function register(router) {
   });
 
   /**
+   * The quotation's printed layout — which of the designs, and the wording
+   * the engineer rewrote on it. Saved from the printed document itself, the
+   * way the study's deck is.
+   */
+  router.put('/api/quotations/:id/print', ({ params, body, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+    // Same rule as the deck: keys left out of the body keep their stored value.
+    const stored = sanitizePrint(safeParse(quote.print_json, null));
+    const print = sanitizePrint({ ...stored, ...(body && typeof body === 'object' ? body : {}) });
+    update('quotations', id, { print_json: JSON.stringify(print) });
+    audit(user.id, 'quotation', id, 'print', { template: print.template });
+    return { print };
+  });
+
+  /**
    * Wording changed on the deck, and slides dropped from it.
    *
    * This is saved from the printed deck rather than from the study form: the
@@ -424,7 +446,10 @@ export function register(router) {
     assertCanEdit(user, quote.owner_id);
 
     const stored = safeParse(quote.study_json, null) || defaultStudy(quote);
-    const study = { ...stored, deck: sanitizeDeck(body) };
+    // A body that only names the design keeps the wording already saved, so
+    // choosing a layout in the form never wipes what was rewritten on the deck.
+    const deck = sanitizeDeck({ ...sanitizeDeck(stored.deck), ...(body && typeof body === 'object' ? body : {}) });
+    const study = { ...stored, deck };
     update('quotations', id, { study_json: JSON.stringify(study) });
     audit(user.id, 'quotation', id, 'study_deck');
     return { deck: study.deck };
