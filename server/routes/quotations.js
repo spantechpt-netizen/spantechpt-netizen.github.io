@@ -15,10 +15,34 @@ import {
 } from '../validate.js';
 import { readFileSync } from 'node:fs';
 import {
-  computeStudy, defaultStudy, sanitizeDeck,
-  CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS,
+  computeStudy, defaultStudy, sanitizeDeck, sanitizePrint,
+  CONVENTIONAL_SYSTEMS, CONVENTIONAL_KEYS, STUDY_TEMPLATES, QUOTE_TEMPLATES,
 } from '../study.js';
 import { saveDrawing, deleteDrawingFile, drawingPath, DRAWING_KINDS } from '../uploads.js';
+import { sendDownload, FORMATS } from '../export.js';
+import { broadcast } from '../events.js';
+
+/** Column headings for the spreadsheet, in the language it was asked for. */
+const EXPORT_LABELS = {
+  ar: {
+    file: 'عروض-الأسعار', sheet: 'عروض الأسعار',
+    number: 'رقم العرض', revision: 'المراجعة', project: 'المشروع', customer: 'العميل',
+    country_h: 'الدولة', location: 'الموقع', issue_date: 'تاريخ الإصدار', valid_until: 'ساري حتى',
+    status_h: 'الحالة', currency: 'العملة', subtotal: 'المجموع', net: 'الصافي', vat: 'الضريبة',
+    total: 'الإجمالي', margin: 'هامش الربح %', owner: 'المهندس',
+    status: { draft: 'مسودة', sent: 'مُرسل', under_review: 'تحت الدراسة', approved: 'معتمد', rejected: 'مرفوض', expired: 'منتهي', cancelled: 'ملغي' },
+    country: { SA: 'السعودية', EG: 'مصر', QA: 'قطر' },
+  },
+  en: {
+    file: 'quotations', sheet: 'Quotations',
+    number: 'Quotation No.', revision: 'Revision', project: 'Project', customer: 'Customer',
+    country_h: 'Country', location: 'Location', issue_date: 'Issue date', valid_until: 'Valid until',
+    status_h: 'Status', currency: 'Currency', subtotal: 'Subtotal', net: 'Net', vat: 'VAT',
+    total: 'Total', margin: 'Margin %', owner: 'Engineer',
+    status: { draft: 'Draft', sent: 'Sent', under_review: 'Under review', approved: 'Approved', rejected: 'Rejected', expired: 'Expired', cancelled: 'Cancelled' },
+    country: { SA: 'Saudi Arabia', EG: 'Egypt', QA: 'Qatar' },
+  },
+};
 
 const SELECT_QUOTE = `
   SELECT q.*,
@@ -87,6 +111,9 @@ function hydrate(quote, items) {
     total_words_ar: amountInWords(quote.total, quote.currency, 'ar'),
     total_words_en: amountInWords(quote.total, quote.currency, 'en'),
     valid_until: addDays(quote.issue_date, quote.valid_days),
+    // The layout this offer prints in, and what was rewritten on it.
+    print: sanitizePrint(safeParse(quote.print_json, null)),
+    print_templates: QUOTE_TEMPLATES,
   };
 }
 
@@ -157,7 +184,8 @@ function replaceItems(quotationId, items) {
 
 export function register(router) {
   // ------------------------------------------------------------------ list
-  router.get('/api/quotations', ({ query, user }) => {
+  /** The list, filtered the way the screen filters it. Shared with the export. */
+  function listQuotations(query, user) {
     requirePermission(user, 'quotations.view');
     const where = [];
     const params = [];
@@ -183,6 +211,7 @@ export function register(router) {
       `SELECT q.id, q.number, q.revision, q.project_name, q.project_name_ar, q.issue_date,
               q.valid_days, q.status, q.country, q.currency, q.subtotal, q.net_amount,
               q.vat_amount, q.total, q.margin_pct, q.customer_id, q.opportunity_id, q.owner_id,
+              q.location, q.attention,
               c.name_en AS customer_name, c.name_ar AS customer_name_ar,
               u.name AS owner_name, u.name_ar AS owner_name_ar
          FROM quotations q
@@ -190,10 +219,72 @@ export function register(router) {
          LEFT JOIN users u ON u.id = q.owner_id
          ${clause}
         ORDER BY q.issue_date DESC, q.id DESC
-        LIMIT 500`,
+        LIMIT ${query.limit === 'all' ? 100000 : 500}`,
       ...params,
     );
-    return { quotations: rows.map((row) => stripCost(row, user)) };
+    return rows.map((row) => stripCost(row, user));
+  }
+
+  router.get('/api/quotations', ({ query, user }) => ({ quotations: listQuotations(query, user) }));
+
+  /**
+   * The same list as a spreadsheet. Registered before the `:id` read so
+   * "export" is not taken for a quotation number.
+   */
+  router.get('/api/quotations/export', ({ query, user, res }) => {
+    const format = oneOf(query.format, 'format', FORMATS, { fallback: 'xlsx' });
+    const lang = query.lang === 'en' ? 'en' : 'ar';
+    const rows = listQuotations({ ...query, limit: 'all' }, user);
+    const L = EXPORT_LABELS[lang];
+    const statusLabel = (s) => L.status[s] || s;
+    const countryLabel = (c) => L.country[c] || c;
+
+    const columns = [
+      { key: 'number', label: L.number },
+      { key: 'revision', label: L.revision, type: 'number' },
+      { key: 'project', label: L.project },
+      { key: 'customer', label: L.customer },
+      { key: 'country', label: L.country_h },
+      { key: 'location', label: L.location },
+      { key: 'issue_date', label: L.issue_date, type: 'date' },
+      { key: 'valid_until', label: L.valid_until, type: 'date' },
+      { key: 'status', label: L.status_h },
+      { key: 'currency', label: L.currency },
+      { key: 'subtotal', label: L.subtotal, type: 'number' },
+      { key: 'net_amount', label: L.net, type: 'number' },
+      { key: 'vat_amount', label: L.vat, type: 'number' },
+      { key: 'total', label: L.total, type: 'number' },
+      seesCost(user) ? { key: 'margin_pct', label: L.margin, type: 'number' } : null,
+      { key: 'owner', label: L.owner },
+    ].filter(Boolean);
+
+    const data = rows.map((q) => ({
+      number: q.number,
+      revision: q.revision,
+      project: (lang === 'ar' && q.project_name_ar) || q.project_name,
+      customer: (lang === 'ar' && q.customer_name_ar) || q.customer_name,
+      country: countryLabel(q.country),
+      location: q.location,
+      issue_date: q.issue_date,
+      valid_until: q.issue_date ? new Date(new Date(`${q.issue_date}T00:00:00Z`).getTime() + (q.valid_days || 0) * 86400_000).toISOString().slice(0, 10) : null,
+      status: statusLabel(q.status),
+      currency: q.currency,
+      subtotal: q.subtotal,
+      net_amount: q.net_amount,
+      vat_amount: q.vat_amount,
+      total: q.total,
+      margin_pct: q.margin_pct,
+      owner: (lang === 'ar' && q.owner_name_ar) || q.owner_name,
+    }));
+
+    audit(user.id, 'quotation', null, 'export', { format, rows: data.length });
+    sendDownload(res, {
+      filename: `${L.file}-${new Date().toISOString().slice(0, 10)}`,
+      fallback: `quotations-${new Date().toISOString().slice(0, 10)}`,
+      format,
+      rtl: lang === 'ar',
+      sheets: [{ name: L.sheet, columns, rows: data }],
+    });
   });
 
   // ------------------------------------------------------------------- read
@@ -273,6 +364,7 @@ export function register(router) {
         label_en: CONVENTIONAL_SYSTEMS[key].label_en,
         label_ar: CONVENTIONAL_SYSTEMS[key].label_ar,
       })),
+      templates: STUDY_TEMPLATES,
     };
   });
 
@@ -323,6 +415,24 @@ export function register(router) {
   });
 
   /**
+   * The quotation's printed layout — which of the designs, and the wording
+   * the engineer rewrote on it. Saved from the printed document itself, the
+   * way the study's deck is.
+   */
+  router.put('/api/quotations/:id/print', ({ params, body, user }) => {
+    requirePermission(user, 'quotations.edit');
+    const id = Number(params.id);
+    const quote = loadQuote(id);
+    assertCanEdit(user, quote.owner_id);
+    // Same rule as the deck: keys left out of the body keep their stored value.
+    const stored = sanitizePrint(safeParse(quote.print_json, null));
+    const print = sanitizePrint({ ...stored, ...(body && typeof body === 'object' ? body : {}) });
+    update('quotations', id, { print_json: JSON.stringify(print) });
+    audit(user.id, 'quotation', id, 'print', { template: print.template });
+    return { print };
+  });
+
+  /**
    * Wording changed on the deck, and slides dropped from it.
    *
    * This is saved from the printed deck rather than from the study form: the
@@ -336,7 +446,10 @@ export function register(router) {
     assertCanEdit(user, quote.owner_id);
 
     const stored = safeParse(quote.study_json, null) || defaultStudy(quote);
-    const study = { ...stored, deck: sanitizeDeck(body) };
+    // A body that only names the design keeps the wording already saved, so
+    // choosing a layout in the form never wipes what was rewritten on the deck.
+    const deck = sanitizeDeck({ ...sanitizeDeck(stored.deck), ...(body && typeof body === 'object' ? body : {}) });
+    const study = { ...stored, deck };
     update('quotations', id, { study_json: JSON.stringify(study) });
     audit(user.id, 'quotation', id, 'study_deck');
     return { deck: study.deck };
@@ -674,6 +787,8 @@ export function register(router) {
     audit(user.id, 'quotation', id, 'status', { from: quote.status, to: status });
 
     notifyQuoteStatus({ actorId: user.id, userId: quote.owner_id, quotation: quote, status });
+    // Anyone looking at this quotation, or the list, sees the new status at once.
+    broadcast('quote_status', { id, number: quote.number, status, actor_id: user.id });
     // A won or lost offer is company news: tell the managers too.
     if (['approved', 'rejected'].includes(status)) {
       for (const manager of all("SELECT id FROM users WHERE active = 1 AND role IN ('admin','manager')")) {

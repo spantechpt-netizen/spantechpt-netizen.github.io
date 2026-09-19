@@ -43,6 +43,10 @@ export async function render() {
   };
   draw();
   panel.append(TABS[0].build());
+  // The API reference, for whoever integrates or maintains the system.
+  if (can('users.manage')) {
+    tabs.append(el('a.tab-link', { href: '/api/docs', target: '_blank', rel: 'noopener', text: t('api_docs') }));
+  }
   page.append(tabs, panel);
 
   if (!can('settings.edit')) {

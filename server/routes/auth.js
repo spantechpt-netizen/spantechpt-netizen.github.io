@@ -39,6 +39,27 @@ function recordFailure(key) {
   else entry.count += 1;
 }
 
+/** The widgets a dashboard can hold; anything else sent is dropped. */
+export const DASHBOARD_WIDGETS = ['kpis', 'followups', 'deals', 'quotes', 'country'];
+
+/**
+ * A layout as stored: known widgets only, each once, with a hidden flag.
+ * Widgets the client did not mention are appended visible, so a widget
+ * added in a later version shows up for everyone without a migration.
+ */
+export function sanitizeDashboard(raw) {
+  const seen = new Set();
+  const out = [];
+  for (const item of Array.isArray(raw) ? raw : []) {
+    const key = typeof item === 'string' ? item : item?.key;
+    if (!DASHBOARD_WIDGETS.includes(key) || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ key, hidden: Boolean(typeof item === 'object' && item?.hidden) });
+  }
+  for (const key of DASHBOARD_WIDGETS) if (!seen.has(key)) out.push({ key, hidden: false });
+  return out;
+}
+
 export function register(router) {
   router.post('/api/auth/login', ({ req, res, body }) => {
     const email = emailField(body.email, 'email', { required: true });
@@ -106,6 +127,8 @@ export function register(router) {
       lang: oneOf(body.lang, 'lang', ['ar', 'en'], { fallback: undefined }),
       reminder_lead_hours: int(body.reminder_lead_hours, 'reminder_lead_hours', { min: 1, max: 168, fallback: undefined }),
       stale_after_days: int(body.stale_after_days, 'stale_after_days', { min: 1, max: 365, fallback: undefined }),
+      // How this person arranged the dashboard: which widgets, in what order.
+      dashboard_json: body.dashboard === undefined ? undefined : JSON.stringify(sanitizeDashboard(body.dashboard)),
     });
     const row = get('SELECT * FROM users WHERE id = ?', user.id);
     const { password_hash, ...safe } = row;

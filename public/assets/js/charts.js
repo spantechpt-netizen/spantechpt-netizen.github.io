@@ -172,7 +172,7 @@ export function donutChart({ data, size = 170, format = (v) => v }) {
   });
 
   svg.append(svgEl('text', {
-    x: radius, y: radius - 2, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 700, fill: '#111827',
+    x: radius, y: radius - 2, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 700, fill: 'currentColor',
   }, format(total)));
 
   const wrap = document.createElement('div');

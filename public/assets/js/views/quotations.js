@@ -1,10 +1,11 @@
 import { api } from '../api.js';
-import { t, pick, money, formatDate } from '../i18n.js';
+import { t, pick, money, formatDate, getLang } from '../i18n.js';
 import {
   el, clear, icon, dataTable, openModal, field, readForm,
-  toast, toastError, quoteStatusBadge, blankOption, optionsFrom,
+  toast, toastError, quoteStatusBadge, blankOption, optionsFrom, exportMenu,
 } from '../ui.js';
 import { can, canSeeAll, canSeeCost, state } from '../app.js';
+import { printReport } from './report-print.js';
 
 const STATUSES = ['draft', 'sent', 'under_review', 'approved', 'rejected', 'expired', 'cancelled'];
 const COUNTRIES = ['SA', 'EG', 'QA'];
@@ -38,6 +39,15 @@ export async function render({ navigate }) {
       onchange: (event) => { filters.to = event.target.value; refresh(); },
     }),
     el('div.spacer'),
+    exportMenu({
+      href: (format) => {
+        const params = new URLSearchParams({ format, lang: getLang() });
+        for (const [key, value] of Object.entries(filters)) if (value) params.set(key, value);
+        if (canSeeAll()) params.set('scope', 'all');
+        return `/api/quotations/export?${params}`;
+      },
+      onPdf: () => printList(),
+    }),
     canSeeAll() ? el('button.btn.btn-secondary.btn-sm', {
       type: 'button', text: t('qstatus_expired'),
       title: 'Mark past-validity quotations as expired',
@@ -56,10 +66,57 @@ export async function render({ navigate }) {
 
   page.append(el('div.card', {}, [el('div.card-body.flush', {}, [host])]));
 
+  let current = [];
+
+  /** The list on screen as an A4 report, for the print dialogue's PDF. */
+  function printList() {
+    const lang = getLang();
+    const totals = current.reduce((acc, row) => {
+      acc[row.currency] = (acc[row.currency] || 0) + Number(row.total || 0);
+      return acc;
+    }, {});
+    const filterText = [
+      filters.status && t(`qstatus_${filters.status}`),
+      filters.country && t(`country_${filters.country}`),
+      filters.q && `"${filters.q}"`,
+    ].filter(Boolean).join(' · ') || t('report_all');
+    printReport({
+      lang,
+      landscape: true,
+      title: t('report_quotations'),
+      subtitle: `${t('report_count')}: ${current.length}`,
+      meta: [
+        [t('report_period'), `${filters.from || '…'} → ${filters.to || '…'}`],
+        [t('report_filters'), filterText],
+      ],
+      sections: [{
+        columns: [
+          { label: t('quote_number') }, { label: t('project_name') }, { label: t('customer') },
+          { label: t('country') }, { label: t('issue_date') }, { label: t('status') },
+          { label: t('net_amount'), className: 'num' }, { label: t('grand_total'), className: 'num' },
+          canSeeCost() ? { label: t('margin'), className: 'num' } : null, { label: t('owner') },
+        ].filter(Boolean),
+        rows: current.map((row) => [
+          `${row.number}${row.revision ? ` R${row.revision}` : ''}`, pick(row, 'project_name'), pick(row, 'customer_name'),
+          t(`country_${row.country}`), formatDate(row.issue_date), t(`qstatus_${row.status}`),
+          `${money(row.net_amount)} ${row.currency}`, `${money(row.total)} ${row.currency}`,
+          canSeeCost() ? (row.margin_pct ? `${Number(row.margin_pct).toFixed(1)}%` : '—') : undefined,
+          pick(row, 'owner_name') || '—',
+        ].filter((v) => v !== undefined)),
+        footer: [
+          `${current.length}`, '', '', '', '', '', '',
+          Object.entries(totals).map(([c, sum]) => `${money(sum, 0)} ${c}`).join(' · '),
+          ...(canSeeCost() ? [''] : []), '',
+        ],
+      }],
+    });
+  }
+
   async function refresh() {
     clear(host).append(el('div.loading-page', { text: t('loading') }));
     try {
       const { quotations } = await api.quotations({ ...filters, scope: canSeeAll() ? 'all' : undefined });
+      current = quotations;
       const totalsByCurrency = quotations.reduce((acc, row) => {
         acc[row.currency] = (acc[row.currency] || 0) + Number(row.total || 0);
         return acc;

@@ -249,6 +249,60 @@ test('serves a complete bilingual print document', async () => {
   assert.equal(d.country.vat_rate, 15);
 });
 
+test('stores which design the offer prints in, and what was rewritten on it', async () => {
+  let res = await api('GET', `/api/quotations/${quotationId}`);
+  assert.equal(res.body.quotation.print.template, 'letter', 'the formal letter is the default');
+  assert.deepEqual(res.body.quotation.print_templates, ['letter', 'compact', 'proposal', 'boq', 'summary', 'premium']);
+
+  res = await api('PUT', `/api/quotations/${quotationId}/print`, {
+    template: 'premium',
+    text: {
+      'premium.title': '  برج   الراجحي ',
+      'letter.intro': 'kept for the other design',
+      'premium.empty': '   ',
+      'bad key!': 'dropped',
+      'premium.number': 42,
+    },
+    hidden: { 'premium.profile': true, 'premium.cover': false, 'nope!': true },
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body.print, {
+    template: 'premium',
+    text: { 'premium.title': 'برج الراجحي', 'letter.intro': 'kept for the other design' },
+    hidden: { 'premium.profile': true },
+  });
+
+  res = await api('GET', `/api/quotations/${quotationId}/document`);
+  assert.equal(res.body.quotation.print.template, 'premium', 'the print document carries the choice');
+  assert.equal(res.body.quotation.print.text['premium.title'], 'برج الراجحي');
+
+  res = await api('PUT', `/api/quotations/${quotationId}/print`, { template: 'boq' });
+  assert.equal(res.body.print.template, 'boq');
+  assert.equal(res.body.print.text['premium.title'], 'برج الراجحي', 'choosing a design keeps the wording saved on the others');
+  assert.deepEqual(res.body.print.hidden, { 'premium.profile': true });
+
+  res = await api('PUT', `/api/quotations/${quotationId}/print`, { template: 'not-a-design', text: {}, hidden: {} });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.print.template, 'letter', 'an unknown design falls back to the letter');
+  assert.deepEqual(res.body.print.text, {}, 'and a full body replaces the edits');
+});
+
+test('the study remembers its design the same way', async () => {
+  let res = await api('PUT', `/api/quotations/${quotationId}/study/deck`, {
+    template: 'infographic', text: { 'infographic.title': 'دراسة' }, hidden: {},
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.deck.template, 'infographic');
+
+  res = await api('GET', `/api/quotations/${quotationId}/study`);
+  assert.equal(res.body.study.input.deck.template, 'infographic');
+  assert.deepEqual(res.body.templates, ['deck', 'report', 'compare', 'infographic', 'dashboard', 'story']);
+
+  res = await api('PUT', `/api/quotations/${quotationId}/study/deck`, { template: 'letter' });
+  assert.equal(res.body.deck.template, 'deck', 'a quotation design is not a study design');
+  assert.equal(res.body.deck.text['infographic.title'], 'دراسة', 'and the wording survives the change of design');
+});
+
 test('applies the right VAT and currency for Egypt and Qatar', async () => {
   const eg = await api('POST', '/api/customers', { name_en: 'Hassan Allam', country: 'EG', city: 'Cairo' });
   const egQuote = await api('POST', '/api/quotations', {
@@ -1029,6 +1083,156 @@ test('a study takes figures, drawings and captions', async () => {
   const removed = await api('DELETE', `/api/quotations/${id}/study/drawings/${drawing.id}`);
   assert.equal(removed.status, 200);
   assert.equal(removed.body.drawings.length, 0);
+});
+
+// ------------------------------------------------------------------ exports
+// The screens' lists as spreadsheets: same filters, same permission scope,
+// a real .xlsx on the wire.
+test('quotations and analytics export as spreadsheets', async () => {
+  const xlsx = await fetch(`${BASE}/api/quotations/export?format=xlsx&lang=ar&scope=all&status=sent`, { headers: { cookie } });
+  assert.equal(xlsx.status, 200);
+  assert.match(xlsx.headers.get('content-type'), /spreadsheetml/);
+  assert.match(xlsx.headers.get('content-disposition'), /filename\*=UTF-8''%D8%B9%D8%B1%D9%88%D8%B6/, 'the Arabic filename is encoded');
+  assert.match(xlsx.headers.get('content-disposition'), /filename="quotations-\d{4}-\d{2}-\d{2}\.xlsx"/, 'with an English fallback');
+  const bytes = Buffer.from(await xlsx.arrayBuffer());
+  assert.equal(bytes.slice(0, 2).toString(), 'PK', 'a zip, as Excel expects');
+
+  const csv = await fetch(`${BASE}/api/quotations/export?format=csv&lang=en&scope=all`, { headers: { cookie } });
+  assert.equal(csv.status, 200);
+  const raw = Buffer.from(await csv.arrayBuffer());
+  assert.equal(raw.slice(0, 3).toString('hex'), 'efbbbf', 'a byte-order mark, so Excel reads UTF-8');
+  const text = raw.slice(3).toString('utf8');
+  assert.ok(text.startsWith('Quotation No.,Revision,Project,'), 'English headers');
+  assert.match(text, /Margin %/, 'an administrator sees the margin column');
+
+  const bad = await api('GET', '/api/quotations/export?format=pdf');
+  assert.equal(bad.status, 400, 'a format the server does not write is refused');
+
+  const analytics = await fetch(`${BASE}/api/analytics/export?format=xlsx&lang=en`, { headers: { cookie } });
+  assert.equal(analytics.status, 200);
+  const workbook = Buffer.from(await analytics.arrayBuffer()).toString('latin1');
+  assert.match(workbook, /xl\/worksheets\/sheet10\.xml/, 'one sheet per analytics table');
+});
+
+// ----------------------------------------------------------- mail → customer
+// Every message is filed under the customer its address belongs to, and a
+// contact added later claims the mail that came before them.
+test('mail is filed under the customer by address, including mail that came first', async () => {
+  const customer = await api('POST', '/api/customers', { name_en: 'Filed Mail Co', country: 'SA', email: 'office@filedmail.example' });
+  const id = customer.body.customer.id;
+
+  // A WhatsApp capture from a number nobody knows yet: unfiled.
+  const before = await api('POST', '/api/mail/capture', {
+    channel: 'whatsapp', from_name: 'Sameh', from_phone: '+966 50 777 8899',
+    text: 'محتاجين عرض سعر لسقف 1200 م2',
+  });
+  assert.equal(before.status, 201);
+  let filed = await api('GET', `/api/customers/${id}/mail`);
+  assert.equal(filed.body.total, 0);
+
+  // Adding the contact with that number files it retroactively.
+  const contact = await api('POST', `/api/customers/${id}/contacts`, {
+    name: 'Sameh Fathy', mobile: '0507778899', email: 'sameh@filedmail.example',
+  });
+  assert.equal(contact.status, 201);
+  filed = await api('GET', `/api/customers/${id}/mail`);
+  assert.equal(filed.body.total, 1, 'the earlier message is now on the customer');
+  assert.equal(filed.body.messages[0].request_id > 0, true, 'and it shows as a request');
+
+  // A second capture from the same number files itself at once.
+  await api('POST', '/api/mail/capture', { channel: 'whatsapp', from_phone: '+966507778899', text: 'تمام، ابعتوا العرض' });
+  filed = await api('GET', `/api/customers/${id}/mail`);
+  assert.equal(filed.body.total, 2);
+
+  const detail = await api('GET', `/api/customers/${id}`);
+  assert.equal(detail.body.mail_count, 2, 'the customer carries the count for its tab');
+
+  const full = await api('GET', `/api/customers/${id}/mail/${filed.body.messages[0].id}`);
+  assert.match(full.body.message.body_text, /ابعتوا العرض/);
+
+  const other = await api('POST', '/api/customers', { name_en: 'Someone Else', country: 'SA' });
+  const wrong = await api('GET', `/api/customers/${other.body.customer.id}/mail/${filed.body.messages[0].id}`);
+  assert.equal(wrong.status, 404, 'a message is readable only under its own customer');
+});
+
+// ----------------------------------------------------------------- live
+// The stream says what happened and to whom; the page fetches the rest.
+test('a notification reaches the open event stream at once', async () => {
+  const users = await api('GET', '/api/users');
+  const khaled = users.body.users.find((u) => u.email === 'khaled@test.local');
+
+  // Open the stream as the admin, then have a colleague message the admin.
+  const controller = new AbortController();
+  const stream = await fetch(`${BASE}/api/events`, { headers: { cookie }, signal: controller.signal });
+  assert.equal(stream.status, 200);
+  assert.match(stream.headers.get('content-type'), /text\/event-stream/);
+
+  const reader = stream.body.getReader();
+  const decoder = new TextDecoder();
+  let received = '';
+  const readUntil = async (pattern) => {
+    const deadline = Date.now() + 5000;
+    while (!pattern.test(received)) {
+      if (Date.now() > deadline) throw new Error(`stream never carried ${pattern}: ${received}`);
+      const { value, done } = await reader.read();
+      if (done) break;
+      received += decoder.decode(value, { stream: true });
+    }
+  };
+  await readUntil(/event: hello/);
+
+  const status = await api('GET', '/api/events/status');
+  assert.equal(status.body.connections, 1);
+
+  const adminCookie = cookie;
+  await api('POST', '/api/auth/login', { email: 'khaled@test.local', password: 'Engineer@2026' });
+  const admin = users.body.users.find((u) => u.role === 'admin');
+  await api('POST', '/api/messages', { recipient_ids: [admin.id], subject: 'ping', body: 'live?' });
+  cookie = adminCookie;
+
+  await readUntil(/event: notification\ndata: \{[^\n]*"type":"message"/);
+  controller.abort();
+  void khaled;
+});
+
+// -------------------------------------------------------------- dashboard
+test('a person arranges their own dashboard and it comes back cleaned', async () => {
+  const saved = await api('PATCH', '/api/auth/profile', {
+    dashboard: [{ key: 'followups' }, { key: 'kpis', hidden: true }, { key: 'nope' }, 'deals', { key: 'followups' }],
+  });
+  assert.equal(saved.status, 200);
+  const layout = JSON.parse(saved.body.user.dashboard_json);
+  assert.deepEqual(layout.map((w) => w.key), ['followups', 'kpis', 'deals', 'quotes', 'country'], 'unknown dropped, duplicates once, the rest appended');
+  assert.equal(layout[1].hidden, true);
+  assert.equal(layout[2].hidden, false);
+
+  const me = await api('GET', '/api/auth/me');
+  assert.equal(JSON.parse(me.body.user.dashboard_json)[0].key, 'followups', 'the layout travels with the session');
+
+  const untouched = await api('PATCH', '/api/auth/profile', { phone: '0500000000' });
+  assert.equal(JSON.parse(untouched.body.user.dashboard_json)[0].key, 'followups', 'saving something else keeps it');
+});
+
+// ---------------------------------------------------------------- openapi
+test('the API describes itself from its routes', async () => {
+  const doc = await api('GET', '/api/openapi.json');
+  assert.equal(doc.status, 200);
+  assert.equal(doc.body.openapi, '3.0.3');
+  assert.ok(doc.body.paths['/api/customers/{id}/mail'].get, 'a route added in this version is listed');
+  assert.ok(doc.body.paths['/api/quotations/export'].get, 'and so is the export');
+  assert.ok(doc.body.paths['/api/events'].get.responses[200].content['text/event-stream']);
+  assert.ok(Object.keys(doc.body.paths).length >= 70, `every route: ${Object.keys(doc.body.paths).length}`);
+
+  const page = await fetch(`${BASE}/api/docs`, { headers: { cookie } });
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type'), /text\/html/);
+  assert.match(await page.text(), /API reference/);
+
+  const saved = cookie;
+  cookie = '';
+  const anonymous = await api('GET', '/api/openapi.json');
+  assert.equal(anonymous.status, 401, 'the description is for people with a session');
+  cookie = saved;
 });
 
 // The deck is edited on the deck itself — the engineer rewrites a sentence in

@@ -21,7 +21,8 @@ import * as mailRoutes from './routes/mail.js';
 
 import { runReminderSweep, purgeOldNotifications } from './notifications.js';
 import { userByCalendarToken, buildUserCalendar } from './calendar.js';
-import { syncDueAccounts } from './mailbox.js';
+import { syncDueAccounts, backfillCustomerLinks } from './mailbox.js';
+import { buildOpenApi, docsPage } from './openapi.js';
 
 const router = new Router();
 for (const module of [
@@ -37,6 +38,25 @@ router.get('/api/health', () => ({
   version: '1.0.0',
   time: new Date().toISOString(),
 }), { public: true });
+
+// The API described from its own routes, and a page that renders it.
+// Both need a session: the description names every endpoint the server has.
+let openApiCache = null;
+router.get('/api/openapi.json', ({ req }) => {
+  const proto = (req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim();
+  openApiCache = openApiCache || buildOpenApi(router, { serverUrl: `${proto}://${req.headers.host || 'localhost'}` });
+  return openApiCache;
+});
+router.get('/api/docs', ({ res }) => {
+  const body = docsPage();
+  res.writeHead(200, {
+    'content-type': 'text/html; charset=utf-8',
+    'content-length': Buffer.byteLength(body),
+    'cache-control': 'no-cache',
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(body);
+});
 
 const server = createServer(async (req, res) => {
   // Both of these throw on input a client fully controls — `%zz` in the path,
@@ -162,6 +182,9 @@ const admin = seedAdmin();
 
 // Run one sweep at boot so reminders are current even after downtime.
 try { runReminderSweep(); } catch (error) { console.error('[reminders]', error); }
+// Mail stored before this version, or before its sender was a customer,
+// gets filed under the customer now.
+try { backfillCustomerLinks(); } catch (error) { console.error('[mail links]', error); }
 
 server.listen(config.port, config.host, () => {
   console.log('');

@@ -7,13 +7,18 @@ import { api } from './api.js';
 import { t, getLang, formatDateTime } from './i18n.js';
 import { el, clear, icon, toastError } from './ui.js';
 
+// With the live stream open, polling is only a safety net; without it (an
+// old browser, a proxy that refuses long connections) it is the mechanism.
 const POLL_MS = 60_000;
+const FALLBACK_POLL_MS = 5 * 60_000;
 
 const state = {
   unread: 0,
   unreadMail: 0,
   items: [],
   timer: null,
+  stream: null,
+  live: false,
   lastSeenId: Number(localStorage.getItem('spantech_last_notification') || 0),
 };
 
@@ -101,13 +106,63 @@ export async function refresh({ silent = false } = {}) {
 
 export function startPolling() {
   stopPolling();
-  state.timer = setInterval(() => refresh({ silent: true }), POLL_MS);
+  openStream();
+  state.timer = setInterval(() => refresh({ silent: true }), state.stream ? FALLBACK_POLL_MS : POLL_MS);
 }
 
 export function stopPolling() {
   if (state.timer) clearInterval(state.timer);
   state.timer = null;
+  if (state.stream) { state.stream.close(); state.stream = null; }
+  state.live = false;
 }
+
+// -------------------------------------------------------------- live stream
+/**
+ * One EventSource per tab. The server says what happened and to whom; the
+ * page then fetches through the ordinary API, so nothing arrives on the
+ * stream that the API would refuse. Other views listen for the same events
+ * on `window` and refresh themselves when they are concerned.
+ */
+const listeners = new Set();
+export const onLive = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+
+function emit(kind, detail) {
+  for (const fn of listeners) {
+    try { fn(kind, detail); } catch (error) { console.warn('live listener', error); }
+  }
+  window.dispatchEvent(new CustomEvent('spantech:live', { detail: { kind, ...detail } }));
+}
+
+function openStream() {
+  if (typeof EventSource === 'undefined' || state.stream) return;
+  const source = new EventSource('/api/events');
+  state.stream = source;
+
+  source.addEventListener('hello', () => {
+    state.live = true;
+    onBadgeChange(state);
+  });
+  source.addEventListener('notification', (event) => {
+    // Not silent: this is exactly the moment a desktop pop-up is wanted.
+    refresh({ silent: false });
+    emit('notification', parse(event.data));
+  });
+  source.addEventListener('mail', (event) => {
+    refresh({ silent: true });
+    emit('mail', parse(event.data));
+  });
+  source.addEventListener('quote_status', (event) => {
+    emit('quote_status', parse(event.data));
+  });
+  source.onerror = () => {
+    // EventSource reconnects on its own; until it does, the poll carries on.
+    state.live = false;
+    onBadgeChange(state);
+  };
+}
+
+const parse = (text) => { try { return JSON.parse(text || '{}'); } catch { return {}; } };
 
 export const getState = () => state;
 
@@ -135,6 +190,11 @@ function updateBadge() {
 
 setBadgeHandler(() => {
   updateBadge();
+  const dot = document.querySelector('.live-dot');
+  if (dot) {
+    dot.classList.toggle('on', state.live);
+    dot.title = state.live ? t('live_connected') : t('live_reconnecting');
+  }
   // Keep the sidebar's message badge in step too.
   for (const node of document.querySelectorAll('[data-badge="inbox"]')) {
     node.textContent = state.unreadMail > 0 ? String(state.unreadMail) : '';

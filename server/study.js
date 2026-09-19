@@ -113,13 +113,22 @@ export function defaultStudy(quote = {}, system = 'solid') {
  * of each one are capped so a slide cannot become a payload.
  */
 export const DECK_TEXT_LIMIT = 1500;
-export const DECK_MAX_KEYS = 200;
+export const DECK_MAX_KEYS = 400;
 const DECK_KEY = /^[a-z0-9_.:-]{1,64}$/i;
 
-export function sanitizeDeck(raw) {
+/**
+ * The ways a study and a quotation can be laid out. The first of each is the
+ * default; a template that does not exist falls back to it rather than
+ * failing the save.
+ */
+export const STUDY_TEMPLATES = ['deck', 'report', 'compare', 'infographic', 'dashboard', 'story'];
+export const QUOTE_TEMPLATES = ['letter', 'compact', 'proposal', 'boq', 'summary', 'premium'];
+
+export function sanitizeDeck(raw, templates = STUDY_TEMPLATES) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const text = {};
   const hidden = {};
+  const template = templates.includes(source.template) ? source.template : templates[0];
 
   for (const [key, value] of Object.entries(source.text || {})) {
     if (!DECK_KEY.test(key) || typeof value !== 'string') continue;
@@ -139,8 +148,11 @@ export function sanitizeDeck(raw) {
     if (value) hidden[key] = true;
   }
 
-  return { text, hidden };
+  return { template, text, hidden };
 }
+
+/** The same cleaning for a quotation's printed layout and its edits. */
+export const sanitizePrint = (raw) => sanitizeDeck(raw, QUOTE_TEMPLATES);
 
 const n = (value) => {
   const number = Number(value);

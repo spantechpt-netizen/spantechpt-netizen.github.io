@@ -8,6 +8,11 @@
 
 المستودع: <https://github.com/spantechpt-netizen/spantechpt-netizen.github.io>
 
+> **سيرفر الشركة الفعلي** (Windows Server 2022 عليه برنامج آخر بـ Node 24 و.NET وSQL Server
+> خلف nginx، مع Kaspersky EDR وwin-acme وnssm)؟ اتبع
+> [`DEPLOYMENT-COMPANY-SERVER.md`](DEPLOYMENT-COMPANY-SERVER.md) — خطوات مرتّبة لهذا
+> السيرفر بالذات، بلا مساس بما يعمل عليه.
+
 ---
 
 ## أولاً: المعلومة الناقصة وسجلات الـ DNS
