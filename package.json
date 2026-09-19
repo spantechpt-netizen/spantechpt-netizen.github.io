@@ -1,0 +1,22 @@
+{
+  "name": "spantech-crm",
+  "version": "1.0.0",
+  "description": "Span Tech CRM — bilingual (AR/EN) CRM and quotation system for post-tension slab contracting across Saudi Arabia, Egypt and Qatar.",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "node --no-warnings --watch server/index.js",
+    "demo": "node --no-warnings scripts/first-run.mjs",
+    "check": "node --no-warnings scripts/check.mjs",
+    "seed": "node --no-warnings server/seed.js",
+    "reset": "node --no-warnings server/seed.js --reset",
+    "backup": "node --no-warnings scripts/backup.mjs",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "dependencies": {},
+  "license": "UNLICENSED"
+}

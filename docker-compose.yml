@@ -1,0 +1,26 @@
+services:
+  crm:
+    build: .
+    image: spantech-crm:latest
+    container_name: spantech-crm
+    restart: unless-stopped
+    ports:
+      # Bound to the loopback interface, so the only way in from outside is
+      # through the TLS reverse proxy. Without this the CRM would also answer
+      # on http://<server-ip>:8090, handing out session cookies in clear text.
+      # To try it before the proxy is up, change this to "8090:8090"
+      # temporarily, then put it back.
+      - "127.0.0.1:8090:8090"
+    environment:
+      # Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+      SESSION_SECRET: "CHANGE-ME-BEFORE-GOING-LIVE"
+      SESSION_HOURS: "72"
+      # Set to "true" once the CRM is behind HTTPS — see docs/DEPLOYMENT.md.
+      SECURE_COOKIES: "false"
+      ADMIN_EMAIL: "admin@spantechksa.com"
+      ADMIN_PASSWORD: "SpanTech@2026"
+      ADMIN_NAME: "System Administrator"
+    volumes:
+      # The database lives here — this is the only thing you need to back up.
+      - ./data:/app/data
