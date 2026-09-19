@@ -19,11 +19,11 @@
 
 | الغرض | المسار |
 |---|---|
-| مجلد النظام | `C:\apps\spantech-crm` |
+| مجلد النظام | `C:\Apps\SpanTechCRM` |
 | nginx | `C:\nginx` (الملف الرئيسي `C:\nginx\conf\nginx.conf`) |
 | win-acme | `C:\win-acme\wacs.exe` |
-| مجلد تحقق الشهادات | `C:\apps\acme-webroot` |
-| مجلد الشهادات بصيغة PEM | `C:\apps\certs\crm.spantechpt.com` |
+| مجلد تحقق الشهادات | `C:\Apps\acme-webroot` |
+| مجلد الشهادات بصيغة PEM | `C:\Apps\certs\crm.spantechpt.com` |
 
 النطاق: **`crm.spantechpt.com`**. المنفذ المحلي للنظام: **`8090`** (يُغيَّر إن كان
 مستخدماً — الخطوة 1 تكشف ذلك).
@@ -64,13 +64,13 @@ C:\win-acme\wacs.exe --list
 ## الخطوة 2 — تنزيل النظام في مجلد مستقل
 
 ```powershell
-New-Item -ItemType Directory -Force C:\apps | Out-Null
-cd C:\apps
-git clone https://github.com/spantechpt-netizen/spantechpt-netizen.github.io.git spantech-crm
-cd C:\apps\spantech-crm
+New-Item -ItemType Directory -Force C:\Apps | Out-Null
+cd C:\Apps
+git clone https://github.com/spantechpt-netizen/spantechpt-netizen.github.io.git SpanTechCRM
+cd C:\Apps\SpanTechCRM
 ```
 
-بلا Git على السيرفر؟ فُكّ ملف ZIP المستودع في `C:\apps\spantech-crm` بحيث يكون
+بلا Git على السيرفر؟ فُكّ ملف ZIP المستودع في `C:\Apps\SpanTechCRM` بحيث يكون
 `package.json` مباشرة داخله.
 
 لا يوجد `npm install` ولا خطوة بناء — النظام بلا أي حزم خارجية، فلا يمسّ مجلد
@@ -85,7 +85,7 @@ cd C:\apps\spantech-crm
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-أنشئ `C:\apps\spantech-crm\.env`:
+أنشئ `C:\Apps\SpanTechCRM\.env`:
 
 ```ini
 PORT=8090
@@ -108,7 +108,7 @@ ADMIN_NAME=System Administrator
 ثم فحص جاهزية بأمر واحد:
 
 ```powershell
-cd C:\apps\spantech-crm
+cd C:\Apps\SpanTechCRM
 npm run check
 ```
 
@@ -141,57 +141,92 @@ Invoke-RestMethod http://127.0.0.1:8090/api/health     # المتوقع: ok : Tr
 
 | النوع | القيمة |
 |---|---|
-| مجلد (مع المجلدات الفرعية) | `C:\apps\spantech-crm\data\` |
-| مجلد | `C:\apps\spantech-crm\logs\` |
+| مجلد (مع المجلدات الفرعية) | `C:\Apps\SpanTechCRM\data\` |
+| مجلد | `C:\Apps\SpanTechCRM\logs\` |
 
 **لا تضف `node.exe` كتطبيق موثوق بالكامل** — لا حاجة لذلك، وهو يعمل بالفعل للبرنامج
 الآخر بلا مشكلة. لو ظهر لاحقاً حدث في EDR عن `node.exe` يفتح منفذاً على
 `127.0.0.1:8090` فهذا سلوكنا المتوقع؛ اعتمده كـ allow لهذا المسار فقط.
 
 بعد التشغيل راقب **Reports → Threats** في Kaspersky لدقائق: أي حجر (quarantine)
-لملف داخل `C:\apps\spantech-crm` يجب استرجاعه وإضافة استثنائه.
+لملف داخل `C:\Apps\SpanTechCRM` يجب استرجاعه وإضافة استثنائه.
 
 ---
 
-## الخطوة 5 — خدمة nssm جديدة
+## الخطوة 5 — حساب الخدمة `svc_spantechcrm`
+
+الخدمة لا تعمل بـ `Local System` بل بحساب ويندوز محلي مخصص لها، صلاحياته على
+المجلد قراءة فقط، والكتابة في مجلدَي `data\` و`logs\` وحدهما — وهما كل ما
+يكتب فيه النظام (قاعدة البيانات وملفاتها `-wal` و`-shm` والمخططات، وسجلات nssm).
+
+```powershell
+# الحساب (كلمة سر طويلة تُحفظ في مكان آمن؛ لا تنتهي صلاحيتها)
+$pw = Read-Host -AsSecureString "Password for svc_spantechcrm"
+New-LocalUser -Name svc_spantechcrm -Password $pw -PasswordNeverExpires -UserMayNotChangePassword `
+  -Description "Span Tech CRM service account"
+
+# الصلاحيات: قراءة وتنفيذ على المجلد كله، تعديل على data و logs فقط
+New-Item -ItemType Directory -Force C:\Apps\SpanTechCRM\logs | Out-Null
+icacls "C:\Apps\SpanTechCRM"       /inheritance:e
+icacls "C:\Apps\SpanTechCRM"       /grant "svc_spantechcrm:(OI)(CI)RX" /T
+icacls "C:\Apps\SpanTechCRM\data" /grant "svc_spantechcrm:(OI)(CI)M"  /T
+icacls "C:\Apps\SpanTechCRM\logs" /grant "svc_spantechcrm:(OI)(CI)M"  /T
+```
+
+`RX` على المجلد يكفي لقراءة الكود وملف `.env`. الحساب لا يحتاج عضوية في أي
+مجموعة إدارية، ولا حق دخول تفاعلي.
+
+### اختبار الصلاحيات بالحساب نفسه قبل الخدمة
+
+```powershell
+runas /user:svc_spantechcrm "cmd /c cd /d C:\Apps\SpanTechCRM && npm run check && pause"
+```
+
+الفحص يكتب ملفاً تجريبياً في `data\` ويحذفه، ويتأكد من إصدار Node والمنفذ. لو
+مرّ هنا، فالخدمة ستعمل بنفس الصلاحيات بلا مفاجآت.
+
+---
+
+## الخطوة 6 — خدمة nssm جديدة
 
 نفس الأداة التي تشغّل nginx وNode و.NET الآن؛ نضيف خدمة رابعة ولا نقرب القائمة.
 
 ```powershell
 $node = (Get-Command node).Source     # مثلاً C:\Program Files\nodejs\node.exe
 
-nssm install SpanTechCRM $node "--no-warnings" "C:\apps\spantech-crm\server\index.js"
-nssm set SpanTechCRM AppDirectory   C:\apps\spantech-crm
+nssm install SpanTechCRM $node "--no-warnings" "C:\Apps\SpanTechCRM\server\index.js"
+nssm set SpanTechCRM AppDirectory   C:\Apps\SpanTechCRM
 nssm set SpanTechCRM DisplayName    "Span Tech CRM"
 nssm set SpanTechCRM Description    "نظام سبان تك لإدارة العملاء وعروض الأسعار — crm.spantechpt.com"
 nssm set SpanTechCRM Start          SERVICE_AUTO_START
 nssm set SpanTechCRM AppExit        Default Restart
 nssm set SpanTechCRM AppRestartDelay 5000
 
-New-Item -ItemType Directory -Force C:\apps\spantech-crm\logs | Out-Null
-nssm set SpanTechCRM AppStdout      C:\apps\spantech-crm\logs\service.log
-nssm set SpanTechCRM AppStderr      C:\apps\spantech-crm\logs\service-error.log
+New-Item -ItemType Directory -Force C:\Apps\SpanTechCRM\logs | Out-Null
+nssm set SpanTechCRM AppStdout      C:\Apps\SpanTechCRM\logs\service.log
+nssm set SpanTechCRM AppStderr      C:\Apps\SpanTechCRM\logs\service-error.log
 nssm set SpanTechCRM AppRotateFiles 1
 nssm set SpanTechCRM AppRotateBytes 10485760
+
+# الخدمة تعمل بحساب الخدمة من الخطوة 5 (nssm يمنحه حق "Log on as a service" تلقائياً)
+nssm set SpanTechCRM ObjectName ".\svc_spantechcrm" "<كلمة سر الحساب>"
 
 nssm start SpanTechCRM
 Get-Service SpanTechCRM                                   # Running
 Invoke-RestMethod http://127.0.0.1:8090/api/health        # ok : True
 ```
 
-الخدمة تعمل بحساب `Local System` افتراضياً مثل بقية خدمات nssm، فلها صلاحية
-الكتابة في `data\` و`logs\`. لو كانت خدماتكم تعمل بحساب خدمة مخصص وأردتم
-المثل، أعطوا ذلك الحساب **Modify** على `C:\apps\spantech-crm\data` و`logs`:
+لو رفضت الخدمة أن تبدأ برسالة **logon failure** (حدث 7000 في Event Viewer)،
+فكلمة السر خطأ أو الحساب لم يُمنح حق الدخول كخدمة؛ أعد أمر `ObjectName` بكلمة
+السر الصحيحة، أو أضف الحساب يدوياً في
+*Local Security Policy → Local Policies → User Rights Assignment → Log on as a service*.
 
-```powershell
-icacls C:\apps\spantech-crm\data /grant "DOMAIN\svc_account:(OI)(CI)M"
-icacls C:\apps\spantech-crm\logs /grant "DOMAIN\svc_account:(OI)(CI)M"
-nssm set SpanTechCRM ObjectName "DOMAIN\svc_account" "<password>"
-```
+لو توقفت الخدمة بعد البدء وفي `logs\service-error.log` خطأ `EACCES` أو `EPERM`،
+فصلاحية الكتابة على `data\` أو `logs\` ناقصة؛ راجع الخطوة 5.
 
 ---
 
-## الخطوة 6 — سجل DNS
+## الخطوة 7 — سجل DNS
 
 في لوحة نطاق `spantechpt.com`:
 
@@ -207,11 +242,11 @@ Resolve-DnsName crm.spantechpt.com -Type A
 
 ---
 
-## الخطوة 7 — nginx: ملف إعداد مستقل
+## الخطوة 8 — nginx: ملف إعداد مستقل
 
 **لا تعدّل أي `server` block قائم.** نضيف ملفاً جديداً ونجعله مُضمَّناً.
 
-### 7.1 مجلد الإعدادات الإضافية
+### 8.1 مجلد الإعدادات الإضافية
 
 لو أظهرت الخطوة 1 سطر `include` لمجلد (مثل `include conf.d/*.conf;` أو
 `include sites-enabled/*;`) داخل `http { ... }`، استخدم ذلك المجلد وتجاوز هذه
@@ -224,10 +259,10 @@ Resolve-DnsName crm.spantechpt.com -Type A
 
 ```powershell
 New-Item -ItemType Directory -Force C:\nginx\conf\conf.d | Out-Null
-New-Item -ItemType Directory -Force C:\apps\acme-webroot | Out-Null
+New-Item -ItemType Directory -Force C:\Apps\acme-webroot | Out-Null
 ```
 
-### 7.2 المرحلة الأولى: منفذ 80 فقط (لإصدار الشهادة)
+### 8.2 المرحلة الأولى: منفذ 80 فقط (لإصدار الشهادة)
 
 ملف `C:\nginx\conf\conf.d\crm.spantechpt.com.conf`:
 
@@ -238,7 +273,7 @@ server {
 
     # تحقق Let's Encrypt عبر win-acme (http-01)
     location ^~ /.well-known/acme-challenge/ {
-        root C:/apps/acme-webroot;
+        root C:/Apps/acme-webroot;
         default_type text/plain;
     }
 
@@ -257,7 +292,7 @@ cd C:\nginx
 > `reload` يُعيد تحميل الإعداد بلا توقف. **لا تستخدم `nssm restart nginx`** إلا
 > عند الضرورة — فهو يقطع خدمة المواقع الأخرى ثوانٍ.
 
-### 7.3 المرحلة الثانية: منفذ 443 (بعد الخطوة 8)
+### 8.3 المرحلة الثانية: منفذ 443 (بعد الخطوة 9)
 
 بعد صدور الشهادة، أضف هذا الـ block إلى **نفس الملف** تحت الأول:
 
@@ -267,8 +302,8 @@ server {
     http2 on;
     server_name crm.spantechpt.com;
 
-    ssl_certificate     C:/apps/certs/crm.spantechpt.com/crm.spantechpt.com-chain.pem;
-    ssl_certificate_key C:/apps/certs/crm.spantechpt.com/crm.spantechpt.com-key.pem;
+    ssl_certificate     C:/Apps/certs/crm.spantechpt.com/crm.spantechpt.com-chain.pem;
+    ssl_certificate_key C:/Apps/certs/crm.spantechpt.com/crm.spantechpt.com-key.pem;
 
     client_max_body_size 20m;      # رفع مخططات الدراسات حتى 20 ميجا
 
@@ -307,13 +342,13 @@ cd C:\nginx
 
 ---
 
-## الخطوة 8 — الشهادة عبر win-acme (بلا مساس بالشهادات القائمة)
+## الخطوة 9 — الشهادة عبر win-acme (بلا مساس بالشهادات القائمة)
 
 نُنشئ **تجديداً (renewal) جديداً مستقلاً** لنطاقنا. لا نضيف النطاق كاسم إضافي
 (SAN) على شهادة البرنامج الآخر، حتى لا يترتّب على نظامنا إعادة إصدار شهادتهم.
 
 ```powershell
-New-Item -ItemType Directory -Force C:\apps\certs | Out-Null
+New-Item -ItemType Directory -Force C:\Apps\certs | Out-Null
 cd C:\win-acme
 .\wacs.exe
 ```
@@ -323,8 +358,8 @@ cd C:\win-acme
 1. `M` — Create certificate (full options)
 2. Source: **Manual input** → اكتب `crm.spantechpt.com`
 3. Validation: **[http] Save verification files on (network) path** → المسار
-   `C:\apps\acme-webroot` → لا تُنشئ `web.config` (هذا ليس IIS)
-4. Store: **PEM encoded files (Apache, nginx, etc.)** → المسار `C:\apps\certs`
+   `C:\Apps\acme-webroot` → لا تُنشئ `web.config` (هذا ليس IIS)
+4. Store: **PEM encoded files (Apache, nginx, etc.)** → المسار `C:\Apps\certs`
    (الأداة تُنشئ الملفات باسم النطاق داخله)
 5. Store ثانٍ: لا شيء (`No (additional) store steps`)
 6. Installation: **Start external script or program** →
@@ -334,12 +369,12 @@ cd C:\win-acme
 ثم تأكد من الملفات:
 
 ```powershell
-Get-ChildItem C:\apps\certs
+Get-ChildItem C:\Apps\certs
 ```
 
 المتوقع ملفات باسم `crm.spantechpt.com-chain.pem` و`crm.spantechpt.com-key.pem`
-(وغيرها). لو خرجت في `C:\apps\certs` مباشرة لا في مجلد فرعي، عدّل مساري
-`ssl_certificate` و`ssl_certificate_key` في الخطوة 7.3 بما يطابق.
+(وغيرها). لو خرجت في `C:\Apps\certs` مباشرة لا في مجلد فرعي، عدّل مساري
+`ssl_certificate` و`ssl_certificate_key` في الخطوة 8.3 بما يطابق.
 
 **التجديد التلقائي:** مهمة win-acme المجدولة القائمة على السيرفر تجدّد **كل**
 التجديدات المسجّلة، فتشمل الجديد بلا أي ضبط إضافي. للتأكد:
@@ -349,11 +384,11 @@ Get-ChildItem C:\apps\certs
 .\wacs.exe --renew --force --id <id>      # تجربة تجديد فورية اختيارية
 ```
 
-الآن نفّذ الخطوة 7.3 وافتح <https://crm.spantechpt.com> — شاشة الدخول بشهادة صحيحة.
+الآن نفّذ الخطوة 8.3 وافتح <https://crm.spantechpt.com> — شاشة الدخول بشهادة صحيحة.
 
 ---
 
-## الخطوة 9 — أول دخول
+## الخطوة 10 — أول دخول
 
 1. ادخل بحساب `ADMIN_EMAIL` وكلمة السر المؤقتة.
 2. **غيّر كلمة السر** من الملف الشخصي فوراً.
@@ -362,14 +397,14 @@ Get-ChildItem C:\apps\certs
 
 ---
 
-## الخطوة 10 — النسخ الاحتياطي (مستقل عن SQL Server)
+## الخطوة 11 — النسخ الاحتياطي (مستقل عن SQL Server)
 
-بيانات النظام كلها في `C:\apps\spantech-crm\data\` (قاعدة البيانات + مجلد
+بيانات النظام كلها في `C:\Apps\SpanTechCRM\data\` (قاعدة البيانات + مجلد
 `uploads` للمخططات). لا تنسخ `spantech.db` بأمر `copy` أثناء عمل الخدمة؛
 استخدم الأمر المرفق الذي يأخذ لقطة متماسكة:
 
 ```powershell
-cd C:\apps\spantech-crm
+cd C:\Apps\SpanTechCRM
 npm run backup -- D:\Backups\SpanTechCRM
 ```
 
@@ -377,11 +412,15 @@ npm run backup -- D:\Backups\SpanTechCRM
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute (Get-Command npm.cmd).Source `
-           -Argument "run backup -- D:\Backups\SpanTechCRM" -WorkingDirectory "C:\apps\spantech-crm"
+           -Argument "run backup -- D:\Backups\SpanTechCRM" -WorkingDirectory "C:\Apps\SpanTechCRM"
 $trigger = New-ScheduledTaskTrigger -Daily -At 2am
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
 Register-ScheduledTask -TaskName "Span Tech CRM Backup" -Action $action -Trigger $trigger -Principal $principal
 ```
+
+المهمة تعمل بـ `SYSTEM` لأن وجهة النسخ خارج مجلد النظام. لو أردتها بحساب
+`svc_spantechcrm` أيضاً، أعطه `M` على مجلد الوجهة أولاً:
+`icacls D:\Backups\SpanTechCRM /grant "svc_spantechcrm:(OI)(CI)M"`.
 
 يحتفظ بآخر 30 يوماً. ضمّوا مجلد `D:\Backups\SpanTechCRM` في نسخ السيرفر الخارجية
 كما تفعلون مع نسخ SQL Server. **جرّبوا الاسترجاع مرة واحدة**: أوقف الخدمة، استبدل
@@ -392,7 +431,7 @@ Register-ScheduledTask -TaskName "Span Tech CRM Backup" -Action $action -Trigger
 ## التحديثات لاحقاً
 
 ```powershell
-cd C:\apps\spantech-crm
+cd C:\Apps\SpanTechCRM
 nssm stop SpanTechCRM
 git pull                       # أو فكّ ZIP الإصدار الجديد فوق المجلد مع الإبقاء على .env وdata\
 nssm start SpanTechCRM
@@ -413,7 +452,8 @@ nssm stop SpanTechCRM
 nssm remove SpanTechCRM confirm
 Remove-Item C:\nginx\conf\conf.d\crm.spantechpt.com.conf
 cd C:\nginx; .\nginx.exe -t; .\nginx.exe -s reload
-# اختيارياً: حذف تجديد win-acme (wacs.exe --list ثم --cancel --id <id>)، وحذف C:\apps\spantech-crm بعد أخذ نسخة من data\
+Remove-LocalUser svc_spantechcrm
+# اختيارياً: حذف تجديد win-acme (wacs.exe --list ثم --cancel --id <id>)، وحذف C:\Apps\SpanTechCRM بعد أخذ نسخة من data\
 ```
 
 ---
@@ -423,6 +463,8 @@ cd C:\nginx; .\nginx.exe -t; .\nginx.exe -s reload
 - [ ] `node --version` يعطي v24.12.0 (أو أي 22.5 فأحدث) وأمر `node:sqlite` أعطى `ok`
 - [ ] `npm run check` مرّ بكامله
 - [ ] الخدمة `SpanTechCRM` حالتها Running، وتعود بعد `Restart-Computer`
+- [ ] الخدمة تعمل بحساب `svc_spantechcrm` (عمود Log On As في `services.msc`)، لا بـ Local System
+- [ ] `npm run check` مرّ **بحساب الخدمة نفسه** عبر `runas`
 - [ ] الخدمات الثلاث القائمة (nginx، Node، .NET) لم تتوقف ولم تُعدَّل
 - [ ] `http://<server-ip>:8090` **لا** يستجيب من جهاز آخر على الشبكة
 - [ ] `https://crm.spantechpt.com` يفتح شاشة الدخول بشهادة صحيحة، و`http://` يحوّل إليه
@@ -438,6 +480,8 @@ cd C:\nginx; .\nginx.exe -t; .\nginx.exe -s reload
 | العَرَض | السبب الغالب |
 |---|---|
 | الخدمة تبدأ ثم تتوقف | راجع `logs\service-error.log`؛ غالباً خطأ في `.env` أو المنفذ مستخدم (`Get-NetTCPConnection -LocalPort 8090`) |
+| الخدمة لا تبدأ، حدث 7000 «logon failure» | كلمة سر `svc_spantechcrm` في nssm خطأ، أو الحساب بلا حق Log on as a service (الخطوة 6) |
+| `EACCES` / `EPERM` في `service-error.log` | الحساب بلا صلاحية كتابة على `data\` أو `logs\` (الخطوة 5) |
 | `502 Bad Gateway` من nginx | الخدمة متوقفة، أو المنفذ في `proxy_pass` غير المنفذ في `.env` |
 | الدخول لا يثبت وتُطرد بعد كل صفحة | الموقع مفتوح عبر `http://` مع `SECURE_COOKIES=true`؛ افتحه عبر `https://` |
 | `SQLITE_BUSY` أو `EBUSY` في السجل | Kaspersky يفحص ملفات `data\`؛ راجع الخطوة 4 |
