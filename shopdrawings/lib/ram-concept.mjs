@@ -232,7 +232,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides =
       walls: ram.walls.flatMap((w) => clipSegmentToPolygon(w.a, w.b, body)).filter(([a, b]) => Math.hypot(b.x - a.x, b.y - a.y) > 50).map(([a, b]) => ({ a: R(a), b: R(b) })),
       thickZones: areasIn.filter((a) => a.thickness > bodyThickness + 1).map((a, j) => ({ id: `Z${j + 1}`, thickness: a.thickness, polygon: a.polygon.map(R) })),
       ubar: { edges: 'all', circles: [] },
-      pt: { zones: [], tendons: [] },
+      pt: { zones: [{ id: 'PT1', polygon: outline }], tendons: [] }, // the whole body is post-tensioned
       ram: {
         bands: ram.bands.filter((b) => inside({ x: (b.p0.x + b.p1.x) / 2, y: (b.p0.y + b.p1.y) / 2 }, body) || b.bars.some((bar) => inside(bar.a, body))).map((b) => ({ ...b, p0: R(b.p0), p1: R(b.p1), bars: b.bars.map((bar) => ({ a: R(bar.a), b: R(bar.b) })) })),
         tendons: ram.tendons.filter((t) => t.pts.some((p) => inside(p, body))).map((t) => ({ ...t, pts: t.pts.map(R) })),
@@ -261,7 +261,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides =
   });
   assumptions.push({ text: `Reinforcement, tendons and materials are taken from the RAM Concept model (f'c ${spec.fc} MPa from ${ram.materials.concreteName || 'the model'}, fy ${spec.fy} MPa, cover ${spec.cover} mm). Bar cutting lengths add SBC 304-18 hooks (12 Ø) where a bar ends at a free edge and split runs longer than 12 m with Class B laps.` });
   assumptions.push({ text: 'Punching shear results are not stored in the RAM file: links are shown as the minimum detailing arrangement and are to be confirmed against the RAM punching report (stud rails were specified in the model).' });
-  assumptions.push({ text: 'Bottom / top mesh: no distributed reinforcement in the RAM model; only the designed bands are drawn. Edge U-bars at the PT anchorages are the generator\'s standard detail.' });
+  assumptions.push({ text: 'The office standard reinforcement (bottom mesh, top bars over columns, edge U-bars, trimmers, punching links) is applied to the RAM slab exactly as for a G.A. drawing; the bands designed in RAM Concept are drawn on top of it as ADDITIONAL reinforcement (sheets 02A / 03A, marks ADD.B / ADD.T).' });
   const ptSpec = { ...spec, code_reference: null, sources: { code: 'assumed', fc: 'RAM model', fy: 'RAM model', cover: 'RAM model' }, found: ram.materials.rebarTypes.map((t) => `RAM bar type ${t.name} (${t.area} mm²)`) };
   const base = { bottom: { dia: 12, spacing: 200 }, topColumns: { dia: 16, spacing: 150 }, uEdge: { dia: 12, spacing: 200, leg: 1200 }, uCircle: { dia: 12, spacing: 150, leg: 1200 }, edgeBars: { dia: 12, count: 2 }, ringBars: { dia: 12, count: 2 }, voids: { dia: 12, count: 2 }, openings: { dia: 16, count: 2, diagDia: 12, diagCount: 2, uDia: 12, uSpacing: 200, uLeg: 600 }, sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 } };
   return {

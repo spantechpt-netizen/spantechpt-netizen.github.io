@@ -337,7 +337,12 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
 
   const { composePackage } = await import('../shopdrawings/lib/sheets.mjs');
   const pkg = composePackage(model, { project: 'SYNTHETIC', prefix: 'T', company: 'SPAN TECH' });
-  assert.equal(pkg.sheets.length, 9, '8 sheets for the level + cover');
+  assert.equal(pkg.sheets.length, 11, '8 standard sheets + 2 RAM additional sheets + cover');
+  assert.ok(pkg.sheets.find((s) => s.key === 'bottom').rows.some((r) => r.mark.startsWith('B1-') || r.mark.startsWith('B2-')), 'standard bottom mesh drawn on the RAM slab too');
+  assert.ok(pkg.sheets.find((s) => s.key === 'top').rows.some((r) => r.mark.startsWith('T1-') || r.mark.startsWith('T2-')), 'standard top bars over columns drawn on the RAM slab too');
+  const addb = pkg.sheets.find((s) => s.key === 'addbottom');
+  assert.ok(addb.rows.length && addb.rows.every((r) => /^ADD\.B[12]-\d\d$/.test(r.mark)), addb.rows.map((r) => r.mark).join(','));
+  assert.ok(pkg.sheets.find((s) => s.key === 'addtop').rows.every((r) => /^ADD\.T[12]-\d\d$/.test(r.mark)));
   const cables = pkg.sheets.find((s) => s.key === 'cables');
   assert.ok(cables.rows.length >= 2, 'cables schedule filled from the RAM tendons');
 });

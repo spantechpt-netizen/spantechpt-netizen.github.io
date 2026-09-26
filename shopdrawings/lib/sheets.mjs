@@ -26,6 +26,9 @@ export const SHEET_DEFS = [
   { key: 'framing', base: 'FRAMING_FORMWORK_NOTATION', title: 'FRAMING / FORMWORK NOTATION PLAN', no: '01' },
   { key: 'bottom', base: 'FRAMING_REBAR_SLAB_PT_BOTTOM', title: 'BOTTOM REINFORCEMENT PLAN (B1 / B2)', no: '02', plans: 2 },
   { key: 'top', base: 'FRAMING_REBAR_ADDITIONAL_AT_COLUMNS', title: 'ADDITIONAL TOP REINFORCEMENT OVER COLUMNS (T1 / T2)', no: '03', plans: 2 },
+  // only when the input is a RAM Concept model: the designed bands as additional reinforcement
+  { key: 'addbottom', base: 'FRAMING_REBAR_ADDITIONAL_BOTTOM_RAM', title: 'ADDITIONAL BOTTOM REINFORCEMENT (ADD.B1 / ADD.B2) - RAM DESIGN', no: '02A', plans: 2, ramOnly: true },
+  { key: 'addtop', base: 'FRAMING_REBAR_ADDITIONAL_TOP_RAM', title: 'ADDITIONAL TOP REINFORCEMENT (ADD.T1 / ADD.T2) - RAM DESIGN', no: '03A', plans: 2, ramOnly: true },
   { key: 'ubars', base: 'FRAMING_REBAR_U_BARS_AROUND_REGIONS', title: 'U-BARS AT SLAB EDGES AND AROUND CIRCULAR REGIONS', no: '04' },
   { key: 'voids', base: 'FRAMING_REBAR_AROUND_VOIDS_ACUARS', title: 'REINFORCEMENT AROUND VOIDS / ACUARS AND SUNKEN SLABS', no: '05' },
   { key: 'openings', base: 'FRAMING_REBAR_AROUND_OPENINGS', title: 'REINFORCEMENT AROUND OPENINGS', no: '06' },
@@ -187,13 +190,20 @@ const callout = (n, dia, spacing, mark, len) => `${n}T${dia}${spacing ? `@${spac
  * per band, pieces split at stock length, hooks where a bar ends at the
  * slab edge. Returns the bar lists per layer code.
  */
+/** Office layer code of a band: 1 = bars parallel to the numbered grids (Y), 2 = parallel to the lettered grids (X). */
+export function bandCode(b) {
+  const rep = b.bars[Math.floor(b.bars.length / 2)] || { a: b.p0, b: b.p1 };
+  return Math.abs(rep.b.y - rep.a.y) > Math.abs(rep.b.x - rep.a.x) ? 1 : 2;
+}
+
 function drawRamBands(pl, S, level, spec, face, plans) {
-  const lists = { 1: new R.BarList(`${face}1`), 2: new R.BarList(`${face}2`) };
+  const lists = { 1: new R.BarList(`ADD.${face}1`), 2: new R.BarList(`ADD.${face}2`) };
   const bands = level.ram.bands.filter((b) => b.face === face);
   const nearEdge = (p) => { const e = edges(level.outline); return e.some((ed) => { const L = ed.length || 1; const t = Math.max(0, Math.min(1, ((p.x - ed.a.x) * ed.dx + (p.y - ed.a.y) * ed.dy) / (L * L))); return dist(p, { x: ed.a.x + ed.dx * t, y: ed.a.y + ed.dy * t }) < 250; }); };
   let k = 0;
   for (const b of bands) {
-    const pen = plans[b.dir];
+    const code = bandCode(b);
+    const pen = plans[code];
     if (!pen || !b.bars.length) continue;
     const rep = b.bars[Math.floor(b.bars.length / 2)];
     const hooks = { start: nearEdge(rep.a) || b.ends[0] !== 1, end: nearEdge(rep.b) || b.ends[1] !== 1 };
@@ -202,9 +212,9 @@ function drawRamBands(pl, S, level, spec, face, plans) {
     const cut = Math.ceil((straight + (hooks.start ? hk : 0) + (hooks.end ? hk : 0)) / 10) * 10;
     const lap = R.lapLength(spec, b.dia, { top: face === 'T' });
     const pieces = cut > spec.stock ? R.splitRun(cut, { stock: spec.stock, lap }) : [cut];
-    const marks = pieces.map((len) => lists[b.dir].add({ dia: b.dia, shape: pieces.length > 1 ? 'STR' : hooks.start && hooks.end ? 'C' : hooks.start || hooks.end ? 'L' : 'STR', length: len, qty: b.count, spacing: b.spacing, zone: b.id, note: hooks.start || hooks.end ? `hook ${hk}` : '' }));
+    const marks = pieces.map((len) => lists[code].add({ dia: b.dia, shape: pieces.length > 1 ? 'STR' : hooks.start && hooks.end ? 'C' : hooks.start || hooks.end ? 'L' : 'STR', length: len, qty: b.count, spacing: b.spacing, zone: b.id, note: hooks.start || hooks.end ? `hook ${hk}` : '' }));
     const side = k++ % 2 ? -1 : 1;
-    drawRun(pen, S, { a: rep.a, b: rep.b, pieces, lap, hooks: pieces.length > 1 ? {} : hooks, hookLeg: hk, layer: `REBAR-${face}${b.dir}`, textSide: side, offsetSide: side, label: (i, c) => callout(b.count, b.dia, b.spacing, marks[i].mark, c) });
+    drawRun(pen, S, { a: rep.a, b: rep.b, pieces, lap, hooks: pieces.length > 1 ? {} : hooks, hookLeg: hk, layer: `REBAR-${face}${code}`, textSide: side, offsetSide: side, label: (i, c) => callout(b.count, b.dia, b.spacing, marks[i].mark, c) });
     // band width as a light range line at the first and last bar
     const first = b.bars[0], last = b.bars[b.bars.length - 1];
     if (b.bars.length > 1) { pen.line(first.a, first.b, { layer: 'REBAR-EXTENT', ltype: 'DASHED' }); pen.line(last.a, last.b, { layer: 'REBAR-EXTENT', ltype: 'DASHED' }); }
@@ -340,7 +350,6 @@ function framingSheet(model, level, meta) {
 }
 
 function bottomSheet(model, level, meta) {
-  if (level.ram) return ramBarsSheet(model, level, meta, 'B');
   const res = R.bottomMesh(level, model.spec);
   return (sheet, [plY, plX]) => {
     const S = sheet.S;
@@ -349,11 +358,16 @@ function bottomSheet(model, level, meta) {
       const pl = pens[dir];
       drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false });
       for (const z of res.zones.filter((zz) => zz.dir === dir)) {
-        // mesh label in each quadrant of the zone that is inside the slab
+        // mesh label spread over the zone: sample points inside the slab, keep up to four well apart
         const zb = bbox(z.polygon);
-        for (const [fx, fy] of [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]]) {
+        const placed = [];
+        const minGap = Math.max(zb.w, zb.h) / 4;
+        for (const fy of [0.5, 0.2, 0.8, 0.35, 0.65]) for (const fx of [0.2, 0.5, 0.8, 0.35, 0.65]) {
           const p = { x: zb.minX + zb.w * fx, y: zb.minY + zb.h * fy };
-          if (pointInPolygon(p, z.polygon)) pl.text(p, `Ø${z.dia}@${z.spacing}-${z.code}`, { layer: 'REBAR-MESH', h: 2.6, align: 'C', valign: 'M' });
+          if (placed.length >= 4 || !pointInPolygon(p, z.polygon) || placed.some((q) => dist(p, q) < minGap)) continue;
+          if ((level.openings || []).some((o) => pointInPolygon(p, R.regionPolygon(o)))) continue;
+          placed.push(p);
+          pl.text(p, `Ø${z.dia}@${z.spacing}-${z.code}`, { layer: 'REBAR-MESH', h: 2.6, align: 'C', valign: 'M' });
         }
         let k = 0;
         for (const g of z.groups) {
@@ -400,7 +414,7 @@ function ramBarsSheet(model, level, meta, face) {
     const lists = drawRamBands([pl1, pl2][0] && pl1, S, level, model.spec, face, { 1: pl1, 2: pl2 });
     const rows = R.mergeRows(lists[1], lists[2]);
     const tot = R.mergeTotals(lists[1], lists[2]);
-    const label = face === 'B' ? 'BOTTOM' : 'TOP';
+    const label = face === 'B' ? 'ADDITIONAL BOTTOM' : 'ADDITIONAL TOP';
     const dias = [...new Set(level.ram.bands.filter((b) => b.face === face).map((b) => b.dia))].sort((a, b) => a - b);
     if (face === 'B') {
       const d0 = sheet.detailBox(0, 'SECTION - BOTTOM BARS AND LAP', '1:20');
@@ -411,16 +425,16 @@ function ramBarsSheet(model, level, meta, face) {
       const det0 = D.sectionColumn({ h: level.thickness, c1: level.columns[0]?.w || 300, ext: 1500, dia: dias[0] || 16, spacing: 150, cover: model.spec.cover, hookLeg: R.hookLeg(dias[0] || 16), shape: 'STR' });
       det0.draw(sheet.detailPen(d0, 25, det0.bbox));
     }
-    const d1 = sheet.detailBox(1, `${label} BANDS FROM RAM CONCEPT (${level.ram.bands.filter((b) => b.face === face).length})`, '');
+    const d1 = sheet.detailBox(1, `${face === 'B' ? 'BOTTOM' : 'TOP'} BANDS FROM RAM CONCEPT (${level.ram.bands.filter((b) => b.face === face).length})`, '');
     const bcols = [{ key: 'id', title: 'BAND', w: 16 }, { key: 'dir', title: 'DIR', w: 12 }, { key: 'bars', title: 'BARS', w: 40, align: 'L' }, { key: 'len', title: 'L (mm)', w: 20 }, { key: 'w', title: 'WIDTH', w: 20 }, { key: 'elev', title: 'ELEV.', w: 20 }, { key: 'note', title: 'NOTE', w: (d1.w - 6) - 128, align: 'L', max: 30 }];
-    const brows = level.ram.bands.filter((b) => b.face === face).map((b) => ({ id: b.id, dir: b.dir, bars: `${b.count}T${b.dia}@${b.spacing}`, len: b.length, w: b.width, elev: Math.round(b.elevation), note: b.spacing < 75 ? 'CHECK SPACING' : '' }));
+    const brows = level.ram.bands.filter((b) => b.face === face).map((b) => ({ id: b.id, dir: `${bandCode(b)} (RAM ${b.dir})`, bars: `${b.count}T${b.dia}@${b.spacing}`, len: b.length, w: b.width, elev: Math.round(b.elevation), note: b.spacing < 75 ? 'CHECK SPACING' : '' }));
     sheet.table(d1.x + 3, d1.y + d1.h - 10, bcols, brows, { maxRows: Math.floor((d1.h - 18) / 3.2), headH: 5, rowH: 3.2, h: 1.3 });
     return {
       rows, totals: totalsLine(tot), weight: tot.weight_kg,
-      planTitles: [`${label} REINFORCEMENT (${face}1 - RAM DIRECTION 1)`, `${label} REINFORCEMENT (${face}2 - RAM DIRECTION 2)`],
+      planTitles: [`${label} REINFORCEMENT (ADD.${face}1)`, `${label} REINFORCEMENT (ADD.${face}2)`],
       general: [
         ...commonNotes(model, level),
-        `${label} BARS ARE THE DESIGNED BANDS OF THE RAM CONCEPT MODEL (CONCENTRATED REINFORCEMENT, EVERY INDIVIDUAL BAR READ FROM THE MODEL). PLAN 1 = RAM SPAN DIRECTION 1 (LATITUDE), PLAN 2 = DIRECTION 2 (LONGITUDE). THE DRAWN BAR IS THE MIDDLE BAR OF EACH BAND; THE DASHED LINES MARK THE FIRST AND LAST BAR OF THE BAND.`,
+        `${label} BARS (ADD.${face}1 / ADD.${face}2) ARE THE BANDS DESIGNED IN THE RAM CONCEPT MODEL (CONCENTRATED REINFORCEMENT, EVERY INDIVIDUAL BAR READ FROM THE MODEL), PLACED IN ADDITION TO THE STANDARD ${face === 'B' ? 'BOTTOM MESH OF SHEET 02' : 'TOP BARS OVER COLUMNS OF SHEET 03'}. ADD.${face}1 = BARS PARALLEL TO THE NUMBERED GRIDS, ADD.${face}2 = PARALLEL TO THE LETTERED GRIDS. THE DRAWN BAR IS THE MIDDLE BAR OF EACH BAND; THE DASHED LINES MARK THE FIRST AND LAST BAR OF THE BAND.`,
         'BANDS WITH A SPACING UNDER 75 mm ARE FLAGGED "CHECK SPACING" IN THE BAND TABLE (DETAIL 2) AND ARE TO BE CONFIRMED WITH THE DESIGNER BEFORE FABRICATION.',
         ...lengthNote(model, dias.length ? dias : [12]),
       ],
@@ -432,7 +446,6 @@ function ramBarsSheet(model, level, meta, face) {
 }
 
 function topSheet(model, level, meta) {
-  if (level.ram) return ramBarsSheet(model, level, meta, 'T');
   const res = R.topAtColumns(level, model.spec);
   return (sheet, [plY, plX]) => {
     const S = sheet.S;
@@ -818,9 +831,10 @@ export function composePackage(model, metaIn = {}) {
     date: new Date().toISOString().slice(0, 10), prepared: '', checked: '', approved: '', status: 'SHOP DRAWING - FOR CONSULTANT APPROVAL',
     ...metaIn,
   };
-  const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, punching: punchingSheet };
+  const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, addbottom: (m, l, mt) => ramBarsSheet(m, l, mt, 'B'), addtop: (m, l, mt) => ramBarsSheet(m, l, mt, 'T'), ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, punching: punchingSheet };
   const jobs = [];
   for (const level of model.levels) for (const def0 of SHEET_DEFS) {
+    if (def0.ramOnly && !level.ram) continue;
     const def = level.ram && def0.key === 'cables' ? { ...def0, plans: 2, title: 'PT CABLES LAYOUT AND SCHEDULE (RAM CONCEPT)' } : def0;
     jobs.push({ level, def, draw: makers[def.key](model, level, meta) });
   }

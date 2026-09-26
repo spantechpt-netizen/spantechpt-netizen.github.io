@@ -71,10 +71,15 @@ Each separate slab body becomes its own level (`L01`, `L02`, …), rotated into
 its own orthogonal frame when its columns are set at an angle (the north
 arrow follows). Grid lines do not exist in RAM, so the grid is derived from
 the column positions and lettered / numbered consecutively; the assumption is
-printed on the sheets. Bottom and top sheets draw the RAM bands as one
-representative bar per band with the first / last bar dashed, in the office
-callout convention; the cables sheet is filled with the RAM tendon layout and
-schedule. Punching results are not stored in the file, so the punching sheet
+printed on the sheets. The office standard reinforcement (bottom mesh, top
+bars over columns, U-bars, trimmers, punching links) is applied to the RAM
+slab exactly as to a G.A. drawing; the bands designed in RAM are drawn on top
+of it as additional reinforcement on sheets 02A / 03A (`ADD.B1-01`,
+`ADD.T2-03` marks, one representative bar per band with the first / last bar
+dashed), and the cables sheet is filled with the RAM tendon layout and
+schedule. On curved or skew slab edges the mesh rows are grouped (250 mm
+tolerance) and their cut lengths scheduled in 500 mm steps
+(`spec.bottom.groupTol`, `spec.bottom.lengthStep`). Punching results are not stored in the file, so the punching sheet
 stays the minimum detailing arrangement to be confirmed against the RAM
 punching report.
 
@@ -104,6 +109,8 @@ Per slab level (drawing numbers `ST-SD-<LEVEL>-nn`):
 | 01 | `FRAMING_FORMWORK_NOTATION_<L>` | grid, columns, outline, openings, voids, PT zones, element schedule, notation |
 | 02 | `FRAMING_REBAR_SLAB_PT_BOTTOM_<L>` | bottom mesh in PT zones: plan 1 = B1, plan 2 = B2; runs split into pieces with Class B laps, stopped at openings |
 | 03 | `FRAMING_REBAR_ADDITIONAL_AT_COLUMNS_<L>` | top bars over every column: plan 1 = T1, plan 2 = T2; ln/6 extension, c+3h band, As,min check, bar types |
+| 02A | `FRAMING_REBAR_ADDITIONAL_BOTTOM_RAM_<L>` | RAM input only: the bottom bands designed in RAM Concept as additional bars (`ADD.B1` / `ADD.B2`), band table |
+| 03A | `FRAMING_REBAR_ADDITIONAL_TOP_RAM_<L>` | RAM input only: the top bands designed in RAM Concept as additional bars (`ADD.T1` / `ADD.T2`), band table |
 | 04 | `FRAMING_REBAR_U_BARS_AROUND_REGIONS_<L>` | U-bars along PT anchorage edges + edge bars; radial U-bars and rings around circular regions |
 | 05 | `FRAMING_REBAR_AROUND_VOIDS_ACUARS_<L>` | trimmer bars T&B around each void and sunken slab, anchored ld beyond corners, hairpins at sunken steps |
 | 06 | `FRAMING_REBAR_AROUND_OPENINGS_<L>` | trimmers, corner diagonals and edge U-bars around each opening |

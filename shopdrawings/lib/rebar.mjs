@@ -156,7 +156,8 @@ export function mergeTotals(...lists) {
   return { weight_kg: Math.round(rows.reduce((s, r) => s + r.weight_kg, 0) * 10) / 10, byDia: Object.values(byDia).map((d) => ({ ...d, total_m: Math.round(d.total_m * 10) / 10, weight_kg: Math.round(d.weight_kg * 10) / 10 })) };
 }
 
-const rowsSame = (a, b) => a.length === b.length && a.every((c, i) => Math.abs(c[0] - b[i][0]) < 5 && Math.abs(c[1] - b[i][1]) < 5);
+// rows whose chords agree within `tol` are one group (a curved or skew edge otherwise gives one mark per bar)
+const rowsSame = (a, b, tol = 5) => a.length === b.length && a.every((c, i) => Math.abs(c[0] - b[i][0]) < tol && Math.abs(c[1] - b[i][1]) < tol);
 
 function openingCuts(level, axis, coord, cover) {
   // Intervals along `axis` where a bar at `coord` (perpendicular axis) crosses an opening.
@@ -188,6 +189,9 @@ export function bottomMesh(level, spec) {
   const zones = [];
   const cover = spec.cover;
   const ptZones = level.pt.zones.length ? level.pt.zones : [{ id: 'PT1', polygon: level.outline }];
+  const groupTol = s.groupTol ?? 250;
+  const lengthStep = s.lengthStep ?? 500;
+  let varied = false;
   for (const zone of ptZones) {
     const poly = zone.polygon;
     const b = bbox(poly);
@@ -203,14 +207,35 @@ export function bottomMesh(level, spec) {
         chords = subtractIntervals(chords, openingCuts(level, along, c, cover));
         if (!chords.length) continue;
         const last = groups[groups.length - 1];
-        if (last && rowsSame(last.chords, chords)) { last.rows++; last.end = c; }
-        else groups.push({ chords, rows: 1, start: c, end: c });
+        if (last && rowsSame(last.ref, chords, groupTol)) {
+          last.rows++; last.end = c;
+          // the group bar covers every row of the group: union of the chords
+          last.chords = last.chords.map(([a, bb], i) => [Math.min(a, chords[i][0]), Math.max(bb, chords[i][1])]);
+          if (!rowsSame(last.chords, chords)) last.varied = true;
+        } else groups.push({ chords, ref: chords, rows: 1, start: c, end: c });
+      }
+      if (groups.some((g) => g.varied)) varied = true;
+      // a curved / skew edge: many one- or two-row groups; their cut lengths are binned to `lengthStep`
+      // and consecutive groups that fall in the same bins are merged into one drawn group
+      const curved = groups.filter((g) => g.rows < 3).length >= 5 || groups.length > 8;
+      if (curved) {
+        varied = true;
+        const binned = (g) => g.chords.map(([a, bb]) => ceilTo(bb - a, lengthStep)).join('|');
+        const merged = [];
+        for (const g of groups) {
+          const last = merged[merged.length - 1];
+          if (last && last.chords.length === g.chords.length && binned(last) === binned(g)) {
+            last.rows += g.rows; last.end = g.end;
+            last.chords = last.chords.map(([a, bb], i) => [Math.min(a, g.chords[i][0]), Math.max(bb, g.chords[i][1])]);
+          } else merged.push({ ...g, varied: true });
+        }
+        groups.length = 0; groups.push(...merged);
       }
       groups.forEach((g, gi) => {
         g.id = `${zone.id}-${LAYER_CODE[dir] === '2' ? 'B2' : 'B1'}-${gi + 1}`;
         g.runs = g.chords.map(([a, bb]) => {
           const L = bb - a;
-          const pieces = splitRun(L, { stock: spec.stock, lap });
+          const pieces = splitRun(L, { stock: spec.stock, lap }).map((len) => (curved ? ceilTo(len, lengthStep) : len));
           const marks = pieces.map((len) => bars.add({ dia: s.dia, shape: 'STR', length: len, qty: g.rows, spacing: s.spacing, zone: g.id }));
           return { a, b: bb, L, pieces, marks };
         });
@@ -219,8 +244,11 @@ export function bottomMesh(level, spec) {
     }
   }
   return {
-    zones, lists, lap, dia: s.dia, spacing: s.spacing,
-    assumptions: level.pt.zones.length ? [] : ['No PT zone boundary found on the drawing: bottom mesh applied over the whole slab.'],
+    zones, lists, lap, dia: s.dia, spacing: s.spacing, varied,
+    assumptions: [
+      ...(level.pt.zones.length ? [] : ['No PT zone boundary found on the drawing: bottom mesh applied over the whole slab.']),
+      ...(varied ? [`Mesh rows at curved / skew edges: rows are grouped within ${groupTol} mm and cut lengths are scheduled in ${lengthStep} mm steps (the group's longest row rounded up); bars are cut to the edge less cover on site.`] : []),
+    ],
   };
 }
 
