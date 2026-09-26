@@ -681,5 +681,6 @@ export function composePackage(model, metaIn = {}) {
     pkg.insert(s.blockName, x, y);
     pkg.text(x, y + 594 * s.scale + 1500, `${s.drawingNo}  ${s.title}${s.level !== 'ALL' ? `  (${s.level})` : ''}`, { layer: 'XREF', h: 1200 });
   });
+  if (std?.layers) pkg.applyLayerStandard(std.layers);
   return { meta, sheets: all, pkg };
 }
