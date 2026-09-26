@@ -62,6 +62,18 @@
       "uSpacing": 200,
       "uLeg": 600
     },
+    "sunken": {
+      "dia": 12,
+      "count": 2,
+      "uDia": 10,
+      "uSpacing": 200,
+      "uLeg": 600
+    },
+    "punching": {
+      "dia": 10,
+      "legSpacing": 100,
+      "extentFactor": 2
+    },
     "code_reference": "SBC 304-18",
     "sources": {
       "code": "drawing",
@@ -379,6 +391,9 @@
           "id": "V2"
         }
       ],
+      "sunken": [],
+      "beams": [],
+      "stairs": [],
       "ubar": {
         "edges": "all",
         "circles": [
@@ -726,6 +741,9 @@
           "id": "V1"
         }
       ],
+      "sunken": [],
+      "beams": [],
+      "stairs": [],
       "ubar": {
         "edges": "all",
         "circles": [
@@ -799,7 +817,7 @@
   ],
   "findings": [
     "Drawing units: mm ($INSUNITS); 215 entities read.",
-    "L01 FIRST FLOOR SLAB PLAN: 19 columns, grid A-B-C-D-E / 1-2-3-4, 2 openings, 2 voids, 1 circular U-bar regions, 1 PT zones, 0 tendon lines, slab 250 mm.",
-    "L02 ROOF SLAB PLAN: 20 columns, grid A-B-C-D-E / 1-2-3-4, 2 openings, 1 voids, 2 circular U-bar regions, 1 PT zones, 0 tendon lines, slab 220 mm."
+    "L01 FIRST FLOOR SLAB PLAN: 19 columns, grid A-B-C-D-E / 1-2-3-4, 2 openings, 2 voids, 0 sunken slabs, 0 beam lines, 1 circular U-bar regions, 1 PT zones, 0 tendon lines, slab 250 mm.",
+    "L02 ROOF SLAB PLAN: 20 columns, grid A-B-C-D-E / 1-2-3-4, 2 openings, 1 voids, 0 sunken slabs, 0 beam lines, 2 circular U-bar regions, 1 PT zones, 0 tendon lines, slab 220 mm."
   ]
 }

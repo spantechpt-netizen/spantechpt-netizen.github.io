@@ -25,6 +25,8 @@ export const DEFAULT_SPEC = {
   ringBars: { dia: 12, count: 2 }, // ring bars around circular regions, top and bottom
   voids: { dia: 12, count: 2 }, // trimmer bars each side of a void, top and bottom
   openings: { dia: 16, count: 2, diagDia: 12, diagCount: 2, uDia: 12, uSpacing: 200, uLeg: 600 },
+  sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, // trimmers and hairpins at sunken-slab steps
+  punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 }, // preliminary punching links around columns
 };
 
 export const BAR_AREA = (dia) => (Math.PI * dia * dia) / 4;
@@ -94,19 +96,26 @@ export function splitRun(L, { stock, lap, stagger = false }) {
   return pieces;
 }
 
-/** Accumulates bar entries and issues marks per (dia, shape, length, sheet). */
+/**
+ * Accumulates bar entries and issues marks per (dia, shape, cutting length),
+ * the way the reference drawings do (`T2-05` = fifth cutting length of the
+ * top layer 2). Spacing is informational: the same mark may be placed at
+ * different spacings in different rows.
+ */
 export class BarList {
-  constructor(prefix = 'M') { this.prefix = prefix; this.entries = []; }
+  constructor(prefix = 'M') { this.prefix = prefix.endsWith('-') ? prefix : prefix + (prefix.length > 1 ? '-' : ''); this.entries = []; }
 
   add(e) {
-    // e: { dia, shape, length, qty, spacing?, zone, note?, group? }
-    const key = `${e.dia}|${e.shape}|${e.length}|${e.spacing || ''}|${e.note || ''}`;
+    // e: { dia, shape, length, qty, spacing?, zone, note? }
+    const key = `${e.dia}|${e.shape}|${e.length}|${e.note || ''}`;
     let m = this.entries.find((x) => x.key === key);
     if (!m) {
-      m = { key, mark: '', dia: e.dia, shape: e.shape, length: e.length, spacing: e.spacing || '', note: e.note || '', qty: 0, zones: new Set() };
+      m = { key, mark: '', dia: e.dia, shape: e.shape, length: e.length, spacings: new Set(), note: e.note || '', qty: 0, zones: new Set() };
       this.entries.push(m);
+      this.rows(); // keep marks stable as entries arrive
     }
     m.qty += e.qty;
+    if (e.spacing) m.spacings.add(e.spacing);
     if (e.zone) m.zones.add(e.zone);
     return m;
   }
@@ -116,7 +125,7 @@ export class BarList {
     const sorted = [...this.entries].sort((a, b) => a.dia - b.dia || a.shape.localeCompare(b.shape) || b.length - a.length);
     sorted.forEach((m, i) => { m.mark = `${this.prefix}${String(i + 1).padStart(2, '0')}`; });
     return sorted.map((m) => ({
-      mark: m.mark, dia: m.dia, shape: m.shape, spacing: m.spacing, length: m.length, qty: m.qty,
+      mark: m.mark, dia: m.dia, shape: m.shape, spacing: m.spacings.size === 0 ? '-' : m.spacings.size === 1 ? [...m.spacings][0] : 'VAR.', length: m.length, qty: m.qty,
       total_m: Math.round((m.length * m.qty) / 100) / 10,
       weight_kg: Math.round((m.length * m.qty / 1000) * barWeightPerM(m.dia) * 10) / 10,
       zones: [...m.zones].join(', '), note: m.note,
@@ -134,6 +143,17 @@ export class BarList {
     const weight = rows.reduce((s, r) => s + r.weight_kg, 0);
     return { weight_kg: Math.round(weight * 10) / 10, byDia: Object.values(byDia).map((d) => ({ ...d, total_m: Math.round(d.total_m * 10) / 10, weight_kg: Math.round(d.weight_kg * 10) / 10 })) };
   }
+}
+
+/** Merge several bar lists into one set of schedule rows (marks kept). */
+export function mergeRows(...lists) {
+  return lists.flatMap((l) => l.rows());
+}
+export function mergeTotals(...lists) {
+  const rows = mergeRows(...lists);
+  const byDia = {};
+  for (const r of rows) { byDia[r.dia] = byDia[r.dia] || { dia: r.dia, total_m: 0, weight_kg: 0 }; byDia[r.dia].total_m += r.total_m; byDia[r.dia].weight_kg += r.weight_kg; }
+  return { weight_kg: Math.round(rows.reduce((s, r) => s + r.weight_kg, 0) * 10) / 10, byDia: Object.values(byDia).map((d) => ({ ...d, total_m: Math.round(d.total_m * 10) / 10, weight_kg: Math.round(d.weight_kg * 10) / 10 })) };
 }
 
 const rowsSame = (a, b) => a.length === b.length && a.every((c, i) => Math.abs(c[0] - b[i][0]) < 5 && Math.abs(c[1] - b[i][1]) < 5);
@@ -157,11 +177,14 @@ export function regionPolygon(o) {
 
 export function regionBbox(o) { return bbox(regionPolygon(o)); }
 
+/** Bars parallel to X are layer "2", bars parallel to Y are layer "1" (reference drawing convention). */
+export const LAYER_CODE = { X: '2', Y: '1' };
+
 /** Sheet: bottom mesh in PT zones (or over the whole slab when no zone is drawn). */
 export function bottomMesh(level, spec) {
   const s = spec.bottom;
   const lap = lapLength(spec, s.dia);
-  const bars = new BarList('B');
+  const lists = { X: new BarList('B2'), Y: new BarList('B1') };
   const zones = [];
   const cover = spec.cover;
   const ptZones = level.pt.zones.length ? level.pt.zones : [{ id: 'PT1', polygon: level.outline }];
@@ -170,11 +193,11 @@ export function bottomMesh(level, spec) {
     const b = bbox(poly);
     for (const dir of ['X', 'Y']) {
       const along = dir === 'X' ? 'x' : 'y';
+      const bars = lists[dir];
       const start = (dir === 'X' ? b.minY : b.minX) + cover + s.spacing / 2;
       const end = (dir === 'X' ? b.maxY : b.maxX) - cover;
       const groups = [];
-      let idx = 0;
-      for (let c = start; c <= end; c += s.spacing, idx++) {
+      for (let c = start; c <= end; c += s.spacing) {
         let chords = dir === 'X' ? chordsAtY(poly, c) : chordsAtX(poly, c);
         chords = chords.map(([a, bb]) => [a + cover, bb - cover]).filter(([a, bb]) => bb - a > 300);
         chords = subtractIntervals(chords, openingCuts(level, along, c, cover));
@@ -184,26 +207,19 @@ export function bottomMesh(level, spec) {
         else groups.push({ chords, rows: 1, start: c, end: c });
       }
       groups.forEach((g, gi) => {
-        g.id = `${zone.id}-${dir}${gi + 1}`;
+        g.id = `${zone.id}-${LAYER_CODE[dir] === '2' ? 'B2' : 'B1'}-${gi + 1}`;
         g.runs = g.chords.map(([a, bb]) => {
           const L = bb - a;
-          const A = splitRun(L, { stock: spec.stock, lap, stagger: false });
-          const B = splitRun(L, { stock: spec.stock, lap, stagger: true });
-          const qtyA = Math.ceil(g.rows / 2), qtyB = Math.floor(g.rows / 2);
-          const marks = [];
-          for (const [pieces, qty] of [[A, qtyA], [B, qtyB]]) {
-            if (!qty) continue;
-            for (const len of pieces) marks.push(bars.add({ dia: s.dia, shape: 'STR', length: len, qty, spacing: s.spacing, zone: g.id }));
-          }
-          return { a, b: bb, L, piecesA: A, piecesB: B, marks: [...new Set(marks)] };
+          const pieces = splitRun(L, { stock: spec.stock, lap });
+          const marks = pieces.map((len) => bars.add({ dia: s.dia, shape: 'STR', length: len, qty: g.rows, spacing: s.spacing, zone: g.id }));
+          return { a, b: bb, L, pieces, marks };
         });
       });
-      zones.push({ id: `${zone.id}-${dir}`, zoneId: zone.id, dir, polygon: poly, groups, spacing: s.spacing, dia: s.dia });
+      zones.push({ id: `${zone.id}-${dir}`, zoneId: zone.id, dir, code: `B${LAYER_CODE[dir]}`, polygon: poly, groups, spacing: s.spacing, dia: s.dia });
     }
   }
   return {
-    zones, bars, lap,
-    callout: (g) => `${g.rows}T${s.dia}@${s.spacing} B`,
+    zones, lists, lap, dia: s.dia, spacing: s.spacing,
     assumptions: level.pt.zones.length ? [] : ['No PT zone boundary found on the drawing: bottom mesh applied over the whole slab.'],
   };
 }
@@ -236,7 +252,7 @@ export function topAtColumns(level, spec) {
   const s = spec.topColumns;
   const h = level.thickness;
   const cover = spec.cover;
-  const bars = new BarList('C');
+  const lists = { x: new BarList('T2'), y: new BarList('T1') };
   const types = [];
   const columns = [];
   const checks = [];
@@ -277,7 +293,7 @@ export function topAtColumns(level, spec) {
       const straight = ext[-1] + c1 + ext[1];
       const length = ceilTo(straight + hookN * hookLeg(s.dia), 10);
       const shape = hookN === 0 ? 'STR' : hookN === 1 ? 'L' : 'C';
-      per[dir] = { ext, hooks, n, length, shape, band, asReq: Math.round(asReq), asProv: Math.round(n * BAR_AREA(s.dia)), straight };
+      per[dir] = { ext, hooks, n, length, shape, band, asReq: Math.round(asReq), asProv: Math.round(n * BAR_AREA(s.dia)), straight, hookLeg: hookLeg(s.dia), c1, code: dir === 'x' ? 'T2' : 'T1' };
       checks.push({ column: col.id, dir: dir.toUpperCase(), asReq: Math.round(asReq), asProv: Math.round(n * BAR_AREA(s.dia)), n });
     }
     const key = `${per.x.length}|${per.x.n}|${per.x.shape}|${per.y.length}|${per.y.n}|${per.y.shape}`;
@@ -292,10 +308,10 @@ export function topAtColumns(level, spec) {
   for (const t of types) {
     for (const dir of ['x', 'y']) {
       const p = t[dir];
-      bars.add({ dia: s.dia, shape: p.shape, length: p.length, qty: p.n * t.columns.length, spacing: s.spacing, zone: t.id, note: p.shape === 'STR' ? '' : `hook ${hookLeg(s.dia)}` });
+      p.mark = lists[dir].add({ dia: s.dia, shape: p.shape, length: p.length, qty: p.n * t.columns.length, spacing: s.spacing, zone: t.id, note: p.shape === 'STR' ? '' : `hook ${hookLeg(s.dia)}` });
     }
   }
-  return { types, columns, bars, checks, dia: s.dia, spacing: s.spacing };
+  return { types, columns, lists, checks, dia: s.dia, spacing: s.spacing };
 }
 
 /** Sheet: U-bars along slab edges and around circular regions. */
@@ -382,13 +398,66 @@ function trimmersAround(level, spec, region, { dia, count }, bars, lap) {
   return items;
 }
 
-/** Sheet: reinforcement around voids (void formers / cores). */
+/** Sheet: reinforcement around voids / acuars and sunken slabs. */
 export function aroundVoids(level, spec) {
   const bars = new BarList('V');
   const sv = spec.voids;
   const lap = lapLength(spec, sv.dia, { top: true });
-  const regions = level.voids.map((v) => ({ region: v, trimmers: trimmersAround(level, spec, v, sv, bars, lap) }));
-  return { regions, bars, dia: sv.dia, count: sv.count, ld: developmentLength(spec, sv.dia, { top: true }) };
+  const regions = level.voids.map((v) => ({ kind: 'VOID', region: v, trimmers: trimmersAround(level, spec, v, sv, bars, lap) }));
+  const ss = spec.sunken || { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 };
+  const h = level.thickness;
+  const uLen = ceilTo(2 * ss.uLeg + (h - 2 * spec.cover), 10);
+  for (const sk of level.sunken || []) {
+    const trimmers = trimmersAround(level, spec, sk, ss, bars, lap);
+    const per = perimeter(regionPolygon(sk));
+    const nU = Math.max(0, Math.floor((per - 4 * spec.cover) / ss.uSpacing));
+    const uMark = nU ? bars.add({ dia: ss.uDia, shape: 'U', length: uLen, qty: nU, spacing: ss.uSpacing, zone: sk.id, note: `legs ${ss.uLeg}` }) : null;
+    regions.push({ kind: 'SUNKEN', region: sk, trimmers, uMark, nU });
+  }
+  return { regions, bars, dia: sv.dia, count: sv.count, ld: developmentLength(spec, sv.dia, { top: true }), sunken: ss, uLen };
+}
+
+/**
+ * Punching shear links around columns: minimum detailing arrangement per
+ * SBC 304-18 §8.7.6 / §22.6.8 (first row at d/2 from the face, rows at d/2,
+ * legs along the face at ~100 mm). Extent 2h beyond the face is an
+ * assumption: the number of rows is to be verified against the punching
+ * design (Vu) before fabrication.
+ */
+export function punching(level, spec) {
+  const sp = spec.punching || { dia: 10, legSpacing: 100, extentFactor: 2.0 };
+  const h = level.thickness;
+  const cover = spec.cover;
+  const d = h - cover - 16;
+  const rowSpacing = ceilTo(Math.max(d / 2, 50), 5) > d / 2 ? Math.floor(d / 2 / 5) * 5 : Math.floor(d / 2 / 5) * 5;
+  const extent = sp.extentFactor * h;
+  const rows = Math.max(2, Math.ceil(extent / rowSpacing));
+  const bars = new BarList('PS');
+  const linkLen = ceilTo(2 * 110 + (h - 2 * cover) + 2 * Math.max(6 * sp.dia, 75), 10);
+  const types = [];
+  const columns = [];
+  for (const col of level.columns) {
+    const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
+    const sides = [];
+    for (const [dir, sign] of [['x', -1], ['x', 1], ['y', -1], ['y', 1]]) {
+      const toEdge = edgeDistance(level, col, dir, sign, cover);
+      const faceLen = size[dir === 'x' ? 'y' : 'x'];
+      const room = toEdge - size[dir] / 2;
+      if (room < rowSpacing) continue; // face at the slab edge
+      const nRows = Math.min(rows, Math.floor(room / rowSpacing));
+      const links = Math.floor(faceLen / sp.legSpacing) + 1;
+      sides.push({ dir, sign, nRows, links, faceLen, offset: size[dir] / 2 });
+    }
+    const label = sides.map((sd) => `${sd.nRows}X${sd.links}-T${sp.dia}-${rowSpacing}`).sort().filter((v, i, a) => a.indexOf(v) === i).join(' / ');
+    const key = `${sides.length}|${label}`;
+    let t = types.find((x) => x.key === key);
+    if (!t) { t = { key, id: `PS${types.length + 1}`, sides, size, columns: [], label }; types.push(t); }
+    t.columns.push(col.id);
+    columns.push({ col, type: t, sides });
+    const n = sides.reduce((s, sd) => s + sd.nRows * sd.links, 0);
+    if (n) bars.add({ dia: sp.dia, shape: 'LINK', length: linkLen, qty: n, spacing: rowSpacing, zone: t.id, note: `legs 110, web ${h - 2 * cover}` });
+  }
+  return { types, columns, bars, dia: sp.dia, rowSpacing, rows, extent, linkLen, d, legSpacing: sp.legSpacing };
 }
 
 /** Sheet: reinforcement around openings: trimmers, corner diagonals, edge U-bars. */

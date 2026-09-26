@@ -17,7 +17,7 @@ import { parseDxf } from '../shopdrawings/lib/dxf-reader.mjs';
 import { toDxf, encodeText } from '../shopdrawings/lib/dxf-writer.mjs';
 import { Canvas } from '../shopdrawings/lib/canvas.mjs';
 import { extractModel, classifyLayer, readSpecFromText } from '../shopdrawings/lib/extract.mjs';
-import { developmentLength, lapLength, hookDevelopmentLength, splitRun, BarList, bottomMesh, topAtColumns, aroundOpenings, DEFAULT_SPEC } from '../shopdrawings/lib/rebar.mjs';
+import { developmentLength, lapLength, hookDevelopmentLength, splitRun, BarList, bottomMesh, topAtColumns, aroundOpenings, punching, mergeTotals, DEFAULT_SPEC } from '../shopdrawings/lib/rebar.mjs';
 import { chordsAtY, subtractIntervals, asAxisRect } from '../shopdrawings/lib/geometry.mjs';
 import { buildSampleInput } from '../shopdrawings/samples/make-sample-input.mjs';
 import { generate } from '../shopdrawings/cli.mjs';
@@ -51,13 +51,14 @@ test('runs longer than a stock bar are split with laps, staggered on alternate b
 });
 
 test('the bar list merges identical bars into marks and weighs them', () => {
-  const bars = new BarList('B');
-  bars.add({ dia: 12, shape: 'STR', length: 12000, qty: 10, zone: 'A' });
-  bars.add({ dia: 12, shape: 'STR', length: 12000, qty: 5, zone: 'B' });
+  const bars = new BarList('T2');
+  bars.add({ dia: 12, shape: 'STR', length: 12000, qty: 10, zone: 'A', spacing: 200 });
+  bars.add({ dia: 12, shape: 'STR', length: 12000, qty: 5, zone: 'B', spacing: 400 });
   bars.add({ dia: 16, shape: 'L', length: 3000, qty: 4, zone: 'C' });
   const rows = bars.rows();
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].mark, 'B01');
+  assert.equal(rows.length, 2, 'same cutting length at two spacings is one mark');
+  assert.equal(rows[0].mark, 'T2-01');
+  assert.equal(rows[0].spacing, 'VAR.');
   assert.equal(rows[0].qty, 15);
   assert.equal(rows[0].total_m, 180);
   assert.equal(rows[0].weight_kg, Math.round(180 * 0.006165 * 144 * 10) / 10);
@@ -145,9 +146,11 @@ test('bottom mesh stops at openings and its weight is in the right range', () =>
   const level = model.levels[0];
   const res = bottomMesh(level, model.spec);
   const xZone = res.zones.find((z) => z.dir === 'X');
+  assert.equal(xZone.code, 'B2', 'bars parallel to X are layer 2');
   const rowsThroughStair = xZone.groups.filter((g) => g.runs.length === 2);
   assert.ok(rowsThroughStair.length > 0, 'rows crossing the stair opening are split in two runs');
-  const w = res.bars.totals().weight_kg;
+  assert.ok(res.lists.X.rows()[0].mark.startsWith('B2-'), 'marks carry the layer code');
+  const w = mergeTotals(res.lists.X, res.lists.Y).weight_kg;
   // ~820 m² at T12@200 both ways ≈ 8.9 kg/m² plus laps
   assert.ok(w > 6500 && w < 9000, `weight ${w}`);
   const o = aroundOpenings(level, model.spec);
@@ -183,15 +186,15 @@ test('the DXF writer produces a file the reader and AutoCAD structure agree on',
 test('the generator writes a complete package for the sample drawing', () => {
   const out = mkdtempSync(join(tmpdir(), 'sd-'));
   const { pack, model } = generate({ inputText: toDxf(buildSampleInput()), out, meta: { project: 'TEST' }, svg: true });
-  assert.equal(pack.sheets.length, 1 + 2 * 7);
+  assert.equal(pack.sheets.length, 1 + 2 * 8);
   const names = pack.sheets.map((s) => s.blockName);
-  for (const base of ['FRAMING_REBAR_SLAB_PT_BOTTOM', 'FRAMING_REBAR_ADDITIONAL_AT_COLUMNS', 'FRAMING_REBAR_U_BARS_AROUND_REGIONS', 'FRAMING_REBAR_AROUND_VOIDS_ACUARS', 'FRAMING_REBAR_AROUND_OPENINGS', 'CABLES_SCHEDULE_EMPTY_TEMPLATE']) {
+  for (const base of ['FRAMING_REBAR_SLAB_PT_BOTTOM', 'FRAMING_REBAR_ADDITIONAL_AT_COLUMNS', 'FRAMING_REBAR_U_BARS_AROUND_REGIONS', 'FRAMING_REBAR_AROUND_VOIDS_ACUARS', 'FRAMING_REBAR_AROUND_OPENINGS', 'CABLES_SCHEDULE_EMPTY_TEMPLATE', 'FRAMING_REBAR_PUNCHING_LINKS']) {
     assert.ok(names.includes(`${base}_L01`) && names.includes(`${base}_L02`), base);
   }
   assert.ok(existsSync(join(out, 'SHOP_DRAWINGS_PACKAGE.dxf')));
   assert.ok(existsSync(join(out, 'REPORT.md')));
-  assert.equal(readdirSync(join(out, 'dxf')).length, 15);
-  assert.equal(readdirSync(join(out, 'preview')).length, 15);
+  assert.equal(readdirSync(join(out, 'dxf')).length, 17);
+  assert.equal(readdirSync(join(out, 'preview')).length, 17);
   const cables = pack.sheets.find((s) => s.key === 'cables');
   assert.ok(cables.rows.every((r) => r.strands === '' && r.length === ''), 'cable schedule stays empty');
   assert.ok(!readdirSync(join(out, 'schedules')).some((f) => /CABLES/.test(f)), 'no CSV for the empty cable template');
@@ -199,4 +202,23 @@ test('the generator writes a complete package for the sample drawing', () => {
   const pkg = readFileSync(join(out, 'SHOP_DRAWINGS_PACKAGE.dxf'), 'utf8');
   for (const n of names) assert.ok(pkg.includes(`\n2\n${n}\n`), `${n} defined in the package`);
   assert.ok(model.assumptions.length >= 4);
+});
+
+test('punching links follow the minimum detailing arrangement of the reference drawings', () => {
+  const model = extractModel(parseDxf(toDxf(buildSampleInput())));
+  const level = model.levels[0]; // 250 mm slab
+  const res = punching(level, model.spec);
+  // d = 250 - 25 - 16 = 209 → d/2 = 104.5 → rows at 100; extent 2h = 500 → 5 rows
+  assert.equal(res.rowSpacing, 100);
+  assert.equal(res.rows, 5);
+  const interior = res.columns.find((c) => c.col.id === 'C/2');
+  assert.equal(interior.sides.length, 4, 'interior column has links on all four faces');
+  // 600 face at 100 leg spacing → 7 links per row
+  assert.ok(interior.sides.every((s) => s.links === 7 && s.nRows === 5));
+  assert.ok(interior.type.label.includes('5X7-T10-100'));
+  assert.ok(res.bars.rows()[0].mark.startsWith('PS-'));
+  // a column flush with the slab edge: no links on the faces at the edge
+  const edgeLevel = { thickness: 250, outline: [{ x: 0, y: 0 }, { x: 10000, y: 0 }, { x: 10000, y: 10000 }, { x: 0, y: 10000 }], columns: [{ id: 'E1', shape: 'rect', cx: 300, cy: 300, w: 600, h: 600 }] };
+  const edge = punching(edgeLevel, model.spec);
+  assert.equal(edge.columns[0].sides.length, 2, 'corner column: faces at the slab edge carry no links');
 });

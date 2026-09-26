@@ -234,3 +234,34 @@ export function notationLegend({ thickness, fc, fy, cover }) {
     },
   };
 }
+
+/** Punching link (closed C-link) shape with its bending dimensions, reference style. */
+export function punchingLink({ h, cover, dia, rowSpacing, legSpacing, rows }) {
+  const web = h - 2 * cover;
+  return {
+    bbox: { minX: -700, maxX: 1500, minY: -web - 500, maxY: 450, cx: 400, cy: -web / 2 },
+    draw(pen) {
+      // link in elevation
+      pen.pline([{ x: 0, y: 0 }, { x: 110, y: 0 }, { x: 110, y: -web }, { x: 0, y: -web }], { layer: 'REBAR-PUNCH', lw: 70 });
+      pen.line({ x: 0, y: 0 }, { x: 0, y: -60 }, { layer: 'REBAR-PUNCH', lw: 70 });
+      pen.line({ x: 0, y: -web }, { x: 0, y: -web + 60 }, { layer: 'REBAR-PUNCH', lw: 70 });
+      pen.dim({ x: 0, y: 0 }, { x: 110, y: 0 }, 4, { text: '110' });
+      pen.dim({ x: 110, y: 0 }, { x: 110, y: -web }, -4, { text: String(web) });
+      pen.dim({ x: 0, y: -web }, { x: 110, y: -web }, -4, { text: '110' });
+      pen.text({ x: 55, y: 120 }, `T${dia} LINK`, { layer: 'REBAR-TEXT', h: 1.8, align: 'C' });
+      // plan arrangement beside it
+      const ox = 600;
+      pen.rect({ x: ox, y: -web - 100, w: 300, h: web + 100 }, { layer: 'COLUMN' });
+      pen.solid([{ x: ox, y: -web - 100 }, { x: ox + 300, y: -web - 100 }, { x: ox + 300, y: 0 }, { x: ox, y: 0 }], { layer: 'COLUMN-HATCH' });
+      for (let r = 1; r <= rows; r++) {
+        const x = ox + 300 + r * rowSpacing;
+        pen.line({ x, y: -web - 100 }, { x, y: 0 }, { layer: 'REBAR-PUNCH' });
+        for (let yy = -web - 100 + 40; yy < 0; yy += legSpacing / 2) pen.circle({ x, y: yy }, 8, { layer: 'REBAR-PUNCH' });
+      }
+      pen.dim({ x: ox + 300, y: 40 }, { x: ox + 300 + rowSpacing, y: 40 }, 3, { text: `${rowSpacing} (d/2)` });
+      pen.dim({ x: ox + 300, y: -web - 160 }, { x: ox + 300 + rows * rowSpacing, y: -web - 160 }, -3, { text: `${rows} ROWS` });
+      pen.text({ x: ox + 150, y: -web / 2 }, 'COL.', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'M', color: 7 });
+      pen.text({ x: 400, y: -web - 380 }, `LINKS T${dia}: ${rows} ROWS @ ${rowSpacing} FROM FACE, LEGS @ ${legSpacing} ALONG THE FACE`, { layer: 'REBAR-TEXT', h: 1.7, align: 'C' });
+    },
+  };
+}

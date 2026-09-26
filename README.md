@@ -45,13 +45,15 @@ default rates automatically.
 
 ## Shop drawings · لوحات التسليح والكابلات
 
-`shopdrawings/` turns the consultant's combined structural DXF into a
-submission package: framing plan, bottom PT mesh, top bars over columns,
-U-bars, reinforcement around voids and openings, and an empty PT cables
-template, each an A1 sheet block / Xref with title band, notes, assumptions,
-schedules and details, per slab level. Saudi practice (SBC 304-18) is applied
-for laps and anchorage where the drawing is silent, and every assumption is
-printed on the sheet.
+`shopdrawings/` turns the consultant's structural G.A. (DXF, DWG via
+LibreDWG, or LibreDWG JSON) into a submission package in the office's own
+drafting convention: framing plan, bottom PT mesh (B1/B2), top bars over
+columns (T1/T2), U-bars, reinforcement around voids / sunken slabs and
+openings, a preliminary punching-links sheet, and an empty PT cables
+template, each an A1 sheet block / Xref with key plan, title band, notes,
+assumptions, references, revisions, schedules and details, per slab level.
+Saudi practice (SBC 304-18) is applied for laps and anchorage where the
+drawing is silent, and every assumption is printed on the sheet.
 
 ```bash
 node shopdrawings/cli.mjs --input STRUCTURAL.dxf --out ./package --project "…"

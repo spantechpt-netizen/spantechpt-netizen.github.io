@@ -23,6 +23,9 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDxf } from './lib/dxf-reader.mjs';
+import { fromLibredwgJson } from './lib/libredwg-json.mjs';
+import { execFileSync } from 'node:child_process';
+import { basename, extname } from 'node:path';
 import { extractModel } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
@@ -44,10 +47,31 @@ export function parseArgs(argv) {
   return a;
 }
 
-export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true }) {
-  const text = inputText ?? readFileSync(inputDxf, 'utf8');
-  const dxf = parseDxf(text);
-  const model = extractModel(dxf, { spec });
+/** Load a DXF, a LibreDWG JSON export, or a DWG (converted with `dwgread` when it is on PATH). */
+export function loadDrawing(inputPath, inputText) {
+  if (inputText != null) return parseDxf(inputText);
+  const ext = extname(inputPath).toLowerCase();
+  if (ext === '.json') return fromLibredwgJson(JSON.parse(readFileSync(inputPath, 'utf8')));
+  if (ext === '.dwg') {
+    const tool = process.env.DWGREAD || 'dwgread';
+    const jsonPath = inputPath.replace(/\.dwg$/i, '.libredwg.json');
+    try { execFileSync(tool, ['-O', 'json', '-o', jsonPath, inputPath], { stdio: 'ignore', maxBuffer: 1 << 30 }); }
+    catch (e) { throw new Error(`Cannot convert DWG: ${tool} (LibreDWG) not found or failed. Export the drawing as DXF (DXFOUT) or JSON (dwgread -O json) first.`); }
+    return fromLibredwgJson(JSON.parse(readFileSync(jsonPath, 'utf8')));
+  }
+  return parseDxf(readFileSync(inputPath, 'utf8'));
+}
+
+/** Level name guessed from the file name, e.g. S02D__FIRST_FLOOR_SLAB_G.A → "S02D FIRST FLOOR SLAB". */
+export function levelNameFromFile(inputPath) {
+  if (!inputPath) return null;
+  const base = basename(inputPath).replace(/\.[^.]+$/, '').replace(/\.libredwg$/, '');
+  return base.replace(/[_-]+/g, ' ').replace(/\bG\.?A\.?\b/i, '').replace(/\s+/g, ' ').trim().toUpperCase() || null;
+}
+
+export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames }) {
+  const dxf = loadDrawing(inputDxf, inputText);
+  const model = extractModel(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
   const pack = composePackage(model, meta);
   mkdirSync(join(out, 'dxf'), { recursive: true });
   mkdirSync(join(out, 'schedules'), { recursive: true });

@@ -4,6 +4,11 @@
  * scale, while the slab plan is placed at true size (1 unit = 1 mm) — the
  * usual Middle-East convention of a frame scaled around model-space geometry,
  * so everything on the plan measures correctly in AutoCAD.
+ *
+ * The right-hand strip follows the layout of the reference drawings: key
+ * plan, schedule, notes, coordination / contract references, revisions and
+ * the title block with project, client, engineer, contractor and the
+ * shop-drawing author.
  */
 import { Canvas } from './canvas.mjs';
 import { wrap } from './svg-writer.mjs';
@@ -19,22 +24,26 @@ export function layoutFor(size = 'A1') {
   const x0 = 20, y0 = 10, x1 = w - 10, y1 = h - 10;
   const rx = x1 - right;
   const strip = 125;
-  const titleH = 125;
-  const notesH = Math.round((y1 - y0 - titleH) * 0.56);
+  const titleH = 150, refsH = 52, keyH = 46, schedH = 140;
+  const notesH = y1 - y0 - titleH - refsH - keyH - schedH;
+  const plan = { x: x0, y: y0 + strip, w: rx - x0, h: y1 - y0 - strip };
   return {
     w, h,
     frame: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 },
     title: { x: rx, y: y0, w: right, h: titleH },
-    notes: { x: rx, y: y0 + titleH, w: right, h: notesH },
-    schedule: { x: rx, y: y0 + titleH + notesH, w: right, h: y1 - (y0 + titleH + notesH) },
-    plan: { x: x0, y: y0 + strip, w: rx - x0, h: y1 - y0 - strip },
+    refs: { x: rx, y: y0 + titleH, w: right, h: refsH },
+    notes: { x: rx, y: y0 + titleH + refsH, w: right, h: notesH },
+    schedule: { x: rx, y: y0 + titleH + refsH + notesH, w: right, h: schedH },
+    keyplan: { x: rx, y: y1 - keyH, w: right, h: keyH },
+    plan,
+    halves: [{ x: plan.x, y: plan.y, w: plan.w / 2, h: plan.h }, { x: plan.x + plan.w / 2, y: plan.y, w: plan.w / 2, h: plan.h }],
     strip: { x: x0, y: y0, w: rx - x0, h: strip },
     details: [0, 1, 2].map((i) => ({ x: x0 + (i * (rx - x0)) / 3, y: y0, w: (rx - x0) / 3, h: strip })),
   };
 }
 
 export function chooseScale(bboxMm, area, margin = 12) {
-  const w = area.w - 2 * margin, h = area.h - 2 * margin;
+  const w = area.w - 2 * margin, h = area.h - 2 * margin - 14; // 14: room for the plan title
   for (const s of SCALES) if (bboxMm.w / s <= w && bboxMm.h / s <= h) return s;
   return SCALES[SCALES.length - 1];
 }
@@ -70,25 +79,26 @@ export class Sheet {
     };
   }
 
-  /** Place a plan (true-size mm geometry) centred in the plan area. */
+  /** Place a plan (true-size mm geometry) centred in an area (default: the plan area). */
   setPlan(bboxMm, area = this.L.plan) {
     const S = this.S;
     const ox = cx(area) * S - bboxMm.cx;
-    const oy = cy(area) * S - bboxMm.cy;
-    this.planOffset = { x: ox, y: oy };
-    this.pl = this.makePen((p) => ({ x: p.x + ox, y: p.y + oy }), 1);
-    return this.pl;
+    const oy = (cy(area) + 7) * S - bboxMm.cy; // leave room for the plan title below
+    const pen = this.makePen((p) => ({ x: p.x + ox, y: p.y + oy }), 1);
+    pen.area = area;
+    if (!this.pl) this.pl = pen;
+    return pen;
   }
 
   /**
    * Pen for a detail drawn at `detailScale` (e.g. 20 for 1:20) inside a paper
-   * box: geometry in mm is centred in the box's inner area.
+   * box: geometry in mm is centred in the box's inner area. Falls back to the
+   * next standard scale when the nominal one overflows the box.
    */
   detailPen(box, detailScale, gb, inner = { top: 9, pad: 6 }) {
     const S = this.S;
     const ax = box.x + inner.pad, ay = box.y + inner.pad;
     const aw = box.w - 2 * inner.pad, ah = box.h - inner.top - 2 * inner.pad;
-    // Fit: fall back to the next standard scale when the nominal one overflows the box.
     const gw = (gb.maxX - gb.minX), gh = (gb.maxY - gb.minY);
     const need = Math.max(gw / aw, gh / ah);
     let scale = detailScale;
@@ -132,22 +142,6 @@ export class Sheet {
         }
         return { x: X, y: Y };
       },
-      /** Extent line with arrows at both ends and a label along it. */
-      extent: (a, b, label, o = {}) => {
-        const A = P(a), B = P(b);
-        const layer = o.layer || 'REBAR-EXTENT';
-        blk.line(A.x, A.y, B.x, B.y, { layer });
-        blk.arrow(B.x, B.y, A.x, A.y, (o.size || 1.5) * S, { layer });
-        blk.arrow(A.x, A.y, B.x, B.y, (o.size || 1.5) * S, { layer });
-        let rot = (Math.atan2(B.y - A.y, B.x - A.x) * 180) / Math.PI;
-        if (rot > 90 || rot <= -90) rot += 180;
-        const r = (rot * Math.PI) / 180;
-        const nx = -Math.sin(r), ny = Math.cos(r);
-        const off = (o.off || 1.2) * S;
-        const mx = (A.x + B.x) / 2 + nx * off, my = (A.y + B.y) / 2 + ny * off;
-        const lines = String(label).split('\n');
-        lines.forEach((ln, i) => blk.text(mx - nx * i * (o.h || 2) * 1.6 * S, my - ny * i * (o.h || 2) * 1.6 * S, ln, { layer: o.textLayer || 'REBAR-TEXT', h: (o.h || 2) * S, rot, align: 'C', valign: 'B' }));
-      },
       /** Short perpendicular ticks at both bar ends (bar extent convention). */
       barEnds: (a, b, o = {}) => {
         const A = P(a), B = P(b);
@@ -166,9 +160,7 @@ export class Sheet {
     const { w, h, frame } = this.L;
     this.pp.rect(0, 0, w, h, { layer: 'FRAME', lw: 13 });
     this.pp.rect(frame.x, frame.y, frame.w, frame.h, { layer: 'FRAME' });
-    // centring marks
     for (const [x, y, dx, dy] of [[w / 2, 0, 0, 6], [w / 2, h, 0, -6], [0, h / 2, 6, 0], [w, h / 2, -6, 0]]) this.pp.line(x, y, x + dx, y + dy, { layer: 'FRAME' });
-    // ruler along the top and left, A-J / 1-8 zoning
     const cols = 8, rows = 6;
     for (let i = 0; i <= cols; i++) {
       const x = frame.x + (frame.w * i) / cols;
@@ -188,76 +180,166 @@ export class Sheet {
         this.pp.text(w - 5, y + frame.h / rows / 2, 'ABCDEF'[rows - 1 - j], { layer: 'FRAME', h: 2.5, align: 'C', valign: 'M' });
       }
     }
-    // region dividers
-    const { title, notes, schedule, plan, strip } = this.L;
+    const { title, refs, notes, schedule, keyplan, plan, strip } = this.L;
     this.pp.line(title.x, frame.y, title.x, frame.y + frame.h, { layer: 'FRAME' });
     this.pp.line(plan.x, strip.y + strip.h, plan.x + plan.w, strip.y + strip.h, { layer: 'FRAME' });
-    this.pp.line(notes.x, notes.y, notes.x + notes.w, notes.y, { layer: 'FRAME' });
-    this.pp.line(schedule.x, schedule.y, schedule.x + schedule.w, schedule.y, { layer: 'FRAME' });
+    for (const r of [refs, notes, schedule, keyplan]) this.pp.line(r.x, r.y, r.x + r.w, r.y, { layer: 'FRAME' });
   }
 
-  /** Title band: project / company / drawing data / signatures. */
+  /** Key plan box: the slab outline reduced into the box, with a north arrow. */
+  keyPlan(outline, label = 'KEY PLAN') {
+    const K = this.L.keyplan;
+    const pp = this.pp;
+    pp.text(K.x + 2, K.y + K.h - 4.5, label, { layer: 'TITLE', h: 2.2 });
+    const box = { x: K.x + 40, y: K.y + 3, w: K.w - 80, h: K.h - 9 };
+    pp.rect(box.x, box.y, box.w, box.h, { layer: 'TITLE' });
+    if (outline && outline.length) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of outline) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); }
+      const k = Math.min((box.w - 6) / (maxX - minX || 1), (box.h - 6) / (maxY - minY || 1));
+      const pts = outline.map((p) => ({ x: box.x + box.w / 2 + (p.x - (minX + maxX) / 2) * k, y: box.y + box.h / 2 + (p.y - (minY + maxY) / 2) * k }));
+      pp.pline(pts, { layer: 'OUTLINE', closed: true });
+      pp.hatch([pts], { layer: 'HATCH', pattern: 'ANSI31', spacing: 1.2 });
+    }
+    const nx = K.x + K.w - 20, ny = K.y + K.h / 2 - 3;
+    pp.circle(nx, ny, 6, { layer: 'TEXT' });
+    pp.solid([{ x: nx, y: ny + 5 }, { x: nx - 2.5, y: ny - 3.5 }, { x: nx, y: ny - 1.2 }, { x: nx + 2.5, y: ny - 3.5 }], { layer: 'TEXT' });
+    pp.text(nx, ny + 7.5, 'N', { layer: 'TEXT', h: 2.5, align: 'C' });
+  }
+
+  /** Coordination, contract references and the revision table. */
+  refsBlock(meta) {
+    const R = this.L.refs;
+    const pp = this.pp;
+    const x0 = R.x, w = R.w;
+    let y = R.y + R.h;
+    const row = (h) => { y -= h; pp.line(x0, y, x0 + w, y, { layer: 'TITLE' }); return y; };
+    // coordinated with
+    let top = y; y = row(5);
+    pp.text(x0 + w / 2, top - 2.5, 'COORDINATED WITH THE FOLLOWING DISCIPLINES', { layer: 'TITLE', h: 1.7, align: 'C', valign: 'M' });
+    top = y; y = row(6);
+    ['ARCH.', 'STRUCT.', 'MEP', 'EL.'].forEach((d, i) => {
+      const cxp = x0 + (w * i) / 4;
+      if (i) pp.line(cxp, y, cxp, top, { layer: 'TITLE' });
+      pp.text(cxp + 1.5, top - 2.2, d, { layer: 'TITLE', h: 1.5 });
+      pp.text(cxp + w / 8, y + 1, meta.coordinated?.[i] || '', { layer: 'TEXT-TITLE', h: 1.6, align: 'C' });
+    });
+    // contract drawing references
+    top = y; y = row(5);
+    pp.text(x0 + w / 2, top - 2.5, 'CONTRACT DRAWING REFERENCES', { layer: 'TITLE', h: 1.7, align: 'C', valign: 'M' });
+    top = y; y = row(4);
+    ['ARCHITECTURAL', 'STRUCTURAL', 'MEP'].forEach((d, i) => {
+      const cxp = x0 + (w * i) / 3;
+      if (i) pp.line(cxp, y, cxp, top, { layer: 'TITLE' });
+      pp.text(cxp + w / 6, top - 2, d, { layer: 'TITLE', h: 1.5, align: 'C', valign: 'M' });
+    });
+    top = y; y = row(4);
+    for (let i = 0; i < 3; i++) {
+      const cxp = x0 + (w * i) / 3;
+      if (i) pp.line(cxp, y, cxp, top, { layer: 'TITLE' });
+      pp.line(cxp + w / 3 - 12, y, cxp + w / 3 - 12, top, { layer: 'TITLE' });
+      pp.text(cxp + 1.5, top - 2.7, 'DRAWING No.', { layer: 'TITLE', h: 1.3 });
+      pp.text(cxp + w / 3 - 6, top - 2.7, 'REV.', { layer: 'TITLE', h: 1.3, align: 'C' });
+    }
+    const refsList = meta.references || [];
+    for (let r = 0; r < 2; r++) {
+      top = y; y = row(4);
+      for (let i = 0; i < 3; i++) {
+        const cxp = x0 + (w * i) / 3;
+        if (i) pp.line(cxp, y, cxp, top, { layer: 'TITLE' });
+        pp.line(cxp + w / 3 - 12, y, cxp + w / 3 - 12, top, { layer: 'TITLE' });
+        const ref = refsList.filter((q) => q.discipline === ['ARCH', 'STRUCT', 'MEP'][i])[r];
+        if (ref) { pp.text(cxp + 1.5, y + 1, ref.no, { layer: 'TEXT-TITLE', h: 1.4 }); pp.text(cxp + w / 3 - 6, y + 1, ref.rev || '', { layer: 'TEXT-TITLE', h: 1.4, align: 'C' }); }
+      }
+    }
+    // revisions
+    top = y; y = row(4);
+    const cols = [[0, 'REV.', 12], [12, 'DESCRIPTION', 118], [130, 'DATE', 30], [160, 'BY', 25]];
+    for (const [ox, label, cw] of cols) { if (ox) pp.line(x0 + ox, y, x0 + ox, top, { layer: 'TITLE' }); pp.text(x0 + ox + cw / 2, top - 2, label, { layer: 'TITLE', h: 1.4, align: 'C', valign: 'M' }); }
+    const revs = meta.revisions && meta.revisions.length ? meta.revisions : [{ rev: meta.revision || '00', description: meta.issued || 'ISSUED FOR APPROVAL', date: meta.date || '', by: meta.preparedInitials || '' }];
+    const rowsLeft = Math.floor((y - R.y) / 4);
+    for (let r = 0; r < rowsLeft; r++) {
+      top = y; y = row(4);
+      const rv = revs[r];
+      for (const [ox, , cw] of cols) {
+        if (ox) pp.line(x0 + ox, y, x0 + ox, top, { layer: 'TITLE' });
+        if (!rv) continue;
+        const v = [rv.rev, rv.description, rv.date, rv.by][cols.findIndex((c) => c[0] === ox)] || '';
+        pp.text(x0 + ox + (ox === 12 ? 1.5 : cw / 2), y + 1, v, { layer: 'TEXT-TITLE', h: 1.5, align: ox === 12 ? 'L' : 'C' });
+      }
+    }
+  }
+
+  /** Title block: project / client / engineer / contractor / author / title / numbers / signatures. */
   titleBlock(meta) {
     const T = this.L.title;
     const pp = this.pp;
     const x0 = T.x, w = T.w;
-    let y = T.y + T.h; // cursor from the top
+    let y = T.y + T.h;
     const row = (h) => { y -= h; pp.line(x0, y, x0 + w, y, { layer: 'TITLE' }); return y; };
-    const label = (x, yy, s) => pp.text(x + 1.5, yy - 3.2, s, { layer: 'TITLE', h: 1.6 });
-    const value = (x, yy, s, h = 3, o = {}) => pp.text(x + 1.5, yy - 3.2 - h - 1.2, s, { layer: 'TEXT-TITLE', h, ...o });
+    const label = (x, yy, s) => pp.text(x + 1.5, yy - 3, s, { layer: 'TITLE', h: 1.5 });
+    const value = (x, yy, s, h = 2.6, o = {}) => pp.text(x + 1.5, yy - 3 - h - 1, s, { layer: 'TEXT-TITLE', h, ...o });
     const vline = (x, y1, y2) => pp.line(x, y1, x, y2, { layer: 'TITLE' });
-
-    // company
-    let top = y; y = row(18);
-    pp.text(x0 + w / 2, top - 7, (meta.company || 'SPAN TECH CONTRACTING').toUpperCase(), { layer: 'TEXT-TITLE', h: 4.5, align: 'C', valign: 'M', bold: true });
-    pp.text(x0 + w / 2, top - 13.5, meta.company_line || 'POST-TENSIONED SLABS · KSA · EGYPT · QATAR', { layer: 'TITLE', h: 2, align: 'C', valign: 'M' });
-    // project
-    top = y; y = row(14);
-    label(x0, top, 'PROJECT');
-    value(x0, top, meta.project || '', 3);
-    pp.text(x0 + 1.5, y + 1.5, [meta.client ? `CLIENT: ${meta.client}` : '', meta.location ? `LOCATION: ${meta.location}` : ''].filter(Boolean).join('   '), { layer: 'TITLE', h: 1.8 });
-    // drawing title
-    top = y; y = row(19);
+    const box = (h, lab, val, vh = 2.6, second) => {
+      const top = y; y = row(h);
+      label(x0, top, lab);
+      if (val) value(x0, top, val, vh);
+      if (second) pp.text(x0 + 1.5, y + 1.3, second, { layer: 'TITLE', h: 1.7 });
+    };
+    {
+      const top = y; y = row(15);
+      label(x0, top, 'PROJECT');
+      const lines = wrap((meta.project || '').toUpperCase(), 62).slice(0, 2);
+      lines.forEach((ln, i) => pp.text(x0 + 1.5, top - 6.2 - i * 3, ln, { layer: 'TEXT-TITLE', h: 2.1 }));
+      pp.text(x0 + 1.5, y + 1.3, [meta.location ? meta.location.toUpperCase() : '', meta.projectCode ? `PROJECT CODE: ${meta.projectCode}` : ''].filter(Boolean).join('   '), { layer: 'TITLE', h: 1.7 });
+    }
+    box(9, 'THE CLIENT', meta.client || '', 2.2);
+    box(9, 'THE ENGINEER (CONSULTANT)', meta.engineer || '', 2.2);
+    box(9, 'MAIN CONTRACTOR', meta.contractor || '', 2.2);
+    // shop drawing author (company)
+    let top = y; y = row(16);
+    label(x0, top, 'POST-TENSION SUB-CONTRACTOR / SHOP DRAWINGS BY');
+    pp.text(x0 + w / 2, top - 8.5, (meta.company || 'SPAN TECH CONTRACTING').toUpperCase(), { layer: 'TEXT-TITLE', h: 4, align: 'C', valign: 'M', bold: true });
+    pp.text(x0 + w / 2, top - 13.5, meta.company_line || 'POST-TENSIONED SLABS · KSA · EGYPT · QATAR', { layer: 'TITLE', h: 1.7, align: 'C', valign: 'M' });
+    // title
+    top = y; y = row(20);
     label(x0, top, 'DRAWING TITLE');
-    const titleLines = wrap(meta.title || '', 34).slice(0, 2);
-    titleLines.forEach((ln, i) => pp.text(x0 + 1.5, top - 8 - i * 4.2, ln, { layer: 'TEXT-TITLE', h: 3.2, bold: true }));
-    if (meta.level) pp.text(x0 + 1.5, y + 1.5, meta.level, { layer: 'TITLE', h: 2.2 });
+    const titleLines = wrap([meta.titlePrefix, meta.title].filter(Boolean).join(' - '), 40).slice(0, 3);
+    titleLines.forEach((ln, i) => pp.text(x0 + 1.5, top - 7.5 - i * 3.9, ln, { layer: 'TEXT-TITLE', h: 2.9, bold: true }));
+    if (meta.level) pp.text(x0 + 1.5, y + 1.3, meta.level, { layer: 'TITLE', h: 2 });
     // drawing no / rev / date
     top = y; y = row(11);
-    const c3 = [x0, x0 + w * 0.5, x0 + w * 0.75];
+    const c3 = [x0, x0 + w * 0.5, x0 + w * 0.72];
     vline(c3[1], y, top); vline(c3[2], y, top);
     label(c3[0], top, 'DRAWING No.'); value(c3[0], top, meta.drawingNo || '', 3.2);
     label(c3[1], top, 'REV.'); value(c3[1], top, meta.revision || '00', 3.2);
-    label(c3[2], top, 'DATE'); value(c3[2], top, meta.date || '', 2.6);
-    // scale / size / sheet
+    label(c3[2], top, 'DATE'); value(c3[2], top, meta.date || '', 2.4);
+    // scale / sheet / grid ref
     top = y; y = row(11);
-    const c3b = [x0, x0 + w * 0.34, x0 + w * 0.66];
+    const c3b = [x0, x0 + w * 0.4, x0 + w * 0.66];
     vline(c3b[1], y, top); vline(c3b[2], y, top);
-    label(c3b[0], top, 'SCALE'); value(c3b[0], top, meta.scale || `1:${this.S} @ ${this.size}`, 2.8);
-    label(c3b[1], top, 'SHEET SIZE'); value(c3b[1], top, this.size, 2.8);
-    label(c3b[2], top, 'SHEET'); value(c3b[2], top, meta.sheet || '', 2.8);
+    label(c3b[0], top, 'SCALE (A1)'); value(c3b[0], top, meta.scale || `1:${this.S}`, 2.4);
+    label(c3b[1], top, 'SHEET'); value(c3b[1], top, meta.sheet || '', 2.4);
+    label(c3b[2], top, 'GRID REFERENCE'); value(c3b[2], top, meta.gridRef || '', 2.2);
     // signatures
-    top = y; y = row(18);
+    top = y; y = row(15);
     const c3c = [x0, x0 + w / 3, x0 + (2 * w) / 3];
     vline(c3c[1], y, top); vline(c3c[2], y, top);
     [['PREPARED', meta.prepared], ['CHECKED', meta.checked], ['APPROVED', meta.approved]].forEach(([k, v], i) => {
       label(c3c[i], top, k);
-      pp.text(c3c[i] + 1.5, top - 8.5, v || '', { layer: 'TEXT-TITLE', h: 2.2 });
-      pp.text(c3c[i] + 1.5, y + 1.5, 'SIGN / DATE: ..........', { layer: 'TITLE', h: 1.5 });
+      pp.text(c3c[i] + 1.5, top - 7.5, v || '', { layer: 'TEXT-TITLE', h: 2 });
+      pp.text(c3c[i] + 1.5, y + 1.3, 'SIGN / DATE: ..........', { layer: 'TITLE', h: 1.4 });
     });
-    // grid ref / drawing index
+    // index / code / block
     top = y; y = row(10);
-    vline(x0 + w / 2, y, top);
-    label(x0, top, 'GRID REFERENCE'); value(x0, top, meta.gridRef || '', 2.4);
-    label(x0 + w / 2, top, 'DRAWING INDEX'); value(x0 + w / 2, top, meta.index || '', 2.4);
-    // code / block
-    top = y; y = row(10);
-    vline(x0 + w / 2, y, top);
-    label(x0, top, 'CODE REFERENCE'); value(x0, top, meta.codeRef || '', 2.2);
-    label(x0 + w / 2, top, 'BLOCK / XREF NAME'); value(x0 + w / 2, top, this.blockName, 1.7);
-    // status (fills the rest)
+    const c3d = [x0, x0 + w * 0.3, x0 + w * 0.62];
+    vline(c3d[1], y, top); vline(c3d[2], y, top);
+    label(c3d[0], top, 'DRAWING INDEX'); value(c3d[0], top, meta.index || '', 2);
+    label(c3d[1], top, 'CODE REFERENCE'); value(c3d[1], top, meta.codeRef || '', 1.8);
+    label(c3d[2], top, 'BLOCK / XREF'); value(c3d[2], top, this.blockName, 1.4);
+    // status fills the rest
     const rest = y - T.y;
-    pp.text(x0 + w / 2, T.y + rest / 2, meta.status || 'SHOP DRAWING - FOR CONSULTANT APPROVAL', { layer: 'TEXT-TITLE', h: 2.4, align: 'C', valign: 'M', bold: true });
+    pp.text(x0 + w / 2, T.y + rest / 2, meta.status || 'SHOP DRAWING - FOR CONSULTANT APPROVAL', { layer: 'TEXT-TITLE', h: 2.3, align: 'C', valign: 'M', bold: true });
     pp.rect(T.x, T.y, T.w, T.h, { layer: 'TITLE', lw: 50 });
   }
 
@@ -268,28 +350,28 @@ export class Sheet {
     const x = N.x + 3;
     let y = N.y + N.h - 3;
     const head = (en, ar) => {
-      y -= 3.5;
-      pp.text(x, y, en, { layer: 'TEXT-TITLE', h: 2.6, bold: true });
-      if (ar) pp.text(N.x + N.w - 3, y, ar, { layer: 'TEXT-TITLE', h: 2.4, align: 'R' });
-      y -= 1.2;
+      y -= 3.2;
+      pp.text(x, y, en, { layer: 'TEXT-TITLE', h: 2.4, bold: true });
+      if (ar) pp.text(N.x + N.w - 3, y, ar, { layer: 'TEXT-TITLE', h: 2.2, align: 'R' });
+      y -= 1.1;
       pp.line(x, y, N.x + N.w - 3, y, { layer: 'NOTES' });
-      y -= 1.5;
+      y -= 1.3;
     };
-    const para = (s, h = 1.9) => {
+    const para = (s, h = 1.75) => {
       const lines = wrap(s, Math.floor((N.w - 8) / (h * 0.78)));
       y -= h;
       pp.mtext(x, y + h, s, { layer: 'NOTES', h, width: N.w - 7 });
-      y -= (lines.length - 1) * h * 1.55 + 1.6;
+      y -= (lines.length - 1) * h * 1.55 + 1.3;
     };
     head('GENERAL NOTES', 'ملاحظات عامة');
     general.forEach((g, i) => para(`${i + 1}. ${g}`));
     if (assumptions.length) {
       head('ASSUMPTIONS', 'افتراضات');
-      assumptions.forEach((g, i) => para(`A${i + 1}. ${g}`, 1.8));
+      assumptions.forEach((g, i) => para(`A${i + 1}. ${g}`, 1.65));
     }
     head('CODE REFERENCE', 'المرجع الكودي');
-    para(codeRef, 1.9);
-    for (const e of extra) { head(e.title, e.ar); e.lines.forEach((ln) => para(ln, 1.8)); }
+    para(codeRef, 1.75);
+    for (const e of extra) { head(e.title, e.ar); e.lines.forEach((ln) => para(ln, 1.65)); }
     if (legend.length) {
       head('LEGEND', 'مفتاح الرموز');
       for (const [layer, text, kind] of legend) {
@@ -297,17 +379,14 @@ export class Sheet {
         if (kind === 'hatch') pp.hatch([[{ x, y: y - 0.8 }, { x: x + 8, y: y - 0.8 }, { x: x + 8, y: y + 1.8 }, { x, y: y + 1.8 }]], { layer, spacing: 1 });
         else if (kind === 'solid') pp.solid([{ x, y: y - 0.8 }, { x: x + 8, y: y - 0.8 }, { x: x + 8, y: y + 1.8 }, { x, y: y + 1.8 }], { layer });
         else pp.line(x, y + 0.5, x + 8, y + 0.5, { layer, lw: kind === 'thick' ? 50 : undefined });
-        pp.text(x + 10, y, text, { layer: 'NOTES', h: 1.8 });
+        pp.text(x + 10, y, text, { layer: 'NOTES', h: 1.7 });
         y -= 0.8;
       }
     }
     return y;
   }
 
-  /**
-   * Generic table. cols: [{ key, title, w, align }] ; rows: objects.
-   * Returns the y of the bottom line. Rows beyond `maxRows` are returned as leftover.
-   */
+  /** Generic table. cols: [{ key, title, w, align }] ; rows: objects. */
   table(x, yTop, cols, rows, { title, rowH = 4, h = 1.7, headH = 5, titleH = 6, maxRows = Infinity, layer = 'SCHEDULE', textLayer = 'SCHEDULE-TEXT', totals = null } = {}) {
     const pp = this.pp;
     const W = cols.reduce((s, c) => s + c.w, 0);
@@ -343,7 +422,6 @@ export class Sheet {
       pp.text(x + 2, y - (rowH + 0.5) / 2, totals, { layer: textLayer, h, valign: 'M', bold: true });
       y -= rowH + 0.5;
     }
-    // vertical lines
     cx0 = x;
     const top = yTop - (title ? titleH : 0);
     for (const c of cols) { pp.line(cx0, top, cx0, y, { layer }); cx0 += c.w; }
@@ -366,15 +444,20 @@ export class Sheet {
     return d;
   }
 
-  /** Plan title under the plan area. */
-  planTitle(title, scaleLabel) {
-    const P = this.L.plan;
-    this.pp.text(P.x + 6, P.y + 4, title, { layer: 'TEXT-TITLE', h: 4, bold: true });
-    this.pp.line(P.x + 6, P.y + 2.5, P.x + 6 + title.length * 3.2, P.y + 2.5, { layer: 'TITLE', lw: 50 });
-    this.pp.text(P.x + 6 + title.length * 3.2 + 4, P.y + 4, scaleLabel, { layer: 'TITLE', h: 2.5 });
+  /** Plan title in the reference style: circled number, underlined title, scale below. */
+  planTitleAt(area, n, title, scaleLabel) {
+    const pp = this.pp;
+    const x = area.x + 10, y = area.y + 6;
+    pp.circle(x + 4, y + 1.2, 4, { layer: 'CALLOUT' });
+    pp.text(x + 4, y + 1.2, String(n), { layer: 'CALLOUT', h: 3.2, align: 'C', valign: 'M' });
+    pp.text(x + 11, y, title, { layer: 'TEXT-TITLE', h: 3.4, bold: true });
+    pp.line(x + 11, y - 1.2, x + 11 + title.length * 2.6, y - 1.2, { layer: 'TITLE', lw: 35 });
+    pp.text(x + 11, y - 4.2, scaleLabel, { layer: 'TITLE', h: 2 });
   }
 
-  /** Big diagonal-free status stamp in a box (used for the cable template). */
+  planTitle(title, scaleLabel) { this.planTitleAt(this.L.plan, 1, title, scaleLabel); }
+
+  /** Status stamp in a box (used for the cable template). */
   stamp(text, sub) {
     const P = this.L.plan;
     const w = 150, h = 22;

@@ -14,6 +14,9 @@ const LAYER_RULES = [
   ['ubar', /U[-_ ]?BARS?|HAIRPIN/i],
   ['void', /VOID|ACU|ACOU|AKWAR|أكوار|اكوار|كور|HOLLOW|COBIAX|BUBBLE/i],
   ['opening', /OPEN|SHAFT|DUCT|فتح|HOLE|SLEEVE/i],
+  ['sunken', /SUNK|DROP|RECESS|منخفض/i],
+  ['stair', /STAIR|سلم|درج/i],
+  ['beam', /BEAM|كمر/i],
   ['pt', /(^|[^A-Z])PT([^A-Z]|$)|P-T|TENDON|POST[-_ ]?TEN|كابل|كوابل/i],
   ['column', /COL(?!OR)|COLUMN|عمود|أعمدة|اعمدة/i],
   ['slab', /SLAB|OUTLINE|EDGE|BOUND|حدود|بلاطة|SOG|DECK/i],
@@ -44,6 +47,7 @@ function flatten(dxf) {
         const pts = outer.flatMap(entityPoints);
         const at = t ? transformPoint({ x: e.x, y: e.y }, t) : { x: e.x, y: e.y };
         sink.push({ type: 'INSERT', layer: e.layer, name: e.name, x: at.x, y: at.y, pts, blockBbox: pts.length ? bbox(pts) : null });
+        for (const a of e.attribs || []) sink.push(t ? transformEntity(a, t) : { ...a });
         continue;
       }
       const te = t ? transformEntity(e, t) : { ...e };
@@ -135,6 +139,7 @@ function regionFrom(e, poly) {
   return { kind: 'polygon', polygon: polygonArea(poly) < 0 ? [...poly].reverse() : poly };
 }
 
+const regionPolygonOf = (r) => (r.kind === 'circle' ? circlePolygon(r.cx, r.cy, r.r) : r.kind === 'rect' ? rectPolygon(r.rect) : r.polygon);
 const regionCenter = (r) => (r.kind === 'circle' ? { x: r.cx, y: r.cy } : r.kind === 'rect' ? { x: r.rect.x + r.rect.w / 2, y: r.rect.y + r.rect.h / 2 } : centroid(r.polygon));
 const regionArea = (r) => (r.kind === 'circle' ? Math.PI * r.r * r.r : r.kind === 'rect' ? r.rect.w * r.rect.h : Math.abs(polygonArea(r.polygon)));
 
@@ -154,6 +159,15 @@ export function extractModel(dxf, options = {}) {
   let outlines = [];
   for (const e of ents.filter((x) => x.kind === 'slab')) for (const p of closedPolys(e)) if (Math.abs(polygonArea(p)) > 10e6) outlines.push(p);
   if (!outlines.length) {
+    const segs = [];
+    for (const e of ents.filter((x) => x.kind === 'slab')) {
+      if (e.type === 'LINE') segs.push([{ x: e.x, y: e.y }, { x: e.x2, y: e.y2 }]);
+      else if (e.type === 'LWPOLYLINE' && !e.closed && e.pts.length >= 2) for (let i = 0; i + 1 < e.pts.length; i++) segs.push([e.pts[i], e.pts[i + 1]]);
+    }
+    for (const loop of chainSegments(segs)) if (Math.abs(polygonArea(loop)) > 10e6) outlines.push(loop);
+    if (outlines.length) findings.push('Slab edge drawn as separate lines: chained into closed outline(s).');
+  }
+  if (!outlines.length) {
     const cands = [];
     for (const e of ents.filter((x) => x.kind !== 'grid' && x.type === 'LWPOLYLINE')) for (const p of closedPolys(e)) if (Math.abs(polygonArea(p)) > 20e6) cands.push(p);
     outlines = cands.filter((p) => !cands.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(p[0], q)));
@@ -165,6 +179,7 @@ export function extractModel(dxf, options = {}) {
     outlines = [rectPolygon({ x: b.minX - 1000, y: b.minY - 1000, w: b.w + 2000, h: b.h + 2000 })];
     assumptions.push({ text: 'No slab outline could be read: a rectangle 1.0 m outside the column extents was assumed as the slab edge.' });
   }
+  outlines = outlines.filter((p) => !outlines.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(centroid(p), q)));
   outlines = outlines.map((p) => (polygonArea(p) < 0 ? [...p].reverse() : p));
   // Plans usually sit side by side left to right, then top to bottom.
   outlines.sort((a, b) => { const A = bbox(a), B = bbox(b); return Math.abs(A.minY - B.minY) > Math.max(A.h, B.h) * 0.5 ? B.minY - A.minY : A.minX - B.minX; });
@@ -173,7 +188,7 @@ export function extractModel(dxf, options = {}) {
   const allText = texts.map(textOf).join('\n');
   const spec = readSpecFromText(allText, assumptions, options.spec || {});
 
-  const levels = outlines.map((outline, i) => buildLevel(outline, i, ents, texts, spec, assumptions, findings));
+  const levels = outlines.map((outline, i) => buildLevel(outline, i, ents, texts, spec, assumptions, findings, options));
   const codeRef = spec.code_reference;
   return {
     source: { units: units.name, entities: ents.length, layers: [...new Set(ents.map((e) => e.layer))].sort() },
@@ -236,7 +251,7 @@ export function readSpecFromText(text, assumptions, overrides = {}) {
   return spec;
 }
 
-function buildLevel(outline, index, ents, texts, spec, assumptions, findings) {
+function buildLevel(outline, index, ents, texts, spec, assumptions, findings, options = {}) {
   const id = `L${String(index + 1).padStart(2, '0')}`;
   const ob = bbox(outline);
   const region = expandBbox(ob, Math.max(ob.w, ob.h) * 0.25);
@@ -252,12 +267,23 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings) {
   let name = null;
   const titles = levelTexts.filter((t) => titleRx.test(t.text) && (t.height >= median * 1.5 || t.y < ob.minY)).sort((a, b) => b.height - a.height);
   if (titles.length) name = titles[0].text.replace(/\s+/g, ' ').trim();
+  if (!name && options.levelNames && options.levelNames[index]) name = options.levelNames[index];
   if (!name) { name = `LEVEL ${index + 1}`; assumptions.push({ ...A, text: `No plan title found near slab ${index + 1}: named "${name}".` }); }
 
   // ------------------------------------------------------------ thickness
   let thickness = null;
-  const thkRx = /(?:SLAB\s*)?(?:THK|THICK(?:NESS)?|T\s*=|H\s*=)\s*[:=]?\s*(\d{3})|(\d{3})\s*(?:MM)?\s*(?:THK|THICK)|PT\s*SLAB\s*(\d{3})/i;
-  for (const t of [...levelTexts, ...texts]) { const m = t.text.match(thkRx); if (m) { thickness = parseInt(m[1] || m[2] || m[3], 10); break; } }
+  const thkRx = /(?:SLAB\s*)?(?:THK|THICK(?:NESS)?|TH\s*=|T\s*=|H\s*=)\s*[:=]?\s*(\d{3})|(\d{3})\s*(?:MM)?\s*(?:THK|THICK)|PT\s*SLAB\s*(\d{3})/i;
+  const thkVotes = new Map();
+  for (const t of [...levelTexts, ...texts]) {
+    if (/SUNK|DROP|BEAM|WALL|RECESS|COL/i.test(t.text)) continue;
+    const m = t.text.replace(/\s+/g, ' ').match(thkRx);
+    if (!m) continue;
+    const v = parseInt(m[1] || m[2] || m[3], 10);
+    if (v < 100 || v > 800) continue;
+    const w = (levelTexts.includes(t) ? 10 : 1) * (/PT|SLAB/i.test(t.text) ? 3 : 1);
+    thkVotes.set(v, (thkVotes.get(v) || 0) + w);
+  }
+  if (thkVotes.size) thickness = [...thkVotes.entries()].sort((a, b) => b[1] - a[1])[0][0];
   if (!thickness) { thickness = 250; assumptions.push({ ...A, text: `Slab thickness not stated for ${name}: ${thickness} mm assumed.` }); }
 
   // ------------------------------------------------------------ grid
@@ -343,10 +369,21 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings) {
 
   // ------------------------------------------------------------ openings / voids / u-bar / pt
   const openings = [], voids = [], ubarCircles = [], ptZones = [], tendons = [];
+  const sunken = [], beams = [], stairs = [];
   const ubarEdges = [];
   const textNear = (p, r = 1500) => texts.filter((t) => dist({ x: t.x, y: t.y }, p) < r).map(textOf).join(' ').toUpperCase();
   const isColumnShape = (rg) => columns.some((c) => dist(regionCenter(rg), { x: c.cx, y: c.cy }) < 150);
   for (const e of ents) {
+    if (e.kind === 'beam') {
+      if (e.type === 'LINE') { if (near({ x: e.x, y: e.y }, 800) || near({ x: e.x2, y: e.y2 }, 800)) beams.push({ a: { x: e.x, y: e.y }, b: { x: e.x2, y: e.y2 } }); }
+      else if (e.type === 'LWPOLYLINE') for (let i = 0; i + 1 < e.pts.length; i++) if (near(e.pts[i], 800)) beams.push({ a: e.pts[i], b: e.pts[i + 1] });
+      continue;
+    }
+    if (e.kind === 'stair') { if (e.type === 'LWPOLYLINE' && e.pts.length > 1 && near(e.pts[0], 800)) stairs.push({ pts: e.pts, closed: e.closed }); else if (e.type === 'LINE' && near({ x: e.x, y: e.y }, 800)) stairs.push({ pts: [{ x: e.x, y: e.y }, { x: e.x2, y: e.y2 }] }); continue; }
+    if (e.kind === 'sunken') {
+      for (const p of closedPolys(e)) { const rg = regionFrom(e, p); const c = regionCenter(rg); if (!near(c) || regionArea(rg) < 0.2e6) continue; if (!sunken.some((o) => dist(regionCenter(o), c) < 100)) sunken.push(rg); }
+      continue;
+    }
     if (!['void', 'opening', 'ubar', 'pt'].includes(e.kind)) continue;
     if (e.type === 'CIRCLE') {
       const rg = { kind: 'circle', cx: e.x, cy: e.y, r: e.r };
@@ -377,9 +414,49 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings) {
       if (!kind.some((o) => dist(regionCenter(o), c) < 100)) kind.push(rg);
     }
   }
+  for (const [kind, list] of [['opening', openings], ['void', voids], ['sunken', sunken]]) {
+    // Openings drawn as a rectangle with a cross: each diagonal's bbox is the opening.
+    const diag = [];
+    const segs = [];
+    for (const e of ents.filter((x) => x.kind === kind)) {
+      const add = (a, b) => {
+        if (!near(a, 300) && !near(b, 300)) return;
+        if (Math.abs(a.x - b.x) > 1 && Math.abs(a.y - b.y) > 1) diag.push(bbox([a, b]));
+        else segs.push([a, b]);
+      };
+      if (e.type === 'LINE') add({ x: e.x, y: e.y }, { x: e.x2, y: e.y2 });
+      else if (e.type === 'LWPOLYLINE' && !e.closed) for (let i = 0; i + 1 < e.pts.length; i++) add(e.pts[i], e.pts[i + 1]);
+    }
+    const found = [];
+    for (const b of diag) {
+      if (b.w < 150 || b.h < 150 || b.w * b.h > 60e6) continue;
+      const rg = { kind: 'rect', rect: { x: b.minX, y: b.minY, w: b.w, h: b.h } };
+      if (isColumnShape(rg)) continue;
+      if (!found.some((o) => dist(regionCenter(o), regionCenter(rg)) < 50)) found.push(rg);
+    }
+    if (!found.length) for (const loop of chainSegments(segs)) {
+      const rg = regionFrom({ type: 'LWPOLYLINE' }, loop);
+      if (regionArea(rg) < 0.05e6 || regionArea(rg) > 60e6 || isColumnShape(rg)) continue;
+      found.push(rg);
+    }
+    for (const rg of found) if (!list.some((o) => dist(regionCenter(o), regionCenter(rg)) < 100)) list.push(rg);
+  }
+  // Drop duplicates (a hatch boundary on top of an outline, or a region inside another of the same kind).
+  const dedupeRegions = (list) => {
+    const out = [];
+    for (const rg of list) {
+      const c = regionCenter(rg);
+      if (out.some((o) => pointInPolygon(c, regionPolygonOf(o)) && Math.abs(regionArea(o) - regionArea(rg)) < 0.5 * Math.max(regionArea(o), regionArea(rg)))) continue;
+      out.push(rg);
+    }
+    return out;
+  };
+  openings.splice(0, openings.length, ...dedupeRegions(openings));
+  voids.splice(0, voids.length, ...dedupeRegions(voids));
+  sunken.splice(0, sunken.length, ...dedupeRegions(sunken));
   if (!openings.length && !voids.length) {
-    // Heuristic: closed shapes inside the slab that are not columns.
-    for (const e of ents.filter((x) => x.type === 'LWPOLYLINE' && !['grid', 'slab', 'column', 'pt'].includes(x.kind))) {
+    // Heuristic: closed shapes inside the slab that are on no recognisable layer.
+    for (const e of ents.filter((x) => x.type === 'LWPOLYLINE' && x.kind === 'other')) {
       for (const p of closedPolys(e)) {
         const rg = regionFrom(e, p);
         const area = regionArea(rg);
@@ -393,15 +470,45 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings) {
     }
   }
   openings.forEach((o, i) => { o.id = `O${i + 1}`; });
+  sunken.forEach((o, i) => { o.id = `S${i + 1}`; const words = textNear(regionCenter(o), 2500); const m = words.match(/TH\s*=?\s*(\d{3})/); o.thickness = m ? parseInt(m[1], 10) : null; });
   voids.forEach((v, i) => { v.id = `V${i + 1}`; });
   ubarCircles.forEach((u, i) => { u.id = `R${i + 1}`; });
   ptZones.forEach((z, i) => { z.id = `PT${i + 1}`; z.polygon = z.polygon || (z.kind === 'rect' ? rectPolygon(z.rect) : circlePolygon(z.cx, z.cy, z.r)); });
 
-  findings.push(`${id} ${name}: ${columns.length} columns, grid ${grid.x.map((g) => g.label).join('-')} / ${grid.y.map((g) => g.label).join('-')}, ${openings.length} openings, ${voids.length} voids, ${ubarCircles.length} circular U-bar regions, ${ptZones.length} PT zones, ${tendons.length} tendon lines, slab ${thickness} mm.`);
+  findings.push(`${id} ${name}: ${columns.length} columns, grid ${grid.x.map((g) => g.label).join('-')} / ${grid.y.map((g) => g.label).join('-')}, ${openings.length} openings, ${voids.length} voids, ${sunken.length} sunken slabs, ${beams.length} beam lines, ${ubarCircles.length} circular U-bar regions, ${ptZones.length} PT zones, ${tendons.length} tendon lines, slab ${thickness} mm.`);
 
   return {
-    id, name, thickness, outline, bbox: ob, grid, columns, openings, voids,
+    id, name, thickness, outline, bbox: ob, grid, columns, openings, voids, sunken, beams, stairs,
     ubar: { edges: ubarEdges.length ? ubarEdges : 'all', circles: ubarCircles },
     pt: { zones: ptZones, tendons },
   };
+}
+
+/** Join line segments end-to-end (within tol) into closed loops. */
+export function chainSegments(segs, tol = 5) {
+  const used = new Array(segs.length).fill(false);
+  const loops = [];
+  const same = (a, b) => Math.abs(a.x - b.x) <= tol && Math.abs(a.y - b.y) <= tol;
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    const loop = [segs[i][0], segs[i][1]];
+    let guard = 0;
+    while (guard++ < segs.length + 1) {
+      const tail = loop[loop.length - 1];
+      if (loop.length > 2 && same(tail, loop[0])) { loop.pop(); break; }
+      let found = -1, flip = false;
+      for (let j = 0; j < segs.length; j++) {
+        if (used[j]) continue;
+        if (same(segs[j][0], tail)) { found = j; flip = false; break; }
+        if (same(segs[j][1], tail)) { found = j; flip = true; break; }
+      }
+      if (found < 0) break;
+      used[found] = true;
+      loop.push(flip ? segs[found][0] : segs[found][1]);
+    }
+    if (loop.length >= 3 && same(loop[loop.length - 1], loop[0])) loop.pop();
+    if (loop.length >= 3) loops.push(cleanPolygon(loop));
+  }
+  return loops;
 }

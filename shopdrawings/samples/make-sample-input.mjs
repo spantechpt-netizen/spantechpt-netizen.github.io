@@ -9,7 +9,7 @@
  * layer names, blocks and notes the extractor has to cope with.
  */
 import { writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Canvas } from '../lib/canvas.mjs';
 import { toDxf } from '../lib/dxf-writer.mjs';
@@ -140,7 +140,8 @@ export function buildSampleInput() {
   return c;
 }
 
-const canvas = buildSampleInput();
-const out = join(here, 'sample-structural-input.dxf');
-writeFileSync(out, toDxf(canvas, { ltscale: 100 }));
-console.log('wrote', out);
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const out = join(here, 'sample-structural-input.dxf');
+  writeFileSync(out, toDxf(buildSampleInput(), { ltscale: 100 }));
+  console.log('wrote', out);
+}
