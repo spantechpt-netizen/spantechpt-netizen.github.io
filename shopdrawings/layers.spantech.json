@@ -2,56 +2,236 @@
   "_comment": "Span Tech layer standard for generated shop drawings. Keys are the generator's internal layer names; values are the names written to the DXF. Colors are ACI indexes (1 red, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 white/black, 8 grey), lineweights in 1/100 mm.",
   "prefix": "ST",
   "layers": {
-    "0":              { "name": "0" },
-    "FRAME":          { "name": "ST-SHEET-FRAME",    "color": 7, "lw": 50 },
-    "TITLE":          { "name": "ST-SHEET-TITLE",    "color": 7, "lw": 25 },
-    "TEXT-TITLE":     { "name": "ST-SHEET-TEXT",     "color": 2 },
-    "NOTES":          { "name": "ST-SHEET-NOTES",    "color": 7 },
-    "SCHEDULE":       { "name": "ST-SHEET-SCHEDULE", "color": 7 },
-    "SCHEDULE-TEXT":  { "name": "ST-SHEET-SCHEDULE-TEXT", "color": 7 },
-    "DETAIL":         { "name": "ST-DETAIL",         "color": 7 },
-    "DETAIL-HATCH":   { "name": "ST-DETAIL-HATCH",   "color": 8 },
-    "HATCH":          { "name": "ST-HATCH",          "color": 8 },
-    "XREF":           { "name": "ST-XREF",           "color": 7 },
-    "TEXT":           { "name": "ST-TEXT",           "color": 7 },
-    "DIM":            { "name": "ST-DIM",            "color": 8 },
-    "CALLOUT":        { "name": "ST-CALLOUT",        "color": 3 },
-    "GRID":           { "name": "ST-GRID",           "color": 8, "ltype": "CENTER" },
-    "GRID-BUBBLE":    { "name": "ST-GRID-BUBBLE",    "color": 8 },
-    "OUTLINE":        { "name": "ST-SLAB-EDGE",      "color": 3, "lw": 35 },
-    "COLUMN":         { "name": "ST-COL",            "color": 7, "lw": 35 },
-    "COLUMN-HATCH":   { "name": "ST-COL-HATCH",      "color": 7 },
-    "BEAM":           { "name": "ST-BEAM",           "color": 3, "lw": 25 },
-    "STAIR":          { "name": "ST-STAIR",          "color": 8 },
-    "OPENING":        { "name": "ST-OPENING",        "color": 6 },
-    "OPENING-HATCH":  { "name": "ST-OPENING-HATCH",  "color": 6 },
-    "VOID":           { "name": "ST-VOID",           "color": 30, "ltype": "DASHED" },
-    "VOID-HATCH":     { "name": "ST-VOID-HATCH",     "color": 30 },
-    "SUNKEN":         { "name": "ST-SUNKEN",         "color": 4 },
-    "SUNKEN-HATCH":   { "name": "ST-SUNKEN-HATCH",   "color": 8 },
-    "PT-ZONE":        { "name": "ST-PT-ZONE",        "color": 4, "ltype": "DASHDOT" },
-    "PT-TENDON":      { "name": "ST-PT-TENDON",      "color": 3 },
-    "PT-HATCH":       { "name": "ST-PT-HATCH",       "color": 4 },
-    "CABLE":          { "name": "ST-PT-CABLE",       "color": 3, "lw": 50 },
-    "CABLE-TEXT":     { "name": "ST-PT-TEXT",        "color": 3 },
-    "REBAR":          { "name": "ST-RB",             "color": 6, "lw": 50 },
-    "REBAR-B1":       { "name": "ST-RB-B1",          "color": 6, "lw": 50 },
-    "REBAR-B2":       { "name": "ST-RB-B2",          "color": 6, "lw": 50 },
-    "REBAR-T1":       { "name": "ST-RB-T1",          "color": 6, "lw": 50 },
-    "REBAR-T2":       { "name": "ST-RB-T2",          "color": 6, "lw": 50 },
-    "REBAR-BOT":      { "name": "ST-RB-BOT",         "color": 1, "lw": 50 },
-    "REBAR-TOP":      { "name": "ST-RB-TOP",         "color": 5, "lw": 50 },
-    "REBAR-U":        { "name": "ST-RB-UBAR",        "color": 6, "lw": 50 },
-    "REBAR-TRIM":     { "name": "ST-RB-TRIM",        "color": 6, "lw": 50 },
-    "REBAR-PUNCH":    { "name": "ST-RB-PUNCH",       "color": 6, "lw": 35 },
-    "REBAR-EXTENT":   { "name": "ST-RB-RANGE",       "color": 6 },
-    "REBAR-TEXT":     { "name": "ST-RB-TEXT",        "color": 7 },
-    "REBAR-MESH":     { "name": "ST-RB-MESH",        "color": 4 },
-    "REBAR-RED":      { "name": "ST-RB-TYPE",        "color": 1 }
+    "0": {
+      "name": "0"
+    },
+    "FRAME": {
+      "name": "ST-SHEET-FRAME",
+      "color": 7,
+      "lw": 50
+    },
+    "TITLE": {
+      "name": "ST-SHEET-TITLE",
+      "color": 7,
+      "lw": 25
+    },
+    "TEXT-TITLE": {
+      "name": "ST-SHEET-TEXT",
+      "color": 2
+    },
+    "NOTES": {
+      "name": "ST-SHEET-NOTES",
+      "color": 7
+    },
+    "SCHEDULE": {
+      "name": "ST-SHEET-SCHEDULE",
+      "color": 7
+    },
+    "SCHEDULE-TEXT": {
+      "name": "ST-SHEET-SCHEDULE-TEXT",
+      "color": 7
+    },
+    "DETAIL": {
+      "name": "ST-DETAIL",
+      "color": 7
+    },
+    "DETAIL-HATCH": {
+      "name": "ST-DETAIL-HATCH",
+      "color": 8
+    },
+    "HATCH": {
+      "name": "ST-HATCH",
+      "color": 8
+    },
+    "XREF": {
+      "name": "ST-XREF",
+      "color": 7
+    },
+    "TEXT": {
+      "name": "ST-TEXT",
+      "color": 7
+    },
+    "DIM": {
+      "name": "ST-DIM",
+      "color": 8
+    },
+    "CALLOUT": {
+      "name": "ST-CALLOUT",
+      "color": 3
+    },
+    "GRID": {
+      "name": "ST-GRID",
+      "color": 8,
+      "ltype": "CENTER"
+    },
+    "GRID-BUBBLE": {
+      "name": "ST-GRID-BUBBLE",
+      "color": 8
+    },
+    "OUTLINE": {
+      "name": "ST-SLAB-EDGE",
+      "color": 3,
+      "lw": 35
+    },
+    "COLUMN": {
+      "name": "ST-COL",
+      "color": 7,
+      "lw": 35
+    },
+    "COLUMN-HATCH": {
+      "name": "ST-COL-HATCH",
+      "color": 7
+    },
+    "BEAM": {
+      "name": "ST-BEAM",
+      "color": 3,
+      "lw": 25
+    },
+    "STAIR": {
+      "name": "ST-STAIR",
+      "color": 8
+    },
+    "OPENING": {
+      "name": "ST-OPENING",
+      "color": 6
+    },
+    "OPENING-HATCH": {
+      "name": "ST-OPENING-HATCH",
+      "color": 6
+    },
+    "VOID": {
+      "name": "ST-VOID",
+      "color": 30,
+      "ltype": "DASHED"
+    },
+    "VOID-HATCH": {
+      "name": "ST-VOID-HATCH",
+      "color": 30
+    },
+    "SUNKEN": {
+      "name": "ST-SUNKEN",
+      "color": 4
+    },
+    "SUNKEN-HATCH": {
+      "name": "ST-SUNKEN-HATCH",
+      "color": 8
+    },
+    "PT-ZONE": {
+      "name": "ST-PT-ZONE",
+      "color": 4,
+      "ltype": "DASHDOT"
+    },
+    "PT-TENDON": {
+      "name": "ST-PT-TENDON",
+      "color": 3
+    },
+    "PT-HATCH": {
+      "name": "ST-PT-HATCH",
+      "color": 4
+    },
+    "CABLE": {
+      "name": "ST-PT-CABLE",
+      "color": 3,
+      "lw": 50
+    },
+    "CABLE-TEXT": {
+      "name": "ST-PT-TEXT",
+      "color": 3
+    },
+    "REBAR": {
+      "name": "ST-RB",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-B1": {
+      "name": "ST-RB-B1",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-B2": {
+      "name": "ST-RB-B2",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-T1": {
+      "name": "ST-RB-T1",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-T2": {
+      "name": "ST-RB-T2",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-BOT": {
+      "name": "ST-RB-BOT",
+      "color": 1,
+      "lw": 50
+    },
+    "REBAR-TOP": {
+      "name": "ST-RB-TOP",
+      "color": 5,
+      "lw": 50
+    },
+    "REBAR-U": {
+      "name": "ST-RB-UBAR",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-TRIM": {
+      "name": "ST-RB-TRIM",
+      "color": 6,
+      "lw": 50
+    },
+    "REBAR-PUNCH": {
+      "name": "ST-RB-PUNCH",
+      "color": 6,
+      "lw": 35
+    },
+    "REBAR-EXTENT": {
+      "name": "ST-RB-RANGE",
+      "color": 6
+    },
+    "REBAR-TEXT": {
+      "name": "ST-RB-TEXT",
+      "color": 7
+    },
+    "REBAR-MESH": {
+      "name": "ST-RB-MESH",
+      "color": 4
+    },
+    "REBAR-RED": {
+      "name": "ST-RB-TYPE",
+      "color": 1
+    },
+    "WALL": {
+      "name": "ST-WALL",
+      "color": 8,
+      "lw": 50
+    },
+    "SLAB-THK": {
+      "name": "ST-SLAB-THK",
+      "color": 3,
+      "ltype": "DASHED"
+    },
+    "SLAB-THK-HATCH": {
+      "name": "ST-SLAB-THK-HATCH",
+      "color": 8
+    },
+    "CABLE-LIVE": {
+      "name": "ST-PT-ANCHOR",
+      "color": 3
+    }
   },
   "textStyles": {
-    "STANDARD": { "font": "arial.ttf" },
-    "ST-REBAR": { "font": "romans.shx" },
-    "ST-TITLE": { "font": "arial.ttf" }
+    "STANDARD": {
+      "font": "arial.ttf"
+    },
+    "ST-REBAR": {
+      "font": "romans.shx"
+    },
+    "ST-TITLE": {
+      "font": "arial.ttf"
+    }
   }
 }

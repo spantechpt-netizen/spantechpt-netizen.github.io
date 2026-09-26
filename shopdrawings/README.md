@@ -39,7 +39,8 @@ npm run shopdrawings:sample
 title-band fields or any reinforcement assumption (see `DEFAULT_SPEC` in
 `lib/rebar.mjs`).
 
-Input is a **DXF** (any release, ASCII), a **LibreDWG JSON** export
+Input is a **DXF** (any release, ASCII), a **RAM Concept** `.cpt` model
+(see below), a **LibreDWG JSON** export
 (`dwgread -O json -o plan.json plan.dwg`), or a **DWG** directly when
 `dwgread` from [GNU LibreDWG](https://www.gnu.org/software/libredwg/) is on
 the `PATH` (or named in `DWGREAD`). From PDF: `PDFIMPORT` in AutoCAD, then
@@ -47,6 +48,35 @@ the `PATH` (or named in `DWGREAD`). From PDF: `PDFIMPORT` in AutoCAD, then
 Bound Xrefs (`XREF_1st FLOOR$0$BBR-COLUMN` style layer names) are exploded
 and read like native layers; grid labels inside bubble blocks are read from
 their attributes.
+
+### RAM Concept input · من ملف رام
+
+A `.cpt` file (RAM Concept v8 or later, which is an SQLite database) is read
+directly, no export needed:
+
+```bash
+node shopdrawings/cli.mjs --input 1st-floor.cpt --out ./package --level "1ST FLOOR" --config majd.json
+```
+
+What is taken from the model: the slab mesh (outline of every separate slab
+body, thickness per mesh element, thickened areas), columns (rectangular with
+their angle, or round), wall line supports (clipped to the slab), the
+tendons chained node to node with strand counts, jacks, jacking stress and
+elongation, the designed reinforcement bands (`ConcentratedRebar`) with every
+individual bar RAM stored, the transverse (shear) regions, punching checks,
+materials (f'c, fy, covers) and the four title headings. RAM internal units
+(0.1 mm, 100 MPa, 0.01 mm²) are converted on read.
+
+Each separate slab body becomes its own level (`L01`, `L02`, …), rotated into
+its own orthogonal frame when its columns are set at an angle (the north
+arrow follows). Grid lines do not exist in RAM, so the grid is derived from
+the column positions and lettered / numbered consecutively; the assumption is
+printed on the sheets. Bottom and top sheets draw the RAM bands as one
+representative bar per band with the first / last bar dashed, in the office
+callout convention; the cables sheet is filled with the RAM tendon layout and
+schedule. Punching results are not stored in the file, so the punching sheet
+stays the minimum detailing arrangement to be confirmed against the RAM
+punching report.
 
 `--config` meta fields: `project`, `location`, `projectCode`, `client`,
 `engineer`, `contractor`, `company`, `prefix` (drawing number prefix),
@@ -182,6 +212,7 @@ shopdrawings/
   lib/dxf-reader.mjs         ASCII DXF → entities (LINE, LWPOLYLINE, CIRCLE, TEXT, MTEXT, INSERT, HATCH…)
   lib/libredwg-json.mjs      LibreDWG `dwgread -O json` → the same entities (DWG input)
   lib/preview.mjs            any parsed drawing → Canvas, for SVG previews of input drawings
+  lib/ram-concept.mjs        RAM Concept .cpt (SQLite) → slab bodies, columns, tendons, bands → model
   lib/extract.mjs            entities → levels, grid, columns, regions, spec, assumptions
   lib/rebar.mjs              SBC 304 lengths, bar splitting, bar list, zone generators
   lib/sheet.mjs              A1 frame, title band, notes, tables, coordinate pens

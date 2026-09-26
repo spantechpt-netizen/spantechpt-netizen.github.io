@@ -1,0 +1,271 @@
+/**
+ * Reads a RAM Concept model (.cpt, SQLite from version 8 on) straight from
+ * the file: slab areas and mesh, columns, wall line supports, tendons with
+ * jacks, the designed reinforcement bands with every individual bar, shear
+ * regions, punching checks and materials. Internal RAM units: length 0.1 mm,
+ * stress 100 MPa (0.1 kN/mm²), area 0.01 mm².
+ */
+import { DatabaseSync } from 'node:sqlite';
+import { bbox, polygonArea, dist, cleanPolygon, simplifyPolygon, centroid, pointInPolygon, clipSegmentToPolygon, distToPolygon } from './geometry.mjs';
+import { chainSegments } from './extract.mjs';
+
+const L = (v) => v / 10; // 0.1 mm → mm
+const MPa = (v) => v * 100;
+const mm2 = (v) => v / 100;
+const nums = (s) => (String(s || '').match(/-?\d+(?:\.\d+)?/g) || []).map(Number);
+const point = (s) => { const v = nums(s); return { x: L(v[0]), y: L(v[1]) }; };
+const points = (s) => { const v = nums(s); const out = []; for (let i = 0; i + 1 < v.length; i += 2) out.push({ x: L(v[i]), y: L(v[i + 1]) }); return out; };
+const bools = (s) => (String(s || '').match(/true|false/g) || []).map((b) => b === 'true');
+
+export function readRamConcept(path) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  const rows = (t) => { try { return db.prepare(`select * from "${t}"`).all(); } catch { return []; } };
+  const byUid = (list) => new Map(list.map((r) => [r.UID, r]));
+
+  // ---------------------------------------------------------------- materials / project
+  const cover = rows('Cover')[0] || {};
+  const headings = [cover.Heading1, cover.Heading2, cover.Heading3, cover.Heading4].filter(Boolean);
+  const concrete = rows('Concrete')[0] || {};
+  const rebarTypes = byUid(rows('Rebar').map((r) => ({ ...r, dia: parseInt(String(r.Name).replace(/\D/g, ''), 10) || Math.round(Math.sqrt((4 * mm2(r.As)) / Math.PI)), fy: MPa(r.Fy), area: mm2(r.As) })));
+  const ptSystem = rows('PTSystem')[0] || {};
+  const strand = rows('StrandMaterial')[0] || {};
+  const duct = rows('DuctSystem')[0] || {};
+  const anchor = rows('AnchorSystem')[0] || {};
+  const spanSeg = rows('SpanSegment');
+  const punchChecks = rows('PunchCheck');
+  const coverTop = spanSeg.length ? L(Math.max(...spanSeg.map((s) => s.ColumnStripTopCover || 0))) : (punchChecks[0] ? L(punchChecks[0].TopCover) : 25);
+  const coverBot = spanSeg.length ? L(Math.max(...spanSeg.map((s) => s.ColumnStripBottomCover || 0))) : (punchChecks[0] ? L(punchChecks[0].BottomCover) : 25);
+  const fc = concrete.FcFinal ? Math.round(MPa(concrete.FcFinal)) : null;
+  const fy = rebarTypes.size ? Math.round([...rebarTypes.values()][0].fy) : null;
+
+  // ---------------------------------------------------------------- slab areas and mesh
+  const slabAreas = rows('SlabArea').map((r) => ({ polygon: cleanPolygon(points(r.MultiPoint)), thickness: L(r.SlabThickness), priority: r.Priority, behaviour: r.SlabBehavior, toc: L(r.TOC) }));
+  const nodes = new Map(rows('ElementCornerNode').map((r) => [r.Point0, point(r.Point0)]));
+  const edgeCount = new Map();
+  const elemThk = [];
+  const addEdge = (a, b) => { const k = a < b ? `${a}|${b}` : `${b}|${a}`; edgeCount.set(k, (edgeCount.get(k) || 0) + 1); };
+  for (const q of rows('QuadSlabElement')) { const n = [q.CornerNode0, q.CornerNode1, q.CornerNode2, q.CornerNode3]; for (let i = 0; i < 4; i++) addEdge(n[i], n[(i + 1) % 4]); elemThk.push({ thk: L(q.SlabThickness), n }); }
+  for (const q of rows('TriSlabElement')) { const n = [q.CornerNode0, q.CornerNode1, q.CornerNode2]; for (let i = 0; i < 3; i++) addEdge(n[i], n[(i + 1) % 3]); elemThk.push({ thk: L(q.SlabThickness), n }); }
+  const elements = elemThk.map((e) => { const poly = e.n.map((k) => nodes.get(k) || point(k)); return { thickness: e.thk, area: Math.abs(polygonArea(poly)), centroid: centroid(poly) }; });
+  const segs = [];
+  for (const [k, c] of edgeCount) if (c === 1) { const [a, b] = k.split('|'); const pa = nodes.get(a) || point(a), pb = nodes.get(b) || point(b); segs.push([pa, pb]); }
+  let loops = chainSegments(segs, 2).map((p) => simplifyPolygon(p, 1)).filter((p) => p.length >= 3).map((p) => ({ polygon: p, area: Math.abs(polygonArea(p)) })).sort((a, b) => b.area - a.area);
+  let outline, holes = [];
+  const allLoops = loops.map((l) => (polygonArea(l.polygon) < 0 ? [...l.polygon].reverse() : l.polygon));
+  if (loops.length) {
+    outline = loops[0].polygon;
+    holes = loops.slice(1).filter((l) => pointInPolygon(l.polygon[0], outline)).map((l) => l.polygon);
+  } else if (slabAreas.length) {
+    outline = slabAreas.sort((a, b) => Math.abs(polygonArea(b.polygon)) - Math.abs(polygonArea(a.polygon)))[0].polygon;
+  }
+  if (outline && polygonArea(outline) < 0) outline = [...outline].reverse();
+  // dominant thickness: by element area (approximate by counting elements)
+  const thkCount = new Map();
+  for (const e of elemThk) thkCount.set(e.thk, (thkCount.get(e.thk) || 0) + 1);
+  const thicknesses = [...thkCount.entries()].sort((a, b) => b[1] - a[1]);
+  const baseThickness = thicknesses.length ? thicknesses[0][0] : (slabAreas[0]?.thickness || 250);
+  const thickZones = slabAreas.filter((a) => a.thickness > baseThickness + 1).map((a, i) => ({ id: `Z${i + 1}`, polygon: a.polygon, thickness: a.thickness }));
+
+  // ---------------------------------------------------------------- supports
+  const columns = rows('Column').map((r, i) => {
+    const p = point(r.Point0);
+    const w = L(r.B), h = L(r.D), angle = (r.Angle || 0) * 180 / Math.PI;
+    if (w < 1) return { id: `C${i + 1}`, shape: 'circle', cx: p.x, cy: p.y, d: h, w: h, h, angle: 0, below: r.SupportSet === 'below' };
+    return { id: `C${i + 1}`, shape: 'rect', cx: p.x, cy: p.y, w, h, angle, below: r.SupportSet === 'below' };
+  });
+  const walls = rows('LineSupport').map((r) => ({ a: point(r.Point0), b: point(r.Point1) }));
+
+  // ---------------------------------------------------------------- tendons
+  const tendonSegs = rows('Tendon');
+  const jacks = rows('Jack');
+  const layersById = new Map(rows('TendonLayer').map((r) => [r.UID, r]));
+  const levelsById = new Map(rows('TendonLevel').map((r) => [r.UID, r]));
+  const catParent = new Map(rows('TendonCategory').map((r) => [r.UID, r.ParentUID]));
+  const jackByNode = new Map(jacks.map((j) => [j.TendonNode0, j]));
+  const spanSetOf = (parentUid) => {
+    const lvl = levelsById.get(catParent.get(parentUid));
+    const layer = lvl && (layersById.get(lvl.ParentUID) || [...layersById.values()].find((l) => l.UID === lvl.ParentUID));
+    if (layer) return layer.SpanSet;
+    // fall back: order of categories = order of layers
+    const idx = [...catParent.keys()].indexOf(parentUid);
+    const layersList = [...layersById.values()];
+    return layersList[idx] ? layersList[idx].SpanSet : 'latitude';
+  };
+  // chain segments node to node
+  const adj = new Map();
+  for (const s of tendonSegs) { for (const n of [s.TendonNode0, s.TendonNode1]) { if (!adj.has(n)) adj.set(n, []); adj.get(n).push(s); } }
+  const used = new Set();
+  const tendons = [];
+  for (const start of adj.keys()) {
+    if (adj.get(start).length !== 1) continue;
+    const first = adj.get(start)[0];
+    if (used.has(first.UID)) continue;
+    let node = start; let seg = first;
+    const pts = [point(node)];
+    const segsOfTendon = [];
+    while (seg && !used.has(seg.UID)) {
+      used.add(seg.UID); segsOfTendon.push(seg);
+      node = seg.TendonNode0 === node ? seg.TendonNode1 : seg.TendonNode0;
+      pts.push(point(node));
+      seg = (adj.get(node) || []).find((s) => !used.has(s.UID));
+    }
+    const strands = Math.max(...segsOfTendon.map((s) => s.NumStrands));
+    const length = pts.reduce((s, p, i) => (i ? s + dist(pts[i - 1], p) : 0), 0);
+    const ends = [segsOfTendon[0].TendonNode0 === start ? start : start, node];
+    const jackEnds = [start, node].map((n) => jackByNode.get(n)).filter(Boolean);
+    const spanSet = spanSetOf(segsOfTendon[0].ParentUID);
+    tendons.push({
+      id: '', spanSet, strands, pts, length: Math.round(length), segments: segsOfTendon.length,
+      live: [!!jackByNode.get(start), !!jackByNode.get(node)],
+      jackStress: jackEnds.length ? MPa(jackEnds[0].JackStress) : null,
+      elongation: jackEnds.length ? Math.round(jackEnds.reduce((s, j) => s + L(j.Elongation), 0)) : null,
+      harped: !!segsOfTendon[0].Harped,
+    });
+  }
+  // closed loops (no degree-1 node) are ignored; number tendons per span set
+  const strandArea = strand.Aps ? mm2(strand.Aps) : 98.7;
+  for (const set of ['latitude', 'longitude']) {
+    tendons.filter((t) => t.spanSet === set).sort((a, b) => (set === 'latitude' ? a.pts[0].y - b.pts[0].y : a.pts[0].x - b.pts[0].x)).forEach((t, i) => { t.id = `${set === 'latitude' ? 'TA' : 'TB'}-${String(i + 1).padStart(2, '0')}`; });
+  }
+  for (const t of tendons) t.jackForce = t.jackStress ? Math.round((t.jackStress * strandArea * t.strands) / 1000) : null;
+
+  // ---------------------------------------------------------------- designed reinforcement
+  const bandsRaw = rows('ConcentratedRebar');
+  const indiv = rows('IndividualBars');
+  const bandKey = (r, n) => `${r.ParentUID % 2}|${r.BarFace}|${r.SpanDirection}|${n}|${Math.round(r.AbsoluteElevation)}`;
+  const indivByKey = new Map();
+  for (const b of indiv) { const k = `${b.BarFace}|${b.SpanDirection}|${points(b.Point0).length}|${Math.round(b.AbsoluteElevation)}`; if (!indivByKey.has(k)) indivByKey.set(k, []); indivByKey.get(k).push(b); }
+  const bands = bandsRaw.map((r, i) => {
+    const type = rebarTypes.get(r.BarType) || { dia: 12, name: 'T12' };
+    const p0 = point(r.Point0), p1 = point(r.Point1);
+    const left = point(r.LeftPoint), right = point(r.RightPoint);
+    const k = `${r.BarFace}|${r.SpanDirection}|${r.BarCount}|${Math.round(r.AbsoluteElevation)}`;
+    // pick the individual-bar set whose bars lie on this band (closest first-bar midpoint to the band line)
+    const cands = indivByKey.get(k) || [];
+    let best = null, bestD = Infinity;
+    const mid = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
+    for (const c of cands) {
+      const a = points(c.Point0), b = points(c.Point1);
+      const cm = a.reduce((s, p, j) => ({ x: s.x + (p.x + b[j].x) / 2 / a.length, y: s.y + (p.y + b[j].y) / 2 / a.length }), { x: 0, y: 0 });
+      const d = dist(cm, mid);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    let bars = [];
+    if (best) { const a = points(best.Point0), b = points(best.Point1); bars = a.map((p, j) => ({ a: p, b: b[j] })); }
+    else { const n = r.BarCount; for (let j = 0; j < n; j++) { const f = n > 1 ? j / (n - 1) : 0.5; const off = { x: left.x + (right.x - left.x) * f - mid.x, y: left.y + (right.y - left.y) * f - mid.y }; bars.push({ a: { x: p0.x + off.x, y: p0.y + off.y }, b: { x: p1.x + off.x, y: p1.y + off.y } }); } }
+    const length = bars.length ? Math.round(bars.reduce((s, b) => s + dist(b.a, b.b), 0) / bars.length) : Math.round(dist(p0, p1));
+    return {
+      id: `RB${i + 1}`, face: r.BarFace === 1 ? 'T' : 'B', dir: r.SpanDirection, dia: type.dia, typeName: type.Name || `T${type.dia}`,
+      count: r.BarCount, spacing: Math.round(L(r.BarSpacing)), width: Math.round(dist(left, right)), length, elevation: L(r.AbsoluteElevation),
+      ends: [r.BarEnd0, r.BarEnd1], bars, p0, p1, matched: !!best,
+    };
+  });
+
+  // shear regions (stirrups)
+  const shear = rows('TransverseRebarRegion').map((r, i) => {
+    const type = rebarTypes.get(r.BarType) || { dia: 10 };
+    return { id: `SR${i + 1}`, a: point(r.Point0), b: point(r.Point1), dia: type.dia, legs: r.StirrupLegs, spacing: Math.round(L(r.StirrupSpacing)), length: Math.round(dist(point(r.Point0), point(r.Point1))) };
+  });
+  const punching = punchChecks.map((r) => ({ name: r.Name, p: point(r.Point0), ssr: r.SsrSystem, coverToCgs: L(r.CoverToCGS) }));
+
+  // background DXF geometry imported into RAM (for reference only)
+  const background = [];
+  for (const r of rows('DXFLine')) background.push({ type: 'LINE', layer: r.CadLayerName, pts: [point(r.Point0 || r.MultiPoint), point(r.Point1)] });
+  for (const r of rows('DXFPolyline')) background.push({ type: 'PLINE', layer: r.CadLayerName, pts: points(r.MultiPoint) });
+
+  db.close();
+  return {
+    project: { headings, company: headings[0] || '', name: headings[1] || '', part: headings[2] || '', revision: headings[3] || '' },
+    materials: { fc, fcu: concrete.FcuFinal ? Math.round(MPa(concrete.FcuFinal)) : null, fy, coverTop, coverBot, concreteName: concrete.Name, rebarTypes: [...rebarTypes.values()].map((t) => ({ name: t.Name, dia: t.dia, area: t.area })) },
+    pt: { system: ptSystem.Name, strandArea, fpu: strand.Fpu ? MPa(strand.Fpu) : null, jackStress: anchor.JackStress ? MPa(anchor.JackStress) : null, strandsPerDuct: duct.StrandsPerDuct, ductType: duct.PTSystemType, ductWidth: duct.DuctWidth ? L(duct.DuctWidth) : null, ductHeight: duct.DuctHeight ? L(duct.DuctHeight) : null, fse: ptSystem.Fse ? MPa(ptSystem.Fse) : null },
+    slab: { outline, holes, allLoops, baseThickness, thicknesses: thicknesses.map(([thk, n]) => ({ thickness: thk, elements: n })), thickZones, areas: slabAreas, elements },
+    columns, walls, tendons, bands, shear, punching, background,
+  };
+}
+
+// ---------------------------------------------------------------- to the generator's model
+const rot = (p, c, a) => { const s = Math.sin(a), k = Math.cos(a); const x = p.x - c.x, y = p.y - c.y; return { x: c.x + x * k - y * s, y: c.y + x * s + y * k }; };
+const modeAngle = (angles) => {
+  const bins = new Map();
+  for (const a of angles) { const k = Math.round(a / 2.5) * 2.5; bins.set(k, (bins.get(k) || 0) + 1); }
+  return [...bins.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 0;
+};
+
+/**
+ * Split the RAM model into slab bodies (one level per disconnected slab
+ * outline), rotate each body into its own orthogonal frame and hand back a
+ * model the sheet composers understand, with the RAM design attached.
+ */
+export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides = {} } = {}) {
+  const assumptions = [], findings = [];
+  // bodies: the outline plus every other outer loop
+  const loops = [ram.slab.outline, ...ram.slab.holes].filter(Boolean);
+  const outer = ram.slab.allLoops || loops;
+  const bodies = outer.filter((p) => !outer.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(p[0], q)));
+  const holesOf = (body) => outer.filter((q) => q !== body && pointInPolygon(q[0], body) && Math.abs(polygonArea(q)) < Math.abs(polygonArea(body)));
+  const inside = (p, poly) => pointInPolygon(p, poly);
+  const spec = {
+    fc: ram.materials.fc || 30, fy: ram.materials.fy || 420, cover: Math.max(ram.materials.coverTop || 25, ram.materials.coverBot || 25), stock: 12000, lambda: 1,
+    ...specOverrides,
+  };
+  const levels = bodies.map((body, i) => {
+    const holes = holesOf(body);
+    // a column whose centre sits on the slab edge (corner / edge columns) belongs to the body too
+    const near = (p, poly, tol) => inside(p, poly) || distToPolygon(p, poly) <= tol;
+    const cols = ram.columns.filter((c) => near({ x: c.cx, y: c.cy }, body, Math.max(c.w, c.h) / 2) && !holesOf(body).some((h) => inside({ x: c.cx, y: c.cy }, h)));
+    const angleDeg = cols.length ? modeAngle(cols.map((c) => ((c.angle % 180) + 180) % 180)) : 0;
+    const theta = -(angleDeg * Math.PI) / 180;
+    const c0 = centroid(body);
+    const R = (p) => rot(p, c0, theta);
+    const outline = body.map(R);
+    const areasIn = ram.slab.areas.filter((a) => inside(centroid(a.polygon), body)).map((a) => ({ ...a, area: Math.abs(polygonArea(a.polygon)) })).sort((a, b) => b.area - a.area);
+    const byThk = new Map();
+    for (const e of ram.slab.elements || []) if (inside(e.centroid, body)) byThk.set(e.thickness, (byThk.get(e.thickness) || 0) + e.area);
+    const dominant = [...byThk.entries()].sort((a, b) => b[1] - a[1])[0];
+    const bodyThickness = dominant ? dominant[0] : (areasIn.length ? areasIn[0].thickness : ram.slab.baseThickness);
+    const level = {
+      id: `L${String(i + 1).padStart(2, '0')}`, name: `${levelName} - BODY ${i + 1}`, rotation: angleDeg,
+      thickness: bodyThickness, outline, bbox: bbox(outline),
+      columns: cols.map((c, j) => { const p = R({ x: c.cx, y: c.cy }); return { ...c, id: `C${j + 1}`, cx: p.x, cy: p.y, angle: Math.round(((c.angle - angleDeg) % 180 + 180) % 180 * 10) / 10 }; }),
+      openings: holes.map((h, j) => ({ id: `O${j + 1}`, kind: 'polygon', polygon: h.map(R) })),
+      voids: [], sunken: [], stairs: [], beams: [],
+      walls: ram.walls.flatMap((w) => clipSegmentToPolygon(w.a, w.b, body)).filter(([a, b]) => Math.hypot(b.x - a.x, b.y - a.y) > 50).map(([a, b]) => ({ a: R(a), b: R(b) })),
+      thickZones: areasIn.filter((a) => a.thickness > bodyThickness + 1).map((a, j) => ({ id: `Z${j + 1}`, thickness: a.thickness, polygon: a.polygon.map(R) })),
+      ubar: { edges: 'all', circles: [] },
+      pt: { zones: [], tendons: [] },
+      ram: {
+        bands: ram.bands.filter((b) => inside({ x: (b.p0.x + b.p1.x) / 2, y: (b.p0.y + b.p1.y) / 2 }, body) || b.bars.some((bar) => inside(bar.a, body))).map((b) => ({ ...b, p0: R(b.p0), p1: R(b.p1), bars: b.bars.map((bar) => ({ a: R(bar.a), b: R(bar.b) })) })),
+        tendons: ram.tendons.filter((t) => t.pts.some((p) => inside(p, body))).map((t) => ({ ...t, pts: t.pts.map(R) })),
+        shear: ram.shear.filter((s) => inside({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, body)).map((s) => ({ ...s, a: R(s.a), b: R(s.b) })),
+        punching: ram.punching.filter((p) => near(p.p, body, 500)).map((p) => ({ ...p, p: R(p.p) })),
+        pt: ram.pt,
+      },
+    };
+    // grid from column positions in the local frame
+    const cluster = (vals) => { const out = []; for (const v of [...vals].sort((a, b) => a - b)) { const l = out[out.length - 1]; if (l && Math.abs(l.v - v) < 400) { l.n++; l.v = (l.v * (l.n - 1) + v) / l.n; } else out.push({ v, n: 1 }); } return out.map((c) => c.v); };
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const ob = level.bbox;
+    level.grid = {
+      x: cluster(level.columns.map((c) => c.cx)).map((x, k) => ({ label: letters[k % letters.length], x, y1: ob.minY, y2: ob.maxY })),
+      y: cluster(level.columns.map((c) => c.cy)).map((y, k) => ({ label: String(k + 1), y, x1: ob.minX, x2: ob.maxX })),
+      source: 'derived from column positions',
+    };
+    level.columns.forEach((c) => {
+      const gx = level.grid.x.find((g) => Math.abs(g.x - c.cx) < 400), gy = level.grid.y.find((g) => Math.abs(g.y - c.cy) < 400);
+      if (gx && gy) c.id = `${gx.label}/${gy.label}`;
+    });
+    findings.push(`${level.id} ${level.name}: ${Math.round(Math.abs(polygonArea(outline)) / 1e6)} m², ${level.columns.length} columns, ${level.walls.length} wall segments, ${level.thickZones.length} thickened zones, ${level.ram.bands.length} designed bar bands, ${level.ram.tendons.length} tendons, ${level.openings.length} openings${angleDeg ? `, rotated ${angleDeg}° to its local frame` : ''}.`);
+    if (angleDeg) assumptions.push({ level: level.id, text: `Body ${i + 1} is rotated ${angleDeg}° on the site; the plan is drawn in its local frame (north arrow rotated accordingly).` });
+    assumptions.push({ level: level.id, text: 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.' });
+    return level;
+  });
+  assumptions.push({ text: `Reinforcement, tendons and materials are taken from the RAM Concept model (f'c ${spec.fc} MPa from ${ram.materials.concreteName || 'the model'}, fy ${spec.fy} MPa, cover ${spec.cover} mm). Bar cutting lengths add SBC 304-18 hooks (12 Ø) where a bar ends at a free edge and split runs longer than 12 m with Class B laps.` });
+  assumptions.push({ text: 'Punching shear results are not stored in the RAM file: links are shown as the minimum detailing arrangement and are to be confirmed against the RAM punching report (stud rails were specified in the model).' });
+  assumptions.push({ text: 'Bottom / top mesh: no distributed reinforcement in the RAM model; only the designed bands are drawn. Edge U-bars at the PT anchorages are the generator\'s standard detail.' });
+  const ptSpec = { ...spec, code_reference: null, sources: { code: 'assumed', fc: 'RAM model', fy: 'RAM model', cover: 'RAM model' }, found: ram.materials.rebarTypes.map((t) => `RAM bar type ${t.name} (${t.area} mm²)`) };
+  const base = { bottom: { dia: 12, spacing: 200 }, topColumns: { dia: 16, spacing: 150 }, uEdge: { dia: 12, spacing: 200, leg: 1200 }, uCircle: { dia: 12, spacing: 150, leg: 1200 }, edgeBars: { dia: 12, count: 2 }, ringBars: { dia: 12, count: 2 }, voids: { dia: 12, count: 2 }, openings: { dia: 16, count: 2, diagDia: 12, diagCount: 2, uDia: 12, uSpacing: 200, uLeg: 600 }, sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 } };
+  return {
+    source: { units: 'mm (RAM internal 0.1 mm)', entities: ram.bands.length + ram.tendons.length + ram.columns.length, layers: [], ram: true },
+    code_reference: null, spec: { ...base, ...ptSpec }, levels, assumptions, findings, ram,
+  };
+}

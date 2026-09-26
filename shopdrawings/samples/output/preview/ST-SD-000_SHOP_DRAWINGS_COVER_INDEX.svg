@@ -95,7 +95,7 @@
 <text x="7100" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -52150)">BOTTOM REINFORCEMENT PLAN (B1 / B2)</text>
 <text x="27600" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -52150)">L01 - FIRST FLOOR SLAB PLAN</text>
 <text x="38600" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -52150)">FRAMING_REBAR_SLAB_PT_BOTTOM_L01</text>
-<text x="55300" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -52150)">1:200</text>
+<text x="55300" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -52150)">1:150</text>
 <text x="59100" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -52150)">7,335</text>
 <text x="62100" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -52150)">00</text>
 <line x1="3000" y1="-51900" x2="63100" y2="-51900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -103,7 +103,7 @@
 <text x="7100" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -51650)">ADDITIONAL TOP REINFORCEMENT OVER COLUMNS (T1 / T2)</text>
 <text x="27600" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -51650)">L01 - FIRST FLOOR SLAB PLAN</text>
 <text x="38600" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -51650)">FRAMING_REBAR_ADDITIONAL_AT_COLUMNS_L01</text>
-<text x="55300" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -51650)">1:200</text>
+<text x="55300" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -51650)">1:150</text>
 <text x="59100" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -51650)">1,825</text>
 <text x="62100" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -51650)">00</text>
 <line x1="3000" y1="-51400" x2="63100" y2="-51400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -159,7 +159,7 @@
 <text x="7100" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -48150)">BOTTOM REINFORCEMENT PLAN (B1 / B2)</text>
 <text x="27600" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -48150)">L02 - ROOF SLAB PLAN</text>
 <text x="38600" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -48150)">FRAMING_REBAR_SLAB_PT_BOTTOM_L02</text>
-<text x="55300" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -48150)">1:200</text>
+<text x="55300" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -48150)">1:150</text>
 <text x="59100" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -48150)">7,532</text>
 <text x="62100" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -48150)">00</text>
 <line x1="3000" y1="-47900" x2="63100" y2="-47900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -167,7 +167,7 @@
 <text x="7100" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -47650)">ADDITIONAL TOP REINFORCEMENT OVER COLUMNS (T1 / T2)</text>
 <text x="27600" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -47650)">L02 - ROOF SLAB PLAN</text>
 <text x="38600" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -47650)">FRAMING_REBAR_ADDITIONAL_AT_COLUMNS_L02</text>
-<text x="55300" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -47650)">1:200</text>
+<text x="55300" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -47650)">1:150</text>
 <text x="59100" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -47650)">1,650</text>
 <text x="62100" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -47650)">00</text>
 <line x1="3000" y1="-47400" x2="63100" y2="-47400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>

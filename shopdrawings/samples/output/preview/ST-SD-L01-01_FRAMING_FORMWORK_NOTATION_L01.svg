@@ -245,7 +245,7 @@
 <text x="38050" y="-46350" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#ff8c1a" transform="rotate(0 38050 -46350)">V2 VOID 5,000 x 3,500</text>
 <circle cx="22300" cy="-44650" r="1000" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
 <text x="22300" y="-42950" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e13cd6" transform="rotate(0 22300 -42950)">R1 U-BAR REGION Ø2,000</text>
-<text x="17850" y="-24350" font-size="358.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 17850 -24350)" font-weight="bold">PT FLAT SLAB TH=250mm</text>
+<text x="17850" y="-22450" font-size="358.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 17850 -22450)" font-weight="bold">PT FLAT SLAB TH=250mm</text>
 <circle cx="31750" cy="-39850" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="31750" y="-39850" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 31750 -39850)">O1</text>
 <line x1="31537.867965644036" y1="-39637.867965644036" x2="31050" y2="-39150" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>

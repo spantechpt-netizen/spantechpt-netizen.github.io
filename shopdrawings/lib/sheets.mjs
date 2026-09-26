@@ -15,6 +15,13 @@ import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import { bbox, expandBbox, edges, rectPolygon, circlePolygon, dist, pointInPolygon, centroid } from './geometry.mjs';
 
+/** Column outline as a polygon (rotated columns supported). */
+export function columnPolygon(c) {
+  if (c.shape === 'circle') return circlePolygon(c.cx, c.cy, c.d / 2, 24);
+  const a = ((c.angle || 0) * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+  return [[-c.w / 2, -c.h / 2], [c.w / 2, -c.h / 2], [c.w / 2, c.h / 2], [-c.w / 2, c.h / 2]].map(([x, y]) => ({ x: c.cx + x * cs - y * sn, y: c.cy + x * sn + y * cs }));
+}
+
 export const SHEET_DEFS = [
   { key: 'framing', base: 'FRAMING_FORMWORK_NOTATION', title: 'FRAMING / FORMWORK NOTATION PLAN', no: '01' },
   { key: 'bottom', base: 'FRAMING_REBAR_SLAB_PT_BOTTOM', title: 'BOTTOM REINFORCEMENT PLAN (B1 / B2)', no: '02', plans: 2 },
@@ -83,9 +90,16 @@ function drawBase(sheet, pl, level, o = {}) {
     for (let i = 0; i + 1 < gy.length; i++) pl.dim({ x: ob.maxX + 5200, y: gy[i].y }, { x: ob.maxX + 5200, y: gy[i + 1].y }, -6, { h: 1.8 });
     if (gy.length > 1) pl.dim({ x: ob.maxX + 5200, y: gy[0].y }, { x: ob.maxX + 5200, y: gy[gy.length - 1].y }, -12, { h: 1.8 });
   }
-  // slab outline, beams, stairs
+  // slab outline, beams, walls, thickened zones, stairs
+  // walls below first so a wall on the slab edge does not hide the green edge line
+  for (const w of level.walls || []) pl.line(w.a, w.b, { layer: 'WALL' });
   pl.pline(level.outline, { layer: 'OUTLINE', closed: true, color: 3 });
   for (const bm of level.beams || []) pl.line(bm.a, bm.b, { layer: 'BEAM' });
+  if (o.thickZones !== false) for (const z of level.thickZones || []) {
+    pl.pline(z.polygon, { layer: 'SLAB-THK', closed: true });
+    pl.hatch([z.polygon], { layer: 'SLAB-THK-HATCH', pattern: 'ANSI31', spacing: 3 });
+    if (o.regionLabels) { const c = centroid(z.polygon); pl.text({ x: c.x, y: c.y }, `${z.id} THK=${z.thickness}`, { layer: 'SLAB-THK', h: 1.5, align: 'C', valign: 'M' }); }
+  }
   if (o.stairs !== false) for (const st of level.stairs || []) pl.pline(st.pts, { layer: 'STAIR', closed: !!st.closed });
   // PT zones
   if (o.pt !== false) for (const z of level.pt.zones) {
@@ -93,10 +107,11 @@ function drawBase(sheet, pl, level, o = {}) {
     const zb = bbox(z.polygon);
     pl.text({ x: zb.minX + 600, y: zb.maxY - 900 }, `${z.id} - PT SLAB ZONE`, { layer: 'PT-ZONE', h: 2.2 });
   }
-  // columns: solid black
+  // columns: solid black (rotated columns drawn as polygons)
   for (const c of level.columns) {
-    if (c.shape === 'circle') { pl.circle({ x: c.cx, y: c.cy }, c.d / 2, { layer: 'COLUMN' }); pl.solid(circlePolygon(c.cx, c.cy, c.d / 2, 8).slice(0, 4), { layer: 'COLUMN-HATCH', color: 7 }); pl.hatch([circlePolygon(c.cx, c.cy, c.d / 2, 24)], { layer: 'COLUMN-HATCH', pattern: 'SOLID', color: 7 }); }
-    else { const r = { x: c.cx - c.w / 2, y: c.cy - c.h / 2, w: c.w, h: c.h }; pl.rect(r, { layer: 'COLUMN' }); pl.hatch([rectPolygon(r)], { layer: 'COLUMN-HATCH', pattern: 'SOLID', color: 7 }); }
+    const poly = columnPolygon(c);
+    if (c.shape === 'circle') pl.circle({ x: c.cx, y: c.cy }, c.d / 2, { layer: 'COLUMN' }); else pl.pline(poly, { layer: 'COLUMN', closed: true });
+    pl.hatch([poly], { layer: 'COLUMN-HATCH', pattern: 'SOLID', color: 7 });
     if (o.columnIds) pl.text({ x: c.cx + c.w / 2 + 150, y: c.cy + c.h / 2 + 150 }, c.id, { layer: 'TEXT', h: 1.5 });
   }
   // openings: crossed
@@ -167,6 +182,36 @@ function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, label, lay
 
 const callout = (n, dia, spacing, mark, len) => `${n}T${dia}${spacing ? `@${spacing}` : ''}-${mark}-(L=${len})`;
 
+/**
+ * Designed bands from RAM Concept: one representative bar (the middle one)
+ * per band, pieces split at stock length, hooks where a bar ends at the
+ * slab edge. Returns the bar lists per layer code.
+ */
+function drawRamBands(pl, S, level, spec, face, plans) {
+  const lists = { 1: new R.BarList(`${face}1`), 2: new R.BarList(`${face}2`) };
+  const bands = level.ram.bands.filter((b) => b.face === face);
+  const nearEdge = (p) => { const e = edges(level.outline); return e.some((ed) => { const L = ed.length || 1; const t = Math.max(0, Math.min(1, ((p.x - ed.a.x) * ed.dx + (p.y - ed.a.y) * ed.dy) / (L * L))); return dist(p, { x: ed.a.x + ed.dx * t, y: ed.a.y + ed.dy * t }) < 250; }); };
+  let k = 0;
+  for (const b of bands) {
+    const pen = plans[b.dir];
+    if (!pen || !b.bars.length) continue;
+    const rep = b.bars[Math.floor(b.bars.length / 2)];
+    const hooks = { start: nearEdge(rep.a) || b.ends[0] !== 1, end: nearEdge(rep.b) || b.ends[1] !== 1 };
+    const hk = R.hookLeg(b.dia);
+    const straight = dist(rep.a, rep.b);
+    const cut = Math.ceil((straight + (hooks.start ? hk : 0) + (hooks.end ? hk : 0)) / 10) * 10;
+    const lap = R.lapLength(spec, b.dia, { top: face === 'T' });
+    const pieces = cut > spec.stock ? R.splitRun(cut, { stock: spec.stock, lap }) : [cut];
+    const marks = pieces.map((len) => lists[b.dir].add({ dia: b.dia, shape: pieces.length > 1 ? 'STR' : hooks.start && hooks.end ? 'C' : hooks.start || hooks.end ? 'L' : 'STR', length: len, qty: b.count, spacing: b.spacing, zone: b.id, note: hooks.start || hooks.end ? `hook ${hk}` : '' }));
+    const side = k++ % 2 ? -1 : 1;
+    drawRun(pen, S, { a: rep.a, b: rep.b, pieces, lap, hooks: pieces.length > 1 ? {} : hooks, hookLeg: hk, layer: `REBAR-${face}${b.dir}`, textSide: side, offsetSide: side, label: (i, c) => callout(b.count, b.dia, b.spacing, marks[i].mark, c) });
+    // band width as a light range line at the first and last bar
+    const first = b.bars[0], last = b.bars[b.bars.length - 1];
+    if (b.bars.length > 1) { pen.line(first.a, first.b, { layer: 'REBAR-EXTENT', ltype: 'DASHED' }); pen.line(last.a, last.b, { layer: 'REBAR-EXTENT', ltype: 'DASHED' }); }
+  }
+  return lists;
+}
+
 /** U-bar / hairpin symbol in plan at point p, legs along n (unit), width w. */
 function hairpin(pl, p, n, leg, w = 100, layer = 'REBAR-U') {
   const t = { x: -n.y, y: n.x };
@@ -196,9 +241,19 @@ function buildSheet({ model, level, def, meta, index, total, draw }) {
   const root = new Canvas();
   const blockName = level ? `${def.base}_${level.id}` : def.base;
   const L = layoutFor('A1');
-  const pb = level ? expandBbox(level.bbox, 5500) : null;
-  const areas = def.plans === 2 ? L.halves : [L.plan];
-  const scale = level ? Math.max(...areas.map((a) => chooseScale(pb, a))) : 100;
+  // plan margin: room for the grid bubbles (3000 + 2 x 4S) plus a little air; the
+  // scale is picked with a provisional margin and the margin re-fitted to it.
+  const marginFor = (sc) => 3000 + 8 * (sc / 100) + 400;
+  let pb = level ? expandBbox(level.bbox, marginFor(200)) : null;
+  const stacked = [{ x: L.plan.x, y: L.plan.y + L.plan.h / 2, w: L.plan.w, h: L.plan.h / 2 }, { x: L.plan.x, y: L.plan.y, w: L.plan.w, h: L.plan.h / 2 }];
+  const pick = () => {
+    let areas = def.plans === 2 ? L.halves : [L.plan];
+    if (level && def.plans === 2 && chooseScale(pb, stacked[0]) < chooseScale(pb, L.halves[0])) areas = stacked;
+    return areas;
+  };
+  let areas = pick();
+  let scale = level ? Math.max(...areas.map((a) => chooseScale(pb, a))) : 100;
+  if (level) { pb = expandBbox(level.bbox, marginFor(scale)); areas = pick(); scale = Math.max(...areas.map((a) => chooseScale(pb, a))); }
   const sheet = new Sheet(root, { blockName, scale });
   sheet.frame();
   const pens = level ? areas.map((a) => sheet.setPlan(pb, a)) : [];
@@ -246,7 +301,7 @@ function buildSheet({ model, level, def, meta, index, total, draw }) {
 function framingSheet(model, level, meta) {
   return (sheet, [pl]) => {
     drawBase(sheet, pl, level, { regionLabels: true, columnIds: true, gridTag: meta.gridTag });
-    pl.text({ x: level.bbox.minX + 800, y: level.bbox.minY + 700 }, `PT FLAT SLAB TH=${level.thickness}mm`, { layer: 'TEXT', h: 2.6, bold: true });
+    pl.text({ x: level.bbox.minX + 800, y: level.bbox.minY - 1200 }, `PT FLAT SLAB TH=${level.thickness}mm${level.thickZones?.length ? ` (THICKENED ZONES ${[...new Set(level.thickZones.map((z) => z.thickness))].join(' / ')} mm HATCHED)` : ''}`, { layer: 'TEXT', h: 2.6, bold: true });
     for (const op of level.openings) { const b = regionBox(op); pl.bubble({ x: b.maxX, y: b.maxY }, op.id, { dx: 7, dy: 7, layer: 'CALLOUT', r: 3, h: 1.6 }); }
     for (const v of level.voids) { const b = regionBox(v); pl.bubble({ x: b.minX, y: b.maxY }, v.id, { dx: -7, dy: 7, layer: 'CALLOUT', r: 3, h: 1.6 }); }
     for (const u of level.ubar.circles) pl.bubble({ x: u.cx, y: u.cy }, u.id, { dx: 9, dy: -9, layer: 'CALLOUT' });
@@ -255,6 +310,8 @@ function framingSheet(model, level, meta) {
       ...level.openings.map((o) => ({ id: o.id, element: 'OPENING', size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
       ...level.voids.map((o) => ({ id: o.id, element: 'VOID / ACUAR', size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
       ...(level.sunken || []).map((o) => ({ id: o.id, element: `SUNKEN SLAB TH=${o.thickness || '?'}`, size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
+      ...(level.thickZones || []).map((z) => ({ id: z.id, element: `THICKENED ZONE / BAND ${z.thickness} mm`, size: `${fmtMM(bbox(z.polygon).w)} x ${fmtMM(bbox(z.polygon).h)}`, location: gridRef(level, bbox(z.polygon)) })),
+      ...(level.walls && level.walls.length ? [{ id: 'W', element: 'WALLS BELOW (LINE SUPPORTS)', size: `${(level.walls.reduce((s, w) => s + dist(w.a, w.b), 0) / 1000).toFixed(1)} m`, location: `${level.walls.length} SEGMENTS` }] : []),
       ...level.ubar.circles.map((o) => ({ id: o.id, element: 'U-BAR REGION', size: `Ø${fmtMM(2 * o.r)}`, location: gridRef(level, { minX: o.cx - o.r, maxX: o.cx + o.r, minY: o.cy - o.r, maxY: o.cy + o.r }) })),
     ];
     const cols = [{ key: 'id', title: 'ID', w: 20 }, { key: 'element', title: 'ELEMENT', w: 42 }, { key: 'size', title: 'SIZE (mm)', w: 45 }, { key: 'location', title: 'LOCATION / GRID', w: 78, align: 'L', max: 44 }];
@@ -283,6 +340,7 @@ function framingSheet(model, level, meta) {
 }
 
 function bottomSheet(model, level, meta) {
+  if (level.ram) return ramBarsSheet(model, level, meta, 'B');
   const res = R.bottomMesh(level, model.spec);
   return (sheet, [plY, plX]) => {
     const S = sheet.S;
@@ -334,7 +392,47 @@ function bottomSheet(model, level, meta) {
   };
 }
 
+/** Bottom or top sheet from the RAM Concept design: plan 1 = span direction 1 (latitude), plan 2 = direction 2 (longitude). */
+function ramBarsSheet(model, level, meta, face) {
+  return (sheet, [pl1, pl2]) => {
+    const S = sheet.S;
+    for (const pl of [pl1, pl2]) drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false, regionLabels: false });
+    const lists = drawRamBands([pl1, pl2][0] && pl1, S, level, model.spec, face, { 1: pl1, 2: pl2 });
+    const rows = R.mergeRows(lists[1], lists[2]);
+    const tot = R.mergeTotals(lists[1], lists[2]);
+    const label = face === 'B' ? 'BOTTOM' : 'TOP';
+    const dias = [...new Set(level.ram.bands.filter((b) => b.face === face).map((b) => b.dia))].sort((a, b) => a - b);
+    if (face === 'B') {
+      const d0 = sheet.detailBox(0, 'SECTION - BOTTOM BARS AND LAP', '1:20');
+      const det0 = D.sectionMesh({ h: level.thickness, cover: model.spec.cover, dia: dias[0] || 12, lap: R.lapLength(model.spec, dias[0] || 12), spacing: 200 });
+      det0.draw(sheet.detailPen(d0, 20, det0.bbox));
+    } else {
+      const d0 = sheet.detailBox(0, 'SECTION AT SUPPORT - TOP BARS', '1:25');
+      const det0 = D.sectionColumn({ h: level.thickness, c1: level.columns[0]?.w || 300, ext: 1500, dia: dias[0] || 16, spacing: 150, cover: model.spec.cover, hookLeg: R.hookLeg(dias[0] || 16), shape: 'STR' });
+      det0.draw(sheet.detailPen(d0, 25, det0.bbox));
+    }
+    const d1 = sheet.detailBox(1, `${label} BANDS FROM RAM CONCEPT (${level.ram.bands.filter((b) => b.face === face).length})`, '');
+    const bcols = [{ key: 'id', title: 'BAND', w: 16 }, { key: 'dir', title: 'DIR', w: 12 }, { key: 'bars', title: 'BARS', w: 40, align: 'L' }, { key: 'len', title: 'L (mm)', w: 20 }, { key: 'w', title: 'WIDTH', w: 20 }, { key: 'elev', title: 'ELEV.', w: 20 }, { key: 'note', title: 'NOTE', w: (d1.w - 6) - 128, align: 'L', max: 30 }];
+    const brows = level.ram.bands.filter((b) => b.face === face).map((b) => ({ id: b.id, dir: b.dir, bars: `${b.count}T${b.dia}@${b.spacing}`, len: b.length, w: b.width, elev: Math.round(b.elevation), note: b.spacing < 75 ? 'CHECK SPACING' : '' }));
+    sheet.table(d1.x + 3, d1.y + d1.h - 10, bcols, brows, { maxRows: Math.floor((d1.h - 18) / 3.2), headH: 5, rowH: 3.2, h: 1.3 });
+    return {
+      rows, totals: totalsLine(tot), weight: tot.weight_kg,
+      planTitles: [`${label} REINFORCEMENT (${face}1 - RAM DIRECTION 1)`, `${label} REINFORCEMENT (${face}2 - RAM DIRECTION 2)`],
+      general: [
+        ...commonNotes(model, level),
+        `${label} BARS ARE THE DESIGNED BANDS OF THE RAM CONCEPT MODEL (CONCENTRATED REINFORCEMENT, EVERY INDIVIDUAL BAR READ FROM THE MODEL). PLAN 1 = RAM SPAN DIRECTION 1 (LATITUDE), PLAN 2 = DIRECTION 2 (LONGITUDE). THE DRAWN BAR IS THE MIDDLE BAR OF EACH BAND; THE DASHED LINES MARK THE FIRST AND LAST BAR OF THE BAND.`,
+        'BANDS WITH A SPACING UNDER 75 mm ARE FLAGGED "CHECK SPACING" IN THE BAND TABLE (DETAIL 2) AND ARE TO BE CONFIRMED WITH THE DESIGNER BEFORE FABRICATION.',
+        ...lengthNote(model, dias.length ? dias : [12]),
+      ],
+      assumptions: levelAssumptions(model, level),
+      legend: [[`REBAR-${face}1`, `${label} BAR (REPRESENTATIVE)`, 'thick'], ['REBAR-EXTENT', 'FIRST / LAST BAR OF BAND', 'line'], ['WALL', 'WALL BELOW', 'thick'], ['SLAB-THK-HATCH', 'THICKENED ZONE', 'hatch']],
+      detailsUsed: 2,
+    };
+  };
+}
+
 function topSheet(model, level, meta) {
+  if (level.ram) return ramBarsSheet(model, level, meta, 'T');
   const res = R.topAtColumns(level, model.spec);
   return (sheet, [plY, plX]) => {
     const S = sheet.S;
@@ -558,6 +656,12 @@ function punchingSheet(model, level, meta) {
       }
       pl.text({ x: col.cx - size.x / 2 - 1.5 * S, y: col.cy + size.y / 2 + 1.5 * S }, type.id, { layer: 'REBAR-RED', h: 2.5, align: 'R' });
     }
+    for (const sr of level.ram?.shear || []) {
+      pl.line(sr.a, sr.b, { layer: 'REBAR-PUNCH' });
+      pl.barEnds(sr.a, sr.b, { layer: 'REBAR-PUNCH', size: 0.8 });
+      let rotd = (Math.atan2(sr.b.y - sr.a.y, sr.b.x - sr.a.x) * 180) / Math.PI; if (rotd > 90 || rotd <= -90) rotd += 180;
+      pl.text({ x: (sr.a.x + sr.b.x) / 2, y: (sr.a.y + sr.b.y) / 2 + 0.5 * S }, `${sr.id}: T${sr.dia}-${sr.legs}LEGS@${sr.spacing} (${sr.length})`, { layer: 'REBAR-TEXT', h: 1.6, rot: rotd, align: 'C' });
+    }
     const d0 = sheet.detailBox(0, 'PUNCHING LINK - SHAPE AND ARRANGEMENT', '1:10');
     const det0 = D.punchingLink({ h: level.thickness, cover: model.spec.cover, dia: res.dia, rowSpacing: res.rowSpacing, legSpacing: res.legSpacing, rows: res.rows });
     det0.draw(sheet.detailPen(d0, 10, det0.bbox));
@@ -574,14 +678,71 @@ function punchingSheet(model, level, meta) {
         'CALL-OUT PER FACE: [ROWS] X [LINKS PER ROW] - T[Ø] - [ROW SPACING]. FACES AT A SLAB EDGE CARRY NO LINKS. LINKS ENCLOSE THE TOP AND BOTTOM BARS.',
         'PS TYPES GROUP COLUMNS WITH THE SAME ARRANGEMENT (TABLE, DETAIL 2).',
       ],
-      assumptions: ['PUNCHING SHEAR DEMAND (Vu) NOT AVAILABLE: LINK ROWS SET BY MINIMUM DETAILING AND 2h EXTENT; SUBJECT TO DESIGN CONFIRMATION.', ...levelAssumptions(model, level).slice(0, 4)],
+      assumptions: ['PUNCHING SHEAR DEMAND (Vu) NOT AVAILABLE: LINK ROWS SET BY MINIMUM DETAILING AND 2h EXTENT; SUBJECT TO DESIGN CONFIRMATION.', ...(level.ram ? [`RAM CONCEPT SPECIFIES STUD RAILS (${level.ram.punching[0]?.ssr ? 'SSR SYSTEM ' + level.ram.punching[0].ssr : 'SSR'}) AT ${level.ram.punching.length} PUNCHING CHECKS; THE STUD LAYOUT FROM THE RAM PUNCHING REPORT GOVERNS OVER THE LINKS SHOWN. SHEAR REGIONS (SR) ARE THE RAM TRANSVERSE REINFORCEMENT REGIONS.`] : []), ...levelAssumptions(model, level).slice(0, 4)],
       legend: [['REBAR-PUNCH', 'ROW OF LINKS', 'thick'], ['REBAR-RED', 'PS TYPE LABEL', 'line'], ['COLUMN-HATCH', 'COLUMN', 'solid']],
       detailsUsed: 2,
     };
   };
 }
 
+/** Cables sheet from the RAM Concept tendons: plan 1 latitude, plan 2 longitude. */
+function ramCablesSheet(model, level, meta) {
+  return (sheet, [pl1, pl2]) => {
+    const S = sheet.S;
+    const pt = level.ram.pt;
+    for (const pl of [pl1, pl2]) drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false, regionLabels: false, ubarRegions: false });
+    const rows = [];
+    for (const t of level.ram.tendons) {
+      const pl = t.spanSet === 'latitude' ? pl1 : pl2;
+      pl.pline(t.pts, { layer: 'CABLE' });
+      const [a, b] = [t.pts[0], t.pts[t.pts.length - 1]];
+      const endSym = (p, q, live) => {
+        const L = dist(p, q) || 1, ux = (q.x - p.x) / L, uy = (q.y - p.y) / L;
+        if (live) pl.solid([{ x: p.x, y: p.y }, { x: p.x + ux * 1.2 * S - uy * 0.5 * S, y: p.y + uy * 1.2 * S + ux * 0.5 * S }, { x: p.x + ux * 1.2 * S + uy * 0.5 * S, y: p.y + uy * 1.2 * S - ux * 0.5 * S }, { x: p.x, y: p.y }], { layer: 'CABLE-LIVE' });
+        else pl.circle(p, 0.5 * S, { layer: 'CABLE-LIVE' });
+      };
+      endSym(a, t.pts[1], t.live[0]); endSym(b, t.pts[t.pts.length - 2], t.live[1]);
+      const mi = Math.floor(t.pts.length / 2);
+      const m1 = t.pts[mi - 1] || a, m2 = t.pts[mi] || b;
+      let rotd = (Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180) / Math.PI; if (rotd > 90 || rotd <= -90) rotd += 180;
+      pl.text({ x: (m1.x + m2.x) / 2, y: (m1.y + m2.y) / 2 + 0.5 * S }, `${t.id} (${t.strands}S)`, { layer: 'CABLE-TEXT', h: 1.7, rot: rotd, align: 'C' });
+      rows.push({ id: t.id, type: `${pt.ductType || 'bonded'} ${t.harped ? 'H' : ''}`.trim(), strands: t.strands, profile: t.spanSet === 'latitude' ? 'P-LAT' : 'P-LON', length: (t.length / 1000).toFixed(2), live: t.live.filter(Boolean).length === 2 ? 'BOTH' : t.live[0] ? 'START' : t.live[1] ? 'END' : '-', jack: t.jackForce ?? '', elong: t.elongation ?? '', qty: 1, remarks: `${t.segments} SEG.` });
+    }
+    const cols = [
+      { key: 'id', title: 'TENDON\nID', w: 16 }, { key: 'type', title: 'TYPE', w: 16 }, { key: 'strands', title: 'No.\nSTR.', w: 12 }, { key: 'profile', title: 'PROFILE\nREF.', w: 18 },
+      { key: 'length', title: 'LENGTH\n(m)', w: 17 }, { key: 'live', title: 'LIVE\nEND', w: 16 }, { key: 'jack', title: 'JACK\n(kN)', w: 17 }, { key: 'elong', title: 'ELONG.\n(mm)', w: 17 }, { key: 'qty', title: 'QTY', w: 12 }, { key: 'remarks', title: 'REMARKS', w: 44, align: 'L' },
+    ];
+    const totalStrandM = level.ram.tendons.reduce((s, t) => s + (t.length / 1000) * t.strands, 0);
+    const d0 = sheet.detailBox(0, 'TYPICAL TENDON PROFILE', '1:50');
+    const span = level.grid.x.length > 1 ? level.grid.x[1].x - level.grid.x[0].x : 7500;
+    const det0 = D.tendonProfile({ span, h: level.thickness });
+    det0.draw(sheet.detailPen(d0, 50, det0.bbox));
+    const d1 = sheet.detailBox(1, 'TENDON SYMBOLS', 'N.T.S.');
+    const det1 = D.tendonLegend();
+    det1.draw(sheet.detailPen(d1, 12, det1.bbox));
+    const manyTendons = level.ram.tendons.length > 30;
+    if (!manyTendons) {
+      const d2 = sheet.detailBox(2, 'STRESSING RECORD', '');
+      const recCols = [{ key: 'a', title: 'TENDON', w: 24 }, { key: 'b', title: 'DATE', w: 26 }, { key: 'c', title: 'GAUGE\n(bar)', w: 26 }, { key: 'd', title: 'ELONG.\nCALC.', w: 30 }, { key: 'e', title: 'ELONG.\nMEAS.', w: 30 }, { key: 'f', title: '%', w: 18 }, { key: 'g', title: 'SIGN', w: d2.w - 6 - 154 }];
+      sheet.table(d2.x + 3, d2.y + d2.h - 10, recCols, level.ram.tendons.map((t) => ({ a: t.id, d: t.elongation ?? '' })), { maxRows: Math.floor((d2.h - 18) / 3.2), headH: 6, rowH: 3.2, h: 1.3 });
+    }
+    return {
+      rows, cols, scheduleTitle: 'PT CABLES SCHEDULE (RAM CONCEPT)', detailsUsed: manyTendons ? 2 : 3, totals: `${level.ram.tendons.length} TENDONS · ${Math.round(totalStrandM)} m STRAND · ${level.ram.tendons.filter((t) => t.live[0]).length + level.ram.tendons.filter((t) => t.live[1]).length} LIVE ENDS`,
+      planTitles: ['PT TENDON LAYOUT - LATITUDE (DIRECTION 1)', 'PT TENDON LAYOUT - LONGITUDE (DIRECTION 2)'],
+      general: [
+        commonNotes(model, level)[0],
+        `PT SYSTEM: ${pt.system || ''} - ${pt.ductType || 'bonded'} FLAT DUCT ${pt.ductWidth ? `${pt.ductWidth} x ${pt.ductHeight} mm` : ''}, ${pt.strandsPerDuct || ''} STRANDS PER DUCT MAX. STRAND ${Math.round(Math.sqrt((4 * pt.strandArea) / Math.PI) * 10) / 10} mm, Aps = ${pt.strandArea} mm², fpu = ${Math.round(pt.fpu || 1860)} MPa, JACKING STRESS ${Math.round(level.ram.tendons[0]?.jackStress || pt.jackStress || 0)} MPa (${Math.round(((level.ram.tendons[0]?.jackStress || pt.jackStress || 0) / (pt.fpu || 1860)) * 100)} % fpu), EFFECTIVE STRESS ${Math.round(pt.fse || 0)} MPa.`,
+        'TENDON PATHS, STRAND COUNTS, STRESSING ENDS, JACKING FORCES AND CALCULATED ELONGATIONS ARE READ FROM THE RAM CONCEPT MODEL. LIVE (STRESSING) ENDS ARE SHOWN WITH AN ARROW, DEAD ENDS WITH A CIRCLE. TENDON PROFILES PER THE RAM PROFILE REPORT (HIGH POINTS OVER SUPPORTS, LOW POINTS AT MID-SPAN).',
+        'STRESSING AT NOT LESS THAN THE SPECIFIED TRANSFER STRENGTH; ELONGATION TOLERANCE ±7 % (SBC 304-18 §20.3.2 / PTI). RECORD EVERY TENDON IN DETAIL 3.',
+      ],
+      assumptions: levelAssumptions(model, level).slice(0, 4),
+      legend: [['CABLE', 'TENDON', 'thick'], ['CABLE-LIVE', 'LIVE END (ARROW) / DEAD END (CIRCLE)', 'line'], ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL', 'WALL BELOW', 'thick']],
+    };
+  };
+}
+
 function cablesSheet(model, level, meta) {
+  if (level.ram) return ramCablesSheet(model, level, meta);
   return (sheet, [pl]) => {
     drawBase(sheet, pl, level, { gridTag: meta.gridTag, columnIds: true, regionLabels: true, ubarRegions: false });
     sheet.stamp('EMPTY TEMPLATE - NO TENDONS SHOWN', 'TENDON LAYOUT, PROFILES AND QUANTITIES TO BE ADDED ON COMPLETION OF THE PT DESIGN');
@@ -659,7 +820,10 @@ export function composePackage(model, metaIn = {}) {
   };
   const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, punching: punchingSheet };
   const jobs = [];
-  for (const level of model.levels) for (const def of SHEET_DEFS) jobs.push({ level, def, draw: makers[def.key](model, level, meta) });
+  for (const level of model.levels) for (const def0 of SHEET_DEFS) {
+    const def = level.ram && def0.key === 'cables' ? { ...def0, plans: 2, title: 'PT CABLES LAYOUT AND SCHEDULE (RAM CONCEPT)' } : def0;
+    jobs.push({ level, def, draw: makers[def.key](model, level, meta) });
+  }
   const total = jobs.length + 1;
   const sheets = jobs.map((j, i) => buildSheet({ model, level: j.level, def: j.def, meta, index: i + 2, total, draw: j.draw }));
   const cover = buildSheet({ model, level: null, def: { key: 'cover', base: 'SHOP_DRAWINGS_COVER_INDEX', title: 'COVER SHEET / DRAWING INDEX', no: '000' }, meta, index: 1, total, draw: coverSheet(model, sheets, meta) });

@@ -228,3 +228,116 @@ test('punching links follow the minimum detailing arrangement of the reference d
   const edge = punching(edgeLevel, model.spec);
   assert.equal(edge.columns[0].sides.length, 2, 'corner column: faces at the slab edge carry no links');
 });
+
+// ---------------------------------------------------------------- RAM Concept input
+
+/** A tiny RAM Concept model written with node:sqlite: 12 x 8 m slab meshed 3 x 2, five columns, one wall crossing the edge, two tendons, two bands. */
+async function buildSyntheticCpt(dir) {
+  const { DatabaseSync } = await import('node:sqlite');
+  const path = join(dir, 'synthetic.cpt');
+  const db = new DatabaseSync(path);
+  const P = (x, y) => `[${x * 10}][${y * 10}]`; // mm → 0.1 mm
+  const create = (t, cols) => db.exec(`create table "${t}" (${cols.map((c) => `"${c}"`).join(',')})`);
+  const insert = (t, rowsToAdd) => { for (const r of rowsToAdd) db.prepare(`insert into "${t}" (${Object.keys(r).map((k) => `"${k}"`).join(',')}) values (${Object.keys(r).map(() => '?').join(',')})`).run(...Object.values(r)); };
+  create('Cover', ['Heading1', 'Heading2', 'Heading3', 'Heading4']); insert('Cover', [{ Heading1: 'SPAN TECH', Heading2: 'SYNTHETIC SLAB', Heading3: 'PART 1', Heading4: 'R0' }]);
+  create('Concrete', ['UID', 'Name', 'FcFinal', 'FcuFinal']); insert('Concrete', [{ UID: 1, Name: 'C32/40', FcFinal: 0.32, FcuFinal: 0.4 }]);
+  create('Rebar', ['UID', 'Name', 'Fy', 'As']); insert('Rebar', [{ UID: 11, Name: 'T12', Fy: 4.2, As: 11300 }, { UID: 16, Name: 'T16', Fy: 4.2, As: 20100 }]);
+  create('SlabArea', ['UID', 'MultiPoint', 'SlabThickness', 'Priority', 'SlabBehavior', 'TOC']);
+  insert('SlabArea', [
+    { UID: 21, MultiPoint: `${P(0, 0)}${P(12000, 0)}${P(12000, 8000)}${P(0, 8000)}`, SlabThickness: 2500, Priority: 1, SlabBehavior: 0, TOC: 0 },
+    { UID: 22, MultiPoint: `${P(4000, 0)}${P(8000, 0)}${P(8000, 4000)}${P(4000, 4000)}`, SlabThickness: 4000, Priority: 2, SlabBehavior: 0, TOC: 0 },
+  ]);
+  create('ElementCornerNode', ['UID', 'Point0']);
+  create('QuadSlabElement', ['UID', 'CornerNode0', 'CornerNode1', 'CornerNode2', 'CornerNode3', 'SlabThickness']);
+  const xs = [0, 4000, 8000, 12000], ys = [0, 4000, 8000];
+  const nodes = []; for (const y of ys) for (const x of xs) nodes.push(P(x, y));
+  insert('ElementCornerNode', nodes.map((p, i) => ({ UID: 100 + i, Point0: p })));
+  const quads = [];
+  for (let j = 0; j < 2; j++) for (let i = 0; i < 3; i++) quads.push({ UID: 200 + quads.length, CornerNode0: P(xs[i], ys[j]), CornerNode1: P(xs[i + 1], ys[j]), CornerNode2: P(xs[i + 1], ys[j + 1]), CornerNode3: P(xs[i], ys[j + 1]), SlabThickness: i === 1 && j === 0 ? 4000 : 2500 });
+  insert('QuadSlabElement', quads);
+  create('Column', ['UID', 'Point0', 'B', 'D', 'Angle', 'SupportSet']);
+  insert('Column', [
+    { UID: 31, Point0: P(0, 0), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' }, { UID: 32, Point0: P(12000, 0), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' },
+    { UID: 33, Point0: P(0, 8000), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' }, { UID: 34, Point0: P(12000, 8000), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' },
+    { UID: 35, Point0: P(6000, 4000), B: 0, D: 6000, Angle: 0, SupportSet: 'below' },
+  ]);
+  create('LineSupport', ['UID', 'Point0', 'Point1']); insert('LineSupport', [{ UID: 41, Point0: P(-3000, 2000), Point1: P(5000, 2000) }]);
+  create('TendonLayer', ['UID', 'SpanSet']); insert('TendonLayer', [{ UID: 51, SpanSet: 'latitude' }, { UID: 52, SpanSet: 'longitude' }]);
+  create('TendonLevel', ['UID', 'ParentUID']); insert('TendonLevel', [{ UID: 61, ParentUID: 51 }, { UID: 62, ParentUID: 52 }]);
+  create('TendonCategory', ['UID', 'ParentUID']); insert('TendonCategory', [{ UID: 71, ParentUID: 61 }, { UID: 72, ParentUID: 62 }]);
+  create('Tendon', ['UID', 'ParentUID', 'TendonNode0', 'TendonNode1', 'NumStrands', 'Harped']);
+  insert('Tendon', [
+    { UID: 81, ParentUID: 71, TendonNode0: P(0, 2000), TendonNode1: P(6000, 2000), NumStrands: 4, Harped: 0 }, { UID: 82, ParentUID: 71, TendonNode0: P(6000, 2000), TendonNode1: P(12000, 2000), NumStrands: 4, Harped: 0 },
+    { UID: 83, ParentUID: 72, TendonNode0: P(3000, 0), TendonNode1: P(3000, 8000), NumStrands: 3, Harped: 0 },
+  ]);
+  create('Jack', ['UID', 'TendonNode0', 'JackStress', 'Elongation']); insert('Jack', [{ UID: 91, TendonNode0: P(0, 2000), JackStress: 14.88, Elongation: 850 }]);
+  create('StrandMaterial', ['UID', 'Aps', 'Fpu']); insert('StrandMaterial', [{ UID: 1, Aps: 9870, Fpu: 18.6 }]);
+  create('ConcentratedRebar', ['UID', 'ParentUID', 'BarFace', 'SpanDirection', 'BarType', 'BarCount', 'BarSpacing', 'Point0', 'Point1', 'LeftPoint', 'RightPoint', 'BarEnd0', 'BarEnd1', 'AbsoluteElevation']);
+  insert('ConcentratedRebar', [
+    { UID: 301, ParentUID: 1, BarFace: 2, SpanDirection: 1, BarType: 11, BarCount: 5, BarSpacing: 2000, Point0: P(0, 4000), Point1: P(12000, 4000), LeftPoint: P(6000, 3600), RightPoint: P(6000, 4400), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -2000 },
+    { UID: 302, ParentUID: 1, BarFace: 1, SpanDirection: 2, BarType: 16, BarCount: 6, BarSpacing: 1500, Point0: P(6000, 1500), Point1: P(6000, 6500), LeftPoint: P(5250, 4000), RightPoint: P(6750, 4000), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -400 },
+  ]);
+  create('IndividualBars', ['UID', 'BarFace', 'SpanDirection', 'Point0', 'Point1', 'AbsoluteElevation']);
+  const ys5 = [3600, 3800, 4000, 4200, 4400];
+  insert('IndividualBars', [{ UID: 401, BarFace: 2, SpanDirection: 1, Point0: ys5.map((y) => P(0, y)).join(''), Point1: ys5.map((y) => P(12000, y)).join(''), AbsoluteElevation: -2000 }]);
+  create('TransverseRebarRegion', ['UID', 'Point0', 'Point1', 'BarType', 'StirrupLegs', 'StirrupSpacing']);
+  insert('TransverseRebarRegion', [{ UID: 501, Point0: P(4000, 4000), Point1: P(8000, 4000), BarType: 11, StirrupLegs: 2, StirrupSpacing: 1500 }]);
+  create('PunchCheck', ['UID', 'Name', 'Point0', 'SsrSystem', 'CoverToCGS', 'TopCover', 'BottomCover']);
+  insert('PunchCheck', [{ UID: 601, Name: 'PC1', Point0: P(6000, 4000), SsrSystem: 'SSR', CoverToCGS: 350, TopCover: 350, BottomCover: 250 }]);
+  db.close();
+  return path;
+}
+
+test('a RAM Concept file is read into a level with its bands, tendons and walls clipped to the slab', async () => {
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ram-'));
+  const ram = readRamConcept(await buildSyntheticCpt(dir));
+  assert.equal(ram.project.name, 'SYNTHETIC SLAB');
+  assert.equal(ram.materials.fc, 32);
+  assert.equal(ram.materials.fy, 420);
+  assert.equal(ram.materials.coverTop, 35);
+  assert.equal(ram.slab.baseThickness, 250);
+  assert.equal(ram.slab.outline.length, 4, 'mesh boundary chained into the slab outline');
+  assert.equal(ram.columns.length, 5);
+  assert.equal(ram.columns[4].shape, 'circle');
+  assert.equal(ram.columns[4].d, 600);
+  assert.equal(ram.tendons.length, 2, 'tendon segments chained node to node');
+  const lat = ram.tendons.find((t) => t.spanSet === 'latitude');
+  assert.equal(lat.strands, 4);
+  assert.equal(lat.length, 12000);
+  assert.deepEqual(lat.live, [true, false]);
+  assert.equal(lat.jackStress, 1488);
+  assert.equal(lat.jackForce, Math.round((1488 * 98.7 * 4) / 1000));
+  assert.equal(ram.bands.length, 2);
+  const bottom = ram.bands.find((b) => b.face === 'B');
+  assert.equal(bottom.dia, 12);
+  assert.equal(bottom.count, 5);
+  assert.equal(bottom.spacing, 200);
+  assert.ok(bottom.matched, 'individual bars were matched to the band');
+  assert.equal(bottom.bars.length, 5);
+  assert.equal(bottom.length, 12000);
+  const top = ram.bands.find((b) => b.face === 'T');
+  assert.equal(top.dia, 16);
+  assert.equal(top.bars.length, 6, 'bars synthesised from the band width when RAM stores no individual bars');
+  assert.equal(ram.shear[0].spacing, 150);
+
+  const model = ramToModel(ram, { levelName: 'TEST' });
+  assert.equal(model.levels.length, 1);
+  const level = model.levels[0];
+  assert.equal(level.thickness, 250, 'dominant thickness by mesh element area');
+  assert.equal(level.thickZones.length, 1);
+  assert.equal(level.thickZones[0].thickness, 400);
+  assert.equal(level.walls.length, 1);
+  assert.ok(level.walls[0].a.x >= -1 && level.walls[0].b.x <= 5001, 'wall clipped to the slab outline');
+  assert.equal(level.grid.x.length, 3);
+  assert.equal(level.grid.y.length, 3);
+  assert.equal(level.ram.bands.length, 2);
+  assert.equal(level.ram.tendons.length, 2);
+  assert.ok(model.assumptions.some((a) => /RAM Concept/.test(a.text)));
+
+  const { composePackage } = await import('../shopdrawings/lib/sheets.mjs');
+  const pkg = composePackage(model, { project: 'SYNTHETIC', prefix: 'T', company: 'SPAN TECH' });
+  assert.equal(pkg.sheets.length, 9, '8 sheets for the level + cover');
+  const cables = pkg.sheets.find((s) => s.key === 'cables');
+  assert.ok(cables.rows.length >= 2, 'cables schedule filled from the RAM tendons');
+});

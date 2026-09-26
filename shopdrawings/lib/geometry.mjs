@@ -85,6 +85,20 @@ export function cleanPolygon(poly) {
   return pts;
 }
 
+/** Drop vertices that lie on the straight line between their neighbours (within tol mm). */
+export function simplifyPolygon(poly, tol = 1) {
+  const pts = cleanPolygon(poly);
+  if (pts.length < 4) return pts;
+  const out = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[(i + pts.length - 1) % pts.length], p = pts[i], b = pts[(i + 1) % pts.length];
+    const len = dist(a, b);
+    const off = len < 1e-9 ? 0 : Math.abs((b.x - a.x) * (a.y - p.y) - (a.x - p.x) * (b.y - a.y)) / len;
+    if (off > tol) out.push(p);
+  }
+  return out.length >= 3 ? out : pts;
+}
+
 /** If the polygon is an axis-aligned rectangle, return it as {x, y, w, h}. */
 export function asAxisRect(poly, tol = 1) {
   const pts = cleanPolygon(poly);
@@ -164,4 +178,42 @@ export function transformPoint(p, t) {
     x: (t.x || 0) + x * Math.cos(r) - y * Math.sin(r),
     y: (t.y || 0) + x * Math.sin(r) + y * Math.cos(r),
   };
+}
+
+/** Clip segment a-b to the inside of a polygon; returns the sub-segments that lie inside. */
+export function clipSegmentToPolygon(a, b, poly) {
+  const ts = [0, 1];
+  const n = poly.length;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  for (let i = 0; i < n; i++) {
+    const p = poly[i], q = poly[(i + 1) % n];
+    const ex = q.x - p.x, ey = q.y - p.y;
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) continue;
+    const t = ((p.x - a.x) * ey - (p.y - a.y) * ex) / den;
+    const u = ((p.x - a.x) * dy - (p.y - a.y) * dx) / den;
+    if (t > 0 && t < 1 && u >= 0 && u <= 1) ts.push(t);
+  }
+  ts.sort((x, y) => x - y);
+  const out = [];
+  for (let i = 0; i < ts.length - 1; i++) {
+    const t0 = ts[i], t1 = ts[i + 1];
+    if (t1 - t0 < 1e-6) continue;
+    const mid = { x: a.x + dx * (t0 + t1) / 2, y: a.y + dy * (t0 + t1) / 2 };
+    if (pointInPolygon(mid, poly)) out.push([{ x: a.x + dx * t0, y: a.y + dy * t0 }, { x: a.x + dx * t1, y: a.y + dy * t1 }]);
+  }
+  return out;
+}
+
+/** Distance from a point to the boundary of a polygon. */
+export function distToPolygon(p, poly) {
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
+    best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+  }
+  return best;
 }

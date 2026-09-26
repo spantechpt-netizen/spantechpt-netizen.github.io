@@ -46,7 +46,7 @@ default rates automatically.
 ## Shop drawings · لوحات التسليح والكابلات
 
 `shopdrawings/` turns the consultant's structural G.A. (DXF, DWG via
-LibreDWG, or LibreDWG JSON) into a submission package in the office's own
+LibreDWG, or LibreDWG JSON) or a **RAM Concept** model (`.cpt`) into a submission package in the office's own
 drafting convention: framing plan, bottom PT mesh (B1/B2), top bars over
 columns (T1/T2), U-bars, reinforcement around voids / sunken slabs and
 openings, a preliminary punching-links sheet, and an empty PT cables
@@ -57,6 +57,7 @@ drawing is silent, and every assumption is printed on the sheet.
 
 ```bash
 node shopdrawings/cli.mjs --input STRUCTURAL.dxf --out ./package --project "…"
+node shopdrawings/cli.mjs --input SLAB.cpt --out ./package --level "1ST FLOOR"   # from RAM Concept
 npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/output
 ```
 

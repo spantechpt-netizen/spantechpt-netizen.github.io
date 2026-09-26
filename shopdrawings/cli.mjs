@@ -11,6 +11,7 @@
  *   --prepared "…"  --checked "…"  --approved "…"
  *   --config file.json      project meta and spec overrides ({ meta: {...}, spec: {...}, layers: "path" })
  *   --layers file.json      layer standard (default: shopdrawings/layers.spantech.json)
+ *   --level "1ST FLOOR"     level name (default: from the file name)
  *   --no-svg                skip the SVG previews
  *
  * Output
@@ -25,6 +26,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseDxf } from './lib/dxf-reader.mjs';
 import { fromLibredwgJson } from './lib/libredwg-json.mjs';
+import { readRamConcept, ramToModel } from './lib/ram-concept.mjs';
 import { execFileSync } from 'node:child_process';
 import { basename, extname } from 'node:path';
 import { extractModel } from './lib/extract.mjs';
@@ -77,9 +79,17 @@ export function loadLayerStandard(path = DEFAULT_LAYER_STANDARD) {
 }
 
 export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames, layerStandard }) {
-  const dxf = loadDrawing(inputDxf, inputText);
   meta = { layerStandard: layerStandard || loadLayerStandard(), ...meta };
-  const model = extractModel(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
+  let model;
+  if (inputDxf && /\.cpt$/i.test(inputDxf)) {
+    const ram = readRamConcept(inputDxf);
+    model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', spec });
+    const h = ram.project;
+    meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
+  } else {
+    const dxf = loadDrawing(inputDxf, inputText);
+    model = extractModel(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
+  }
   const pack = composePackage(model, meta);
   mkdirSync(join(out, 'dxf'), { recursive: true });
   mkdirSync(join(out, 'schedules'), { recursive: true });
@@ -160,7 +170,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (a.rev) meta.revision = a.rev;
   const t0 = Date.now();
   const layerStandard = loadLayerStandard(a.layers || cfg.layers || DEFAULT_LAYER_STANDARD);
-  const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg, layerStandard });
+  const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg, layerStandard, levelNames: a.level ? [a.level] : undefined });
   console.log(model.findings.join('\n'));
   console.log(`\n${pack.sheets.length} sheets → ${out}  (${files.length} DXF, ${Date.now() - t0} ms)`);
   for (const s of pack.sheets) console.log(`  ${s.drawingNo}  ${s.blockName.padEnd(44)} 1:${s.scale}  ${s.weight ? Math.round(s.weight) + ' kg' : ''}`);
