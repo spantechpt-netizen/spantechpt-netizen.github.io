@@ -254,7 +254,9 @@ export function toDxf(root, opts = {}) {
             for (const d of ln.dashes) tag(49, num(d * sc));
           }
         }
-        tag(47, 1); tag(98, 0);
+        // no group 47 (pixel size): AutoCAD reads it only for boundary paths flagged 'derived' (0x4)
+        // and otherwise rejects the file with "expected group code 98"
+        tag(98, 0);
         break;
       }
       case 'insert':

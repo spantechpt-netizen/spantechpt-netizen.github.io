@@ -387,3 +387,27 @@ test('walls, drop panels, pour strips and stepped zones are read from their laye
   const pun = punching(L, model.spec);
   assert.equal(pun.columns.length, 4);
 });
+
+test('HATCH records carry no pixel-size group, which AutoCAD rejects on non-derived boundaries', () => {
+  const c = new Canvas();
+  c.hatch([[{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 350 }, { x: 0, y: 350 }]], { layer: 'W', pattern: 'ANSI31', spacing: 1.2 });
+  c.hatch([[{ x: 0, y: 0 }, { x: 600, y: 0 }, { x: 600, y: 600 }, { x: 0, y: 600 }]], { layer: 'C', pattern: 'SOLID' });
+  const txt = toDxf(c);
+  // walk the file as (code, value) pairs and collect the codes of each HATCH entity
+  const lines = txt.split('\n');
+  const hatches = [];
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    if (lines[i].trim() === '0' && lines[i + 1].trim() === 'HATCH') {
+      const codes = [];
+      for (let j = i + 2; j + 1 < lines.length && lines[j].trim() !== '0'; j += 2) codes.push(lines[j].trim());
+      hatches.push(codes);
+    }
+  }
+  assert.equal(hatches.length, 2);
+  for (const codes of hatches) {
+    assert.ok(!codes.includes('47'), 'no group 47');
+    // pattern data (78 ...) or the style groups (75, 76) are followed directly by the seed count
+    const i98 = codes.lastIndexOf('98');
+    assert.ok(i98 > 0 && ['79', '76', '49'].includes(codes[i98 - 1]), `98 follows the pattern lines / style groups, got ${codes[i98 - 1]}`);
+  }
+});
