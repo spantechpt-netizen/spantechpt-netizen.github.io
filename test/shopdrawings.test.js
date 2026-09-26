@@ -202,6 +202,12 @@ test('the generator writes a complete package for the sample drawing', () => {
   const pkg = readFileSync(join(out, 'SHOP_DRAWINGS_PACKAGE.dxf'), 'utf8');
   for (const n of names) assert.ok(pkg.includes(`\n2\n${n}\n`), `${n} defined in the package`);
   assert.ok(model.assumptions.length >= 4);
+  // layers follow the Span Tech standard, not the generator's internal names
+  const layerNames = [...pkg.matchAll(/\nLAYER\n5\n[0-9A-F]+\n330\n[0-9A-F]+\n100\nAcDbSymbolTableRecord\n100\nAcDbLayerTableRecord\n2\n([^\n]+)\n/g)].map((m) => m[1]);
+  assert.ok(layerNames.includes('ST-RB-T1') && layerNames.includes('ST-RB-B2') && layerNames.includes('ST-SLAB-EDGE') && layerNames.includes('ST-SHEET-TITLE'), layerNames.join(','));
+  assert.ok(!layerNames.some((n) => /^REBAR|^COLUMN|BBR/.test(n)), 'no internal or BBR layer names remain');
+  assert.ok(/\n2\nST-REBAR\n70\n0\n/.test(pkg) && pkg.includes('romans.shx'), 'rebar text style present');
+  assert.ok(!/\n8\nREBAR-T1\n/.test(pkg), 'entities were renamed too');
 });
 
 test('punching links follow the minimum detailing arrangement of the reference drawings', () => {

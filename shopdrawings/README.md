@@ -144,16 +144,32 @@ the drawing names another reference.
 All of these are the defaults in `lib/rebar.mjs` and are overridden by the
 drawing notes or by `--config`.
 
+## Layer standard · معيار الطبقات
+
+Generated drawings use the **Span Tech layer standard** in
+`shopdrawings/layers.spantech.json` (prefix `ST-`). Edit that file, or pass
+another one with `--layers file.json` (or `"layers": "path"` in the config),
+to change names, colours, linetypes or lineweights; the generator maps its
+internal layer names to yours at write time, so nothing else changes.
+
+| Group | Layers |
+|---|---|
+| Sheet | `ST-SHEET-FRAME`, `ST-SHEET-TITLE`, `ST-SHEET-TEXT`, `ST-SHEET-NOTES`, `ST-SHEET-SCHEDULE`, `ST-SHEET-SCHEDULE-TEXT`, `ST-DETAIL`, `ST-DETAIL-HATCH`, `ST-XREF` |
+| Structure (from the G.A.) | `ST-GRID`, `ST-GRID-BUBBLE`, `ST-SLAB-EDGE`, `ST-COL`, `ST-COL-HATCH`, `ST-BEAM`, `ST-STAIR`, `ST-OPENING`, `ST-VOID`, `ST-SUNKEN` (+ `-HATCH`), `ST-PT-ZONE` |
+| Reinforcement | `ST-RB-B1`, `ST-RB-B2`, `ST-RB-T1`, `ST-RB-T2` (bars per layer), `ST-RB-UBAR`, `ST-RB-TRIM` (trimmers / diagonals), `ST-RB-PUNCH`, `ST-RB-TEXT` (call-outs, style `ST-REBAR` = romans.shx), `ST-RB-MESH` (mesh labels), `ST-RB-TYPE` (PS labels), `ST-RB-RANGE`, `ST-RB-BOT` / `ST-RB-TOP` (section details) |
+| PT | `ST-PT-TENDON`, `ST-PT-CABLE`, `ST-PT-TEXT`, `ST-PT-HATCH` |
+| General | `ST-TEXT`, `ST-DIM`, `ST-CALLOUT`, `ST-HATCH` |
+
+Text styles written: `STANDARD` (arial.ttf), `ST-REBAR` (romans.shx, used
+for all bar call-outs), `ST-TITLE` (arial.ttf).
+
 ## In AutoCAD · داخل أوتوكاد
 
 - Insert or Xref any `dxf/*.dxf` at `0,0`, scale 1, units mm. Plan geometry
   is 1:1; the A1 frame is scaled by the sheet scale (1:100 → 84 100 × 59 400).
-- Layers: `REBAR-BOT`, `REBAR-TOP`, `REBAR-U`, `REBAR-TRIM`, `REBAR-TEXT`,
-  `CALLOUT`, `SCHEDULE`, `NOTES`, `GRID`, `OUTLINE`, `COLUMN`, `OPENING`,
-  `VOID`, `PT-ZONE`, `CABLE`, `FRAME`, `TITLE`, `DIM`, `DETAIL`.
-- Dimensions are plain lines and text on `DIM` so they stay editable without
-  a dimension style. Text style `STANDARD` on `arial.ttf`; Arabic is carried
-  as `\U+` escapes (AutoCAD 2007+).
+- Layers per the standard above. Dimensions are plain lines and text on
+  `ST-DIM` so they stay editable without a dimension style. Arabic is
+  carried as `\U+` escapes (AutoCAD 2007+).
 - Explode a block to edit; re-run the generator after the consultant revises
   the structural drawings and re-attach.
 
@@ -162,6 +178,7 @@ drawing notes or by `--config`.
 ```
 shopdrawings/
   cli.mjs                    command line + generate()
+  layers.spantech.json       the company layer standard (names, colours, linetypes, lineweights, text styles)
   lib/dxf-reader.mjs         ASCII DXF → entities (LINE, LWPOLYLINE, CIRCLE, TEXT, MTEXT, INSERT, HATCH…)
   lib/libredwg-json.mjs      LibreDWG `dwgread -O json` → the same entities (DWG input)
   lib/preview.mjs            any parsed drawing → Canvas, for SVG previews of input drawings

@@ -136,10 +136,12 @@ export function toDxf(root, opts = {}) {
     tag(370, def.lw ?? -3); tag(390, hPlaceholder);
   }));
 
-  table('STYLE', [(owner) => {
+  const styles = root.textStyles && root.textStyles.size ? [...root.textStyles.entries()] : [['STANDARD', { font: root.textStyle?.font || 'arial.ttf' }]];
+  if (!styles.some(([n]) => n === 'STANDARD')) styles.unshift(['STANDARD', { font: 'arial.ttf' }]);
+  table('STYLE', styles.map(([name, def]) => (owner) => {
     tag(0, 'STYLE'); tag(5, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbTextStyleTableRecord');
-    tag(2, 'STANDARD'); tag(70, 0); tag(40, 0); tag(41, 1); tag(50, 0); tag(71, 0); tag(42, 2.5); tag(3, root.textStyle.font || 'arial.ttf'); tag(4, '');
-  }]);
+    tag(2, name); tag(70, 0); tag(40, 0); tag(41, def.widthFactor || 1); tag(50, 0); tag(71, 0); tag(42, 2.5); tag(3, def.font || 'arial.ttf'); tag(4, '');
+  }));
 
   table('VIEW', []);
   table('UCS', []);
@@ -206,7 +208,7 @@ export function toDxf(root, opts = {}) {
         tag(10, num(e.x)); tag(20, num(e.y)); tag(30, 0); tag(40, num(e.h)); tag(1, encodeText(e.str));
         if (e.rot) tag(50, num(e.rot));
         if (e.widthFactor) tag(41, num(e.widthFactor));
-        tag(7, 'STANDARD'); tag(72, hAlign);
+        tag(7, e.style || 'STANDARD'); tag(72, hAlign);
         if (hAlign || vAlign) { tag(11, num(e.x)); tag(21, num(e.y)); tag(31, 0); }
         tag(100, 'AcDbText'); tag(73, vAlign);
         break;
@@ -220,7 +222,7 @@ export function toDxf(root, opts = {}) {
         const chunks = s.match(/.{1,250}/g) || [''];
         chunks.slice(0, -1).forEach((c) => tag(3, c));
         tag(1, chunks[chunks.length - 1]);
-        tag(7, 'STANDARD');
+        tag(7, e.style || 'STANDARD');
         if (e.rot) tag(50, num(e.rot));
         tag(44, num(e.lineSpacing || 1));
         break;

@@ -39,6 +39,7 @@ const SCHEDULE_COLS = [
 ];
 
 const CALL_H = 2.1, LEN_H = 1.7, HOOK_H = 1.5;
+const REBAR_STYLE = 'ST-REBAR';
 const fmtMM = (v) => Math.round(v).toLocaleString('en-US');
 const regionBox = (o) => R.regionBbox(o);
 const sizeOf = (o) => (o.kind === 'circle' ? `Ø${fmtMM(2 * o.r)}` : o.kind === 'rect' ? `${fmtMM(o.rect.w)} x ${fmtMM(o.rect.h)}` : `${fmtMM(regionBox(o).w)} x ${fmtMM(regionBox(o).h)} (POLY)`);
@@ -155,10 +156,10 @@ function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, label, lay
     if (i === 0 && hooks.start) pl.line(at(0), at(0, -offsetSide * 250), { layer });
     if (i === last && hooks.end) pl.line(at(s1), at(s1, -offsetSide * 250), { layer });
     const mid = (axisStart + s1) / 2;
-    pl.text(at(mid, tn * 0.55 * S), label(i, pieces[i], straights[i]), { layer: 'REBAR-TEXT', h: CALL_H, rot, align: 'C', valign: 'B' });
-    pl.text(at(mid, -tn * (LEN_H + 0.5) * S), String(Math.round(straights[i])), { layer: 'REBAR-TEXT', h: LEN_H, rot, align: 'C', valign: 'B' });
-    if (i === 0 && hooks.start) pl.text(at(-0.4 * S, tn * 0.55 * S), String(hookLeg), { layer: 'REBAR-TEXT', h: HOOK_H, rot, align: 'R', valign: 'B' });
-    if (i === last && hooks.end) pl.text(at(s1 + 0.4 * S, tn * 0.55 * S), String(hookLeg), { layer: 'REBAR-TEXT', h: HOOK_H, rot, align: 'L', valign: 'B' });
+    pl.text(at(mid, tn * 0.55 * S), label(i, pieces[i], straights[i]), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: CALL_H, rot, align: 'C', valign: 'B' });
+    pl.text(at(mid, -tn * (LEN_H + 0.5) * S), String(Math.round(straights[i])), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: LEN_H, rot, align: 'C', valign: 'B' });
+    if (i === 0 && hooks.start) pl.text(at(-0.4 * S, tn * 0.55 * S), String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'R', valign: 'B' });
+    if (i === last && hooks.end) pl.text(at(s1 + 0.4 * S, tn * 0.55 * S), String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'L', valign: 'B' });
     pos = s1;
   }
   pl.barEnds(at(0), at(pos), { layer, size: 0.6 });
@@ -304,7 +305,7 @@ function bottomSheet(model, level, meta) {
           for (const run of g.runs) {
             const a = dir === 'X' ? { x: run.a, y: mid } : { x: mid, y: run.a };
             const b = dir === 'X' ? { x: run.b, y: mid } : { x: mid, y: run.b };
-            drawRun(pl, S, { a, b, pieces: run.pieces, lap: res.lap, textSide: side, offsetSide: side, label: (i, cut) => callout(g.rows, z.dia, z.spacing, run.marks[i].mark, cut) });
+            drawRun(pl, S, { a, b, pieces: run.pieces, lap: res.lap, textSide: side, offsetSide: side, layer: `REBAR-${z.code}`, label: (i, cut) => callout(g.rows, z.dia, z.spacing, run.marks[i].mark, cut) });
           }
         }
       }
@@ -351,7 +352,7 @@ function topSheet(model, level, meta) {
         const t = dir === 'x' ? col.cy : col.cx;
         const a = dir === 'x' ? { x: a0, y: t } : { x: t, y: a0 };
         const b = dir === 'x' ? { x: b0, y: t } : { x: t, y: b0 };
-        drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
+        drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, layer: `REBAR-${p.code}`, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
         const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
         pl.bubble({ x: col.cx + size.x / 2, y: col.cy + size.y / 2 }, type.id, { dx: 6, dy: 6, layer: 'CALLOUT', r: 3, h: 1.6 });
         seen.add(type.id);
@@ -446,10 +447,10 @@ function drawTrimmers(pl, S, regions, spec, kindLabel, opts = {}) {
       const a = { x: t.edge.a.x - t.ux * t.ext[-1] + t.nx * off, y: t.edge.a.y - t.uy * t.ext[-1] + t.ny * off };
       const b = { x: t.edge.b.x + t.ux * t.ext[1] + t.nx * off, y: t.edge.b.y + t.uy * t.ext[1] + t.ny * off };
       const hk = R.hookLeg(spec.dia);
-      drawRun(pl, S, { a, b, pieces: [t.length], lap: 0, hooks: { start: !!t.hooks[-1], end: !!t.hooks[1] }, hookLeg: hk, label: (i, cut) => `${2 * spec.count}T${spec.dia}-T&B-${t.marks[0].mark}-(L=${cut})`, offsetSide: -1, textSide: -1 });
+      drawRun(pl, S, { a, b, pieces: [t.length], lap: 0, hooks: { start: !!t.hooks[-1], end: !!t.hooks[1] }, hookLeg: hk, layer: 'REBAR-TRIM', label: (i, cut) => `${2 * spec.count}T${spec.dia}-T&B-${t.marks[0].mark}-(L=${cut})`, offsetSide: -1, textSide: -1 });
     }
     if (corners) for (const c of corners) {
-      pl.line({ x: c.c.x - c.dx * diagL / 2, y: c.c.y - c.dy * diagL / 2 }, { x: c.c.x + c.dx * diagL / 2, y: c.c.y + c.dy * diagL / 2 }, { layer: 'REBAR' });
+      pl.line({ x: c.c.x - c.dx * diagL / 2, y: c.c.y - c.dy * diagL / 2 }, { x: c.c.x + c.dx * diagL / 2, y: c.c.y + c.dy * diagL / 2 }, { layer: 'REBAR-TRIM' });
     }
     if (corners && corners.length && diagMark) {
       const c = corners[0];
@@ -633,7 +634,7 @@ function coverSheet(model, sheets, meta) {
     const tcols = [{ key: 'dia', title: 'Ø', w: 16 }, { key: 'ld_bottom', title: 'ld BOT', w: 30 }, { key: 'ld_top', title: 'ld TOP', w: 30 }, { key: 'lap_bottom', title: 'LAP BOT', w: 32 }, { key: 'lap_top', title: 'LAP TOP', w: 32 }, { key: 'ldh', title: 'ldh HOOK', w: d1.w - 6 - 140 }];
     sheet.table(d1.x + 3, d1.y + d1.h - 10, tcols, R.lengthTable(model.spec), { headH: 5, rowH: 4, h: 1.6 });
     const d2 = sheet.detailBox(2, 'HOW TO USE THE BLOCKS / XREFS', '');
-    const how = ['EACH SHEET IS A BLOCK NAMED AS LISTED; THE SAME NAME IS ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN GEOMETRY IS 1:1 AND THE FRAME IS SCALED BY THE SHEET SCALE.', 'LAYERS: REBAR (BARS, MAGENTA) / REBAR-TEXT (CALL-OUTS) / REBAR-MESH (MESH LABELS, CYAN) / REBAR-U / REBAR-PUNCH / CALLOUT / SCHEDULE / NOTES / GRID / OUTLINE / COLUMN / BEAM / OPENING / SUNKEN / VOID / PT-ZONE / CABLE / FRAME / TITLE.', 'EXPLODE A BLOCK TO EDIT; RE-RUN THE GENERATOR AFTER THE CONSULTANT REVISES THE G.A. AND RE-ATTACH.'];
+    const how = ['EACH SHEET IS A BLOCK NAMED AS LISTED; THE SAME NAME IS ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN GEOMETRY IS 1:1 AND THE FRAME IS SCALED BY THE SHEET SCALE.', 'LAYERS PER THE SPAN TECH STANDARD (ST-): ST-RB-B1 / B2 / T1 / T2 (BARS), ST-RB-UBAR, ST-RB-TRIM, ST-RB-PUNCH, ST-RB-TEXT (CALL-OUTS), ST-RB-MESH, ST-RB-TYPE, ST-GRID, ST-SLAB-EDGE, ST-COL, ST-BEAM, ST-OPENING, ST-SUNKEN, ST-VOID, ST-PT-*, ST-SHEET-*, ST-DIM, ST-CALLOUT.', 'EXPLODE A BLOCK TO EDIT; RE-RUN THE GENERATOR AFTER THE CONSULTANT REVISES THE G.A. AND RE-ATTACH.'];
     how.forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.8, width: d2.w - 8 }));
     return {
       general: [
@@ -663,8 +664,14 @@ export function composePackage(model, metaIn = {}) {
   const sheets = jobs.map((j, i) => buildSheet({ model, level: j.level, def: j.def, meta, index: i + 2, total, draw: j.draw }));
   const cover = buildSheet({ model, level: null, def: { key: 'cover', base: 'SHOP_DRAWINGS_COVER_INDEX', title: 'COVER SHEET / DRAWING INDEX', no: '000' }, meta, index: 1, total, draw: coverSheet(model, sheets, meta) });
   const all = [cover, ...sheets];
+  const std = meta.layerStandard;
+  for (const s of all) {
+    if (std?.textStyles) for (const [n, d] of Object.entries(std.textStyles)) s.root.textStyleDef(n, d);
+    if (std?.layers) s.root.applyLayerStandard(std.layers);
+  }
 
   const pkg = new Canvas();
+  if (std?.textStyles) for (const [n, d] of Object.entries(std.textStyles)) pkg.textStyleDef(n, d);
   const perRow = 4;
   const gapX = 900 * 100, gapY = 650 * 100;
   all.forEach((s, i) => {

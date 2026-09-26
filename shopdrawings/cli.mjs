@@ -9,7 +9,8 @@
  *   --project "…"  --client "…"  --location "…"  --company "…"
  *   --prefix ST-SD  --rev 00  --date YYYY-MM-DD
  *   --prepared "…"  --checked "…"  --approved "…"
- *   --config file.json      project meta and spec overrides ({ meta: {...}, spec: {...} })
+ *   --config file.json      project meta and spec overrides ({ meta: {...}, spec: {...}, layers: "path" })
+ *   --layers file.json      layer standard (default: shopdrawings/layers.spantech.json)
  *   --no-svg                skip the SVG previews
  *
  * Output
@@ -69,8 +70,15 @@ export function levelNameFromFile(inputPath) {
   return base.replace(/[_-]+/g, ' ').replace(/\bG\.?A\.?\b/i, '').replace(/\s+/g, ' ').trim().toUpperCase() || null;
 }
 
-export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames }) {
+export const DEFAULT_LAYER_STANDARD = join(here, 'layers.spantech.json');
+
+export function loadLayerStandard(path = DEFAULT_LAYER_STANDARD) {
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames, layerStandard }) {
   const dxf = loadDrawing(inputDxf, inputText);
+  meta = { layerStandard: layerStandard || loadLayerStandard(), ...meta };
   const model = extractModel(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
   const pack = composePackage(model, meta);
   mkdirSync(join(out, 'dxf'), { recursive: true });
@@ -151,7 +159,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   for (const k of ['project', 'client', 'location', 'company', 'prefix', 'prepared', 'checked', 'approved', 'date']) if (a[k]) meta[k] = a[k];
   if (a.rev) meta.revision = a.rev;
   const t0 = Date.now();
-  const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg });
+  const layerStandard = loadLayerStandard(a.layers || cfg.layers || DEFAULT_LAYER_STANDARD);
+  const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg, layerStandard });
   console.log(model.findings.join('\n'));
   console.log(`\n${pack.sheets.length} sheets → ${out}  (${files.length} DXF, ${Date.now() - t0} ms)`);
   for (const s of pack.sheets) console.log(`  ${s.drawingNo}  ${s.blockName.padEnd(44)} 1:${s.scale}  ${s.weight ? Math.round(s.weight) + ' kg' : ''}`);

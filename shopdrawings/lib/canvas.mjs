@@ -36,6 +36,10 @@ export const STANDARD_LAYERS = {
   'REBAR-PUNCH': { color: 6, ltype: 'CONTINUOUS', lw: 35 },
   'REBAR-RED': { color: 1, ltype: 'CONTINUOUS' },
   'REBAR': { color: 6, ltype: 'CONTINUOUS', lw: 50 },
+  'REBAR-B1': { color: 6, ltype: 'CONTINUOUS', lw: 50 },
+  'REBAR-B2': { color: 6, ltype: 'CONTINUOUS', lw: 50 },
+  'REBAR-T1': { color: 6, ltype: 'CONTINUOUS', lw: 50 },
+  'REBAR-T2': { color: 6, ltype: 'CONTINUOUS', lw: 50 },
   STAIR: { color: 8, ltype: 'CONTINUOUS' },
   BEAM: { color: 3, ltype: 'CONTINUOUS', lw: 25 },
   SUNKEN: { color: 4, ltype: 'CONTINUOUS' },
@@ -70,7 +74,32 @@ export class Canvas {
       this.blocks = new Map();
       this.layers = new Map(Object.entries(STANDARD_LAYERS).map(([k, v]) => [k, { ...v }]));
       this.textStyle = { name: 'STANDARD', font: 'arial.ttf' };
+      this.textStyles = new Map([['STANDARD', { font: 'arial.ttf' }]]);
     }
+  }
+
+  /** Register a text style (DXF STYLE table entry) usable as `style` on text entities. */
+  textStyleDef(name, def) { this.root.textStyles.set(name, def); return name; }
+
+  /**
+   * Apply a layer standard: rename every layer (in the table, in entities and
+   * in blocks) and take colour / linetype / lineweight from the standard.
+   * `map` is { internalName: { name, color?, ltype?, lw? } }.
+   */
+  applyLayerStandard(map) {
+    const root = this.root;
+    const rename = (canvas) => { for (const e of canvas.entities) if (map[e.layer]) e.layer = map[e.layer].name; };
+    rename(root);
+    for (const blk of root.blocks.values()) rename(blk);
+    const next = new Map();
+    for (const [name, def] of root.layers) {
+      const m = map[name];
+      if (!m) { next.set(name, def); continue; }
+      const merged = { ...def, ...(m.color != null ? { color: m.color } : {}), ...(m.ltype ? { ltype: m.ltype } : {}), ...(m.lw != null ? { lw: m.lw } : {}) };
+      next.set(m.name, next.has(m.name) ? { ...next.get(m.name), ...merged } : merged);
+    }
+    root.layers = next;
+    return this;
   }
 
   layer(name, def) {
