@@ -133,7 +133,12 @@ in the bottom strip.
 ## What is read from the drawing · ما يُستخرج تلقائياً
 
 Layers are matched by name (`COL`, `GRID`, `SLAB`, `PT`, `OPEN`, `VOID`,
-`SUNK`, `BEAM`, `STAIR`, `U-BAR`, Arabic equivalents…); when a layer is
+`SUNK`, `DROP`, `WALL`, `POUR STRIP`, `BEAM`, `STAIR`, `U-BAR`, Arabic
+equivalents…); walls are read as hatched rectangles (and carry top bars,
+not punching links), drop panels as thickened zones of unstated depth, pour
+strips as hatched strips on the framing plan, and level tags (`T.O.S +0.60`
+block attributes) are printed on the plan: a slab zone drawn as its own
+outline with a different level becomes a stepped (sunken / raised) zone; when a layer is
 missing the extractor falls back to geometry (largest closed polylines = slab
 outlines, small closed rectangles = columns, grid from column lines, text
 nearby to tell a void from an opening). Slab edges drawn as separate lines

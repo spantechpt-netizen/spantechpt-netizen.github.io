@@ -346,3 +346,44 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
   const cables = pkg.sheets.find((s) => s.key === 'cables');
   assert.ok(cables.rows.length >= 2, 'cables schedule filled from the RAM tendons');
 });
+
+test('walls, drop panels, pour strips and stepped zones are read from their layers', () => {
+  // a 30 x 20 m slab: perimeter wall along the top edge, four columns with drop panels, a pour strip,
+  // a nested slab zone drawn on the slab layer with its own level tag
+  const c = new Canvas();
+  const rect = (x, y, w, h, layer) => c.pline([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], { layer, closed: true });
+  rect(0, 0, 30000, 20000, '0-slab');
+  rect(0, 0, 6000, 20000, '0-slab'); // stepped zone
+  rect(0, 19650, 30000, 350, '0-walls');
+  for (const [x, y] of [[10000, 5000], [20000, 5000], [10000, 15000], [20000, 15000]]) { rect(x - 300, y - 300, 600, 600, '0-columns'); rect(x - 1250, y - 1500, 2500, 3000, '0-drops'); }
+  rect(14500, 0, 1000, 20000, '0-pour strip');
+  c.text(15000, 10000, 'T.O.S', { layer: 'A-TEXT', h: 200 }); c.text(15000, 9700, '+0.60', { layer: 'A-TEXT', h: 200 });
+  c.text(3000, 10000, 'T.O.S', { layer: 'A-TEXT', h: 200 }); c.text(3000, 9700, '+0.50', { layer: 'A-TEXT', h: 200 });
+  const dxf = parseDxf(toDxf(c));
+  // texts are plain TEXT here; the level tags come from block attributes in real drawings, so feed them as ATTRIB
+  for (const e of dxf.entities) if (e.type === 'TEXT' && e.layer === 'A-TEXT') e.type = 'ATTRIB';
+  const model = extractModel(dxf, {});
+  const L = model.levels[0];
+  assert.equal(model.levels.length, 1, 'the nested zone is not a second level');
+  assert.equal(L.walls.length, 1);
+  assert.ok(L.walls[0].polygon && Math.round(L.walls[0].t) === 350 && Math.round(L.walls[0].length) === 30000);
+  assert.equal(L.thickZones.length, 4);
+  assert.equal(L.thickZones[0].kind, 'drop');
+  assert.equal(L.thickZones[0].thickness, null);
+  assert.equal(L.pourStrips.length, 1);
+  assert.equal(Math.round(L.pourStrips[0].width), 1000);
+  assert.equal(L.tos, '+0.60');
+  assert.equal(L.sunken.length, 1);
+  assert.equal(L.sunken[0].step, -100, 'the zone at +0.50 is a 100 mm step down from the main +0.60');
+  assert.equal(L.columns.length, 4, 'walls and drops are not columns');
+  assert.equal(L.grid.x.length, 2);
+  assert.equal(L.grid.y.length, 2);
+  // top bars run over the wall too, punching links do not
+  const top = topAtColumns(L, model.spec);
+  assert.ok(top.columns.some((r) => r.col.isWall), 'wall support in the top-bar set');
+  const wallRow = top.columns.find((r) => r.col.isWall);
+  assert.ok(wallRow.per.y.n > 100 && wallRow.per.y.length < 4000, `bars across the wall: ${wallRow.per.y.n} x ${wallRow.per.y.length}`);
+  assert.ok(wallRow.per.x.n <= 12, `bars along the wall are not inflated by the column As,min rule: ${wallRow.per.x.n}`);
+  const pun = punching(L, model.spec);
+  assert.equal(pun.columns.length, 4);
+});

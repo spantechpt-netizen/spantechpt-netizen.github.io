@@ -209,6 +209,23 @@
       "color": 8,
       "lw": 50
     },
+    "WALL-HATCH": {
+      "name": "ST-WALL-HATCH",
+      "color": 8
+    },
+    "POUR-STRIP": {
+      "name": "ST-POUR-STRIP",
+      "color": 30,
+      "ltype": "DASHED"
+    },
+    "POUR-STRIP-HATCH": {
+      "name": "ST-POUR-STRIP-HATCH",
+      "color": 30
+    },
+    "LEVEL": {
+      "name": "ST-LEVEL",
+      "color": 4
+    },
     "SLAB-THK": {
       "name": "ST-SLAB-THK",
       "color": 3,

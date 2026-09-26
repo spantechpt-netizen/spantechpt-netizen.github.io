@@ -95,14 +95,25 @@ function drawBase(sheet, pl, level, o = {}) {
   }
   // slab outline, beams, walls, thickened zones, stairs
   // walls below first so a wall on the slab edge does not hide the green edge line
-  for (const w of level.walls || []) pl.line(w.a, w.b, { layer: 'WALL' });
+  for (const w of level.walls || []) {
+    if (w.polygon) { pl.pline(w.polygon, { layer: 'WALL', closed: true }); pl.hatch([w.polygon], { layer: 'WALL-HATCH', pattern: 'ANSI31', spacing: 1.2 }); }
+    else pl.line(w.a, w.b, { layer: 'WALL' });
+  }
   pl.pline(level.outline, { layer: 'OUTLINE', closed: true, color: 3 });
   for (const bm of level.beams || []) pl.line(bm.a, bm.b, { layer: 'BEAM' });
   if (o.thickZones !== false) for (const z of level.thickZones || []) {
     pl.pline(z.polygon, { layer: 'SLAB-THK', closed: true });
     pl.hatch([z.polygon], { layer: 'SLAB-THK-HATCH', pattern: 'ANSI31', spacing: 3 });
-    if (o.regionLabels) { const c = centroid(z.polygon); pl.text({ x: c.x, y: c.y }, `${z.id} THK=${z.thickness}`, { layer: 'SLAB-THK', h: 1.5, align: 'C', valign: 'M' }); }
+    if (o.regionLabels) { const c = centroid(z.polygon); pl.text({ x: c.x, y: c.y }, z.thickness ? `${z.id} THK=${z.thickness}` : `${z.id} DROP`, { layer: 'SLAB-THK', h: 1.5, align: 'C', valign: 'M' }); }
   }
+  // pour strips: dashed outline, light hatch, label on the framing plan only
+  if (o.pourStrips !== false) for (const ps of level.pourStrips || []) {
+    pl.pline(ps.polygon, { layer: 'POUR-STRIP', closed: true });
+    pl.hatch([ps.polygon], { layer: 'POUR-STRIP-HATCH', pattern: 'ANSI37', spacing: 2.5 });
+    if (o.regionLabels) { const b = bbox(ps.polygon); const vertical = b.h > b.w; pl.text({ x: b.cx, y: b.cy }, `${ps.id} POUR STRIP ${fmtMM(ps.width)}`, { layer: 'POUR-STRIP', h: 1.5, align: 'C', valign: 'M', rot: vertical ? 90 : 0 }); }
+  }
+  // level tags
+  if (o.regionLabels) for (const t of level.levelTags || []) pl.text({ x: t.x, y: t.y }, `${t.label} ${t.value}`, { layer: 'LEVEL', h: 1.8, align: 'C', valign: 'M' });
   if (o.stairs !== false) for (const st of level.stairs || []) pl.pline(st.pts, { layer: 'STAIR', closed: !!st.closed });
   // PT zones
   if (o.pt !== false) for (const z of level.pt.zones) {
@@ -138,7 +149,7 @@ function drawBase(sheet, pl, level, o = {}) {
     const poly = R.polygonOf(sk);
     pl.pline(poly, { layer: 'SUNKEN', closed: true });
     pl.hatch([poly], { layer: 'SUNKEN-HATCH', pattern: 'ANSI31', spacing: 1.5 });
-    if (o.regionLabels) { const c = centroid(poly); pl.text({ x: c.x, y: c.y + 120 }, `${sk.id} SUNKEN SLAB`, { layer: 'SUNKEN', h: 1.4, align: 'C' }); pl.text({ x: c.x, y: c.y - 150 }, `TH=${sk.thickness || '?'}mm`, { layer: 'SUNKEN', h: 1.4, align: 'C' }); }
+    if (o.regionLabels) { const c = centroid(poly); pl.text({ x: c.x, y: c.y + 120 }, sk.step ? `${sk.id} ${sk.step > 0 ? 'RAISED' : 'SUNKEN'} ZONE T.O.S ${sk.tos}` : `${sk.id} SUNKEN SLAB`, { layer: 'SUNKEN', h: 1.4, align: 'C' }); pl.text({ x: c.x, y: c.y - 150 }, sk.step ? `STEP ${sk.step > 0 ? '+' : ''}${sk.step} mm` : `TH=${sk.thickness || '?'}mm`, { layer: 'SUNKEN', h: 1.4, align: 'C' }); }
   }
   // circular U-bar regions
   if (o.ubarRegions !== false) for (const u of level.ubar.circles) {
@@ -276,7 +287,9 @@ function buildSheet({ model, level, def, meta, index, total, draw }) {
     const maxRows = Math.floor((Sc.h - 6 - 6 - 5 - 6) / 4);
     const res = sheet.table(Sc.x, Sc.y + Sc.h - 3, r.cols || SCHEDULE_COLS, r.rows, { title: r.scheduleTitle || 'BAR BENDING SCHEDULE', maxRows, totals: r.totals || null });
     leftover = res.leftover;
-    if (leftover.length) {
+    if (leftover.length && (r.detailsUsed ?? 3) >= 3) {
+      sheet.pp.text(Sc.x + 2, Sc.y + 1.5, `+ ${leftover.length} MORE ROWS - SEE THE SCHEDULE FILE OF THIS SHEET`, { layer: 'SCHEDULE-TEXT', h: 1.6 });
+    } else if (leftover.length) {
       const used = r.detailsUsed ?? 3;
       const box = sheet.L.details[Math.min(used, 2)];
       sheet.pp.rect(box.x, box.y, box.w, box.h, { layer: 'FRAME' });
@@ -307,11 +320,21 @@ function buildSheet({ model, level, def, meta, index, total, draw }) {
   return { root, sheet, blockName, drawingNo, title: def.title, level: level ? level.id : 'ALL', levelName: level ? level.name : '', scale, key: def.key, rows: r.rows || [], csvCols: r.cols || SCHEDULE_COLS, weight: r.weight || 0, leftoverRows: leftover.length, checks: r.checks || [] };
 }
 
+/** Group items by key when there are more than six of them; one schedule row per group. */
+function summarise(items, keyOf, rowOf) {
+  if (items.length <= 6) return items.map((it) => rowOf(it, keyOf(it), 1, it.id, [it]));
+  const groups = new Map();
+  for (const it of items) { const k = keyOf(it); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(it); }
+  return [...groups.values()].map((g) => rowOf(g[0], keyOf(g[0]), g.length, g.length > 1 ? `${g[0].id}-${g[g.length - 1].id}` : g[0].id, g));
+}
+
 // ------------------------------------------------------------------ sheets
 function framingSheet(model, level, meta) {
   return (sheet, [pl]) => {
     drawBase(sheet, pl, level, { regionLabels: true, columnIds: true, gridTag: meta.gridTag });
-    pl.text({ x: level.bbox.minX + 800, y: level.bbox.minY - 1200 }, `PT FLAT SLAB TH=${level.thickness}mm${level.thickZones?.length ? ` (THICKENED ZONES ${[...new Set(level.thickZones.map((z) => z.thickness))].join(' / ')} mm HATCHED)` : ''}`, { layer: 'TEXT', h: 2.6, bold: true });
+    const thkList = [...new Set((level.thickZones || []).map((z) => z.thickness).filter(Boolean))];
+    const drops = (level.thickZones || []).filter((z) => !z.thickness).length;
+    pl.text({ x: level.bbox.minX + 800, y: level.bbox.minY - 1200 }, `PT FLAT SLAB TH=${level.thickness}mm${level.tos ? ` T.O.S ${level.tos}` : ''}${thkList.length ? ` (THICKENED ZONES ${thkList.join(' / ')} mm HATCHED)` : ''}${drops ? ` (${drops} DROP PANELS HATCHED - DEPTH PER STRUCTURAL DRAWINGS)` : ''}`, { layer: 'TEXT', h: 2.6, bold: true });
     for (const op of level.openings) { const b = regionBox(op); pl.bubble({ x: b.maxX, y: b.maxY }, op.id, { dx: 7, dy: 7, layer: 'CALLOUT', r: 3, h: 1.6 }); }
     for (const v of level.voids) { const b = regionBox(v); pl.bubble({ x: b.minX, y: b.maxY }, v.id, { dx: -7, dy: 7, layer: 'CALLOUT', r: 3, h: 1.6 }); }
     for (const u of level.ubar.circles) pl.bubble({ x: u.cx, y: u.cy }, u.id, { dx: 9, dy: -9, layer: 'CALLOUT' });
@@ -319,9 +342,11 @@ function framingSheet(model, level, meta) {
       ...level.columns.map((c) => ({ id: c.id, element: c.shape === 'circle' ? 'COLUMN (ROUND)' : c.w > 3 * c.h || c.h > 3 * c.w ? 'WALL / BLADE COL.' : 'COLUMN', size: c.shape === 'circle' ? `Ø${fmtMM(c.d)}` : `${fmtMM(c.w)} x ${fmtMM(c.h)}`, location: `X ${fmtMM(c.cx)}, Y ${fmtMM(c.cy)}` })),
       ...level.openings.map((o) => ({ id: o.id, element: 'OPENING', size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
       ...level.voids.map((o) => ({ id: o.id, element: 'VOID / ACUAR', size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
-      ...(level.sunken || []).map((o) => ({ id: o.id, element: `SUNKEN SLAB TH=${o.thickness || '?'}`, size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
-      ...(level.thickZones || []).map((z) => ({ id: z.id, element: `THICKENED ZONE / BAND ${z.thickness} mm`, size: `${fmtMM(bbox(z.polygon).w)} x ${fmtMM(bbox(z.polygon).h)}`, location: gridRef(level, bbox(z.polygon)) })),
-      ...(level.walls && level.walls.length ? [{ id: 'W', element: 'WALLS BELOW (LINE SUPPORTS)', size: `${(level.walls.reduce((s, w) => s + dist(w.a, w.b), 0) / 1000).toFixed(1)} m`, location: `${level.walls.length} SEGMENTS` }] : []),
+      ...(level.sunken || []).map((o) => ({ id: o.id, element: o.step ? `${o.step > 0 ? 'RAISED' : 'SUNKEN'} ZONE T.O.S ${o.tos} (STEP ${o.step})` : `SUNKEN SLAB TH=${o.thickness || '?'}`, size: sizeOf(o), location: gridRef(level, regionBox(o)) })),
+      ...summarise((level.thickZones || []), (z) => (z.thickness ? `THK ${z.thickness}` : 'DROP') + ` ${fmtMM(bbox(z.polygon).w)} x ${fmtMM(bbox(z.polygon).h)}`, (z, key, n, ids) => ({ id: ids, element: z.thickness ? `THICKENED ZONE / BAND ${z.thickness} mm${n > 1 ? ` (${n} No.)` : ''}` : `DROP PANEL (DEPTH PER STRUCT. DWG)${n > 1 ? ` (${n} No.)` : ''}`, size: `${fmtMM(bbox(z.polygon).w)} x ${fmtMM(bbox(z.polygon).h)}`, location: n > 1 ? 'AT COLUMNS - SEE PLAN' : gridRef(level, bbox(z.polygon)) })),
+      ...(level.pourStrips || []).map((z) => ({ id: z.id, element: 'POUR STRIP', size: `${fmtMM(z.width)} x ${fmtMM(z.length)}`, location: gridRef(level, bbox(z.polygon)) })),
+      ...summarise((level.walls || []).filter((w) => w.polygon), (w) => `T${Math.round(w.t / 10) * 10}`, (w, key, n, ids, all) => ({ id: ids, element: `WALL BELOW ${fmtMM(w.t)} THK${n > 1 ? ` (${n} No.)` : ''}`, size: n > 1 ? `${(all.reduce((s, x) => s + x.length, 0) / 1000).toFixed(1)} m TOTAL` : `${fmtMM(w.t)} x ${fmtMM(w.length)}`, location: n > 1 ? 'SEE PLAN (HATCHED)' : gridRef(level, bbox(w.polygon)) })),
+      ...(level.walls && level.walls.some((w) => !w.polygon) ? [{ id: 'W', element: 'WALLS BELOW (LINE SUPPORTS)', size: `${(level.walls.filter((w) => !w.polygon).reduce((s, w) => s + dist(w.a, w.b), 0) / 1000).toFixed(1)} m`, location: `${level.walls.filter((w) => !w.polygon).length} SEGMENTS` }] : []),
       ...level.ubar.circles.map((o) => ({ id: o.id, element: 'U-BAR REGION', size: `Ø${fmtMM(2 * o.r)}`, location: gridRef(level, { minX: o.cx - o.r, maxX: o.cx + o.r, minY: o.cy - o.r, maxY: o.cy + o.r }) })),
     ];
     const cols = [{ key: 'id', title: 'ID', w: 20 }, { key: 'element', title: 'ELEMENT', w: 42 }, { key: 'size', title: 'SIZE (mm)', w: 45 }, { key: 'location', title: 'LOCATION / GRID', w: 78, align: 'L', max: 44 }];
@@ -343,7 +368,7 @@ function framingSheet(model, level, meta) {
         'FORMWORK LEVELS AND CAMBER PER PT DESIGN. NO PENETRATIONS OTHER THAN THOSE SHOWN WITHOUT THE ENGINEER\'S APPROVAL.',
       ],
       assumptions: levelAssumptions(model, level),
-      legend: [['OUTLINE', 'SLAB EDGE (GREEN)', 'thick'], ['COLUMN-HATCH', 'COLUMN / WALL', 'solid'], ['BEAM', 'BEAM', 'line'], ['OPENING', 'OPENING (CROSSED)', 'line'], ['SUNKEN-HATCH', 'SUNKEN SLAB', 'hatch'], ['VOID', 'VOID / ACUAR', 'line'], ['PT-ZONE', 'PT ZONE', 'line']],
+      legend: [['OUTLINE', 'SLAB EDGE (GREEN)', 'thick'], ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL-HATCH', 'WALL BELOW (HATCHED)', 'hatch'], ['BEAM', 'BEAM', 'line'], ['OPENING', 'OPENING (CROSSED)', 'line'], ['SUNKEN-HATCH', 'SUNKEN / STEPPED ZONE', 'hatch'], ['SLAB-THK-HATCH', 'DROP PANEL / THICKENED ZONE', 'hatch'], ['POUR-STRIP-HATCH', 'POUR STRIP', 'hatch'], ['VOID', 'VOID / ACUAR', 'line'], ['PT-ZONE', 'PT ZONE', 'line']],
       detailsUsed: 3,
     };
   };

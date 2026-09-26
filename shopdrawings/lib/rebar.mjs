@@ -256,10 +256,12 @@ function neighbour(level, col, dir, sign) {
   // Nearest column along dir ('x' or 'y') on the same line (within a 1.5 m band).
   const perp = dir === 'x' ? 'cy' : 'cx';
   const alongKey = dir === 'x' ? 'cx' : 'cy';
+  // a long support (wall) looks for the next support anywhere along its own length
+  const halfPerp = (col.shape === 'circle' ? (col.d || 0) : (dir === 'x' ? col.h : col.w) || 0) / 2;
   let best = null;
   for (const o of level.columns) {
-    if (o === col) continue;
-    if (Math.abs(o[perp] - col[perp]) > 1500) continue;
+    if (o === col || o.id === col.id) continue;
+    if (Math.abs(o[perp] - col[perp]) > halfPerp + 1500) continue;
     const d = (o[alongKey] - col[alongKey]) * sign;
     if (d <= 0) continue;
     if (!best || d < best.d) best = { col: o, d };
@@ -284,15 +286,23 @@ export function topAtColumns(level, spec) {
   const types = [];
   const columns = [];
   const checks = [];
-  for (const col of level.columns) {
+  // walls below carry top bars too: a wall is treated as a long rectangular support (bars across it
+  // along its length, bars along it within t + 3h), without joining the grid or the punching sheet
+  const wallSupports = (level.walls || []).filter((w) => w.polygon && w.t).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true }));
+  if (!level.maxSpan) {
+    let mx = 0;
+    for (const c of level.columns) for (const dir of ['x', 'y']) for (const sign of [-1, 1]) { const nb = neighbour(level, c, dir, sign); if (nb && nb.d > mx) mx = nb.d; }
+    level.maxSpan = mx || 8000;
+  }
+  for (const col of [...level.columns, ...wallSupports]) {
     const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
     const per = {};
+    // spans to the next support in each direction, found first so that the strip width
+    // (Acf) of one direction can use the span of the other
+    const spanOf = {};
     for (const dir of ['x', 'y']) {
       const c1 = size[dir];
-      const c2 = size[dir === 'x' ? 'y' : 'x'];
-      const ext = {};
-      const hooks = {};
-      const spans = [];
+      const ext = {}, hooks = {}, spans = [];
       for (const sign of [-1, 1]) {
         const nb = neighbour(level, col, dir, sign);
         const toEdge = edgeDistance(level, col, dir, sign, cover);
@@ -304,18 +314,32 @@ export function topAtColumns(level, spec) {
           if (c1 / 2 + e > toEdge) { e = Math.max(toEdge - c1 / 2, 0); hooks[sign] = true; }
           ext[sign] = e;
         } else {
-          ext[sign] = Math.max(toEdge - c1 / 2, 0);
-          hooks[sign] = true;
-          spans.push(2 * toEdge);
+          // no support on this side: the bar runs to the slab edge, but never further than
+          // a sixth of the longest span found in the level (a wall at the far end of a slab
+          // must not pull the bars across the whole slab)
+          const cap = ceilTo(Math.max(level.maxSpan || 0, 6 * 1.5 * h) / 6, 50);
+          const toEdgeExt = Math.max(toEdge - c1 / 2, 0);
+          ext[sign] = Math.min(toEdgeExt, cap);
+          hooks[sign] = ext[sign] === toEdgeExt;
+          spans.push(2 * Math.min(toEdge, cap * 6));
         }
       }
+      spanOf[dir] = { ext, hooks, spans };
+    }
+    for (const dir of ['x', 'y']) {
+      const c1 = size[dir];
+      const c2 = size[dir === 'x' ? 'y' : 'x'];
+      const { ext, hooks, spans } = spanOf[dir];
+      const other = spanOf[dir === 'x' ? 'y' : 'x'].spans;
       // Minimum bonded reinforcement over the column: As = 0.00075·Acf (§8.6.2.3),
-      // Acf = h × larger tributary width of the strip.
-      const l2 = spans.length ? Math.max(...spans) : 2 * edgeDistance(level, col, dir, 1, 0);
+      // Acf = h × larger tributary width of the strip. Over a wall only the span
+      // across the wall is a slab span (its own length is not).
+      const l2 = col.isWall ? (dir === 'x' ? (size.x > size.y ? Math.max(...other) : Math.max(...spans)) : (size.y > size.x ? Math.max(...other) : Math.max(...spans)))
+        : Math.max(...spans, ...other);
       const band = c2 + 3 * h; // bars placed within c2 + 1.5h each side, §8.7.5.5.1
       let n = Math.max(4, Math.floor(band / s.spacing) + 1);
       const asReq = 0.00075 * h * l2;
-      const nReq = Math.ceil(asReq / BAR_AREA(s.dia));
+      const nReq = col.isWall ? 0 : Math.ceil(asReq / BAR_AREA(s.dia)); // §8.6.2.3 is a column rule; over a wall the spacing governs
       if (nReq > n) n = nReq;
       const hookN = (hooks[-1] ? 1 : 0) + (hooks[1] ? 1 : 0);
       const straight = ext[-1] + c1 + ext[1];
@@ -464,6 +488,7 @@ export function punching(level, spec) {
   const linkLen = ceilTo(2 * 110 + (h - 2 * cover) + 2 * Math.max(6 * sp.dia, 75), 10);
   const types = [];
   const columns = [];
+  // walls are line supports: no punching links
   for (const col of level.columns) {
     const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
     const sides = [];

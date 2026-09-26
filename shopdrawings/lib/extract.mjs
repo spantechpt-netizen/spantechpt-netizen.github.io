@@ -14,7 +14,10 @@ const LAYER_RULES = [
   ['ubar', /U[-_ ]?BARS?|HAIRPIN/i],
   ['void', /VOID|ACU|ACOU|AKWAR|أكوار|اكوار|كور|HOLLOW|COBIAX|BUBBLE/i],
   ['opening', /OPEN|SHAFT|DUCT|فتح|HOLE|SLEEVE/i],
-  ['sunken', /SUNK|DROP|RECESS|منخفض/i],
+  ['drop', /DROP/i],
+  ['pourstrip', /POUR|CLOSURE[-_ ]?STRIP|CONSTRUCTION[-_ ]?JOINT/i],
+  ['wall', /WALL|حائط|حوائط|SHEAR/i],
+  ['sunken', /SUNK|RECESS|منخفض/i],
   ['stair', /STAIR|سلم|درج/i],
   ['beam', /BEAM|كمر/i],
   ['pt', /(^|[^A-Z])PT([^A-Z]|$)|P-T|TENDON|POST[-_ ]?TEN|كابل|كوابل/i],
@@ -179,7 +182,8 @@ export function extractModel(dxf, options = {}) {
     outlines = [rectPolygon({ x: b.minX - 1000, y: b.minY - 1000, w: b.w + 2000, h: b.h + 2000 })];
     assumptions.push({ text: 'No slab outline could be read: a rectangle 1.0 m outside the column extents was assumed as the slab edge.' });
   }
-  outlines = outlines.filter((p) => !outlines.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(centroid(p), q)));
+  const nestedOutlines = outlines.filter((p) => outlines.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(centroid(p), q)));
+  outlines = outlines.filter((p) => !nestedOutlines.includes(p));
   outlines = outlines.map((p) => (polygonArea(p) < 0 ? [...p].reverse() : p));
   // Plans usually sit side by side left to right, then top to bottom.
   outlines.sort((a, b) => { const A = bbox(a), B = bbox(b); return Math.abs(A.minY - B.minY) > Math.max(A.h, B.h) * 0.5 ? B.minY - A.minY : A.minX - B.minX; });
@@ -188,7 +192,7 @@ export function extractModel(dxf, options = {}) {
   const allText = texts.map(textOf).join('\n');
   const spec = readSpecFromText(allText, assumptions, options.spec || {});
 
-  const levels = outlines.map((outline, i) => buildLevel(outline, i, ents, texts, spec, assumptions, findings, options));
+  const levels = outlines.map((outline, i) => buildLevel(outline, i, ents, texts, spec, assumptions, findings, { ...options, nested: nestedOutlines.filter((p) => pointInPolygon(centroid(p), outline)) }));
   const codeRef = spec.code_reference;
   return {
     source: { units: units.name, entities: ents.length, layers: [...new Set(ents.map((e) => e.layer))].sort() },
@@ -351,7 +355,7 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings, op
   }
   if (!grid.x.length || !grid.y.length) {
     // Derive a grid from column lines.
-    const cluster = (vals) => { const out = []; for (const v of [...vals].sort((a, b) => a - b)) { const l = out[out.length - 1]; if (l && Math.abs(l.v - v) < 300) { l.n++; l.v = (l.v * (l.n - 1) + v) / l.n; } else out.push({ v, n: 1 }); } return out.map((c) => c.v); };
+    const cluster = (vals) => { const out = []; for (const v of [...vals].sort((a, b) => a - b)) { const l = out[out.length - 1]; if (l && Math.abs(l.v - v) < 600) { l.n++; l.v = (l.v * (l.n - 1) + v) / l.n; } else out.push({ v, n: 1 }); } return out.map((c) => c.v); };
     if (!grid.x.length) grid.x = cluster(columns.map((c) => c.cx)).map((x) => ({ label: null, x, y1: ob.minY, y2: ob.maxY }));
     if (!grid.y.length) grid.y = cluster(columns.map((c) => c.cy)).map((y) => ({ label: null, y, x1: ob.minX, x2: ob.maxX }));
     grid.source = 'derived from column positions';
@@ -370,7 +374,35 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings, op
   // ------------------------------------------------------------ openings / voids / u-bar / pt
   const openings = [], voids = [], ubarCircles = [], ptZones = [], tendons = [];
   const sunken = [], beams = [], stairs = [];
+  const walls = [], thickZones = [], pourStrips = [];
   const ubarEdges = [];
+  // level tags (T.O.S +0.60 style block attributes): the value written nearest a "T.O.S" attribute
+  const levelTags = [];
+  const attribs = ents.filter((e) => e.type === 'ATTRIB' && e.text);
+  for (const t of attribs.filter((a) => /T\.?O\.?[SC]\b|TOS|TOC|LEVEL|LVL|S\.?S\.?L/i.test(a.text))) {
+    const v = attribs.filter((a) => a !== t && /^[+-]?\d+(\.\d+)?$/.test(a.text.trim())).sort((a, b) => dist(a, t) - dist(b, t))[0];
+    if (v && dist(v, t) < 1500 && near({ x: v.x, y: v.y })) levelTags.push({ x: v.x, y: v.y, label: t.text.trim().toUpperCase(), value: v.text.trim() });
+  }
+  for (const e of ents) {
+    if (e.kind === 'wall') {
+      for (const p of closedPolys(e)) {
+        const b = bbox(p);
+        if (Math.min(b.w, b.h) < 120 || Math.min(b.w, b.h) > 1200 || !near({ x: b.cx, y: b.cy }, 800)) continue;
+        const along = b.w >= b.h ? 'x' : 'y';
+        const a = along === 'x' ? { x: b.minX, y: b.cy } : { x: b.cx, y: b.minY }, bb = along === 'x' ? { x: b.maxX, y: b.cy } : { x: b.cx, y: b.maxY };
+        walls.push({ polygon: p, a, b: bb, cx: b.cx, cy: b.cy, w: b.w, h: b.h, t: Math.min(b.w, b.h), length: Math.max(b.w, b.h) });
+      }
+      continue;
+    }
+    if (e.kind === 'drop') {
+      for (const p of closedPolys(e)) { const b = bbox(p); if (!near({ x: b.cx, y: b.cy }) || Math.abs(polygonArea(p)) < 0.5e6) continue; if (!thickZones.some((z) => dist(centroid(z.polygon), { x: b.cx, y: b.cy }) < 100)) thickZones.push({ polygon: polygonArea(p) < 0 ? [...p].reverse() : p, thickness: null, kind: 'drop' }); }
+      continue;
+    }
+    if (e.kind === 'pourstrip') {
+      for (const p of closedPolys(e)) { const b = bbox(p); if (!near({ x: b.cx, y: b.cy })) continue; pourStrips.push({ polygon: polygonArea(p) < 0 ? [...p].reverse() : p, width: Math.min(b.w, b.h), length: Math.max(b.w, b.h) }); }
+      continue;
+    }
+  }
   const textNear = (p, r = 1500) => texts.filter((t) => dist({ x: t.x, y: t.y }, p) < r).map(textOf).join(' ').toUpperCase();
   const isColumnShape = (rg) => columns.some((c) => dist(regionCenter(rg), { x: c.cx, y: c.cy }) < 150);
   for (const e of ents) {
@@ -469,16 +501,32 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings, op
       }
     }
   }
+  // nested slab outlines drawn on the slab layer: zones at another level (steps) when their level tag differs
+  const tagIn = (poly) => levelTags.filter((t) => pointInPolygon(t, poly));
+  const mainTag = (() => { const inside = levelTags.filter((t) => !(options.nested || []).some((p) => pointInPolygon(t, p))); const c = new Map(); for (const t of inside) c.set(t.value, (c.get(t.value) || 0) + 1); return [...c.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || null; })();
+  for (const p of options.nested || []) {
+    const poly = polygonArea(p) < 0 ? [...p].reverse() : p;
+    const tag = tagIn(poly)[0];
+    const step = tag && mainTag ? Math.round((parseFloat(tag.value) - parseFloat(mainTag)) * 1000) : null;
+    if (tag && step !== null && step !== 0) sunken.push({ kind: 'polygon', polygon: poly, tos: tag.value, step, thickness: null, fromOutline: true });
+    else if (!tag) { sunken.push({ kind: 'polygon', polygon: poly, thickness: null, fromOutline: true }); assumptions.push({ ...A, text: `Slab zone inside ${name} drawn as a separate outline with no level tag: treated as a stepped (sunken / raised) zone.` }); }
+  }
   openings.forEach((o, i) => { o.id = `O${i + 1}`; });
   sunken.forEach((o, i) => { o.id = `S${i + 1}`; const words = textNear(regionCenter(o), 2500); const m = words.match(/TH\s*=?\s*(\d{3})/); o.thickness = m ? parseInt(m[1], 10) : null; });
   voids.forEach((v, i) => { v.id = `V${i + 1}`; });
   ubarCircles.forEach((u, i) => { u.id = `R${i + 1}`; });
   ptZones.forEach((z, i) => { z.id = `PT${i + 1}`; z.polygon = z.polygon || (z.kind === 'rect' ? rectPolygon(z.rect) : circlePolygon(z.cx, z.cy, z.r)); });
+  walls.forEach((w, i) => { w.id = `W${i + 1}`; });
+  thickZones.forEach((z, i) => { z.id = `D${i + 1}`; });
+  pourStrips.forEach((z, i) => { z.id = `PS${i + 1}`; });
+  if (thickZones.length) assumptions.push({ ...A, text: `${thickZones.length} drop panels read from the drawing; their depth is not stated: to be taken from the structural drawings (top bars over the columns are detailed for the slab thickness).` });
+  if (pourStrips.length) assumptions.push({ ...A, text: `${pourStrips.length} pour strips read from the drawing: the mesh runs through the strip and laps inside it (Class B); the strip is cast after stressing per the PT designer's sequence.` });
+  if (walls.length) findings.push(`${id} ${name}: ${walls.length} walls below (${Math.round(walls.reduce((s, w) => s + w.length, 0) / 1000)} m), ${thickZones.length} drop panels, ${pourStrips.length} pour strips, ${levelTags.length} level tags${mainTag ? ` (main T.O.S ${mainTag})` : ''}.`);
 
   findings.push(`${id} ${name}: ${columns.length} columns, grid ${grid.x.map((g) => g.label).join('-')} / ${grid.y.map((g) => g.label).join('-')}, ${openings.length} openings, ${voids.length} voids, ${sunken.length} sunken slabs, ${beams.length} beam lines, ${ubarCircles.length} circular U-bar regions, ${ptZones.length} PT zones, ${tendons.length} tendon lines, slab ${thickness} mm.`);
 
   return {
-    id, name, thickness, outline, bbox: ob, grid, columns, openings, voids, sunken, beams, stairs,
+    id, name, thickness, outline, bbox: ob, grid, columns, openings, voids, sunken, beams, stairs, walls, thickZones, pourStrips, levelTags, tos: mainTag,
     ubar: { edges: ubarEdges.length ? ubarEdges : 'all', circles: ubarCircles },
     pt: { zones: ptZones, tendons },
   };
