@@ -43,6 +43,25 @@ default rates automatically.
 
 ---
 
+## Shop drawings · لوحات التسليح والكابلات
+
+`shopdrawings/` turns the consultant's combined structural DXF into a
+submission package: framing plan, bottom PT mesh, top bars over columns,
+U-bars, reinforcement around voids and openings, and an empty PT cables
+template, each an A1 sheet block / Xref with title band, notes, assumptions,
+schedules and details, per slab level. Saudi practice (SBC 304-18) is applied
+for laps and anchorage where the drawing is silent, and every assumption is
+printed on the sheet.
+
+```bash
+node shopdrawings/cli.mjs --input STRUCTURAL.dxf --out ./package --project "…"
+npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/output
+```
+
+See [shopdrawings/README.md](shopdrawings/README.md).
+
+---
+
 ## Email intake
 
 Point the CRM at the company mailbox and quotation requests stop living in
