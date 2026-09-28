@@ -456,13 +456,15 @@ test('beam design through RAM: one strip per beam span with a splitter on each e
   // through both packages: the beams sheet appears with the schedule, the plan labelled
   const { generate } = await import('../shopdrawings/cli.mjs');
   const { pack } = generate({ inputDxf: src, out: join(dir, 'design'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
-  const sheet = pack.sheets.find((s) => s.key === 'dbeams');
-  assert.ok(sheet && sheet.drawingNo.endsWith('-07'), 'beam sheet 07 in the design package');
+  assert.ok(!pack.sheets.some((s) => s.key === 'dbeams'), 'no separate beam sheet: the beams live on the framing plan');
+  const sheet = pack.sheets.find((s) => s.key === 'dframing');
+  assert.ok(sheet && sheet.drawingNo.endsWith('-01'), 'the framing plan carries the beam schedule');
   assert.deepEqual(sheet.rows.map((r) => [r.mark, r.section, r.top, r.bottom, r.count]), [['B1', '300 x 600', '4T16', '3T16', 1]]);
   const dxf = toDxf(sheet.root);
-  assert.ok(dxf.includes('\n1\nB1 300x600\n') && dxf.includes('\n1\n?? 300x600\n'), 'every beam labelled with its type and section on the plan');
+  assert.ok(dxf.includes('[B1] BEAM 300x600') && dxf.includes('\n1\n4T16 / 3T16 / '), 'every typed beam labelled with its type, section and bars beside it on the plan');
+  assert.ok(/NOT DESIGNED/.test(dxf), 'a beam without a design says so');
   const { pack: unified } = generate({ inputDxf: src, out: join(dir, 'unified'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, spec: { beamTypes: [rec('B1', 3, 3), rec('B2', 5, 4, 100)] }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
-  const us = unified.sheets.find((s) => s.key === 'dbeams');
+  const us = unified.sheets.find((s) => s.key === 'dframing');
   assert.deepEqual(us.rows.map((r) => [r.mark, r.top]), [['B2', '5T16']], 'the beam takes the project type on record, printed with its bars');
   assert.ok(toDxf(us.root).includes('UNIFIED BEAM SCHEDULE'), 'the sheet says so');
   const { pack: shop } = generate({ inputDxf: src, out: join(dir, 'shop'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'shop' });
@@ -809,10 +811,10 @@ test('office beam design: continuous-beam envelope on the model loads, bars and 
   assert.deepEqual([bm1('max').top.text, bm1('max').bottom.text, bm1('max').stirrups.text], ['4T16', bm1('office').bottom.text, 'T12-2L@125'], 'max: set by set the heavier (RAM top and stirrups, office bottom)');
   assert.deepEqual(by.ram.undesigned, ['BM2']); assert.deepEqual(by.office.undesigned, [], 'the office design covers the beam RAM did not');
   assert.ok(by.office.office.failing.includes('BM2') && by.office.office.beams.find((b) => b.id === 'BM2').reasons.includes('deflection'), 'the 12 m 300 x 600 edge beam fails deflection');
-  const sheet = readFileSync(readdirSync(join(dir, 'office', 'dxf')).map((f) => join(dir, 'office', 'dxf', f)).find((f) => /BEAM/.test(f)), 'utf8');
+  const sheet = readFileSync(readdirSync(join(dir, 'office', 'dxf')).map((f) => join(dir, 'office', 'dxf', f)).find((f) => /FRAMING/.test(f)), 'utf8'); // (the beams live on the framing plan)
   assert.ok(sheet.includes('OFFICE DESIGN') && sheet.includes('NOT PASSING (DEFLECTION)') && sheet.includes('BEAMS NOT PASSING THE OFFICE CHECK: BM2'), 'the sheet says which beam fails and why');
   const ok = generate({ inputDxf: src, out: join(dir, 'bypass'), meta: {}, spec: { beamDesign: 'office', beams: { override: { beams: 'all', by: 'Eng. Sara Test', date: '2026-09-28', note: 'camber 20 mm' } } }, svg: false, levelNames: ['B1'], mode: 'design' });
-  const sheet2 = readFileSync(readdirSync(join(dir, 'bypass', 'dxf')).map((f) => join(dir, 'bypass', 'dxf', f)).find((f) => /BEAM/.test(f)), 'utf8');
+  const sheet2 = readFileSync(readdirSync(join(dir, 'bypass', 'dxf')).map((f) => join(dir, 'bypass', 'dxf', f)).find((f) => /FRAMING/.test(f)), 'utf8');
   assert.ok(sheet2.includes("ACCEPTED AT THE DESIGN ENGINEER'S RESPONSIBILITY (ENG. SARA TEST, 2026-09-28): CAMBER 20 MM"), 'the bypass is printed with the engineer\'s name');
   assert.ok(readFileSync(join(dir, 'office', 'REPORT.md'), 'utf8').includes('Office beam design') && existsSync(join(dir, 'office', 'beams.json')));
   void ok;

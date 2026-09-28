@@ -23,7 +23,7 @@ export const DETAIL_SCALES = [5, 10, 12.5, 15, 20, 25, 30, 40, 50, 75, 100, 150,
  * bottom detail strip, and which boxes are drawn (`keyplan`, `refs`, `schedule`, `details`); a box switched off
  * gives its room to the notes. `size` picks A0 / A1 / A2.
  */
-export const DEFAULT_FRAME = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true, margin: { left: 20, bottom: 10, right: 10, top: 10 } };
+export const DEFAULT_FRAME = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: false, margin: { left: 20, bottom: 10, right: 10, top: 10 } };
 
 export function layoutFor(size = 'A1', frameOpts = {}) {
   const F = { ...DEFAULT_FRAME, ...frameOpts, margin: { ...DEFAULT_FRAME.margin, ...(frameOpts.margin || {}) } };
@@ -106,6 +106,7 @@ export class Sheet {
    */
   detailPen(box, detailScale, gb, inner = { top: 9, pad: 6 }) {
     const S = this.S;
+    if (box.off) { const scratch = new Canvas('_scratch'); const blk = this.blk; this.blk = scratch; try { return this.makePen((p) => ({ x: p.x, y: p.y }), 1); } finally { this.blk = blk; } }
     const ax = box.x + inner.pad, ay = box.y + inner.pad;
     const aw = box.w - 2 * inner.pad, ah = box.h - inner.top - 2 * inner.pad;
     const gw = (gb.maxX - gb.minX), gh = (gb.maxY - gb.minY);
@@ -425,6 +426,8 @@ export class Sheet {
 
   /** Generic table. cols: [{ key, title, w, align }] ; rows: objects. */
   table(x, yTop, cols, rows, { title, rowH = 4, h = 1.7, headH = 5, titleH = 6, maxRows = Infinity, layer = 'SCHEDULE', textLayer = 'SCHEDULE-TEXT', totals = null } = {}) {
+    // a table meant for a detail box while the bottom strip is off is not drawn
+    if (!(this.L.strip.h > 0) && x < this.L.strip.x + this.L.strip.w && yTop <= this.L.strip.y + 1) return { y: yTop, leftover: [] };
     const pp = this.pp;
     const W = cols.reduce((s, c) => s + c.w, 0);
     let y = yTop;
@@ -469,6 +472,9 @@ export class Sheet {
 
   /** Box for a detail in the bottom strip, with title strip and scale. */
   detailBox(i, title, scaleLabel) {
+    // the office keeps the bottom strip off (the plan takes the whole width): a detail asked for then goes nowhere -
+    // a box that is off, whose pen draws into a scratch canvas and whose tables are skipped
+    if (!(this.L.strip.h > 0)) return { x: 0, y: 0, w: 0, h: 0, off: true, label: null, nts: true };
     const d = this.L.details[i];
     const pp = this.pp;
     pp.rect(d.x, d.y, d.w, d.h, { layer: 'FRAME' });

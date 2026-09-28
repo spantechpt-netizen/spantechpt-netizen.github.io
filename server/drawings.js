@@ -37,7 +37,7 @@ export const BEAM_DECISIONS = ['deepen', 'bypass', 'ram_ok', 'clear'];
 /** Project document sections: the original design files, the RAM models, the PT design drawings, the PT shop drawings. */
 export const FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
 /** Sheet frame defaults (paper mm); see shopdrawings/lib/sheet.mjs DEFAULT_FRAME. */
-export const FRAME_DEFAULTS = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true };
+export const FRAME_DEFAULTS = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: false };
 
 /** The submittal (transmittal) form: one template for the whole office, filled from the project and the runs. */
 export const SUBMITTAL_DEFAULTS = {

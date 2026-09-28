@@ -415,7 +415,7 @@ test('beam design through RAM: the run\'s model comes back with one strip per be
   assert.equal(result.status, 201, JSON.stringify(result.body));
   const run = result.body.run;
   assert.ok(run.beams.length === 1 && run.beams[0].types.length === 1 && run.beams[0].types[0].mark === 'B1', JSON.stringify(run.beams));
-  assert.ok(run.sheets.some((s) => s.no.endsWith('-07') && /BEAM/.test(s.title)), 'the beam sheet in the package');
+  assert.ok(!run.sheets.some((s) => s.no.endsWith('-07')) && run.sheets.some((s) => s.no.endsWith('-01')), 'no separate beam sheet: the beams live on the framing plan');
   const prep = await api('POST', `/api/drawings/runs/${run.id}/beam-strips`, {});
   assert.equal(prep.status, 201, JSON.stringify(prep.body));
   assert.deepEqual([prep.body.beam_strips.beams, prep.body.beam_strips.spans, prep.body.beam_strips.splitters], [2, 2, 4]);

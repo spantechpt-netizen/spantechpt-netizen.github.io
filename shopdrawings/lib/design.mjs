@@ -30,7 +30,7 @@ import { extractModel, flatten, closedPolys } from './extract.mjs';
 import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisRect, cleanPolygon, ceilTo, distToPolygon, clipSegmentToPolygon } from './geometry.mjs';
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
-import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet, beamsSheet } from './sheets.mjs';
+import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet, beamScheduleRows, BEAM_SCHEDULE_COLS, drawBeamSections, beamSteelKg, beamScheduleTotals, beamScheduleNotes } from './sheets.mjs';
 import { overrideColumns } from './punching.mjs';
 import * as RC from './ram-concept.mjs';
 /** The office's DIM100: 250 text, 150 oblique ticks, green number, text above the line, and no extension lines at all (dimse1/dimse2 on, dimexe 0). */
@@ -1881,7 +1881,6 @@ export const DESIGN_SHEETS = [
   // from a RAM model: the tendons, one direction per sheet, with the high / low points of the profile only
   { key: 'dcablat', base: 'DESIGN_PT_CABLES_LATITUDE', title: 'PT CABLES - LATITUDE (DIRECTION 1) - DESIGN LAYOUT AND PROFILE POINTS', no: '05', ramOnly: true, set: 'latitude' },
   { key: 'dcablon', base: 'DESIGN_PT_CABLES_LONGITUDE', title: 'PT CABLES - LONGITUDE (DIRECTION 2) - DESIGN LAYOUT AND PROFILE POINTS', no: '06', ramOnly: true, set: 'longitude' },
-  { key: 'dbeams', base: 'DESIGN_BEAM_MARKS_SECTIONS_SCHEDULE', title: 'BEAM MARKS, SECTIONS AND REINFORCEMENT SCHEDULE - RAM DESIGN', no: '07', ramOnly: true, needsBeams: true },
 ];
 
 const designNotes = (model, level) => [
@@ -1907,14 +1906,41 @@ function framingSheet(model, level, meta, adds) {
       ...(level.beams || []).filter((bm) => bm.polygon).map((bm) => ({ id: bm.id, element: bm.band ? 'BAND BEAM (THICKENED STRIP)' : bm.interior ? 'INTERIOR BEAM' : 'EDGE BEAM', size: `${fmtMM(bm.t)}${bm.depth ? ' x ' + fmtMM(bm.depth) : ''} L=${fmtMM(dist(bm.a, bm.b))}`, location: gridRef(level, bbox(bm.polygon)) })),
     ];
     const cols = [{ key: 'id', title: 'ID', w: 20 }, { key: 'element', title: 'ELEMENT', w: 42 }, { key: 'size', title: 'SIZE (mm)', w: 45 }, { key: 'location', title: 'LOCATION / GRID', w: 78, align: 'L', max: 44 }];
-    const d0 = sheet.detailBox(0, 'GENERAL DETAILS APPLIED ON THIS LEVEL', '');
-    sheet.table(d0.x + 3, d0.y + d0.h - 10, DETAIL_KEY_COLS, detailsKeyRows(Object.keys(DETAILS)), { headH: 5, rowH: 4, h: 1.5, maxRows: 12 });
-    const d1 = sheet.detailBox(1, 'NOTATION AND MATERIALS', 'N.T.S.');
-    const det1 = D.notationLegend({ thickness: level.thickness, fc: model.spec.fc, fy: model.spec.fy, cover: model.spec.cover });
-    det1.draw(sheet.detailPen(d1, 12, det1.bbox));
-    const d2 = sheet.detailBox(2, 'TYPICAL SLAB SECTION AT COLUMN', '1:25');
-    const det2 = D.sectionColumn({ h: level.thickness, c1: level.columns[0]?.w || 600, ext: 1200, dia: 10, spacing: 150, cover: model.spec.cover, hookLeg: R.hookLeg(10), shape: 'STR' });
-    det2.draw(sheet.detailPen(d2, 25, det2.bbox));
+    // the beams live on the framing plan (office rule: no separate beam sheet): every typed beam carries its type,
+    // section and bars beside it (drawBase), the beam schedule takes the table and the sections the detail boxes
+    const sch = level.beamSchedule && (level.beamSchedule.types || []).length ? level.beamSchedule : null;
+    const designLabel = sch ? (sch.design === 'office' ? 'OFFICE DESIGN' : sch.design === 'max' ? 'HEAVIER OF RAM AND OFFICE DESIGN' : 'RAM DESIGN') : '';
+    let next = 0;
+    if (sch) next = drawBeamSections(sheet, sch, 0);
+    if (next < 3) {
+      const d0 = sheet.detailBox(next++, 'GENERAL DETAILS APPLIED ON THIS LEVEL', '');
+      sheet.table(d0.x + 3, d0.y + d0.h - 10, DETAIL_KEY_COLS, detailsKeyRows(Object.keys(DETAILS)), { headH: 5, rowH: 4, h: 1.5, maxRows: 12 });
+    }
+    if (next < 3) {
+      const d1 = sheet.detailBox(next++, 'NOTATION AND MATERIALS', 'N.T.S.');
+      const det1 = D.notationLegend({ thickness: level.thickness, fc: model.spec.fc, fy: model.spec.fy, cover: model.spec.cover });
+      det1.draw(sheet.detailPen(d1, 12, det1.bbox));
+    }
+    if (next < 3) {
+      const d2 = sheet.detailBox(next++, 'TYPICAL SLAB SECTION AT COLUMN', '1:25');
+      const det2 = D.sectionColumn({ h: level.thickness, c1: level.columns[0]?.w || 600, ext: 1200, dia: 10, spacing: 150, cover: model.spec.cover, hookLeg: R.hookLeg(10), shape: 'STR' });
+      det2.draw(sheet.detailPen(d2, 25, det2.bbox));
+    }
+    const failing = (sch?.office?.beams || []).filter((b) => b.status === 'fail');
+    const forces = sch?.office ? sch.office.beams.slice(0, 8).map((b) => `${b.id} ${Math.round(b.width / 50) * 50}x${Math.round(b.depth / 50) * 50}: SPANS ${b.spans.map((sp) => (sp.length / 1000).toFixed(1)).join('+')} m, wu ${b.loads.wu} kN/m, Mu- ${b.forces?.mNeg ?? b.mu_neg ?? ''} Mu+ ${b.forces?.mPos ?? b.mu_pos ?? ''} kN.m`) : [];
+    if (sch) {
+      const kg = beamSteelKg(sch);
+      return {
+        rows: beamScheduleRows(sch), cols: BEAM_SCHEDULE_COLS, scheduleTitle: `BEAM SCHEDULE (${designLabel})`, totals: beamScheduleTotals(sch, kg), weight: Math.round(kg),
+        elementRows: rows, elementCols: cols,
+        planTitles: [`FRAMING PLAN WITH BEAM MARKS AND SECTIONS - ${designLabel}`],
+        general: [...designNotes(model, level).slice(0, 2), 'SLAB OUTLINE, COLUMNS, WALLS, OPENINGS, THICKNESS ZONES AND BEAMS ARE READ FROM THE MODEL. EVERY BEAM CARRIES ITS TYPE (IN BRACKETS), ITS SECTION b x h AND THE BARS OF ITS TYPE BESIDE IT; A COLUMN, A WALL OR A DEEPER BEAM CROSSING A BEAM DIVIDES IT. THE TYPES ARE SCHEDULED HERE WITH THEIR SECTIONS.', ...beamScheduleNotes(model, level, sch)],
+        assumptions: [...forces, ...levelAssumptions(model, level).slice(0, forces.length ? 2 : 6)],
+        legend: [['OUTLINE', 'SLAB EDGE', 'thick'], ['s-hatch', 'COLUMN (SOLID GREY)', 'solid'], ['WALL-HATCH', 'WALL (HATCHED)', 'hatch'], ['BEAM', 'BEAM (HATCHED) - TYPE, SECTION AND BARS BESIDE IT', 'hatch'], ['CALLOUT', `BEAM NOT DESIGNED${sch.design === 'ram' ? ' IN RAM' : ''}`, 'hatch'], ['OPENING', 'OPENING (CROSSED)', 'line'], ['SLAB-THK-HATCH', 'THICKENED ZONE', 'hatch']],
+        detailsUsed: Math.min(3, next),
+        checks: [`${sch.beams.length} beams, ${sch.types.length} types, ${sch.undesigned.length} without a design, ${failing.length} not passing the office check.`],
+      };
+    }
     return {
       rows, cols, scheduleTitle: 'ELEMENT SCHEDULE',
       general: [...designNotes(model, level).slice(0, 2), 'SLAB OUTLINE, COLUMNS, WALLS, OPENINGS, STAIRS, THICKNESS ZONES, LEVELS AND CAMBER NOTES ARE READ FROM THE OFFICE DESIGN PLAN. EDGE BEAMS ARE LABELLED WHERE THE PLAN DRAWS THEM; DETAIL 1 APPLIES ALONG THEM.', 'SEE SHEETS 02 (BOTTOM), 03 (TOP) AND 04 (PUNCHING) FOR REINFORCEMENT; THE GENERAL DETAILS SHEET IS PART OF THIS SET.'],
@@ -2197,7 +2223,7 @@ export function composeDesignPackage(model, metaIn = {}) {
     applyEdits(level, adds, model.spec.edits, model.assumptions);
     level.planData = planData(level, adds);
     level.additions = { items: adds.items.length, weight: { T: adds.bars.T.totals().weight_kg, B: adds.bars.B.totals().weight_kg } };
-    const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet, dcablat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'design' }), dcablon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'design' }), dbeams: (m, l, mt) => beamsSheet(m, l, mt) };
+    const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet, dcablat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'design' }), dcablon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'design' }) };
     for (const def of DESIGN_SHEETS) {
       if (def.ramOnly && !level.ram) continue;
       if (def.set && !(level.ram?.tendons || []).some((t) => t.spanSet === def.set)) continue;

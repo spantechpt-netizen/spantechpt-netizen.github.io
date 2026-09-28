@@ -992,7 +992,7 @@ function drawingsPanel(settings) {
   ]);
 
   // the sheet frame: strip sizes and boxes, and the office's own frame DXF
-  const fr = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true, ...(current.frame || {}) };
+  const fr = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: false, ...(current.frame || {}) };
   const frameForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
     el('div.grid.grid-3', {}, [
       field({ name: 'size', label: t('dw_frame_size'), type: 'select', value: fr.size, disabled: readOnly(), options: ['A0', 'A1', 'A2'].map((v) => ({ value: v, label: v })) }),

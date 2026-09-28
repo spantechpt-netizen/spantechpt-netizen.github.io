@@ -120,7 +120,12 @@ export function drawBase(sheet, pl, level, o = {}) {
       if (o.regionLabels) {
         const sp = beamSpans(bm, level.columns || [], level.walls || [], level.beams || []);
         const rot = sp.alongX ? 0 : 90;
-        const label = `${bm.id} BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}`;
+        // a beam typed in the beam schedule reads its type mark with its section, its bars written on the other side
+        const rec = (level.beamSchedule?.beams || []).find((b) => b.id === bm.id);
+        const label = rec?.mark ? `${bm.id} [${rec.mark}] BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}` : `${bm.id} BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}`;
+        const chk = (level.beamSchedule?.office?.beams || []).find((x) => String(x.id).toUpperCase() === String(bm.id).toUpperCase());
+        const barsText = rec ? (rec.mark ? `${rec.top?.text || '-'} / ${rec.bottom?.text || '-'} / ${rec.stirrups?.text || '-'}` : `NOT DESIGNED${level.beamSchedule?.design === 'ram' ? ' IN RAM' : ''}`) + (chk && chk.status === 'fail' ? ` - NOT PASSING (${(chk.reasons.length ? chk.reasons : ['RAM']).join(', ').toUpperCase()})` : '') : null;
+        if (rec) pl.hatch([bm.polygon], { layer: rec.mark ? 'BEAM' : 'CALLOUT', pattern: 'ANSI31', spacing: 1.2 });
         const off = (bm.t || 300) / 2 + 350;
         const side = sp.alongX ? { x: 0, y: 1 } : { x: -1, y: 0 };
         const H = 1.8, widthOf = (text) => text.length * H * sheet.S * 0.9; // the label's length on the plan (model mm)
@@ -134,6 +139,11 @@ export function drawBase(sheet, pl, level, o = {}) {
           let at = { x: m.x + side.x * off, y: m.y + side.y * off };
           if (!pointInPolygon(at, level.outline)) at = { x: m.x - side.x * off, y: m.y - side.y * off }; // an edge beam: the label on the slab side
           pl.text(at, text, { layer: 'BEAM', h: H, align: 'C', valign: 'M', rot });
+          // the bars of the type on the other side of the beam (once, on the longest span)
+          if (barsText && span === sp.spans.reduce((a, b) => (b.length > a.length ? b : a)) && (widthOf(barsText) * 0.85 + 300 <= t1 - t0 || /NOT PASSING|NOT DESIGNED/.test(barsText))) {
+            const other = { x: m.x - (at.x - m.x), y: m.y - (at.y - m.y) };
+            pl.text(other, barsText, { layer: 'TEXT', h: 1.6, align: 'C', valign: 'M', rot });
+          }
         }
       }
     }
@@ -360,7 +370,7 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
     const maxRows = Math.floor((Sc.h - 6 - 6 - 5 - 6) / rowH);
     const res = sheet.table(Sc.x, Sc.y + Sc.h - 3, r.cols || SCHEDULE_COLS, r.rows, { title: r.scheduleTitle || 'BAR BENDING SCHEDULE', maxRows, rowH, h: r.rowH ? Math.min(1.7, r.rowH * 0.45) : 1.7, totals: r.totals || null });
     leftover = res.leftover;
-    if (leftover.length && (r.detailsUsed ?? 3) >= 3) {
+    if (leftover.length && ((r.detailsUsed ?? 3) >= 3 || !(sheet.L.strip.h > 0))) {
       sheet.pp.text(Sc.x + 2, Sc.y + 1.5, `+ ${leftover.length} MORE ROWS - SEE THE SCHEDULE FILE OF THIS SHEET`, { layer: 'SCHEDULE-TEXT', h: 1.6 });
     } else if (leftover.length) {
       const used = r.detailsUsed ?? 3;
@@ -1424,54 +1434,85 @@ export function beamsSheet(model, level, meta) {
     // the office design forces per beam (the first twelve; the rest in REPORT.md)
     const forces = office ? office.beams.slice(0, 12).map((b) => `${b.id} ${size50(b.width)}x${size50(b.depth)}: SPANS ${b.spans.map((sp) => (sp.length / 1000).toFixed(1)).join('+')} m, TRIB ${(b.trib_mm.total / 1000).toFixed(1)} m, wu ${b.loads.wu} kN/m, Mu- ${b.Mneg_max} / Mu+ ${b.Mpos_max} kN.m, Vu ${b.Vu} kN -> ${b.top?.text || '-'} / ${b.bottom?.text || '-'} / ${b.stirrups?.text || '-'}; DEFL. ${b.deflection.table_ok ? 'OK BY SPAN/DEPTH' : `${b.deflection.ratio} OF LIMIT${b.deflection.ok ? '' : ' - NOT PASSING'}`}${b.ram_failed ? '; REPORTED FAILING IN RAM' : ''}`) : [];
     if (office && office.beams.length > 12) forces.push(`${office.beams.length - 12} MORE BEAMS IN REPORT.md.`);
-    const rows = sch.types.map((t) => ({ mark: t.isNew && sch.library ? `${t.mark} *` : t.mark, section: `${t.width} x ${t.depth}`, top: t.top?.text || '-', bottom: t.bottom?.text || '-', stirrups: t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs} LEGS @ ${t.stirrups.spacing}` : '-', count: t.count, beams: t.beams.join(', ') }));
-    const cols = [
-      { key: 'mark', title: 'TYPE', w: 14 }, { key: 'section', title: 'SECTION\nb x h (mm)', w: 24 }, { key: 'top', title: 'TOP BARS\n(SUPPORTS)', w: 24 }, { key: 'bottom', title: 'BOTTOM BARS\n(SPAN)', w: 24 },
-      { key: 'stirrups', title: 'STIRRUPS', w: 34 }, { key: 'count', title: 'No.', w: 10 }, { key: 'beams', title: 'BEAMS', w: 55, align: 'L', max: 34 },
-    ];
-    // the sections of the types, four to a box, at 1:25
-    let detailsUsed = 0;
-    const perBox = 4;
-    for (let bi = 0; bi < 3 && bi * perBox < sch.types.length; bi++) {
-      const group = sch.types.slice(bi * perBox, (bi + 1) * perBox);
-      const d = sheet.detailBox(bi, `BEAM SECTIONS ${group[0].mark}${group.length > 1 ? ` - ${group[group.length - 1].mark}` : ''}`, '1:25');
-      detailsUsed = bi + 1;
-      const gap = 600;
-      let x = 0;
-      const maxH = Math.max(...group.map((t) => t.depth));
-      const items = group.map((t) => { const it = { t, x }; x += t.width + gap; return it; });
-      const gb = { minX: -200, maxX: x - gap + 200, minY: -1400, maxY: maxH + 300, cx: (x - gap) / 2, cy: (maxH - 1100) / 2 };
-      const pen = sheet.detailPen(d, 25, gb);
-      for (const { t, x: x0 } of items) {
-        const cov = 40, b = t.width, h = t.depth;
-        pen.pline([{ x: x0, y: 0 }, { x: x0 + b, y: 0 }, { x: x0 + b, y: h }, { x: x0, y: h }], { layer: 'OUTLINE', closed: true, lw: 35 });
-        pen.pline([{ x: x0 + cov, y: cov }, { x: x0 + b - cov, y: cov }, { x: x0 + b - cov, y: h - cov }, { x: x0 + cov, y: h - cov }], { layer: 'REBAR', closed: true });
-        const rowOf = (set, y) => { if (!set) return; const nb = set.n, r = set.dia / 2; const x1 = x0 + cov + 12, x2 = x0 + b - cov - 12; for (let i = 0; i < nb; i++) { const xx = nb > 1 ? x1 + ((x2 - x1) * i) / (nb - 1) : (x1 + x2) / 2; pen.circle({ x: xx, y }, r, { layer: 'REBAR' }); pen.hatch([[{ x: xx - r, y: y - r }, { x: xx + r, y: y - r }, { x: xx + r, y: y + r }, { x: xx - r, y: y + r }]], { layer: 'REBAR', pattern: 'SOLID' }); } };
-        rowOf(t.top, h - cov - 20); rowOf(t.bottom, cov + 20);
-        pen.text({ x: x0 + b / 2, y: -250 }, `${t.mark}  ${size50(b)}x${size50(h)}`, { layer: 'TEXT', h: 2.2, align: 'C', valign: 'T', bold: true });
-        pen.text({ x: x0 + b / 2, y: -620 }, `TOP ${t.top?.text || '-'}  BOT ${t.bottom?.text || '-'}`, { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
-        pen.text({ x: x0 + b / 2, y: -950 }, t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs}L @ ${t.stirrups.spacing}` : '-', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
-        pen.text({ x: x0 + b / 2, y: -1250 }, `${t.count} BEAM${t.count > 1 ? 'S' : ''}`, { layer: 'NOTES', h: 1.4, align: 'C', valign: 'T' });
-      }
-    }
-    const kg = sch.types.reduce((s, t) => s + t.beams.reduce((ss, id) => { const bm = sch.beams.find((b) => b.id === id); return ss + ((t.top?.area || 0) + (t.bottom?.area || 0)) * (bm ? bm.length : 0) * 7850 / 1e9; }, 0), 0);
+    const rows = beamScheduleRows(sch), cols = BEAM_SCHEDULE_COLS;
+    const detailsUsed = drawBeamSections(sheet, sch, 0);
+    const kg = beamSteelKg(sch);
     return {
-      rows, cols, scheduleTitle: `BEAM SCHEDULE (${designLabel})`, detailsUsed, totals: `${sch.beams.length} BEAMS IN ${sch.types.length} TYPES${sch.undesigned.length ? ` · ${sch.undesigned.length} NOT DESIGNED` : ''} · MAIN BARS ≈ ${Math.round(kg)} kg`,
+      rows, cols, scheduleTitle: `BEAM SCHEDULE (${designLabel})`, detailsUsed, totals: beamScheduleTotals(sch, kg),
       weight: Math.round(kg),
       planTitles: [`BEAM MARKS AND SECTIONS - ${designLabel}`],
-      general: [
-        commonNotes(model, level)[0],
-        `EVERY BEAM CARRIES ITS TYPE AND SECTION (b x h) ON THE PLAN; THE BARS OF THE TYPE ARE IN THE SCHEDULE AND THE SECTIONS. ${sch.design === 'office' ? 'THE BARS ARE THE OFFICE DESIGN: EVERY BEAM ANALYSED AS A CONTINUOUS BEAM OVER ITS COLUMNS AND WALLS UNDER THE SLAB IT CARRIES (SELF-WEIGHT, THE AREA LOADS OF THE MODEL, 1.2 D + 1.6 L, LIVE LOAD PATTERNED), FLEXURE, SHEAR AND DEFLECTION PER SBC 304 / ACI 318.' : sch.design === 'max' ? 'THE BARS ARE, SET BY SET, THE HEAVIER OF THE RAM CONCEPT DESIGN AND THE OFFICE DESIGN (CONTINUOUS-BEAM ANALYSIS ON THE MODEL LOADS, SBC 304 / ACI 318).' : 'TOP BARS ARE THE HEAVIEST RAM DESIGNED OVER THE SUPPORTS OF THE BEAM, BOTTOM BARS THE HEAVIEST IN ITS SPANS, STIRRUPS THE CLOSEST SPACING RAM DESIGNED IN IT.'}`,
-        sch.design === 'ram' ? 'THE DESIGN COMES FROM ONE RAM CONCEPT DESIGN STRIP ON THE CENTRE LINE OF EVERY BEAM SPAN, BOUNDED BY A SPLITTER ON EACH EDGE OF THE BEAM, DESIGNED AS A BEAM. BEAMS OF ONE SECTION WHOSE BARS ARE ALIKE (WITHIN 15 %) SHARE A TYPE AND TAKE THE HEAVIER BARS.' : `THE OFFICE DESIGN FORCES OF EVERY BEAM ARE LISTED IN THE ASSUMPTIONS AND IN REPORT.md; ${sch.office?.assumed?.length ? sch.office.assumed.join('; ').toUpperCase() + '. ' : ''}THE RAM DESIGN REPORT GOVERNS. BEAMS OF ONE SECTION WHOSE BARS ARE ALIKE (WITHIN 15 %) SHARE A TYPE AND TAKE THE HEAVIER BARS.`,
-        `${sch.undesigned.length ? `${sch.undesigned.length} BEAM(S) CARRY NO ${sch.design === 'ram' ? 'RAM ' : ''}DESIGN (${sch.undesigned.slice(0, 10).join(', ')}): RUN CALC ALL ON THE MODEL WITH THE BEAM STRIPS AND RE-ISSUE. ` : ''}CONTINUING TOP BARS, LAPS AND ANCHORAGES PER THE OFFICE BEAM DETAILS; STIRRUP SPACING TO BE HALVED OVER 2h FROM EVERY SUPPORT FACE.`,
-        failing.length ? `BEAMS NOT PASSING THE OFFICE CHECK: ${failing.map((b) => `${b.id} (${b.reasons.join(', ') || 'REPORTED FAILING IN RAM'})`).join('; ').toUpperCase()}${bypass ? ` - ACCEPTED AT THE DESIGN ENGINEER'S RESPONSIBILITY (${[bypass.by, bypass.date].filter(Boolean).join(', ').toUpperCase()})${bypass.note ? ': ' + String(bypass.note).toUpperCase() : ''}` : ' - TO BE RESOLVED (DEEPEN THE BEAM OR CONFIRM AGAINST THE RAM REPORT)'}.` : null,
-        sch.library ? `BEAM TYPES FOLLOW THE PROJECT'S UNIFIED BEAM SCHEDULE (${sch.library} TYPES ON RECORD): A BEAM TAKES THE LIGHTEST TYPE THAT CARRIES IT; ${sch.added?.length ? `TYPES MARKED * (${sch.added.map((t) => t.mark).join(', ')}) ARE NEW ON THIS SHEET, ADDED FOR BEAMS NO EXISTING TYPE CARRIES - THE EXISTING TYPES ARE UNCHANGED.` : 'NO NEW TYPE WAS NEEDED ON THIS SHEET.'}` : null,
-      ],
+      general: [commonNotes(model, level)[0], ...beamScheduleNotes(model, level, sch)],
       assumptions: [...forces, ...levelAssumptions(model, level).slice(0, forces.length ? 1 : 3)],
       legend: [['BEAM', 'BEAM (HATCHED) - TYPE AND SECTION BESIDE IT', 'hatch'], ['CALLOUT', `BEAM NOT DESIGNED${sch.design === 'ram' ? ' IN RAM' : ''}`, 'hatch'], ['COLUMN-HATCH', 'COLUMN', 'solid']],
       checks: [`${sch.beams.length} beams, ${sch.types.length} types, ${sch.undesigned.length} without a design, ${failing.length} not passing the office check.`],
     };
   };
+}
+
+
+/** The rows of the beam schedule: one per type, the new types starred under a unified project schedule. */
+export function beamScheduleRows(sch) {
+  return sch.types.map((t) => ({ mark: t.isNew && sch.library ? `${t.mark} *` : t.mark, section: `${t.width} x ${t.depth}`, top: t.top?.text || '-', bottom: t.bottom?.text || '-', stirrups: t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs} LEGS @ ${t.stirrups.spacing}` : '-', count: t.count, beams: t.beams.join(', ') }));
+}
+
+/** The beam schedule columns (type, section, bars, stirrups, count, beams). */
+export const BEAM_SCHEDULE_COLS = [
+      { key: 'mark', title: 'TYPE', w: 14 }, { key: 'section', title: 'SECTION\nb x h (mm)', w: 24 }, { key: 'top', title: 'TOP BARS\n(SUPPORTS)', w: 24 }, { key: 'bottom', title: 'BOTTOM BARS\n(SPAN)', w: 24 },
+      { key: 'stirrups', title: 'STIRRUPS', w: 34 }, { key: 'count', title: 'No.', w: 10 }, { key: 'beams', title: 'BEAMS', w: 55, align: 'L', max: 34 },
+];
+
+/** The sections of the types drawn four to a detail box at 1:25 from box `first`; returns the number of boxes used in all. */
+export function drawBeamSections(sheet, sch, first = 0) {
+  // the sections of the types, four to a box, at 1:25
+  let detailsUsed = first;
+  const perBox = 4;
+  for (let bi = 0; bi + first < 3 && bi * perBox < sch.types.length; bi++) {
+    const group = sch.types.slice(bi * perBox, (bi + 1) * perBox);
+    const d = sheet.detailBox(bi + first, `BEAM SECTIONS ${group[0].mark}${group.length > 1 ? ` - ${group[group.length - 1].mark}` : ''}`, '1:25');
+    detailsUsed = bi + first + 1;
+    const gap = 600;
+    let x = 0;
+    const maxH = Math.max(...group.map((t) => t.depth));
+    const items = group.map((t) => { const it = { t, x }; x += t.width + gap; return it; });
+    const gb = { minX: -200, maxX: x - gap + 200, minY: -1400, maxY: maxH + 300, cx: (x - gap) / 2, cy: (maxH - 1100) / 2 };
+    const pen = sheet.detailPen(d, 25, gb);
+    for (const { t, x: x0 } of items) {
+      const cov = 40, b = t.width, h = t.depth;
+      pen.pline([{ x: x0, y: 0 }, { x: x0 + b, y: 0 }, { x: x0 + b, y: h }, { x: x0, y: h }], { layer: 'OUTLINE', closed: true, lw: 35 });
+      pen.pline([{ x: x0 + cov, y: cov }, { x: x0 + b - cov, y: cov }, { x: x0 + b - cov, y: h - cov }, { x: x0 + cov, y: h - cov }], { layer: 'REBAR', closed: true });
+      const rowOf = (set, y) => { if (!set) return; const nb = set.n, r = set.dia / 2; const x1 = x0 + cov + 12, x2 = x0 + b - cov - 12; for (let i = 0; i < nb; i++) { const xx = nb > 1 ? x1 + ((x2 - x1) * i) / (nb - 1) : (x1 + x2) / 2; pen.circle({ x: xx, y }, r, { layer: 'REBAR' }); pen.hatch([[{ x: xx - r, y: y - r }, { x: xx + r, y: y - r }, { x: xx + r, y: y + r }, { x: xx - r, y: y + r }]], { layer: 'REBAR', pattern: 'SOLID' }); } };
+      rowOf(t.top, h - cov - 20); rowOf(t.bottom, cov + 20);
+      pen.text({ x: x0 + b / 2, y: -250 }, `${t.mark}  ${size50(b)}x${size50(h)}`, { layer: 'TEXT', h: 2.2, align: 'C', valign: 'T', bold: true });
+      pen.text({ x: x0 + b / 2, y: -620 }, `TOP ${t.top?.text || '-'}  BOT ${t.bottom?.text || '-'}`, { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
+      pen.text({ x: x0 + b / 2, y: -950 }, t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs}L @ ${t.stirrups.spacing}` : '-', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
+      pen.text({ x: x0 + b / 2, y: -1250 }, `${t.count} BEAM${t.count > 1 ? 'S' : ''}`, { layer: 'NOTES', h: 1.4, align: 'C', valign: 'T' });
+    }
+  }
+  return detailsUsed;
+}
+
+/** The main bars of the typed beams, kg (top and bottom areas over the beams' lengths). */
+export function beamSteelKg(sch) {
+  return sch.types.reduce((s, t) => s + t.beams.reduce((ss, id) => { const bm = sch.beams.find((b) => b.id === id); return ss + ((t.top?.area || 0) + (t.bottom?.area || 0)) * (bm ? bm.length : 0) * 7850 / 1e9; }, 0), 0);
+}
+
+export function beamScheduleTotals(sch, kg = beamSteelKg(sch)) {
+  return `${sch.beams.length} BEAMS IN ${sch.types.length} TYPES${sch.undesigned.length ? ` · ${sch.undesigned.length} NOT DESIGNED` : ''} · MAIN BARS ≈ ${Math.round(kg)} kg`;
+}
+
+/** The notes of the beam design (how the bars were found, the beams without a design, the failing ones, the unified schedule). */
+export function beamScheduleNotes(model, level, sch) {
+  const office = sch.office || null;
+  const failing = (office?.beams || []).filter((b) => b.status === 'fail');
+  const bypass = model.spec.beams?.override && (model.spec.beams.override.by || model.spec.beams.override.beams) ? model.spec.beams.override : null;
+  void level;
+  return [
+        `EVERY BEAM CARRIES ITS TYPE AND SECTION (b x h) ON THE PLAN; THE BARS OF THE TYPE ARE IN THE SCHEDULE AND THE SECTIONS. ${sch.design === 'office' ? 'THE BARS ARE THE OFFICE DESIGN: EVERY BEAM ANALYSED AS A CONTINUOUS BEAM OVER ITS COLUMNS AND WALLS UNDER THE SLAB IT CARRIES (SELF-WEIGHT, THE AREA LOADS OF THE MODEL, 1.2 D + 1.6 L, LIVE LOAD PATTERNED), FLEXURE, SHEAR AND DEFLECTION PER SBC 304 / ACI 318.' : sch.design === 'max' ? 'THE BARS ARE, SET BY SET, THE HEAVIER OF THE RAM CONCEPT DESIGN AND THE OFFICE DESIGN (CONTINUOUS-BEAM ANALYSIS ON THE MODEL LOADS, SBC 304 / ACI 318).' : 'TOP BARS ARE THE HEAVIEST RAM DESIGNED OVER THE SUPPORTS OF THE BEAM, BOTTOM BARS THE HEAVIEST IN ITS SPANS, STIRRUPS THE CLOSEST SPACING RAM DESIGNED IN IT.'}`,
+        sch.design === 'ram' ? 'THE DESIGN COMES FROM ONE RAM CONCEPT DESIGN STRIP ON THE CENTRE LINE OF EVERY BEAM SPAN, BOUNDED BY A SPLITTER ON EACH EDGE OF THE BEAM, DESIGNED AS A BEAM. BEAMS OF ONE SECTION WHOSE BARS ARE ALIKE (WITHIN 15 %) SHARE A TYPE AND TAKE THE HEAVIER BARS.' : `THE OFFICE DESIGN FORCES OF EVERY BEAM ARE LISTED IN THE ASSUMPTIONS AND IN REPORT.md; ${sch.office?.assumed?.length ? sch.office.assumed.join('; ').toUpperCase() + '. ' : ''}THE RAM DESIGN REPORT GOVERNS. BEAMS OF ONE SECTION WHOSE BARS ARE ALIKE (WITHIN 15 %) SHARE A TYPE AND TAKE THE HEAVIER BARS.`,
+        `${sch.undesigned.length ? `${sch.undesigned.length} BEAM(S) CARRY NO ${sch.design === 'ram' ? 'RAM ' : ''}DESIGN (${sch.undesigned.slice(0, 10).join(', ')}): RUN CALC ALL ON THE MODEL WITH THE BEAM STRIPS AND RE-ISSUE. ` : ''}CONTINUING TOP BARS, LAPS AND ANCHORAGES PER THE OFFICE BEAM DETAILS; STIRRUP SPACING TO BE HALVED OVER 2h FROM EVERY SUPPORT FACE.`,
+        failing.length ? `BEAMS NOT PASSING THE OFFICE CHECK: ${failing.map((b) => `${b.id} (${b.reasons.join(', ') || 'REPORTED FAILING IN RAM'})`).join('; ').toUpperCase()}${bypass ? ` - ACCEPTED AT THE DESIGN ENGINEER'S RESPONSIBILITY (${[bypass.by, bypass.date].filter(Boolean).join(', ').toUpperCase()})${bypass.note ? ': ' + String(bypass.note).toUpperCase() : ''}` : ' - TO BE RESOLVED (DEEPEN THE BEAM OR CONFIRM AGAINST THE RAM REPORT)'}.` : null,
+        sch.library ? `BEAM TYPES FOLLOW THE PROJECT'S UNIFIED BEAM SCHEDULE (${sch.library} TYPES ON RECORD): A BEAM TAKES THE LIGHTEST TYPE THAT CARRIES IT; ${sch.added?.length ? `TYPES MARKED * (${sch.added.map((t) => t.mark).join(', ')}) ARE NEW ON THIS SHEET, ADDED FOR BEAMS NO EXISTING TYPE CARRIES - THE EXISTING TYPES ARE UNCHANGED.` : 'NO NEW TYPE WAS NEEDED ON THIS SHEET.'}` : null,
+  ].filter(Boolean);
 }
 
 function cablesSheet(model, level, meta) {
