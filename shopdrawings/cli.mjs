@@ -12,6 +12,7 @@
  *   --config file.json      project meta and spec overrides ({ meta: {...}, spec: {...}, layers: "path" })
  *   --layers file.json      layer standard (default: shopdrawings/layers.spantech.json)
  *   --level "1ST FLOOR"     level name (default: from the file name)
+ *   --mode design           design drawings from the office's own RFT plan + the General Details rules (default: shop)
  *   --no-svg                skip the SVG previews
  *
  * Output
@@ -31,6 +32,7 @@ import { execFileSync } from 'node:child_process';
 import { basename, extname } from 'node:path';
 import { extractModel } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
+import { extractDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
 import * as R from './lib/rebar.mjs';
@@ -78,10 +80,14 @@ export function loadLayerStandard(path = DEFAULT_LAYER_STANDARD) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
-export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames, layerStandard }) {
-  meta = { layerStandard: layerStandard || loadLayerStandard(), ...meta };
+export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames, layerStandard, mode = 'shop' }) {
+  meta = { layerStandard: layerStandard || loadLayerStandard(), ...meta, mode };
   let model;
-  if (inputDxf && /\.cpt$/i.test(inputDxf)) {
+  if (mode === 'design') {
+    // design drawings: the office's own design plan + the General Details rules
+    const dxf = loadDrawing(inputDxf, inputText);
+    model = extractDesign(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
+  } else if (inputDxf && /\.cpt$/i.test(inputDxf)) {
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', spec });
     const h = ram.project;
@@ -90,7 +96,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const dxf = loadDrawing(inputDxf, inputText);
     model = extractModel(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
   }
-  const pack = composePackage(model, meta);
+  const pack = mode === 'design' ? composeDesignPackage(model, meta) : composePackage(model, meta);
   mkdirSync(join(out, 'dxf'), { recursive: true });
   mkdirSync(join(out, 'schedules'), { recursive: true });
   if (svg) mkdirSync(join(out, 'preview'), { recursive: true });
@@ -108,7 +114,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     }
   }
   const maxScale = Math.max(...pack.sheets.map((s) => s.scale || 100));
-  writeFileSync(join(out, 'SHOP_DRAWINGS_PACKAGE.dxf'), toDxf(pack.pkg, { ltscale: maxScale / 4 }));
+  writeFileSync(join(out, mode === 'design' ? 'DESIGN_DRAWINGS_PACKAGE.dxf' : 'SHOP_DRAWINGS_PACKAGE.dxf'), toDxf(pack.pkg, { ltscale: maxScale / 4 }));
   writeFileSync(join(out, 'model.json'), JSON.stringify(serializable(model), null, 2));
   writeFileSync(join(out, 'REPORT.md'), report(model, pack));
   return { model, pack, files };
@@ -120,11 +126,12 @@ function serializable(model) {
 
 function report(model, pack) {
   const L = [];
-  L.push(`# Shop drawing package - ${pack.meta.project}`);
+  const design = pack.meta.mode === 'design';
+  L.push(`# ${design ? 'Design drawing package' : 'Shop drawing package'} - ${pack.meta.project}`);
   L.push('');
   L.push(`Generated ${pack.meta.date} · rev ${pack.meta.revision} · ${pack.sheets.length} sheets`);
   L.push('');
-  L.push('## What was read from the structural drawings');
+  L.push(design ? '## What was read from the office design plan' : '## What was read from the structural drawings');
   L.push('');
   for (const f of model.findings) L.push(`- ${f}`);
   L.push(`- Code reference: ${model.code_reference || 'not stated'} (${model.spec.sources.code}); f'c ${model.spec.fc} MPa (${model.spec.sources.fc}); fy ${model.spec.fy} MPa (${model.spec.sources.fy}); cover ${model.spec.cover} mm (${model.spec.sources.cover}).`);
@@ -147,11 +154,15 @@ function report(model, pack) {
   for (const s of pack.sheets) L.push(`| ${s.drawingNo} | ${s.title} | ${s.level} | \`${s.blockName}\` | ${s.scale ? `1:${s.scale}` : 'NTS'} | ${s.weight ? Math.round(s.weight) : '-'} |`);
   const total = pack.sheets.reduce((s, x) => s + (x.weight || 0), 0);
   L.push('');
-  L.push(`Total scheduled reinforcement: **${Math.round(total).toLocaleString('en-US')} kg** (cables excluded - template only).`);
-  const checks = pack.sheets.flatMap((s) => s.checks.map((c) => ({ ...c, level: s.level })));
-  const governed = checks.filter((c) => c.asProv < c.asReq);
-  L.push('');
-  L.push(`## Top bar As,min checks: ${checks.length} column-directions checked, ${governed.length} short`);
+  L.push(design
+    ? `Reinforcement added from the General Details: **${Math.round(total).toLocaleString('en-US')} kg** (the designer's own bars are kept as drawn and not scheduled here).`
+    : `Total scheduled reinforcement: **${Math.round(total).toLocaleString('en-US')} kg** (cables excluded - template only).`);
+  if (!design) {
+    const checks = pack.sheets.flatMap((s) => s.checks.map((c) => ({ ...c, level: s.level })));
+    const governed = checks.filter((c) => c.asProv < c.asReq);
+    L.push('');
+    L.push(`## Top bar As,min checks: ${checks.length} column-directions checked, ${governed.length} short`);
+  }
   return L.join('\n') + '\n';
 }
 
@@ -170,7 +181,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (a.rev) meta.revision = a.rev;
   const t0 = Date.now();
   const layerStandard = loadLayerStandard(a.layers || cfg.layers || DEFAULT_LAYER_STANDARD);
-  const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg, layerStandard, levelNames: a.level ? [a.level] : undefined });
+  const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg, layerStandard, levelNames: a.level ? [a.level] : undefined, mode: a.mode || cfg.mode || 'shop' });
   console.log(model.findings.join('\n'));
   console.log(`\n${pack.sheets.length} sheets → ${out}  (${files.length} DXF, ${Date.now() - t0} ms)`);
   for (const s of pack.sheets) console.log(`  ${s.drawingNo}  ${s.blockName.padEnd(44)} 1:${s.scale}  ${s.weight ? Math.round(s.weight) + ' kg' : ''}`);

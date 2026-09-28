@@ -10,7 +10,7 @@ import { bbox, expandBbox, bboxContains, cleanPolygon, polygonArea, asAxisRect, 
 import { DEFAULT_SPEC } from './rebar.mjs';
 
 const LAYER_RULES = [
-  ['grid', /GRID|AXIS|AXES|محور|محاور/i],
+  ['grid', /GRID|AXIS|AXES|\bAXE\b|محور|محاور/i],
   ['ubar', /U[-_ ]?BARS?|HAIRPIN/i],
   ['void', /VOID|ACU|ACOU|AKWAR|أكوار|اكوار|كور|HOLLOW|COBIAX|BUBBLE/i],
   ['opening', /OPEN|SHAFT|DUCT|فتح|HOLE|SLEEVE/i],
@@ -32,7 +32,7 @@ export function classifyLayer(name) {
 }
 
 /** Explode INSERTs so block geometry becomes plain entities in drawing coordinates. */
-function flatten(dxf) {
+export function flatten(dxf) {
   const out = [];
   const walk = (ents, t, depth, blockName, sink) => {
     for (const e of ents) {
@@ -67,13 +67,16 @@ function shiftEntity(e, base) {
   return transformEntity(e, { x: -base.x, y: -base.y, sx: 1, sy: 1, rotation: 0 });
 }
 
-function transformEntity(e, t) {
+export function transformEntity(e, t) {
   const T = (p) => transformPoint(p, t);
   const scale = Math.abs(t.sx || 1);
   const c = { ...e };
   const p = T({ x: e.x, y: e.y });
   c.x = p.x; c.y = p.y;
   if (e.x2 != null) { const q = T({ x: e.x2, y: e.y2 }); c.x2 = q.x; c.y2 = q.y; }
+  if (e.x3 != null) { const q = T({ x: e.x3, y: e.y3 }); c.x3 = q.x; c.y3 = q.y; }
+  if (e.x4 != null) { const q = T({ x: e.x4, y: e.y4 }); c.x4 = q.x; c.y4 = q.y; }
+  if (e.type === 'DIMENSION') { c.measure = (e.measure || 0) * scale; c.rotation = (e.rotation || 0) + (t.rotation || 0); }
   if (e.pts) c.pts = e.pts.map((q) => ({ ...q, ...T(q) }));
   if (e.paths) c.paths = e.paths.map((path) => path.map((q) => T(q)));
   if (e.r != null) c.r = e.r * scale;
@@ -82,22 +85,23 @@ function transformEntity(e, t) {
   return c;
 }
 
-function entityPoints(e) {
+export function entityPoints(e) {
   switch (e.type) {
     case 'LINE': return [{ x: e.x, y: e.y }, { x: e.x2, y: e.y2 }];
     case 'LWPOLYLINE': case 'SOLID': case 'TRACE': return e.pts;
     case 'CIRCLE': case 'ARC': return [{ x: e.x - e.r, y: e.y - e.r }, { x: e.x + e.r, y: e.y + e.r }];
     case 'HATCH': return e.paths.flat();
     case 'TEXT': case 'MTEXT': return [{ x: e.x, y: e.y }];
+    case 'DIMENSION': return [{ x: e.x, y: e.y }, ...(e.x3 != null ? [{ x: e.x3, y: e.y3 }] : []), ...(e.x4 != null ? [{ x: e.x4, y: e.y4 }] : [])];
     default: return [];
   }
 }
 
-function closedPolys(e) {
+export function closedPolys(e) {
   // Closed polygons carried by an entity (polyline, solid or hatch path).
   if (e.type === 'LWPOLYLINE') {
     const pts = cleanPolygon(e.pts);
-    const closed = e.closed || (e.pts.length > 3 && dist(e.pts[0], e.pts[e.pts.length - 1]) < 1);
+    const closed = e.closed || (e.pts.length > 3 && dist(e.pts[0], e.pts[e.pts.length - 1]) < 50); // a polyline drawn back to its start (within 50 mm) is a closed outline
     return closed && pts.length >= 3 ? [pts] : [];
   }
   if (e.type === 'SOLID' || e.type === 'TRACE') return [cleanPolygon(e.pts)];
@@ -127,7 +131,7 @@ function scaleEntity(e, k) {
 }
 
 /** Region shape from a closed polygon or circle entity. */
-function regionFrom(e, poly) {
+export function regionFrom(e, poly) {
   if (e.type === 'CIRCLE') return { kind: 'circle', cx: e.x, cy: e.y, r: e.r };
   const rect = asAxisRect(poly, 5);
   if (rect) return { kind: 'rect', rect };
@@ -155,7 +159,7 @@ export function extractModel(dxf, options = {}) {
   if (units.source !== '$INSUNITS') assumptions.push({ text: `Drawing units not declared; ${units.name} ${units.source}.` });
   findings.push(`Drawing units: ${units.name} (${units.source}); ${ents.length} entities read.`);
 
-  for (const e of ents) e.kind = classifyLayer(e.layer + ' ' + (e.name || ''));
+  for (const e of ents) { e.kind = classifyLayer(e.layer + ' ' + (e.name || '')); if (e.kind === 'other' && e.fromBlock) e.kind = classifyLayer(e.fromBlock); }
   const texts = ents.filter((e) => (e.type === 'TEXT' || e.type === 'MTEXT') && textOf(e));
 
   // ---------------------------------------------------------- slab outlines

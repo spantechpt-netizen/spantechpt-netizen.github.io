@@ -36,7 +36,7 @@ export const SHEET_DEFS = [
   { key: 'punching', base: 'FRAMING_REBAR_PUNCHING_LINKS', title: 'PUNCHING SHEAR REINFORCEMENT PLAN (PRELIMINARY)', no: '08' },
 ];
 
-const SCHEDULE_COLS = [
+export const SCHEDULE_COLS = [
   { key: 'mark', title: 'MARK', w: 17 },
   { key: 'dia', title: 'Ø', w: 8 },
   { key: 'shape', title: 'SHAPE', w: 13 },
@@ -50,10 +50,10 @@ const SCHEDULE_COLS = [
 
 const CALL_H = 2.1, LEN_H = 1.7, HOOK_H = 1.5;
 const REBAR_STYLE = 'ST-REBAR';
-const fmtMM = (v) => Math.round(v).toLocaleString('en-US');
+export const fmtMM = (v) => Math.round(v).toLocaleString('en-US');
 const regionBox = (o) => R.regionBbox(o);
 const sizeOf = (o) => (o.kind === 'circle' ? `Ø${fmtMM(2 * o.r)}` : o.kind === 'rect' ? `${fmtMM(o.rect.w)} x ${fmtMM(o.rect.h)}` : `${fmtMM(regionBox(o).w)} x ${fmtMM(regionBox(o).h)} (POLY)`);
-const totalsLine = (tot) => `TOTAL ${tot.weight_kg.toLocaleString('en-US')} kg  ·  ${tot.byDia.map((d) => `Ø${d.dia}: ${d.total_m} m`).join('  ')}`;
+export const totalsLine = (tot) => `TOTAL ${tot.weight_kg.toLocaleString('en-US')} kg  ·  ${tot.byDia.map((d) => `Ø${d.dia}: ${d.total_m} m`).join('  ')}`;
 
 /** "B-C / 2-3" style reference for a region. */
 export function gridRef(level, b) {
@@ -66,7 +66,7 @@ export function gridRef(level, b) {
 }
 
 // ------------------------------------------------------------------ base plan
-function drawBase(sheet, pl, level, o = {}) {
+export function drawBase(sheet, pl, level, o = {}) {
   const S = sheet.S;
   const ob = level.bbox;
   const bubbleR = 4 * S;
@@ -240,7 +240,7 @@ function hairpin(pl, p, n, leg, w = 100, layer = 'REBAR-U') {
   pl.pline([{ x: a.x + n.x * leg, y: a.y + n.y * leg }, a, b, { x: b.x + n.x * leg, y: b.y + n.y * leg }], { layer });
 }
 
-const commonNotes = (model, level) => [
+export const commonNotes = (model, level) => [
   'ALL DIMENSIONS ARE IN MILLIMETRES, LEVELS IN METRES UNLESS NOTED OTHERWISE. DO NOT SCALE; FOLLOW THE WRITTEN DIMENSIONS.',
   `CONCRETE f'c = ${model.spec.fc} MPa (${model.spec.sources.fc}). REINFORCEMENT: DEFORMED BARS fy = ${model.spec.fy} MPa (${model.spec.sources.fy}). CLEAR COVER ${model.spec.cover} mm TOP AND BOTTOM (${model.spec.sources.cover}).`,
   `SLAB THICKNESS ${level.thickness} mm. THIS SHEET IS TO BE READ WITH THE CONSULTANT'S STRUCTURAL DRAWINGS (G.A.) AND THE PT LAYOUT; DISCREPANCIES TO BE REFERRED TO THE ENGINEER BEFORE FABRICATION.`,
@@ -251,14 +251,14 @@ const commonNotes = (model, level) => [
 
 const lengthNote = (model, dias) => R.lengthTable(model.spec, dias).map((r) => `Ø${r.dia}: ld ${r.ld_bottom} (bot) / ${r.ld_top} (top) · LAP ${r.lap_bottom} (bot) / ${r.lap_top} (top) · ldh ${r.ldh}`);
 
-const codeText = (model) => (model.spec.sources.code === 'drawing'
+export const codeText = (model) => (model.spec.sources.code === 'drawing'
   ? `${model.code_reference} AS STATED ON THE STRUCTURAL DRAWINGS. DEVELOPMENT, ANCHORAGE AND LAP LENGTHS PER SBC 304-18 CHAPTER 25 (ACI 318-14 BASIS).`
   : 'SAUDI PRACTICE ASSUMED: SBC 304-18 (SAUDI BUILDING CODE - CONCRETE STRUCTURES, BASED ON ACI 318-14) FOR DEVELOPMENT, ANCHORAGE AND LAP LENGTHS. TO BE ADJUSTED ON RECEIPT OF THE FINAL DESIGN CRITERIA / CONSULTANT REQUIREMENTS.');
 
-const levelAssumptions = (model, level) => model.assumptions.filter((a) => !a.level || a.level === level.id).map((a) => a.text);
+export const levelAssumptions = (model, level) => model.assumptions.filter((a) => !a.level || a.level === level.id).map((a) => a.text);
 
 /** Build one sheet. `draw(sheet, pens)` returns { rows, cols, scheduleTitle, totals, general, legend, extra, detailsUsed } */
-function buildSheet({ model, level, def, meta, index, total, draw }) {
+export function buildSheet({ model, level, def, meta, index, total, draw }) {
   const root = new Canvas();
   const blockName = level ? `${def.base}_${level.id}` : def.base;
   const L = layoutFor('A1');
@@ -866,19 +866,24 @@ export function composePackage(model, metaIn = {}) {
   const total = jobs.length + 1;
   const sheets = jobs.map((j, i) => buildSheet({ model, level: j.level, def: j.def, meta, index: i + 2, total, draw: j.draw }));
   const cover = buildSheet({ model, level: null, def: { key: 'cover', base: 'SHOP_DRAWINGS_COVER_INDEX', title: 'COVER SHEET / DRAWING INDEX', no: '000' }, meta, index: 1, total, draw: coverSheet(model, sheets, meta) });
-  const all = [cover, ...sheets];
+  return packSheets([cover, ...sheets], meta);
+}
+
+/** Apply the layer standard to every sheet and collect all sheet blocks into one package canvas. */
+export function packSheets(all, meta, opts = {}) {
   const std = meta.layerStandard;
   for (const s of all) {
     if (std?.textStyles) for (const [n, d] of Object.entries(std.textStyles)) s.root.textStyleDef(n, d);
     if (std?.layers) s.root.applyLayerStandard(std.layers);
   }
-
   const pkg = new Canvas();
   if (std?.textStyles) for (const [n, d] of Object.entries(std.textStyles)) pkg.textStyleDef(n, d);
+  for (const [n, d] of Object.entries(opts.textStyles || {})) pkg.textStyleDef(n, d);
   const perRow = 4;
   const gapX = 900 * 100, gapY = 650 * 100;
   all.forEach((s, i) => {
     for (const [name, def] of s.root.layers) if (!pkg.layers.has(name)) pkg.layers.set(name, def);
+    for (const [name, def] of s.root.textStyles || []) if (!pkg.textStyles.has(name)) pkg.textStyles.set(name, def);
     pkg.blocks.set(s.blockName, s.root.blocks.get(s.blockName));
     const x = (i % perRow) * gapX, y = -Math.floor(i / perRow) * gapY;
     pkg.insert(s.blockName, x, y);

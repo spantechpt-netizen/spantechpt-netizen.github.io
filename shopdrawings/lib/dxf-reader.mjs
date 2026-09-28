@@ -47,15 +47,20 @@ function buildEntity(type, groups) {
       case 20: e.ys.push(v); break;
       case 11: e.x2 = v; break;
       case 21: e.y2 = v; break;
+      case 13: e.x3 = v; break;
+      case 23: e.y3 = v; break;
+      case 14: e.x4 = v; break;
+      case 24: e.y4 = v; break;
+      case 7: e.style = raw.trim(); break;
       case 40: e.r = v; e.height = v; break;
       case 41: e.sx = v; if (type === 'MTEXT') e.width = v; break;
-      case 42: if (type === 'LWPOLYLINE' || type === 'VERTEX') { e.bulges[e.xs.length - 1] = v; } else e.sy = v; break;
+      case 42: if (type === 'LWPOLYLINE' || type === 'VERTEX') { e.bulges[e.xs.length - 1] = v; } else if (type === 'DIMENSION') e.measure = v; else e.sy = v; break;
       case 50: e.rotation = v; e.a1 = v; break;
       case 51: e.a2 = v; break;
       case 70: e.flags = v; break;
       case 72: e.halign = v; break;
       case 1: textBuf += raw; break;
-      case 3: textBuf = raw + textBuf; break; // MTEXT continuation chunks come first
+      case 3: if (type === 'DIMENSION') e.dimstyle = raw.trim(); else textBuf = raw + textBuf; break; // MTEXT continuation chunks come first
       case 62: e.color = v; break;
       default: break;
     }
@@ -71,6 +76,11 @@ function buildEntity(type, groups) {
   e.x = e.xs[0] ?? 0;
   e.y = e.ys[0] ?? 0;
   if ((type === 'TEXT') && e.halign && e.x2 != null) { e.x = e.x2; e.y = e.y2; }
+  if (type === 'DIMENSION') {
+    // 10/20 dimension line point, 11/21 text midpoint, 13/23 + 14/24 the measured points, 50 rotation, 70 type, 42 measurement, 1 text override
+    e.dimType = (e.flags || 0) & 7;
+    e.text = textBuf.trim();
+  }
   if (type === 'LWPOLYLINE') {
     e.pts = e.xs.map((x, i) => ({ x, y: e.ys[i], bulge: e.bulges[i] || 0 }));
     e.closed = !!((e.flags || 0) & 1);
@@ -148,7 +158,7 @@ export function parseDxf(text) {
     if (ent.type === 'POLYLINE') { polyline = { type: 'LWPOLYLINE', layer: ent.layer, pts: [], closed: !!((ent.flags || 0) & 1) }; return; }
     if (ent.type === 'VERTEX' && polyline) { polyline.pts.push({ x: ent.x, y: ent.y, bulge: ent.bulges[0] || 0 }); return; }
     if (ent.type === 'SEQEND') { if (polyline) { target.push(polyline); polyline = null; } return; }
-    if (['LINE', 'LWPOLYLINE', 'CIRCLE', 'ARC', 'TEXT', 'MTEXT', 'INSERT', 'SOLID', 'TRACE', 'HATCH', 'ATTRIB', 'POINT'].includes(ent.type)) target.push(ent);
+    if (['LINE', 'LWPOLYLINE', 'CIRCLE', 'ARC', 'TEXT', 'MTEXT', 'INSERT', 'SOLID', 'TRACE', 'HATCH', 'ATTRIB', 'POINT', 'DIMENSION'].includes(ent.type)) target.push(ent);
   };
 
   for (const [code, value] of pairs(text)) {

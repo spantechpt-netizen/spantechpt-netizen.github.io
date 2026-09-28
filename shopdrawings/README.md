@@ -90,6 +90,43 @@ punching report.
 `references` (list of `{discipline: ARCH|STRUCT|MEP, no, rev}`),
 `coordinated` (four initials), `prepared`, `checked`, `approved`.
 
+### Design drawings · لوحات التصميم
+
+The same generator also produces the **office's own design drawings**: the input is the office's reinforcement
+design plan (the RFT drawing as the design team draws it) and the rules of the office's **General Details** sheet
+for PT / flat slabs. Everything the designer drew is kept exactly as drawn (bars, call-outs, distribution
+dimensions, dots, mesh labels, camber notes, level tags), and the reinforcement the General Details ask for is added
+on the plan at the places each detail refers to, in the **same bar convention**: one line on `REO-TOP` / `REO-BOT`,
+the call-out `T10-200 (T)` over `L=2400` in text style `BW` (isocp.shx) h = 150 parallel to the bar, the
+distribution width as a red dimension with arch ticks and a green number, and a yellow dot where the bar meets it.
+Every added bar carries a circled `D#` (layer `DETAIL-REF`, freeze it to hide) naming the General Detail it comes from.
+
+```bash
+node shopdrawings/cli.mjs --input RFT_Drawings.dxf --out ./design --mode design --level "TYPICAL FLOOR" --config project.json
+```
+
+Each slab outline of the plan becomes a PART (the office splits its plans the same way) with four sheets:
+01 framing (outline, columns, walls, openings, thickness zones, edge beams, levels, camber), 02 bottom and 03 top
+(the designer's bars + the additions, schedule of the additions only), 04 punching (PS tags per column, preliminary),
+plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF per sheet as before.
+
+| Detail | Rule applied | Where |
+|---|---|---|
+| D1 slab edge with edge beam | T10-200 L-bar (T) 1200 into the slab (+ T10-250 distribution when there is no top mesh) | every slab edge that carries a beam line pair |
+| D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it) + 10T12 (T&B) parallel | every wall face that looks onto the slab |
+| D3 varying thickness | lap 500 at the step (note) | thickness zones |
+| D4 column drop / thickened zone | T12@250 (B) extra reinforcement both ways, 50 Ø beyond the zone | nested outline with a thickness written inside (e.g. `280`) |
+| D5 corners | 3T16-200 diagonals 2 m T&B at wall corners, 3T12 at re-entrant slab corners | walls and outline |
+| D7 MEP voids | longitudinal T&B each side, transverse U-bars, diagonals per the void size table | openings not lined by walls and not already trimmed by the designer (T&B bars next to them) |
+| D12 punching | PS1 10R-4-T12 (interior) / PS2 12R-4-T12 (edge), s = 100, with the schedule | every column, to be confirmed by the punching design |
+
+Anchorage-dependent details (slab edge at live anchors, bursting spirals, pan-box trimmers) need the tendon layout and
+are left out on purpose; site-specific details (blockwork support beam, crane and placing-boom openings) apply only
+where drawn. What the plan reads: walls = long or non-rectangular shapes on the column layer, thickness from the `RC230`
+tag, edge beams from `S-BEAM` line pairs along the outline, the designer's reinforcement from the `REO-*` layers with
+its call-outs (`(T)`, `(B)`, `T&B` decide the sheet), DIMENSION entities on `diamension`, `DOT` inserts, mesh labels on
+`9_TEXT`, `CAMBER` notes and `T.O.C` tags on `TEXT-4`.
+
 ## What comes out · المخرجات
 
 ```

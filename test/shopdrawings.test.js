@@ -411,3 +411,125 @@ test('HATCH records carry no pixel-size group, which AutoCAD rejects on non-deri
     assert.ok(i98 > 0 && ['79', '76', '49'].includes(codes[i98 - 1]), `98 follows the pattern lines / style groups, got ${codes[i98 - 1]}`);
   }
 });
+
+// ---------------------------------------------------------------- design drawings (office convention)
+import { extractDesign, designAdditions, composeDesignPackage, VOID_TABLE } from '../shopdrawings/lib/design.mjs';
+
+/** A small office-style design plan: RC slab outline, columns, a U core wall, an edge beam, a void, a 280 zone and the designer's own top bars. */
+function buildOfficePlan() {
+  const c = new Canvas();
+  c.pline([{ x: 0, y: 0 }, { x: 16000, y: 0 }, { x: 16000, y: 12000 }, { x: 10000, y: 12000 }, { x: 10000, y: 9000 }, { x: 0, y: 9000 }], { layer: 'S-RC slab', closed: true });
+  // thickened zone 280 as a nested outline with its thickness written inside
+  c.pline([{ x: 1000, y: 1000 }, { x: 6000, y: 1000 }, { x: 6000, y: 4000 }, { x: 1000, y: 4000 }], { layer: 'S-RC slab', closed: true });
+  c.text(3500, 2500, '280', { layer: 'S-Slab Thick', h: 200 });
+  c.text(8000, 8000, 'RC230', { layer: 'TXT', h: 200 });
+  c.text(7000, 6000, 'MESH T10@150', { layer: '9_TEXT', h: 200 }); c.text(7000, 5700, 'BOTTOM&TOP TWO WAY', { layer: '9_TEXT', h: 200 });
+  c.mtext(2000, 9600, 'CAMBER 1 CM', { layer: 'TEXT-4', h: 200 });
+  c.text(12000, 11000, 'T.O.C', { layer: 'TEXT-4', h: 188 }); c.text(12000, 11300, '+12.35', { layer: 'TEXT-4', h: 188 });
+  // columns and a U-shaped core wall on the column layer
+  const col = c.block('COLUMN'); col.rect(-150, -350, 300, 700, { layer: 'STR-COLS', closed: true }); col.hatch([[{ x: -150, y: -350 }, { x: 150, y: -350 }, { x: 150, y: 350 }, { x: -150, y: 350 }]], { layer: 's-hatch', pattern: 'SOLID' });
+  for (const [x, y] of [[2000, 2000], [8000, 2000], [14000, 2000], [2000, 7000], [8000, 7000], [14000, 7000]]) c.insert('COLUMN', x, y);
+  c.pline([{ x: 11000, y: 4000 }, { x: 13500, y: 4000 }, { x: 13500, y: 6500 }, { x: 13200, y: 6500 }, { x: 13200, y: 4300 }, { x: 11300, y: 4300 }, { x: 11300, y: 6500 }, { x: 11000, y: 6500 }], { layer: 'STR-COLS', closed: true });
+  // edge beam along the bottom edge (a 250 wide line pair)
+  c.line(0, 0, 16000, 0, { layer: 'S-BEAM' }); c.line(0, 250, 16000, 250, { layer: 'S-BEAM' });
+  // an MEP void 1.2 x 0.8 m, crossed
+  c.pline([{ x: 6500, y: 6500 }, { x: 7700, y: 6500 }, { x: 7700, y: 7300 }, { x: 6500, y: 7300 }], { layer: 'S-OPENING', closed: true });
+  c.line(6500, 6500, 7700, 7300, { layer: 'S-OPENING' }); c.line(7700, 6500, 6500, 7300, { layer: 'S-OPENING' });
+  // the designer's own top bars over a column, in a block like the office's "TOP REN" blocks
+  const ren = c.block('TOP REN');
+  ren.line(6800, 2000, 9200, 2000, { layer: 'REO-TOP' });
+  ren.text(7500, 2054, 'T10-300 (T)', { layer: 'REO-TXT', h: 150, style: 'BW' }); ren.text(7700, 1817, 'L=2400', { layer: 'REO-TXT', h: 150, style: 'BW' });
+  ren.line(8000, 800, 8000, 3200, { layer: 'REO-TOP' });
+  ren.text(7950, 1200, 'T10-150 (T)', { layer: 'REO-TXT', h: 150, rot: 90, style: 'BW' }); ren.text(8150, 1200, 'L=2400', { layer: 'REO-TXT', h: 150, rot: 90, style: 'BW' });
+  const dot = c.block('DOT'); dot.circle(0, 0, 33, { layer: 'S-CABLE-SYMBOL' });
+  ren.insert('DOT', 8000, 3000);
+  c.insert('TOP REN', 0, 0);
+  // grid: bubbles with labels and lines
+  for (const [i, x] of [2000, 8000, 14000].entries()) { c.line(x, -2000, x, 14000, { layer: 'S-GRID' }); c.circle(x, 14600, 400, { layer: 'S-GRID-IDEN' }); c.text(x, 14600, String(i + 1), { layer: 'S-GRID-IDEN', h: 300, align: 'C', valign: 'M' }); }
+  for (const [i, y] of [2000, 7000].entries()) { c.line(-2000, y, 18000, y, { layer: 'S-GRID' }); c.circle(-2600, y, 400, { layer: 'S-GRID-IDEN' }); c.text(-2600, y, 'AB'[i], { layer: 'S-GRID-IDEN', h: 300, align: 'C', valign: 'M' }); }
+  return c;
+}
+
+test('a DIMENSION entity is read with its measured points, text midpoint, type and measurement', () => {
+  const dxfText = ['0', 'SECTION', '2', 'ENTITIES', '0', 'DIMENSION', '8', 'diamension', '2', '*D1', '10', '100', '20', '900', '30', '0', '11', '350', '21', '950', '31', '0', '70', '33', '1', '', '3', 'DIM100', '13', '100', '23', '500', '33', '0', '14', '600', '24', '500', '34', '0', '42', '500', '50', '0', '0', 'ENDSEC', '0', 'EOF'].join('\n');
+  const dxf = parseDxf(dxfText);
+  const d = dxf.entities.find((e) => e.type === 'DIMENSION');
+  assert.ok(d, 'DIMENSION kept');
+  assert.equal(d.dimType, 1);
+  assert.equal(d.dimstyle, 'DIM100');
+  assert.equal(d.measure, 500);
+  assert.deepEqual([d.x, d.y, d.x2, d.y2, d.x3, d.y3, d.x4, d.y4], [100, 900, 350, 950, 100, 500, 600, 500]);
+  assert.equal(d.text, '');
+});
+
+test('the office design plan is read with its walls, thickness zone, edge beam, mesh and the designer\'s bars kept', () => {
+  const dxf = parseDxf(toDxf(buildOfficePlan()));
+  const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
+  assert.equal(model.levels.length, 1);
+  const L = model.levels[0];
+  assert.equal(L.name, 'TYPICAL FLOOR - PART 01');
+  assert.equal(L.thickness, 230, 'RC230 tag sets the thickness');
+  assert.equal(L.columns.length, 6);
+  assert.equal(L.walls.length, 1, 'the U core is a wall, not a column');
+  assert.equal(L.thickZones.length, 1);
+  assert.equal(L.thickZones[0].thickness, 280);
+  assert.equal(L.sunken.length, 0, 'the 280 outline is not a sunken zone');
+  assert.equal(L.openings.length, 1);
+  assert.ok(L.edges.some((e) => e.beam), 'the bottom edge carries an edge beam');
+  assert.equal(L.edges.filter((e) => e.beam).length, 1);
+  assert.deepEqual(L.meshSpec, [10, 150]);
+  assert.equal(L.topMesh, true);
+  assert.equal(L.existing.lines.length, 2);
+  assert.equal(L.existing.callouts.length, 4);
+  assert.ok(L.existing.callouts.every((c) => c.face === 'T'));
+  assert.equal(L.existing.dots.length, 1);
+  assert.equal(L.camber.length, 1);
+  assert.equal(L.levelTags[0].value, '+12.35');
+  assert.deepEqual(L.grid.x.map((g) => g.label), ['1', '2', '3']);
+  assert.deepEqual(L.grid.y.map((g) => g.label), ['A', 'B']);
+});
+
+test('the General Details add bars in the office convention at the places they refer to', () => {
+  const dxf = parseDxf(toDxf(buildOfficePlan()));
+  const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
+  const L = model.levels[0];
+  const adds = designAdditions(L, model.spec);
+  const by = (d) => adds.items.filter((it) => it.detail === d);
+  assert.ok(by('D1').length >= 1, 'L-bars along the edge beam, one per run between supports');
+  assert.equal(Math.round(dist2(by('D1')[0].dist.p.x - by('D1')[0].dist.q.x ? { x: by('D1')[0].dist.p.x, y: 0 } : { x: 0, y: 0 }, { x: by('D1')[0].dist.q.x, y: 0 })), 16000, 'the distribution runs along the whole free edge');
+  assert.ok(by('D1').every((it) => it.face === 'T' && it.l1 === 'T10-200 LBAR (T)' && Math.round(dist2(it.a, it.b)) === 1200));
+  assert.ok(by('D2').some((it) => it.l1 === 'T12-200 U-BAR'), 'U-bars at the core wall faces');
+  assert.ok(by('D2').some((it) => it.l1 === '10T12 (T&B)'), 'parallel bars along the wall');
+  assert.equal(by('D4').length, 2, 'extra bottom bars both ways in the 280 zone');
+  assert.ok(by('D4').every((it) => it.face === 'B' && it.l1 === 'T12-250 (B) EXTRA'));
+  assert.ok(by('D5').some((it) => it.l1 === '3T16-200 (T&B)'), 'diagonals at the core wall corners');
+  assert.ok(by('D5').some((it) => it.l1 === '3T12-200 (T&B)'), 'diagonals at the re-entrant slab corner');
+  const d7 = by('D7');
+  assert.ok(d7.length >= 4, 'void trimmers');
+  const row = VOID_TABLE.find((r) => 1.2 <= r.max);
+  assert.ok(d7.some((it) => it.l1 === `${row.long.n}T${row.long.dia}-${row.long.s} (T&B)`), 'void bars follow the size table');
+  assert.equal(adds.punching.length, 6);
+  assert.ok(adds.punching.every((p) => /^\d+R-4-T12$/.test(p.tag)));
+  assert.ok(adds.bars.T.totals().weight_kg > 0 && adds.bars.B.totals().weight_kg > 0);
+  assert.ok(adds.notes.some((n) => /LAP 500/.test(n.text)), 'lap note at the thickness step');
+  function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+});
+
+test('the design package is written in the office layers and text style, on the shop-drawing frame', () => {
+  const dxf = parseDxf(toDxf(buildOfficePlan()));
+  const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
+  const pack = composeDesignPackage(model, { project: 'TEST', prefix: 'ST-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
+  assert.equal(pack.sheets.length, 5);
+  assert.deepEqual(pack.sheets.map((s) => s.drawingNo), ['ST-DD-000', 'ST-DD-L01-01', 'ST-DD-L01-02', 'ST-DD-L01-03', 'ST-DD-L01-04']);
+  const top = pack.sheets.find((s) => s.key === 'dtop');
+  const dxfOut = toDxf(top.root);
+  for (const layer of ['REO-TOP', 'REO-TXT', 'diamension', 'DOTS', 'DETAIL-REF']) assert.ok(dxfOut.includes(`\n8\n${layer}\n`), `${layer} used`);
+  assert.ok(/\n2\nBW\n[\s\S]*?\n3\nisocp\.shx\n/.test(dxfOut), 'BW text style with isocp.shx');
+  assert.ok(dxfOut.includes('\n1\nT10-300 (T)\n'), "the designer's call-out is kept verbatim");
+  assert.ok(dxfOut.includes('\n1\nT10-200 LBAR (T)\n'), 'detail 1 call-out in the office form');
+  assert.ok(dxfOut.includes('\n1\nD1\n'), 'detail reference');
+  assert.ok(/\n0\nLAYER\n[\s\S]*?\n2\nREO-TOP\n[\s\S]*?\n6\nHIDDEN\n/.test(dxfOut), 'REO-TOP is a hidden-line layer');
+  assert.ok(dxfOut.includes('\n8\nST-GRID\n'), 'sheet furniture on the ST standard');
+  const bottom = pack.sheets.find((s) => s.key === 'dbottom');
+  assert.ok(toDxf(bottom.root).includes('\n1\nT12-250 (B) EXTRA\n'));
+});
