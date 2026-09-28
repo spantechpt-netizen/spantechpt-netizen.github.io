@@ -17,7 +17,7 @@
  *
  * Details applied (numbers as on the General Details sheet):
  *   D1  slab edge with edge beam        T10-200 L-bar (T) 1200 into the slab (+ distribution T10-250 unless a top mesh exists)
- *   D2  slab edge at core / retaining wall   T12@200 U-bar (LB 1200, LC = t - cover, LA as plan) + 10T12 (T&B) parallel within 800
+ *   D2  slab edge at core / retaining wall   T12@200 U-bar (LB 1200, LC = t - cover, LA as plan); 10T12 (T&B) parallel only with spec.walls.parallelBars
  *   D3  varying slab thickness          500 lap at the step (note)
  *   D4  column drop / thickened zone    T12@250 (B) extra reinforcement both ways inside the zone, 50 dia beyond it
  *   D5  core wall and slab corners      3T16-200 diagonals 2 m long T&B (3T12 at re-entrant slab corners)
@@ -494,6 +494,16 @@ function clipToSlab(level, items) {
   return out;
 }
 
+/** Convex hull (monotone chain) of a polygon's points. */
+function convexHull(pts) {
+  const P = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (P.length < 3) return P;
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = []; for (const p of P) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
+  const upper = []; for (const p of [...P].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
 /** Chained wall segments (RAM line supports drawn as short pieces) joined into straight walls. */
 function mergeWallSegments(walls, tol = 5) {
   const out = [];
@@ -622,8 +632,11 @@ export function designAdditions(level, spec, opts = {}) {
       const u = unit(a, b), n = perp(u);
       // slab side of this face: the side where a point 600 mm away lies in the slab
       const m = mid(a, b);
+      // (a point inside the hull of a U / L shaped wall is the core it encloses, not the slab)
+      const hull = convexHull(poly);
+      const slabSide = (p) => inSlab(p) && !pointInPolygon(p, hull);
       const s1 = add(m, n, 600), s2 = add(m, n, -600);
-      const dirOut = inSlab(s1) ? 1 : inSlab(s2) ? -1 : 0;
+      const dirOut = slabSide(s1) ? 1 : slabSide(s2) ? -1 : 0;
       if (!dirOut) continue;
       const nOut = { x: n.x * dirOut, y: n.y * dirOut };
       // LA follows the designer's wall top bar length next to this face when there is one
@@ -633,10 +646,13 @@ export function designAdditions(level, spec, opts = {}) {
       // the distribution along the wall face: 700 into the slab, else further in, else over the wall itself, whichever is free of writing
       items.push({ detail: 'D2', face: 'TB', a: m, b: add(m, nOut, 1200), l1: 'T12-200 U-BAR', l2: `L=${LA + 1200 + lc}`, distCands: [700, 1500, -300].map((k) => ({ p: add(a, nOut, k), q: add(b, nOut, k) })), side: 1, zone: `${w.id} ${gridRef(level, bbox(poly))}` });
       addBar('T', { dia: 12, shape: `U ${LA}/${lc}/1200`, length: LA + 1200 + lc, qty: count, spacing: 200, zone: `D2 ${w.id}` });
-      const par = Math.min(12000, Math.round(L + 1200));
-      items.push({ detail: 'D2', face: 'TB', a: add(add(a, nOut, 400), u, -600), b: add(add(b, nOut, 400), u, 600), l1: '10T12 (T&B)', l2: `L=${par}`, side: -1, noTag: true });
-      addBar('T', { dia: 12, shape: 'STR', length: par, qty: 5, zone: `D2 ${w.id}` });
-      addBar('B', { dia: 12, shape: 'STR', length: par, qty: 5, zone: `D2 ${w.id}` });
+      // the 10T12 (T&B) parallel bars of detail 2 only when asked for (office practice: the wall face gets the U-bars only)
+      if (spec.walls?.parallelBars) {
+        const par = Math.min(12000, Math.round(L + 1200));
+        items.push({ detail: 'D2', face: 'TB', a: add(add(a, nOut, 400), u, -600), b: add(add(b, nOut, 400), u, 600), l1: '10T12 (T&B)', l2: `L=${par}`, side: -1, noTag: true });
+        addBar('T', { dia: 12, shape: 'STR', length: par, qty: 5, zone: `D2 ${w.id}` });
+        addBar('B', { dia: 12, shape: 'STR', length: par, qty: 5, zone: `D2 ${w.id}` });
+      }
       if (!la0) assumptions.push(`D2 AT ${w.id}: NO DESIGNER'S WALL BAR LENGTH FOUND NEXT TO THE FACE; LA = 1200 mm USED.`);
     }
   }
@@ -664,7 +680,7 @@ export function designAdditions(level, spec, opts = {}) {
     addBar('T', { dia, shape: 'STR', length: 2000, qty: 3, spacing: 200, zone });
     addBar('B', { dia, shape: 'STR', length: 2000, qty: 3, spacing: 200, zone });
   };
-  for (const w of level.walls || []) {
+  for (const w of spec.walls?.cornerDiagonals ? level.walls || [] : []) { // wall-corner diagonals (detail 5) only when asked for
     const poly = w.polygon; // CCW
     for (let i = 0; i < poly.length; i++) {
       const p0 = poly[(i + poly.length - 1) % poly.length], p1 = poly[i], p2 = poly[(i + 1) % poly.length];
@@ -692,7 +708,29 @@ export function designAdditions(level, spec, opts = {}) {
   for (const o of level.openings || []) {
     const poly = R.regionPolygon(o);
     const b = bbox(poly);
-    if (R.openingLined(level, o)) { assumptions.push(`D7 NOT ADDED AT ${o.id} (${gridRef(level, b)}): OPENING ENCLOSED BY CONCRETE WALLS / BEAMS - NO ADDITIONAL TRIMMERS (OFFICE RULE).`); continue; }
+    if (R.openingLined(level, o)) {
+      // enclosed opening: no trimmers; an L-bar (400 into the beam + `beamTop` on top) along every side that runs
+      // along a beam, like the slab edge (the wall U-bars of detail 2 cover the sides along walls)
+      let nL = 0;
+      const outerSides = R.regionPolygon(o); // CCW: the slab is on the right-hand side of each edge... checked with inSlab below
+      for (let i = 0; i < outerSides.length; i++) {
+        const a = outerSides[i], bb = outerSides[(i + 1) % outerSides.length];
+        if (dist(a, bb) < 600 || R.sideLining(level, a, bb) !== 'beam') continue;
+        const u = unit(a, bb), n = perp(u);
+        const m = mid(a, bb);
+        const nOut = inSlab(add(m, n, 700)) ? n : inSlab(add(m, n, -700)) ? { x: -n.x, y: -n.y } : null;
+        if (!nOut) continue;
+        const su = spec.uEdge;
+        const count = Math.floor(dist(a, bb) / su.spacing) + 1;
+        const d = { p: add(a, nOut, PERIM_DIM_IN), q: add(bb, nOut, PERIM_DIM_IN) };
+        d.textAt = add(mid(d.p, d.q), nOut, PERIM_DIM_IN + DIM100.gap + DIM100.txt / 2);
+        items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nOut, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: d, side: 1, zone: `D1 ${o.id}`, legEnd: 'start', noTag: nL > 0 });
+        addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: count, spacing: su.spacing, zone: `D1 OPENING ${o.id} ${gridRef(level, b)}` });
+        nL++;
+      }
+      assumptions.push(`D7 NOT ADDED AT ${o.id} (${gridRef(level, b)}): OPENING ENCLOSED BY CONCRETE WALLS / BEAMS - NO ADDITIONAL TRIMMERS (OFFICE RULE); ${nL ? `L-BARS ALONG ITS ${nL} BEAM SIDES` : 'WALL U-BARS PER DETAIL 2'}.`);
+      continue;
+    }
     // the designer already trimmed this opening (T&B call-outs next to it): keep the design, do not add detail 7
     if ((level.existing?.callouts || []).some((c) => c.face === 'TB' && distToPolygon(c, poly) < 800)) { assumptions.push(`D7 NOT ADDED AT ${o.id} (${gridRef(level, b)}): THE DESIGN PLAN ALREADY TRIMS THIS OPENING (T&B BARS).`); continue; }
     const size = Math.max(b.w, b.h) / 1000;

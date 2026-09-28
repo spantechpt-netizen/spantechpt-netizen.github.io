@@ -32,6 +32,7 @@ export const DEFAULT_SPEC = {
   openings: { dia: 16, count: 2, diagDia: 12, diagCount: 2, uDia: 12, uSpacing: 200, uLeg: 600 },
   sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, // trimmers and hairpins at sunken-slab steps
   punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 }, // preliminary punching links around columns
+  walls: { parallelBars: false, cornerDiagonals: false }, // design mode: the wall face gets the U-bars only unless these are switched on
   thicknessMesh: { dia: 10, spacing: 200 }, // office rule: the bottom mesh written at every change of slab thickness (per the design)
 };
 
@@ -318,32 +319,42 @@ export function edgeEndAt(level, spec, p) {
 }
 
 /**
- * Office rule: an opening enclosed by concrete walls or beams needs no
- * additional trimmer bars. True when every side of the opening runs along
- * a wall polygon edge or a beam line (within 400 mm, over half the side).
+ * What lines one side of an opening: 'beam' (a beam line parallel within 400 mm over half the
+ * side), 'wall' (a wall polygon edge), 'column' (a column face), or null for a free side.
+ */
+export function sideLining(level, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const distToSeg = (p, e) => { const L2 = e.length * e.length || 1; const t = Math.max(0, Math.min(1, ((p.x - e.a.x) * e.dx + (p.y - e.a.y) * e.dy) / L2)); return Math.hypot(p.x - (e.a.x + e.dx * t), p.y - (e.a.y + e.dy * t)); };
+  const covers = (sg) => {
+    if (sg.length < 200) return false;
+    const vx = sg.dx / sg.length, vy = sg.dy / sg.length;
+    if (Math.abs(ux * vx + uy * vy) < 0.95) return false;
+    const t1 = (sg.a.x - a.x) * ux + (sg.a.y - a.y) * uy, t2 = (sg.b.x - a.x) * ux + (sg.b.y - a.y) * uy;
+    const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(len, Math.max(t1, t2));
+    if (hi - lo < 0.5 * len) return false;
+    const mid = { x: a.x + ux * (lo + hi) / 2, y: a.y + uy * (lo + hi) / 2 };
+    return distToSeg(mid, sg) < 400;
+  };
+  const segOf = (p, q) => { const ddx = q.x - p.x, ddy = q.y - p.y; return { a: p, b: q, dx: ddx, dy: ddy, length: Math.hypot(ddx, ddy) }; };
+  for (const w of level.walls || []) if (w.polygon && edges(w.polygon).some(covers)) return 'wall';
+  for (const bm of level.beams || []) if (covers(segOf(bm.a, bm.b))) return 'beam';
+  for (const c of level.columns || []) {
+    const poly = c.shape === 'circle' ? regionPolygon({ kind: 'circle', cx: c.cx, cy: c.cy, r: c.d / 2 }) : [{ x: c.cx - c.w / 2, y: c.cy - c.h / 2 }, { x: c.cx + c.w / 2, y: c.cy - c.h / 2 }, { x: c.cx + c.w / 2, y: c.cy + c.h / 2 }, { x: c.cx - c.w / 2, y: c.cy + c.h / 2 }];
+    if (edges(poly).some(covers)) return 'column';
+  }
+  return null;
+}
+
+/**
+ * Office rule: an opening enclosed by concrete walls, beams (or column faces at its corners)
+ * needs no additional trimmer bars, only the L-bars along its beams and the wall U-bars.
  */
 export function openingLined(level, region) {
   const poly = regionPolygon(region);
   const sides = edges(poly).filter((e) => e.length > 200);
   if (!sides.length) return false;
-  const segs = [];
-  for (const w of level.walls || []) if (w.polygon) for (const e of edges(w.polygon)) segs.push(e);
-  for (const bm of level.beams || []) { const dx = bm.b.x - bm.a.x, dy = bm.b.y - bm.a.y; segs.push({ a: bm.a, b: bm.b, dx, dy, length: Math.hypot(dx, dy) }); }
-  if (!segs.length) return false;
-  const distToSeg = (p, e) => { const L2 = e.length * e.length || 1; const t = Math.max(0, Math.min(1, ((p.x - e.a.x) * e.dx + (p.y - e.a.y) * e.dy) / L2)); return Math.hypot(p.x - (e.a.x + e.dx * t), p.y - (e.a.y + e.dy * t)); };
-  return sides.every((side) => {
-    const ux = side.dx / side.length, uy = side.dy / side.length;
-    return segs.some((sg) => {
-      if (sg.length < 200) return false;
-      const vx = sg.dx / sg.length, vy = sg.dy / sg.length;
-      if (Math.abs(ux * vx + uy * vy) < 0.95) return false;
-      const t1 = (sg.a.x - side.a.x) * ux + (sg.a.y - side.a.y) * uy, t2 = (sg.b.x - side.a.x) * ux + (sg.b.y - side.a.y) * uy;
-      const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(side.length, Math.max(t1, t2));
-      if (hi - lo < 0.5 * side.length) return false;
-      const mid = { x: side.a.x + ux * (lo + hi) / 2, y: side.a.y + uy * (lo + hi) / 2 };
-      return distToSeg(mid, sg) < 400;
-    });
-  });
+  return sides.every((side) => sideLining(level, side.a, side.b) != null);
 }
 
 /** True when a beam line runs along the slab edge a->b (within 400 mm, over half the edge or 2 m). */
@@ -362,7 +373,6 @@ export function edgeHasBeam(level, a, b) {
   });
 }
 
-/** Runs along the edge a->b (t intervals) outside the top-bar bands of the columns sitting on that edge. */
 export function edgeRunsBetweenColumns(level, a, b, h) {
   const L = dist(a, b) || 1;
   const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;

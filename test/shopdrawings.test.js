@@ -520,6 +520,7 @@ test('the General Details add bars in the office convention at the places they r
   const dxf = parseDxf(toDxf(buildOfficePlan()));
   const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
   const L = model.levels[0];
+  model.spec.walls = { parallelBars: true, cornerDiagonals: true }; // the optional wall extras, on for this check
   const adds = designAdditions(L, model.spec);
   const by = (d) => adds.items.filter((it) => it.detail === d);
   assert.ok(by('D1').length >= 1, 'L-bars along the edge beam, one per run between supports');

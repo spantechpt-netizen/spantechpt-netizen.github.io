@@ -126,11 +126,12 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 | Bar ends (office rule) | every top bar ending at the outer slab edge ends in a U with a 500 mm bottom leg (`U500`) where the edge is free, in an L 400 mm down into the beam (`L400`) where the outer edge carries a beam parallel to it; at an opening always a U | designer's bars and additions |
 | Column top bars (office rule) | two perpendicular groups along the column axis (or the tendon direction), each exactly as long as the drop panel (`dropMax` 6 m tells a drop from a thickened strip) or 4 m, edge columns 70 % with the U / L at the edge; the designer's bars over the column are re-lengthed and their `L=` rewritten, missing groups added, and each group is distributed over the length of the crossing group (the designer's dimension is re-measured or one is added) | every column |
 | Inside the slab | bars and distribution dimensions never leave the slab outline (clipped; perimeter dimensions sit 350 mm inside the edge) | everything added |
-| D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it) + 10T12 (T&B) parallel | every wall face that looks onto the slab |
+| D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it); the 10T12 (T&B) parallel bars only with `walls.parallelBars` | every wall face that looks onto the slab |
 | D3 varying thickness | lap 500 at the step (note) | thickness zones |
 | D4 column drop / thickened zone | T12@250 (B) extra reinforcement both ways, 50 Ø beyond the zone | nested outline with a thickness written inside (e.g. `280`) |
-| D5 corners | 3T16-200 diagonals 2 m T&B at wall corners, 3T12 at re-entrant slab corners | walls and outline |
-| D7 MEP voids | three groups: G1 / G2 longitudinal T&B parallel to the sides, G3 diagonals at 45° crossing both, per the void size table, with the count of crossing bars | openings **not** enclosed by concrete walls / beams and not already trimmed by the designer (T&B bars next to them) |
+| D5 corners | 3T12 diagonals 2 m T&B at re-entrant slab corners; 3T16 at wall corners only with `walls.cornerDiagonals` | outline (and walls when asked) |
+| D7 MEP voids | three groups: G1 / G2 longitudinal T&B parallel to the sides, G3 diagonals at 45° crossing both, per the void size table, with the count of crossing bars | openings **not** enclosed by concrete walls / beams / column faces and not already trimmed by the designer (T&B bars next to them) |
+| Enclosed openings | no trimmers: an L-bar `T12-150 LBAR (T)` (400 into the beam + 3600 on top) along every side that runs along a beam, the wall U-bars along the sides at walls | openings enclosed by beams / walls / columns |
 | Bottom mesh indication | `BOTTOM MESH T10@200` (optional, `thicknessMesh`) | at every change of slab thickness (thickened zones, RC tags) |
 | D12 punching | PS1 10R-4-T12 (interior) / PS2 12R-4-T12 (edge), s = 100, with the schedule | every column, to be confirmed by the punching design |
 
