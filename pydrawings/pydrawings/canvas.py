@@ -13,7 +13,7 @@ mapped to the JS keys inside.
 import math
 import re
 
-from .geometry import js_round, fmt_num
+from .geometry import js_round, fmt_num, js_hypot
 
 # ACI colour index and linetype per standard layer.
 STANDARD_LAYERS = {
@@ -345,7 +345,7 @@ class Canvas:
         """
         o = opts(o, kw)
         dx, dy = p2['x'] - p1['x'], p2['y'] - p1['y']
-        L = math.hypot(dx, dy)
+        L = js_hypot(dx, dy)
         if L < 1e-6:
             return None
         nx, ny = -dy / L, dx / L

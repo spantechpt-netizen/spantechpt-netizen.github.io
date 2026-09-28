@@ -24,6 +24,41 @@ def js_round(x):
     return int(math.floor(x + 0.5))
 
 
+def js_hypot(*vals):
+    """JS `Math.hypot` as V8 computes it (values scaled by the largest, Kahan summation): the last bit can differ
+    from Python's correctly rounded `math.hypot`, so every distance goes through this one to match the Node output."""
+    if not vals:
+        return 0
+    one_nan = False
+    m = 0.0
+    absv = []
+    for v in vals:
+        v = float(v)
+        if math.isnan(v):
+            one_nan = True
+            absv.append(0.0)
+        else:
+            a = abs(v)
+            absv.append(a)
+            if a > m:
+                m = a
+    if m == math.inf:
+        return math.inf
+    if one_nan:
+        return math.nan
+    if m == 0:
+        return 0
+    s = 0.0
+    comp = 0.0
+    for a in absv:
+        n = a / m
+        summand = n * n - comp
+        prelim = s + summand
+        comp = (prelim - s) - summand
+        s = prelim
+    return math.sqrt(s) * m
+
+
 def fmt_num(v):
     """JS `String(number)`: a whole number prints without `.0`, otherwise the shortest round-trip representation."""
     if isinstance(v, bool):
@@ -68,7 +103,7 @@ def to_fixed(v, n):
 
 
 def dist(a, b):
-    return math.hypot(a['x'] - b['x'], a['y'] - b['y'])
+    return js_hypot(a['x'] - b['x'], a['y'] - b['y'])
 
 
 def bbox(points):
@@ -324,9 +359,9 @@ def clip_polyline_to_polygon(pts, poly, tol=0):
     def crossing(a, b):
         # the piece of a->b inside the polygon that touches a: its far end is where the polyline leaves
         pieces = clip_segment_to_polygon(a, b, poly)
-        piece = next((seg for seg in pieces if math.hypot(seg[0]['x'] - a['x'], seg[0]['y'] - a['y']) < 1), None)
+        piece = next((seg for seg in pieces if js_hypot(seg[0]['x'] - a['x'], seg[0]['y'] - a['y']) < 1), None)
         if piece is None:
-            pieces.sort(key=lambda u: math.hypot(u[0]['x'] - a['x'], u[0]['y'] - a['y']))
+            pieces.sort(key=lambda u: js_hypot(u[0]['x'] - a['x'], u[0]['y'] - a['y']))
             piece = pieces[0] if pieces else None
         return piece[1] if piece else a
 
@@ -350,7 +385,7 @@ def clip_polyline_to_polygon(pts, poly, tol=0):
     def span(r):
         L = 0
         for i in range(r['from'], r['to']):
-            L += math.hypot(pts[i + 1]['x'] - pts[i]['x'], pts[i + 1]['y'] - pts[i]['y'])
+            L += js_hypot(pts[i + 1]['x'] - pts[i]['x'], pts[i + 1]['y'] - pts[i]['y'])
         return L
 
     runs.sort(key=lambda r: -span(r))
@@ -360,12 +395,12 @@ def clip_polyline_to_polygon(pts, poly, tol=0):
     cut_end = False
     if best['cutStart']:
         c = crossing(pts[best['from']], pts[best['from'] - 1])
-        if math.hypot(c['x'] - out[0]['x'], c['y'] - out[0]['y']) > 1:
+        if js_hypot(c['x'] - out[0]['x'], c['y'] - out[0]['y']) > 1:
             out.insert(0, c)
         cut_start = True
     if best['cutEnd']:
         c = crossing(pts[best['to']], pts[best['to'] + 1])
-        if math.hypot(c['x'] - out[-1]['x'], c['y'] - out[-1]['y']) > 1:
+        if js_hypot(c['x'] - out[-1]['x'], c['y'] - out[-1]['y']) > 1:
             out.append(c)
         cut_end = True
     return {'pts': out, 'from': best['from'], 'to': best['to'], 'cutStart': cut_start, 'cutEnd': cut_end}
@@ -380,7 +415,7 @@ def dist_to_polygon(p, poly):
         dx, dy = b['x'] - a['x'], b['y'] - a['y']
         l2 = dx * dx + dy * dy
         t = max(0, min(1, ((p['x'] - a['x']) * dx + (p['y'] - a['y']) * dy) / l2)) if l2 else 0
-        best = min(best, math.hypot(p['x'] - (a['x'] + t * dx), p['y'] - (a['y'] + t * dy)))
+        best = min(best, js_hypot(p['x'] - (a['x'] + t * dx), p['y'] - (a['y'] + t * dy)))
     return best
 
 

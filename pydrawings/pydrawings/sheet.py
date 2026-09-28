@@ -18,7 +18,7 @@ import math
 import re
 
 from .canvas import Canvas, opts as _opts, js_str
-from .geometry import fmt_num, js_round
+from .geometry import fmt_num, js_round, js_hypot
 from .svg_writer import wrap
 
 SHEET_SIZES = {'A1': {'w': 841, 'h': 594}, 'A0': {'w': 1189, 'h': 841}, 'A2': {'w': 594, 'h': 420}}
@@ -218,7 +218,7 @@ class Pen:
     def dim(self, a, b, off, o=None, **kw):
         o = _opts(o, kw)
         S = self.S
-        text = o['text'] if o.get('text') is not None else fmt_num(js_round(math.hypot(b['x'] - a['x'], b['y'] - a['y'])))
+        text = o['text'] if o.get('text') is not None else fmt_num(js_round(js_hypot(b['x'] - a['x'], b['y'] - a['y'])))
         return self.blk.dim(self.P(a), self.P(b), off * S, {**o, 'h': (o.get('h') or 1.8) * S, 'ext': (o.get('ext') or 1.5) * S, 'tick': (o.get('tick') or 1) * S, 'text': text})
 
     def dimension(self, p1, p2, dl, o=None, **kw):
@@ -238,7 +238,7 @@ class Pen:
         blk.circle(X, Y, r, {'layer': o.get('layer') or 'CALLOUT'})
         blk.text(X, Y, label, {'layer': o.get('layer') or 'CALLOUT', 'h': (o.get('h') or 2) * S, 'align': 'C', 'valign': 'M'})
         if o.get('dx') or o.get('dy'):
-            d = math.hypot(o.get('dx') or 0, o.get('dy') or 0) * S
+            d = js_hypot(o.get('dx') or 0, o.get('dy') or 0) * S
             ex, ey = X - ((o.get('dx') or 0) * S * r) / d, Y - ((o.get('dy') or 0) * S * r) / d
             blk.line(ex, ey, Q['x'], Q['y'], {'layer': o.get('layer') or 'CALLOUT'})
         return {'x': X, 'y': Y}
@@ -247,7 +247,7 @@ class Pen:
         """Short perpendicular ticks at both bar ends (bar extent convention)."""
         o = _opts(o, kw)
         A, B = self.P(a), self.P(b)
-        L = math.hypot(B['x'] - A['x'], B['y'] - A['y']) or 1
+        L = js_hypot(B['x'] - A['x'], B['y'] - A['y']) or 1
         nx, ny = -(B['y'] - A['y']) / L, (B['x'] - A['x']) / L
         t = (o.get('size') or 1) * self.S
         self.blk.line(A['x'] - nx * t, A['y'] - ny * t, A['x'] + nx * t, A['y'] + ny * t, o)
