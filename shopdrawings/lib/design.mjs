@@ -1823,7 +1823,7 @@ const designNotes = (model, level) => [
 function framingSheet(model, level, meta, adds) {
   return (sheet, [pl]) => {
     const S = sheet.S;
-    drawBase(sheet, pl, level, { columnHatchLayer: 's-hatch', regionLabels: true, columnIds: true, gridTag: meta.gridTag, pt: false, ubarRegions: false });
+    drawBase(sheet, pl, level, { columnHatchLayer: 's-hatch', regionLabels: true, gridTag: meta.gridTag, pt: false, ubarRegions: false });
     drawDesignerNotes(pl, S, level);
     for (const e of level.edges.filter((x) => x.beam)) { const m = mid(e.a, e.b); const nIn = inward(e.a, e.b, level.outline); pl.text(add(m, nIn, 450), 'EDGE BEAM', { layer: 'BEAM', h: 1.5, align: 'C', valign: 'M', rot: readableRot(unit(e.a, e.b)).rot }); }
     const rows = [
@@ -1918,7 +1918,7 @@ function rebarSheet(model, level, meta, adds, face) {
 function punchingSheet(model, level, meta, adds) {
   return (sheet, [pl]) => {
     const S = sheet.S;
-    drawBase(sheet, pl, level, { columnHatchLayer: 's-hatch', gridTag: meta.gridTag, dims: false, pt: false, ubarRegions: false, regionLabels: false, columnIds: true });
+    drawBase(sheet, pl, level, { columnHatchLayer: 's-hatch', gridTag: meta.gridTag, dims: false, pt: false, ubarRegions: false, regionLabels: false });
     attachPlacer(pl, S, level);
     for (const p of adds.punching) {
       const c = p.col;

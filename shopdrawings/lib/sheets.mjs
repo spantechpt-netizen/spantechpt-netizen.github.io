@@ -138,7 +138,7 @@ export function drawBase(sheet, pl, level, o = {}) {
     const poly = columnPolygon(c);
     if (c.shape === 'circle') pl.circle({ x: c.cx, y: c.cy }, c.d / 2, { layer: 'COLUMN' }); else pl.pline(poly, { layer: 'COLUMN', closed: true });
     pl.hatch([poly], { layer: o.columnHatchLayer || 'COLUMN-HATCH', pattern: 'SOLID' }); // solid grey, by layer (the office's s-hatch look)
-    if (o.columnIds) pl.text({ x: c.cx + c.w / 2 + 150, y: c.cy + c.h / 2 + 150 }, c.id, { layer: 'TEXT', h: 1.5 });
+    // (office rule: column ids are not written on the plans - the grid reference locates a column; the ids live in the schedules and notes)
   }
   // openings: crossed
   for (const op of level.openings) {
@@ -376,7 +376,7 @@ function summarise(items, keyOf, rowOf) {
 // ------------------------------------------------------------------ sheets
 function framingSheet(model, level, meta) {
   return (sheet, [pl]) => {
-    drawBase(sheet, pl, level, { regionLabels: true, columnIds: true, gridTag: meta.gridTag });
+    drawBase(sheet, pl, level, { regionLabels: true, gridTag: meta.gridTag });
     const thkList = [...new Set((level.thickZones || []).map((z) => z.thickness).filter(Boolean))];
     const drops = (level.thickZones || []).filter((z) => !z.thickness).length;
     pl.text({ x: level.bbox.minX + 800, y: level.bbox.minY - 1200 }, `PT FLAT SLAB TH=${level.thickness}mm${level.tos ? ` T.O.S ${level.tos}` : ''}${thkList.length ? ` (THICKENED ZONES ${thkList.join(' / ')} mm HATCHED)` : ''}${drops ? ` (${drops} DROP PANELS HATCHED - DEPTH PER STRUCTURAL DRAWINGS)` : ''}`, { layer: 'TEXT', h: 2.6, bold: true });
@@ -1438,7 +1438,7 @@ export function beamsSheet(model, level, meta) {
 
 function cablesSheet(model, level, meta) {
   return (sheet, [pl]) => {
-    drawBase(sheet, pl, level, { gridTag: meta.gridTag, columnIds: true, regionLabels: true, ubarRegions: false });
+    drawBase(sheet, pl, level, { gridTag: meta.gridTag, regionLabels: true, ubarRegions: false });
     sheet.stamp('EMPTY TEMPLATE - NO TENDONS SHOWN', 'TENDON LAYOUT, PROFILES AND QUANTITIES TO BE ADDED ON COMPLETION OF THE PT DESIGN');
     const cols = [
       { key: 'id', title: 'TENDON\nID', w: 16 }, { key: 'type', title: 'TYPE', w: 16 }, { key: 'strands', title: 'No.\nSTR.', w: 12 }, { key: 'profile', title: 'PROFILE\nREF.', w: 18 },
