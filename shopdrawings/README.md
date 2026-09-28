@@ -110,7 +110,8 @@ node shopdrawings/cli.mjs --input SLAB.cpt --out ./design --mode design --level 
 
 From a RAM Concept `.cpt` the bands designed in RAM become the designer's reinforcement, drawn in the same convention
 (RAM's top bands over the columns and its bottom bands local to a drop panel are replaced by the office column bars and the
-detail 4 extra bars; bands shorter than 1.2 m are export artefacts and ignored)
+detail 4 extra bars; bands shorter than 1.2 m are export artefacts and ignored; `spec.ramBands` = `all` (default), `user`
+(only the bands the engineer drew, not the program-generated ones) or `none` (office rules only))
 (`T16-150 (T)` over `L=5000`, distribution DIMENSION across the band width, dot, `U500` ends at the edge), walls (line
 supports) get a body (`spec.wallThickness`, 250 default), the slab and every thickened zone are tagged with their
 thickness, and the rules below are added on top exactly as for an RFT plan.

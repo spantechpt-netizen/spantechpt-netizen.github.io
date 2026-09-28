@@ -33,6 +33,7 @@ export const DEFAULT_SPEC = {
   sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, // trimmers and hairpins at sunken-slab steps
   punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 }, // preliminary punching links around columns
   walls: { parallelBars: false, cornerDiagonals: false }, // design mode: the wall face gets the U-bars only unless these are switched on
+  perimSpan: 12000, // design mode: one perimeter bar symbol every 12 m on a long indication line along the edge
   thicknessMesh: { dia: 10, spacing: 200 }, // office rule: the bottom mesh written at every change of slab thickness (per the design)
 };
 
@@ -357,21 +358,26 @@ export function openingLined(level, region) {
   return sides.every((side) => sideLining(level, side.a, side.b) != null);
 }
 
-/** True when a beam line runs along the slab edge a->b (within 400 mm, over half the edge or 2 m). */
+/**
+ * True when the slab edge a->b carries an edge beam: a beam line lies ON the edge (within 60 mm, over half
+ * the edge or 2 m) and its partner line runs parallel 150..900 mm inside (the beam's inner face). A beam
+ * merely near the edge (an interior beam beside it) is not an edge beam. `spec.edgeBeams === false` disables.
+ */
 export function edgeHasBeam(level, a, b) {
+  if (level.noEdgeBeams) return false;
   const L = dist(a, b) || 1;
   const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
-  const distToSeg = (p) => { const t = Math.max(0, Math.min(L, (p.x - a.x) * ux + (p.y - a.y) * uy)); return Math.hypot(p.x - (a.x + ux * t), p.y - (a.y + uy * t)); };
-  return (level.beams || []).some((bm) => {
-    const bl = dist(bm.a, bm.b) || 1;
-    const vx = (bm.b.x - bm.a.x) / bl, vy = (bm.b.y - bm.a.y) / bl;
-    if (Math.abs(ux * vx + uy * vy) < 0.98) return false;
-    if (Math.min(distToSeg(bm.a), distToSeg(bm.b)) > 400) return false;
-    const t1 = (bm.a.x - a.x) * ux + (bm.a.y - a.y) * uy, t2 = (bm.b.x - a.x) * ux + (bm.b.y - a.y) * uy;
-    const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L, Math.max(t1, t2));
-    return hi - lo > 0.5 * L || hi - lo > 2000;
-  });
+  const along = (p) => (p.x - a.x) * ux + (p.y - a.y) * uy;
+  const off = (p) => (p.x - a.x) * -uy + (p.y - a.y) * ux; // signed distance from the edge line
+  const parallel = (bm) => { const bl = dist(bm.a, bm.b) || 1; return Math.abs(ux * (bm.b.x - bm.a.x) / bl + uy * (bm.b.y - bm.a.y) / bl) >= 0.98; };
+  const coverage = (bm) => { const t1 = along(bm.a), t2 = along(bm.b); const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L, Math.max(t1, t2)); return hi - lo; };
+  const beams = (level.beams || []).filter(parallel);
+  const onEdge = beams.filter((bm) => Math.abs(off(bm.a)) < 60 && Math.abs(off(bm.b)) < 60 && (coverage(bm) > 0.5 * L || coverage(bm) > 2000));
+  if (!onEdge.length) return false;
+  const inSide = Math.sign(off(centroidOf(level.outline)) || 1);
+  return beams.some((bm) => { const d = (off(bm.a) + off(bm.b)) / 2 * inSide; return d > 150 && d < 900 && coverage(bm) > 1000; });
 }
+function centroidOf(poly) { let x = 0, y = 0; for (const p of poly) { x += p.x; y += p.y; } return { x: x / (poly.length || 1), y: y / (poly.length || 1) }; }
 
 export function edgeRunsBetweenColumns(level, a, b, h) {
   const L = dist(a, b) || 1;
