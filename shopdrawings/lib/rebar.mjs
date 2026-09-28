@@ -21,7 +21,7 @@ export const DEFAULT_SPEC = {
   // top bars over columns, both ways. Office rule: an interior column bar covers the drop panel when there is
   // one, otherwise `length` (4 m, set per slab); an edge column bar ends in a U at the edge and runs `edgeFactor`
   // of the interior length on top. rule: 'office' | 'code' (ln/6 each side, SBC 304-18 §8.7.5.5)
-  topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 0, dropMax: 6000, minBeyond: 1500 },
+  topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 0, dropMax: 6000, minBeyond: 1500, wallAlongMax: 6000 },
   // perimeter bars between the column top bars (office rule): T12@150, a U of `total` length at a free edge
   // (equal top and bottom legs), an L of the same 4 m total at an edge beam (`beamLeg` down into the beam + `beamTop` on top)
   uEdge: { dia: 12, spacing: 150, total: 4000, beamLeg: 400, beamTop: 3600, leg: 1200 },
@@ -281,7 +281,21 @@ function neighbour(level, col, dir, sign) {
 }
 
 function edgeDistance(level, col, dir, sign, cover) {
-  // Distance from column centre to slab edge along dir, in direction sign.
+  // Distance from column centre to slab edge along dir, in direction sign: a march from the centre to the first
+  // point outside the outline (robust at notches and where the outline has a vertex on the column's axis)
+  // (marched from the centre and from either side of the column's footprint: a column whose axis lies on an
+  // outline edge, half in a perimeter wall, still reads the slab on its far side)
+  const across = col.shape === 'circle' ? col.d : dir === 'x' ? col.h : col.w;
+  const step = 25, max = 15000;
+  let best = -1;
+  for (const off of [0, across / 2 - 30, -(across / 2 - 30)]) {
+    const c0 = dir === 'x' ? { x: col.cx, y: col.cy + off } : { x: col.cx + off, y: col.cy };
+    if (!pointInPolygon(c0, level.outline)) continue;
+    let d = 0;
+    while (d < max) { const q = dir === 'x' ? { x: c0.x + sign * (d + step), y: c0.y } : { x: c0.x, y: c0.y + sign * (d + step) }; if (!pointInPolygon(q, level.outline)) break; d += step; }
+    if (d > best) best = d; // d = max: no edge within reach in this direction
+  }
+  if (best >= 0) return Math.max(0, best - cover);
   const chords = dir === 'x' ? chordsAtY(level.outline, col.cy) : chordsAtX(level.outline, col.cx);
   const c = dir === 'x' ? col.cx : col.cy;
   for (const [a, b] of chords) if (c >= a - 1 && c <= b + 1) return (sign > 0 ? b - c : c - a) - cover;
@@ -414,7 +428,7 @@ export function topAtColumns(level, spec) {
   // walls below carry top bars too: a wall is treated as a long rectangular support (bars across it
   // along its length, bars along it within t + 3h), without joining the grid or the punching sheet
   // (an isolated wall gets the two column groups over it; a core wall - three or more walls around an opening - keeps the wall U-bars)
-  const wallSupports = (level.walls || []).filter((w) => w.polygon && w.t).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true, core: !!w.core }));
+  const wallSupports = (level.walls || []).filter((w) => w.polygon && w.t).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true, core: !!w.core, skipAlong: Math.max(w.w, w.h) > (s.wallAlongMax || 6000) ? (w.w >= w.h ? 'x' : 'y') : null }));
   if (!level.maxSpan) {
     let mx = 0;
     for (const c of level.columns) for (const dir of ['x', 'y']) for (const sign of [-1, 1]) { const nb = neighbour(level, c, dir, sign); if (nb && nb.d > mx) mx = nb.d; }

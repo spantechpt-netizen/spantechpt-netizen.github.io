@@ -246,24 +246,7 @@ export function extractDesign(dxf, options = {}) {
     if (!tag) A(level, `Slab thickness of ${level.name} not tagged on the plan: ${level.thickness} mm used.`);
     if (!walls.length) A(level, `No walls read in ${level.name}: details 2 and 5 (core walls) not applied.`);
   });
-  // parts of one plan overlap where the office split it: an edge of one part that runs inside another part is a drawing
-  // joint, not a slab edge (no perimeter bars, no U ends there)
-  for (const level of model.levels) {
-    const others = model.levels.filter((o) => o !== level);
-    let joints = 0;
-    for (const e of level.edges) {
-      const m = mid(e.a, e.b);
-      const q1 = add(m, unit(e.a, e.b), Math.min(300, dist(e.a, e.b) / 3)), q2 = add(m, unit(e.b, e.a), Math.min(300, dist(e.a, e.b) / 3));
-      e.joint = others.some((o) => [m, q1, q2].every((q) => pointInPolygon(q, o.outline) || distToPolygon(q, o.outline) < 60));
-      if (e.joint) { e.beam = false; joints++; }
-    }
-    if (joints) {
-      level.jointEdges = level.edges.filter((e) => e.joint);
-      const jl = level.jointEdges.reduce((t, e) => t + dist(e.a, e.b), 0);
-      model.findings.push(`${level.id} ${level.name}: ${joints} edges (${Math.round(jl / 1000)} m) are drawing joints with the neighbouring part, not slab edges: no perimeter bars or U ends there.`);
-      for (const l of level.existing.lines) if (l.uEnd) for (const k of ['start', 'end']) { const p = k === 'start' ? l.a : l.b; if (l.uEnd[k] && level.jointEdges.some((e) => distToSeg(p, e.a, e.b) < spec0.cover + 300)) l.uEnd[k] = false; }
-    }
-  }
+  markJoints(model, spec0.cover);
   const notForDesign = /Top bars over columns not specified|Edge U-bars not specified|Opening trimmers not specified|Void trimmers not specified|Stock bar length|No plan title found near slab/;
   model.assumptions = model.assumptions.filter((a) => !notForDesign.test(a.text) && !(a.text.startsWith('Slab thickness not stated') && model.levels.some((l) => l.id === a.level && l.thicknessSource)));
   model.design = { units: model.source.units };
@@ -276,9 +259,104 @@ export function extractDesign(dxf, options = {}) {
  * "T16-150 (T)" + "L=...", distribution DIMENSION, dot); walls become polygons; slab thicknesses
  * are tagged on the plan; then the General Details rules are added on top exactly as for an RFT plan.
  */
+/** Polygon clipped to the band lo <= axis <= hi (Sutherland-Hodgman against the two half-planes). */
+function clipPolyBand(poly, axis, lo, hi) {
+  const clip = (pts, keep, at) => {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      const ia = keep(a), ib = keep(b);
+      if (ia) out.push(a);
+      if (ia !== ib) { const t = (at - a[axis]) / (b[axis] - a[axis]); out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }); }
+    }
+    return out;
+  };
+  let pts = clip(poly, (q) => q[axis] >= lo, lo);
+  if (pts.length) pts = clip(pts, (q) => q[axis] <= hi, hi);
+  return pts.length >= 3 ? pts : null;
+}
+
+/**
+ * A slab body too big for one sheet is split into PARTS along its longer side, as the office splits its plans
+ * (`spec.partMax`, 60 m, with `spec.partOverlap` 600 mm of overlap so that the cut reads as a drawing joint):
+ * columns, bands, stud rails and punching checks go to the part that holds their centre, walls / openings / zones /
+ * tendons are clipped to each part.
+ */
+function splitLevels(model, spec) {
+  const partMax = spec.partMax || 60000, ov = spec.partOverlap ?? 600;
+  const out = [];
+  for (const level of model.levels) {
+    const b = bbox(level.outline);
+    const axis = b.w >= b.h ? 'x' : 'y';
+    const size = axis === 'x' ? b.w : b.h;
+    const n = Math.ceil(size / partMax);
+    if (n < 2) { out.push(level); continue; }
+    const lo0 = axis === 'x' ? b.minX : b.minY;
+    const step = size / n;
+    for (let k = 0; k < n; k++) {
+      const lo = lo0 + k * step, hi = lo0 + (k + 1) * step;
+      const band = (q) => q[axis] >= lo - (k ? 0 : 1) && q[axis] < hi + (k === n - 1 ? 1 : 0);
+      const outline = clipPolyBand(level.outline, axis, lo - (k ? ov : 0), hi + (k < n - 1 ? ov : 0));
+      if (!outline) continue;
+      const inPart = (q) => pointInPolygon(q, outline);
+      const clipPolys = (list) => list.map((o) => ({ ...o, polygon: clipPolyBand(o.polygon, axis, lo - (k ? ov : 0), hi + (k < n - 1 ? ov : 0)) })).filter((o) => o.polygon);
+      const ram = level.ram || {};
+      out.push({
+        ...level,
+        id: `L${String(out.length + 1).padStart(2, '0')}`, name: `${level.name} - PART ${k + 1}`, partOf: level.id, partCut: { axis, lo, hi },
+        outline, bbox: bbox(outline),
+        // the grid keeps the body's labels; only the lines that cross this part are drawn, trimmed to the part
+        grid: level.grid ? {
+          ...level.grid,
+          x: (level.grid.x || []).filter((g) => axis === 'y' || (g.x >= lo - ov - 1500 && g.x <= hi + ov + 1500)).map((g) => (axis === 'y' ? { ...g, y1: Math.max(g.y1, lo - ov), y2: Math.min(g.y2, hi + ov) } : g)),
+          y: (level.grid.y || []).filter((g) => axis === 'x' || (g.y >= lo - ov - 1500 && g.y <= hi + ov + 1500)).map((g) => (axis === 'x' ? { ...g, x1: Math.max(g.x1, lo - ov), x2: Math.min(g.x2, hi + ov) } : g)),
+        } : level.grid,
+        columns: (level.columns || []).filter((c) => band({ x: c.cx, y: c.cy })),
+        walls: (level.walls || []).flatMap((w) => (w.polygon ? [w].filter(() => band(centroid(w.polygon))) : clipSegmentToPolygon(w.a, w.b, outline).filter(([a, bb]) => dist(a, bb) > 50).map(([a, bb]) => ({ ...w, a, b: bb })))),
+        openings: clipPolys((level.openings || []).map((o) => ({ ...o, kind: 'polygon', polygon: R.regionPolygon(o) }))),
+        thickZones: clipPolys(level.thickZones || []),
+        ram: {
+          ...ram,
+          bands: (ram.bands || []).filter((bd) => band(mid(bd.p0, bd.p1))),
+          tendons: (ram.tendons || []).filter((t) => (t.pts || []).some(inPart)),
+          shear: (ram.shear || []).filter((sr) => band(mid(sr.a, sr.b))),
+          punching: (ram.punching || []).filter((pc) => band(pc.p)),
+          ssr: (ram.ssr || []).filter((st) => band(st.loc)),
+        },
+      });
+    }
+    model.assumptions.push({ level: level.id, text: `${level.name} (${Math.round(b.w / 1000)} x ${Math.round(b.h / 1000)} m) is drawn in ${n} parts along its ${axis === 'x' ? 'length' : 'height'} (the office splits its plans the same way); the cut between the parts is a drawing joint, not a slab edge.` });
+  }
+  model.levels = out;
+}
+
+/**
+ * Parts of one plan overlap where the office split it: an edge of one part that runs inside another part is a drawing
+ * joint, not a slab edge (no perimeter bars, no U ends there). Marks `e.joint`, sets `level.jointEdges`.
+ */
+function markJoints(model, cover) {
+  for (const level of model.levels) {
+    const others = model.levels.filter((o) => o !== level);
+    let joints = 0;
+    for (const e of level.edges || []) {
+      const m = mid(e.a, e.b);
+      const q1 = add(m, unit(e.a, e.b), Math.min(300, dist(e.a, e.b) / 3)), q2 = add(m, unit(e.b, e.a), Math.min(300, dist(e.a, e.b) / 3));
+      e.joint = others.some((o) => [m, q1, q2].every((q) => pointInPolygon(q, o.outline) || distToPolygon(q, o.outline) < 60));
+      if (e.joint) { e.beam = false; joints++; }
+    }
+    if (!joints) continue;
+    level.jointEdges = level.edges.filter((e) => e.joint);
+    const jl = level.jointEdges.reduce((t, e) => t + dist(e.a, e.b), 0);
+    model.findings.push(`${level.id} ${level.name}: ${joints} edges (${Math.round(jl / 1000)} m) are drawing joints with the neighbouring part, not slab edges: no perimeter bars or U ends there.`);
+    const atJoint = (p) => level.jointEdges.some((e) => distToSeg(p, e.a, e.b) < cover + 300);
+    for (const l of [...(level.existing?.lines || []), ...(level.existing?.items || [])]) if (l.uEnd) for (const k of ['start', 'end']) { const p = k === 'start' ? l.a : l.b; if (l.uEnd[k] && atJoint(p)) l.uEnd[k] = false; }
+  }
+}
+
 export function prepareRamDesign(model, options = {}) {
   const wallT = options.wallThickness || 250;
   const spec = model.spec;
+  splitLevels(model, { ...spec, ...(options.spec || {}) });
   // the office rules need their full parameter sets (perimeter U / L bars, column bars, mesh at thickness changes)
   // (the office rules, not the RAM file's G.A. assumptions; the user's config overrides them)
   for (const key of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching']) spec[key] = { ...R.DEFAULT_SPEC[key], ...(options.spec?.[key] || {}) };
@@ -294,7 +372,7 @@ export function prepareRamDesign(model, options = {}) {
     level.walls = mergeWallSegments((level.walls || []).filter((w) => !w.polygon)).concat((level.walls || []).filter((w) => w.polygon)).map((w) => {
       if (w.polygon) return w;
       const u = unit(w.a, w.b), n = perp(u), t = w.t || wallT;
-      return { ...w, t, length: dist(w.a, w.b), polygon: [add(w.a, n, t / 2), add(w.b, n, t / 2), add(w.b, n, -t / 2), add(w.a, n, -t / 2)] };
+      return { ...w, t, assumedT: !w.t, length: dist(w.a, w.b), polygon: [add(w.a, n, t / 2), add(w.b, n, t / 2), add(w.b, n, -t / 2), add(w.a, n, -t / 2)] };
     });
     // blade "columns" (a core wall modelled as a long rectangular column) are walls for the drawing
     // (a 500 x 1500 or 500 x 2200 is still a column with its top bars; only a real blade, 2.5 m or longer and 4 x its width, is a wall)
@@ -372,8 +450,9 @@ export function prepareRamDesign(model, options = {}) {
     const nProg = items.filter((i) => (level.ram?.bands || []).find((b) => b.id === i.ram)?.designedBy === 'program').length;
     A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands drawn as designed, ${nProg} of them generated by the program for its design strips, ${items.length - nProg} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the specification'}.`);
     if (!level.walls.length) A(level, `No walls in the RAM model of ${level.name}: details 2 and 5 (core walls) not applied.`);
-    else A(level, `Walls are line supports in RAM: a ${wallT} mm wall thickness is assumed for the plan (set spec.wallThickness).`);
+    else if (level.walls.some((w) => w.assumedT)) A(level, `${level.walls.filter((w) => w.assumedT).length} walls of ${level.name} are line supports in RAM without a thickness: ${wallT} mm assumed for the plan (set spec.wallThickness).`);
   });
+  markJoints(model, spec.cover || 25);
   model.design = { units: 'mm', source: 'RAM Concept' };
   return model;
 }
@@ -469,7 +548,8 @@ export function applyColumnRule(level, spec, assumptions = []) {
           if (!/^L\s*=\s*\d+/i.test(c.text) || (c.rot != null && Math.abs(dot({ x: Math.cos((c.rot * Math.PI) / 180), y: Math.sin((c.rot * Math.PI) / 180) }, U[dir])) < 0.9)) continue;
           if (olds.some((o) => distToSeg(c, o.a, o.b) < 600)) { c.text = `L=${p.straight}`; c.office = true; }
         }
-      } else if (s.addMissing !== false) {
+      } else if (s.addMissing !== false && !(col.isWall && col.skipAlong === dir)) {
+        // (a long isolated wall gets the group across it only: its own reinforcement runs along it)
         const cAcross = span(across);
         const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: barOffsets(spec, size[across], cAcross.hi - cAcross.lo), keep: cc };
         added.push(item);
@@ -656,8 +736,18 @@ export function markCoreWalls(level) {
     const enclosed = Math.abs(polygonArea(hull)) - Math.abs(polygonArea(w.polygon));
     if (w.polygon.length >= 6 && enclosed > 1e6 && enclosed > 0.5 * Math.abs(polygonArea(w.polygon))) w.core = true;
   }
+  // a wall running along the slab edge is a retaining wall: detail 2 (slab edge at any core or retaining wall) applies,
+  // the wall U-bars along its inner face, not the column groups
+  for (const w of walls) {
+    if (w.core || !w.a || !w.b || !level.outline) continue;
+    const L = dist(w.a, w.b);
+    if (L < 1000) continue;
+    let onEdge = 0;
+    for (let k = 0; k <= 8; k++) if (distToPolygon(add(w.a, unit(w.a, w.b), (L * k) / 8), level.outline) < (w.t || 250) / 2 + 300) onEdge++;
+    if (onEdge >= 5) { w.core = true; w.retaining = true; }
+  }
   const n = walls.filter((w) => w.core).length;
-  return { core: n, isolated: walls.length - n };
+  return { core: n, isolated: walls.length - n, retaining: walls.filter((w) => w.retaining).length };
 }
 
 /** Chained wall segments (RAM line supports drawn as short pieces) joined into straight walls. */
@@ -742,7 +832,9 @@ export function designAdditions(level, spec, opts = {}) {
   const bandOf = (c, dir) => { const r = tcRes.columns.find((x) => x.col.id === c.id); if (!r) return 0; const g = dir === 'across' ? Math.max(r.per.x.straight, r.per.y.straight) : r.per[dir].straight; return g; };
   // consecutive slab edges of one kind (free / beam) form one chain: one long indication line and one bar symbol
   // every `perimSpan` along the whole chain, instead of a symbol per facet
-  const edgesIn = (level.edges || []).filter((x) => !x.joint);
+  // (an edge with a retaining wall along it carries the wall U-bars of detail 2 instead)
+  for (const e of level.edges || []) if (e.wall == null) e.wall = (level.walls || []).some((w) => w.retaining) && R.sideLining(level, e.a, e.b) === 'wall';
+  const edgesIn = (level.edges || []).filter((x) => !x.joint && !x.wall);
   const chains = [];
   for (const e of edgesIn) {
     const last = chains[chains.length - 1];
@@ -817,7 +909,7 @@ export function designAdditions(level, spec, opts = {}) {
       const count = Math.floor(L / 200) + 1;
       // the distribution along the wall face: 700 into the slab, else further in, else over the wall itself, whichever is free of writing
       // the U-bar starts inside the wall at the opening (core) face, passes through the wall and runs LA into the slab
-      const tw = w.t || 250;
+      const tw = Math.round((w.t || 250) / 10) * 10;
       items.push({ detail: 'D2', face: 'TB', a: add(m, nOut, -tw), b: add(m, nOut, LA), l1: 'T12-200 U-BAR', l2: `L=${LA + tw + 1200 + lc}`, ind: [add(a, nOut, PERIM_DIM_IN), add(b, nOut, PERIM_DIM_IN)], hairpin: true, side: 1, zone: `${w.id} ${gridRef(level, bbox(poly))}` });
       addBar('T', { dia: 12, shape: `U ${LA + tw}/${lc}/1200`, length: LA + tw + 1200 + lc, qty: count, spacing: 200, zone: `D2 ${w.id}` });
       // the 10T12 (T&B) parallel bars of detail 2 only when asked for (office practice: the wall face gets the U-bars only)
@@ -1527,7 +1619,7 @@ export function composeDesignPackage(model, metaIn = {}) {
   const jobs = [];
   for (const level of model.levels) {
     const cores = markCoreWalls(level);
-    if (cores.isolated) model.assumptions.push({ level: level.id, text: `${cores.isolated} isolated walls in ${level.name} carry the column top bars (two groups over the wall, the drop panel / 4 m across, at least 1.5 m past the wall face each way); ${cores.core} core walls carry the wall U-bars.` });
+    if (cores.isolated || cores.core) model.assumptions.push({ level: level.id, text: `${cores.isolated} isolated walls in ${level.name} carry the column top bars (the group across the wall, 4 m / the drop panel and at least 1.5 m past the wall face each way; the group along it only on a wall up to ${(model.spec.topColumns?.wallAlongMax || 6000) / 1000} m); ${cores.core} core / retaining walls (${cores.retaining || 0} along the slab edge) carry the wall U-bars of detail 2.` });
     const rule = applyColumnRule(level, model.spec, model.assumptions);
     const adds = designAdditions(level, model.spec);
     for (const it of rule.added) adds.items.push(it);

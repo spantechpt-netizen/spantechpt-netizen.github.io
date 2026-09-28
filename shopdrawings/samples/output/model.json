@@ -35,7 +35,8 @@
       "edgeFactor": 0.7,
       "dropMargin": 0,
       "dropMax": 6000,
-      "minBeyond": 1500
+      "minBeyond": 1500,
+      "wallAlongMax": 6000
     },
     "uEdge": {
       "dia": 12,

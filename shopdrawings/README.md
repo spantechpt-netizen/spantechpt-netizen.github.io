@@ -116,7 +116,9 @@ detail 4 extra bars; bands shorter than 1.2 m are export artefacts and ignored; 
 supports) get a body (`spec.wallThickness`, 250 default), the slab and every thickened zone are tagged with their
 thickness, and the rules below are added on top exactly as for an RFT plan.
 
-Each slab outline of the plan becomes a PART (the office splits its plans the same way) with four sheets:
+Each slab outline of the plan becomes a PART (the office splits its plans the same way; a RAM body longer than
+`spec.partMax` 60 m is cut into parts along its longer side with `partOverlap` 600 mm, the cut being a drawing joint,
+and an isolated wall longer than `topColumns.wallAlongMax` 6 m gets the column group across it only) with four sheets:
 01 framing (outline, columns, walls, openings, thickness zones, edge beams, levels, camber), 02 bottom and 03 top
 (the designer's bars + the additions, schedule of the additions only; the bottom sheet carries the bottom bars only, every
 T&B bar - trimmers, U-bars, diagonals - is drawn on the top sheet), 04 punching (PS types per column),
@@ -128,7 +130,7 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 | Bar ends (office rule) | every top bar ending at the outer slab edge ends in a U with a 500 mm bottom leg (`U500`) where the edge is free, in an L 400 mm down into the beam (`L400`) where the outer edge carries a beam parallel to it; at an opening always a U | designer's bars and additions |
 | Column top bars (office rule) | two perpendicular groups along the column axis (or the tendon direction), each exactly as long as the drop panel (`dropMax` 6 m tells a drop from a thickened strip) or 4 m and at least 1.5 m past the face each way (`minBeyond`), edge columns 70 % with the U / L at the edge; an isolated wall is reinforced the same way, a core wall (three or more walls around an opening) gets the wall U-bars instead; the designer's bars over the column are re-lengthed and their `L=` rewritten, missing groups added, and each group is distributed over the length of the crossing group (the designer's dimension is re-measured or one is added) | every column |
 | Inside the slab | bars and distribution dimensions never leave the slab outline (clipped; perimeter dimensions sit 350 mm inside the edge) and a distribution dimension stops before an opening | everything added |
-| D2 slab edge at core / retaining wall | T12@200 U-bar starting at the opening (core) face, through the wall and LA into the slab (LB 1200, LC = t − cover, LA from the designer's wall bar next to it); the 10T12 (T&B) parallel bars only with `walls.parallelBars` | every core-wall face that looks onto the slab |
+| D2 slab edge at core / retaining wall | T12@200 U-bar starting at the opening (core) face, through the wall and LA into the slab (LB 1200, LC = t − cover, LA from the designer's wall bar next to it); the 10T12 (T&B) parallel bars only with `walls.parallelBars`; a wall running along the slab edge is a retaining wall and takes this detail (no perimeter U-bars, no column groups there) | every core / retaining wall face that looks onto the slab |
 | D3 varying thickness | lap 500 at the step (note) | thickness zones |
 | D4 column drop / thickened zone | in a column drop the bottom mesh is `spec.drops` T12@150 (the base slab keeps T10@200), drawn as two groups through the column, each exactly as long as the drop (4 m without one) and at least 1.5 m past the column face, distributed over the crossing group; a thickened strip without a column gets T12@150 extra bars 50 Ø beyond it | nested outline with a thickness written inside (e.g. `280`), RAM slab areas |
 | D5 corners | 3T12 diagonals 2 m T&B at re-entrant slab corners; 3T16 at wall corners only with `walls.cornerDiagonals` | outline (and walls when asked) |
