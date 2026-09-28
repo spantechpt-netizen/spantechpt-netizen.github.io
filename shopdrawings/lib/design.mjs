@@ -273,6 +273,16 @@ export function prepareRamDesign(model, options = {}) {
       const u = unit(w.a, w.b), n = perp(u), t = w.t || wallT;
       return { ...w, t, length: dist(w.a, w.b), polygon: [add(w.a, n, t / 2), add(w.b, n, t / 2), add(w.b, n, -t / 2), add(w.a, n, -t / 2)] };
     });
+    // blade "columns" (a core wall modelled as a long rectangular column) are walls for the drawing
+    // (a 500 x 1500 or 500 x 2200 is still a column with its top bars; only a real blade, 2.5 m or longer and 4 x its width, is a wall)
+    const bladeMin = options.bladeLength || 2500;
+    const blades = (level.columns || []).filter((c) => c.shape !== 'circle' && Math.max(c.w, c.h) >= bladeMin && Math.max(c.w, c.h) / Math.min(c.w, c.h) >= 4 && !(c.angle % 90));
+    if (blades.length) {
+      level.columns = level.columns.filter((c) => !blades.includes(c));
+      for (const c of blades) level.walls.push({ id: c.id, polygon: rectPolygon({ x: c.cx - c.w / 2, y: c.cy - c.h / 2, w: c.w, h: c.h }), t: Math.min(c.w, c.h), length: Math.max(c.w, c.h), a: c.w >= c.h ? { x: c.cx - c.w / 2, y: c.cy } : { x: c.cx, y: c.cy - c.h / 2 }, b: c.w >= c.h ? { x: c.cx + c.w / 2, y: c.cy } : { x: c.cx, y: c.cy + c.h / 2 }, blade: true });
+      A(level, `${blades.length} long rectangular columns of ${level.name} (${blades.map((c) => `${c.id} ${Math.round(c.w)}x${Math.round(c.h)}`).slice(0, 6).join(', ')}${blades.length > 6 ? ', ...' : ''}) are drawn as walls: wall U-bars along their faces, no column top bars or punching tags.`);
+    }
+    for (const w of level.walls) { const b = bbox(w.polygon); w.cx = w.cx ?? b.cx; w.cy = w.cy ?? b.cy; w.w = w.w ?? b.w; w.h = w.h ?? b.h; }
     level.walls.forEach((w, i) => { if (!w.id) w.id = `W${i + 1}`; });
     level.beams = level.beams || [];
     level.edges = slabEdges(level);
@@ -305,7 +315,8 @@ export function prepareRamDesign(model, options = {}) {
       const L = Math.round(dist(a, b) / 10) * 10;
       const st = add(a, u, dist(a, b) * 0.35);
       const half = Math.max(band.width, 0) / 2;
-      const it = { detail: null, ram: band.id, face: band.face, a, b, l1: n > 1 && spacing ? `T${band.dia}-${spacing} (${band.face})` : `${n}T${band.dia} (${band.face})`, l2: `L=${L}`, side: 1, noTag: true };
+      // a close band reads as a spacing ("T16-150"), a few bars spread over a wide band as a count ("6T16")
+      const it = { detail: null, ram: band.id, face: band.face, a, b, l1: n > 1 && spacing && spacing <= 500 ? `T${band.dia}-${spacing} (${band.face})` : `${n}T${band.dia} (${band.face})`, l2: `L=${L}`, side: 1, noTag: true };
       if (half > 50) it.dist = { p: add(st, nn, -half), q: add(st, nn, half) };
       if (band.face === 'T') it.uEnd = { start: atBoundary(a), end: atBoundary(b) };
       items.push(it);
@@ -708,6 +719,29 @@ export function designAdditions(level, spec, opts = {}) {
   for (const o of level.openings || []) {
     const poly = R.regionPolygon(o);
     const b = bbox(poly);
+    // a RAM model without wall supports: an opening of shaft size (both sides >= `shaftMin`, 1.5 m) is a lift / stair
+    // shaft whose walls are not modelled: no trimmers, the perimeter U-bars (T12@150, 4 m) along its sides instead
+    const shaft = !(level.walls || []).length && Math.min(b.w, b.h) >= (spec.openings?.shaftMin || 1500) && level.ram;
+    if (shaft) {
+      const su = spec.uEdge;
+      const uLeg = ceilTo((su.total - (h - 2 * cover)) / 2, 10);
+      const sidesP = R.regionPolygon(o);
+      let k = 0;
+      for (let i = 0; i < sidesP.length; i++) {
+        const a = sidesP[i], bb = sidesP[(i + 1) % sidesP.length];
+        if (dist(a, bb) < 600) continue;
+        const u = unit(a, bb), n = perp(u), m = mid(a, bb);
+        const nOut = inSlab(add(m, n, 700)) ? n : inSlab(add(m, n, -700)) ? { x: -n.x, y: -n.y } : null;
+        if (!nOut) continue;
+        const d = { p: add(a, nOut, PERIM_DIM_IN), q: add(bb, nOut, PERIM_DIM_IN) };
+        d.textAt = add(mid(d.p, d.q), nOut, PERIM_DIM_IN + DIM100.gap + DIM100.txt / 2);
+        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nOut, uLeg), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: d, side: 1, zone: `D6 ${o.id}`, legEnd: 'start', noTag: k > 0 });
+        addBar('T', { dia: su.dia, shape: `U ${uLeg}/${h - 2 * cover}/${uLeg}`, length: su.total, qty: Math.floor(dist(a, bb) / su.spacing) + 1, spacing: su.spacing, zone: `D6 SHAFT ${o.id} ${gridRef(level, b)}` });
+        k++;
+      }
+      assumptions.push(`${o.id} (${gridRef(level, b)}, ${(b.w / 1000).toFixed(1)} x ${(b.h / 1000).toFixed(1)} m) TAKEN AS A LIFT / STAIR SHAFT WHOSE WALLS ARE NOT IN THE RAM MODEL: NO TRIMMERS, U-BARS T${su.dia}@${su.spacing} ALONG ITS SIDES; IF IT IS AN OPEN MEP VOID, SWITCH TO DETAIL 7.`);
+      continue;
+    }
     if (R.openingLined(level, o)) {
       // enclosed opening: no trimmers; an L-bar (400 into the beam + `beamTop` on top) along every side that runs
       // along a beam, like the slab edge (the wall U-bars of detail 2 cover the sides along walls)

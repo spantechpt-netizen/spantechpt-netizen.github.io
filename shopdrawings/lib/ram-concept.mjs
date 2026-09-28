@@ -73,6 +73,13 @@ export function readRamConcept(path) {
     if (w < 1) return { id: `C${i + 1}`, shape: 'circle', cx: p.x, cy: p.y, d: h, w: h, h, angle: 0, below: r.SupportSet === 'below' };
     return { id: `C${i + 1}`, shape: 'rect', cx: p.x, cy: p.y, w, h, angle, below: r.SupportSet === 'below' };
   });
+  // a column above and a column below at the same point are one column on the plan (the one below drawn)
+  for (let i = columns.length - 1; i >= 0; i--) {
+    const c = columns[i];
+    const twin = columns.findIndex((o, j) => j !== i && Math.abs(o.cx - c.cx) < 50 && Math.abs(o.cy - c.cy) < 50);
+    if (twin >= 0 && twin < i && (!c.below || columns[twin].below)) columns.splice(i, 1);
+    else if (twin >= 0 && twin < i) { columns.splice(twin, 1); i--; }
+  }
   const walls = rows('LineSupport').map((r) => ({ a: point(r.Point0), b: point(r.Point1) }));
 
   // ---------------------------------------------------------------- tendons
