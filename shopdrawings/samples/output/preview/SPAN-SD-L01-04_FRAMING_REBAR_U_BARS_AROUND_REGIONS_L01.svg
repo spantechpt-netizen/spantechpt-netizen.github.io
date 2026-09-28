@@ -325,8 +325,8 @@
 <text x="50150" y="-34150" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 50150 -34150)">E2</text>
 <line x1="49850" y1="-34150" x2="49550" y2="-34150" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="49525" y1="-44565" x2="44575" y2="-44565" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="47050" y="-44620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 47050 -44620)">4T12-T&amp;B-U05-(L=4950)</text>
-<text x="47050" y="-44345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 47050 -44345)">4950</text>
+<text x="47050" y="-44620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 47050 -44620)">4T12-T&amp;B-U05-(L=4950)</text>
+<text x="47050" y="-44345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 47050 -44345)">4950</text>
 <line x1="49525" y1="-44625" x2="49525" y2="-44505" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="44575" y1="-44625" x2="44575" y2="-44505" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M49535 -42725 L49535 -44625 L49415 -44625 L49415 -42725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -338,7 +338,7 @@
 <path d="M45935 -42725 L45935 -44625 L45815 -44625 L45815 -42725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M45335 -42725 L45335 -44625 L45215 -44625 L45215 -42725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M44735 -42725 L44735 -44625 L44615 -44625 L44615 -42725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="47050" y="-42950" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 47050 -42950)">34T12@150-U08-(L=4000) U-BARS LEGS 1900 T&amp;B</text>
+<text x="47050" y="-42950" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 47050 -42950)">34T12@150-U08-(L=4000) U-BARS LEGS 1900 T&amp;B</text>
 <circle cx="47050" cy="-45250" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="47050" y="-45250" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 47050 -45250)">E3</text>
 <line x1="47050" y1="-44950" x2="47050" y2="-44650" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -361,16 +361,16 @@
 <text x="45150" y="-47150" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 45150 -47150)">E4</text>
 <line x1="44850" y1="-47150" x2="44550" y2="-47150" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="44525" y1="-49565" x2="32525" y2="-49565" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="38525" y="-49620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 38525 -49620)">4T12-T&amp;B-U02-(L=12000)</text>
-<text x="38525" y="-49345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 38525 -49345)">12000</text>
+<text x="38525" y="-49620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 38525 -49620)">4T12-T&amp;B-U02-(L=12000)</text>
+<text x="38525" y="-49345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 38525 -49345)">12000</text>
 <line x1="32525" y1="-49565" x2="21075" y2="-49565" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="33075" y1="-49415" x2="32525" y2="-49415" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="26800" y="-49620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 26800 -49620)">4T12-T&amp;B-U06-(L=12000)</text>
-<text x="26800" y="-49345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 26800 -49345)">12000</text>
+<text x="26800" y="-49620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 26800 -49620)">4T12-T&amp;B-U06-(L=12000)</text>
+<text x="26800" y="-49345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 26800 -49345)">12000</text>
 <line x1="21075" y1="-49565" x2="17075" y2="-49565" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="21625" y1="-49415" x2="21075" y2="-49415" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="19075" y="-49620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 19075 -49620)">4T12-T&amp;B-U06-(L=4550)</text>
-<text x="19075" y="-49345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 19075 -49345)">4550</text>
+<text x="19075" y="-49620" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 19075 -49620)">4T12-T&amp;B-U06-(L=4550)</text>
+<text x="19075" y="-49345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 19075 -49345)">4550</text>
 <line x1="44525" y1="-49625" x2="44525" y2="-49505" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="17075" y1="-49625" x2="17075" y2="-49505" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M44535 -47725 L44535 -49625 L44415 -49625 L44415 -47725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -413,7 +413,7 @@
 <path d="M19360 -47725 L19360 -49625 L19240 -49625 L19240 -47725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M17860 -47725 L17860 -49625 L17740 -49625 L17740 -47725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M17260 -47725 L17260 -49625 L17140 -49625 L17140 -47725" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="30800" y="-47950" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 30800 -47950)">151T12@150-U08-(L=4000) U-BARS LEGS 1900 T&amp;B</text>
+<text x="30800" y="-47950" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 30800 -47950)">151T12@150-U08-(L=4000) U-BARS LEGS 1900 T&amp;B</text>
 <circle cx="30800" cy="-50250" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="30800" y="-50250" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 30800 -50250)">E5</text>
 <line x1="30800" y1="-49950" x2="30800" y2="-49650" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>

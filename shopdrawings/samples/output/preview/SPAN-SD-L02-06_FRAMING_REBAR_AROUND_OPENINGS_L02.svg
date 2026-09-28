@@ -229,8 +229,8 @@
 <line x1="31143" y1="-33440" x2="31023" y2="-33440" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="31143" y1="-39860" x2="31023" y2="-39860" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="31760" y1="-39183" x2="27340" y2="-39183" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="29550" y="-39128" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 29550 -39128)">4T16-T&amp;B-O04-(L=4420)</text>
-<text x="29550" y="-39403" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 29550 -39403)">4420</text>
+<text x="29550" y="-39128" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 29550 -39128)">4T16-T&amp;B-O04-(L=4420)</text>
+<text x="29550" y="-39403" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 29550 -39403)">4420</text>
 <line x1="31760" y1="-39243" x2="31760" y2="-39123" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="27340" y1="-39243" x2="27340" y2="-39123" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="28017" y1="-39860" x2="28017" y2="-33440" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -242,7 +242,7 @@
 <line x1="30555.02525316942" y1="-33796.446609406725" x2="31403.553390593275" y2="-34644.97474683059" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="31403.553390593275" y1="-38655.02525316941" x2="30555.02525316942" y2="-39503.553390593275" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="28544.97474683058" y1="-39503.553390593275" x2="27696.446609406725" y2="-38655.02525316941" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="28163.137084989845" y="-34263.137084989845" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(45 28163.137084989845 -34263.137084989845)">4T12-DIAG-O01-(L=1200) AT 4 CORNERS</text>
+<text x="28163.137084989845" y="-34263.137084989845" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-315 28163.137084989845 -34263.137084989845)">4T12-DIAG-O01-(L=1200) AT 4 CORNERS</text>
 <path d="M28300 -33550 L28300 -34150 L28200 -34150 L28200 -33550" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M28900 -33550 L28900 -34150 L28800 -34150 L28800 -33550" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M29500 -33550 L29500 -34150 L29400 -34150 L29400 -33550" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -285,8 +285,8 @@
 <line x1="45143" y1="-33940" x2="45023" y2="-33940" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="45143" y1="-37860" x2="45023" y2="-37860" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="45760" y1="-37183" x2="41840" y2="-37183" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="43800" y="-37128" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 43800 -37128)">4T16-T&amp;B-O05-(L=3920)</text>
-<text x="43800" y="-37403" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 43800 -37403)">3920</text>
+<text x="43800" y="-37128" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 43800 -37128)">4T16-T&amp;B-O05-(L=3920)</text>
+<text x="43800" y="-37403" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 43800 -37403)">3920</text>
 <line x1="45760" y1="-37243" x2="45760" y2="-37123" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="41840" y1="-37243" x2="41840" y2="-37123" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="42517" y1="-37860" x2="42517" y2="-33940" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -298,7 +298,7 @@
 <line x1="44555.02525316941" y1="-34296.446609406725" x2="45403.55339059327" y2="-35144.97474683059" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="45403.55339059327" y1="-36655.02525316941" x2="44555.02525316941" y2="-37503.553390593275" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="43044.97474683059" y1="-37503.553390593275" x2="42196.44660940673" y2="-36655.02525316941" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="42663.13708498985" y="-34763.137084989845" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(45 42663.13708498985 -34763.137084989845)">4T12-DIAG-O01-(L=1200) AT 4 CORNERS</text>
+<text x="42663.13708498985" y="-34763.137084989845" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-315 42663.13708498985 -34763.137084989845)">4T12-DIAG-O01-(L=1200) AT 4 CORNERS</text>
 <path d="M42800 -34050 L42800 -34650 L42700 -34650 L42700 -34050" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M43400 -34050 L43400 -34650 L43300 -34650 L43300 -34050" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M44000 -34050 L44000 -34650 L43900 -34650 L43900 -34050" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>

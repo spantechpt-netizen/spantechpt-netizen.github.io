@@ -229,8 +229,8 @@
 <line x1="24641" y1="-26120" x2="24521" y2="-26120" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="24641" y1="-30180" x2="24521" y2="-30180" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="25080" y1="-29681" x2="20020" y2="-29681" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="22550" y="-29626" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 22550 -29626)">4T12-T&amp;B-V02-(L=5060)</text>
-<text x="22550" y="-29901" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 22550 -29901)">5060</text>
+<text x="22550" y="-29626" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 22550 -29626)">4T12-T&amp;B-V02-(L=5060)</text>
+<text x="22550" y="-29901" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 22550 -29901)">5060</text>
 <line x1="25080" y1="-29741" x2="25080" y2="-29621" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="20020" y1="-29741" x2="20020" y2="-29621" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="20519" y1="-30180" x2="20519" y2="-26120" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -253,8 +253,8 @@
 <line x1="40641" y1="-42120" x2="40521" y2="-42120" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="40641" y1="-46680" x2="40521" y2="-46680" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="41080" y1="-46181" x2="35020" y2="-46181" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<text x="38050" y="-46126" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 38050 -46126)">4T12-T&amp;B-V01-(L=6060)</text>
-<text x="38050" y="-46401" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(-360 38050 -46401)">6060</text>
+<text x="38050" y="-46126" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 38050 -46126)">4T12-T&amp;B-V01-(L=6060)</text>
+<text x="38050" y="-46401" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 38050 -46401)">6060</text>
 <line x1="41080" y1="-46241" x2="41080" y2="-46121" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="35020" y1="-46241" x2="35020" y2="-46121" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="35519" y1="-46680" x2="35519" y2="-42120" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>

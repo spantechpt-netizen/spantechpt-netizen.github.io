@@ -54,6 +54,18 @@ export const OFFICE_LAYERS = {
 export const OFFICE_TEXT_STYLE = { name: 'BW', font: 'isocp.shx', widthFactor: 0.8 };
 const PERIM_DIM_IN = 350; // the perimeter distribution dimension sits this far inside the slab edge (nothing is drawn outside the slab)
 const CALL_H = 150, LEN_H = 150, DIM_H = 250, DIM_TICK = 150, DIM_EXO = 50, DIM_EXE = 100, DOT_R = 33;
+const BAR_W = 20; // every reinforcement bar is a polyline of constant width 20 (model mm)
+/** A bar on the plan: a polyline of width BAR_W. */
+const barLine = (pl, pts, layer) => pl.pline(pts, { layer, width: BAR_W });
+/**
+ * The side a bar's legs / hooks are drawn on, by the engineering convention: a bottom bar's legs point up (a
+ * horizontal bar) / right (a vertical bar), a top bar's legs point down / left. Returns the unit normal.
+ */
+function legSide(u, face) {
+  let n = { x: -u.y, y: u.x };
+  if (n.y < -1e-9 || (Math.abs(n.y) <= 1e-9 && n.x < 0)) n = { x: -n.x, y: -n.y }; // "up / right"
+  return face === 'B' ? n : { x: -n.x, y: -n.y };
+}
 
 export const DETAILS = {
   D1: 'TYPICAL SLAB EDGE DETAIL WITH EDGE BEAM',
@@ -675,7 +687,7 @@ export function clipAtOpenings(level, it, uAllow) {
   it.uEnd = { ...(it.uEnd || {}) };
   if (oA) it.uEnd.start = 'U';
   if (oB) it.uEnd.end = 'U';
-  if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(newL)}`;
+  if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(newL + (it.extra || 0))}`;
   if (it.length) it.length = Math.round(it.length - (oldL - newL) + ((oA ? 1 : 0) + (oB ? 1 : 0)) * uAllow);
   it.clippedOpening = true;
   return it;
@@ -699,7 +711,7 @@ function clipToSlab(level, items, spec = {}) {
       it.a = cutA && !atJoint(seg[0]) ? seg[0] : it.a; it.b = cutB && !atJoint(seg[1]) ? seg[1] : it.b; it.clipped = true;
       // the written length follows the drawn bar (an edge drop's bar stops at the slab edge with its leg)
       const newL = dist(it.a, it.b);
-      if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(newL)}`;
+      if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(newL + (it.extra || 0))}`;
       if (it.length) it.length = Math.round(it.length - (oldL - newL));
     }
     if (clipAtOpenings(level, it, uAllow) === null) continue;
@@ -960,9 +972,11 @@ export function designAdditions(level, spec, opts = {}) {
         const s0 = Math.max(-L / 2 + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700)); // clear of the crossing bar beside the column
         const dp = dir === 'x' ? { x: cc.x + s0, y: cc.y - W / 2 } : { x: cc.x - W / 2, y: cc.y + s0 };
         const dq = dir === 'x' ? { x: cc.x + s0, y: cc.y + W / 2 } : { x: cc.x + W / 2, y: cc.y + s0 };
-        // the drop bar is drawn with its two 500 legs (the bend up out of the drop at each end)
-        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc, crank: sd.leg || 500 });
-        addBar('B', { dia: sd.dia, shape: `CRANK ${sd.leg || 500}`, length: L + 2 * (sd.leg || 500), qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
+        // the drop bar: a U whose legs continue at an angle out of the drop (the step) and run `leg` (500) beyond it
+        // at the slab bottom to lap with the slab bottom bars; its length counts the two cranks and the two 500s
+        const step = Math.max(50, (z.thickness || h) - h), crankLen = ceilTo(step * Math.SQRT2, 10), extra = 2 * (crankLen + (sd.leg || 500));
+        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L + extra}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc, crank: { diag: 200, beyond: sd.leg || 500 }, extra });
+        addBar('B', { dia: sd.dia, shape: `CRANK ${step}+${sd.leg || 500}`, length: L + extra, qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
       }
       continue;
     }
@@ -971,10 +985,11 @@ export function designAdditions(level, spec, opts = {}) {
     const runX = { a: { x: b.minX - ext, y: b.minY + b.h * 0.42 }, b: { x: b.maxX + ext, y: b.minY + b.h * 0.42 } };
     const runY = { a: { x: b.minX + b.w * 0.62, y: b.minY - ext }, b: { x: b.minX + b.w * 0.62, y: b.maxY + ext } };
     const Lx = Math.round(runX.b.x - runX.a.x), Ly = Math.round(runY.b.y - runY.a.y);
-    items.push({ detail: 'D4', face: 'B', a: runX.a, b: runX.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Lx}`, dist: { p: { x: b.minX + b.w * 0.35, y: b.minY }, q: { x: b.minX + b.w * 0.35, y: b.maxY } }, side: 1, zone: `${z.id} ${gridRef(level, b)}`, crank: sd.leg || 500 });
-    items.push({ detail: 'D4', face: 'B', a: runY.a, b: runY.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Ly}`, dist: { p: { x: b.minX, y: b.minY + b.h * 0.72 }, q: { x: b.maxX, y: b.minY + b.h * 0.72 } }, side: -1, noTag: true, crank: sd.leg || 500 });
-    addBar('B', { dia: sd.dia, shape: `CRANK ${sd.leg || 500}`, length: Lx + 2 * (sd.leg || 500), qty: Math.floor(b.h / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
-    addBar('B', { dia: sd.dia, shape: `CRANK ${sd.leg || 500}`, length: Ly + 2 * (sd.leg || 500), qty: Math.floor(b.w / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
+    const stepZ = Math.max(50, (z.thickness || h) - h), crankZ = ceilTo(stepZ * Math.SQRT2, 10), extraZ = 2 * (crankZ + (sd.leg || 500));
+    items.push({ detail: 'D4', face: 'B', a: runX.a, b: runX.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Lx + extraZ}`, dist: { p: { x: b.minX + b.w * 0.35, y: b.minY }, q: { x: b.minX + b.w * 0.35, y: b.maxY } }, side: 1, zone: `${z.id} ${gridRef(level, b)}`, crank: { diag: 200, beyond: sd.leg || 500 }, extra: extraZ });
+    items.push({ detail: 'D4', face: 'B', a: runY.a, b: runY.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Ly + extraZ}`, dist: { p: { x: b.minX, y: b.minY + b.h * 0.72 }, q: { x: b.maxX, y: b.minY + b.h * 0.72 } }, side: -1, noTag: true, crank: { diag: 200, beyond: sd.leg || 500 }, extra: extraZ });
+    addBar('B', { dia: sd.dia, shape: `CRANK ${stepZ}+${sd.leg || 500}`, length: Lx + extraZ, qty: Math.floor(b.h / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
+    addBar('B', { dia: sd.dia, shape: `CRANK ${stepZ}+${sd.leg || 500}`, length: Ly + extraZ, qty: Math.floor(b.w / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
   }
 
   // ---- D5 corners: convex wall corners inside the slab (3T16) and re-entrant slab corners (3T12)
@@ -1260,7 +1275,8 @@ function inward(a, b, outline) {
 }
 
 // ------------------------------------------------------------------ office-convention drafting
-const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r > 90 || r <= -90) { r += 180; flip = -1; } return { rot: r, flip }; };
+// (a bar within half a degree of vertical reads bottom to top, never top to bottom)
+const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r > 90.5 || r < -89.5) { r += 180; flip = -1; } return { rot: r, flip }; };
 
 // ---------------------------------------------------------------- label placement
 const TEXT_W = 0.85; // advance per character in text heights (isocp), before the width factor
@@ -1347,13 +1363,20 @@ export function officeBar(pl, S, it, phase) {
   const m0 = mid(it.a, it.b);
   if (phase !== 'labels') {
     // the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
-    pl.line(it.pairOff ? add(it.a, n, it.pairOff) : it.a, it.pairOff ? add(it.b, n, it.pairOff) : it.b, { layer });
-    if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; pl.line(e, add(e, n, -(it.side || 1) * 250), { layer }); } // leg of an L at the edge
-    if (it.hairpin) { pl.line(add(it.a, n, -150), add(it.b, n, -150), { layer }); pl.line(it.a, add(it.a, n, -150), { layer }); } // the U on the plan: two legs closed at the edge
+    const ls = legSide(u, it.face); // the legs of this bar: up / right for a bottom bar, down / left for a top bar
+    if (it.crank) {
+      // the drop bar: a U whose legs continue at an angle out of the drop and lap with the slab bottom bars:
+      // a 45° crank at each end then `beyond` straight, on the leg side
+      const d = it.crank.diag || 200, bey = it.crank.beyond || 500;
+      const qa1 = add(add(it.a, u, -d), ls, d), qa2 = add(qa1, u, -bey);
+      const qb1 = add(add(it.b, u, d), ls, d), qb2 = add(qb1, u, bey);
+      barLine(pl, [qa2, qa1, it.a, it.b, qb1, qb2], layer);
+    } else barLine(pl, [it.pairOff ? add(it.a, n, it.pairOff) : it.a, it.pairOff ? add(it.b, n, it.pairOff) : it.b], layer);
+    if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; barLine(pl, [e, add(e, ls, 250)], layer); } // leg of an L at the edge
+    if (it.hairpin) { barLine(pl, [add(it.a, ls, 150), add(it.b, ls, 150)], layer); barLine(pl, [it.a, add(it.a, ls, 150)], layer); } // the U on the plan: two legs closed at the edge
     if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
-    if (it.triple) { pl.line(add(it.a, n, 200), add(it.b, n, 200), { layer }); pl.line(add(it.a, n, -200), add(it.b, n, -200), { layer }); }
-    if (it.pairOff) pl.line(add(it.a, n, -it.pairOff), add(it.b, n, -it.pairOff), { layer }); // the second bar of a pair (blockwork beam)
-    if (it.crank) { pl.line(it.a, add(it.a, n, it.crank), { layer }); pl.line(it.b, add(it.b, n, it.crank), { layer }); } // the drop bar's legs at both ends (up / left of the bar)
+    if (it.triple) { barLine(pl, [add(it.a, n, 200), add(it.b, n, 200)], layer); barLine(pl, [add(it.a, n, -200), add(it.b, n, -200)], layer); }
+    if (it.pairOff) barLine(pl, [add(it.a, n, -it.pairOff), add(it.b, n, -it.pairOff)], layer); // the second bar of a pair (blockwork beam)
     if (it.distCands && !it.dist) {
       const boxOf = (d) => { const du = unit(d.p, d.q), dn = perp(du); return [textBox(d.textAt || add(mid(d.p, d.q), dn, DIM100.gap + DIM100.txt / 2), d.text || String(Math.round(dist(d.p, d.q))), DIM100.txt, readableRot(du).rot, 'C', 'M', 0.8)]; };
       it.dist = placer ? placer.pick(it.distCands, boxOf) : it.distCands[0];
@@ -1382,7 +1405,7 @@ export function officeBar(pl, S, it, phase) {
   // a short bar (a U-bar symbol on an edge or a wall face) can also carry its call-out beside it, along the edge
   const sideways = L < 2500 ? [0, 600, -600, 1200, -1200, 1800, -1800, 2400, -2400] : [0];
   const cands = []; for (const j of sideways) for (const k of shifts) for (const sd of [side, -side]) cands.push({ k, sd, j });
-  const gap = it.hairpin ? 150 : 60; // a hairpin's second leg sits 150 below the axis: the lower call-out clears it
+  const gap = it.hairpin ? 150 : 60; // a hairpin's second leg sits 150 beside the axis: the call-out on that side clears it
   // the call-out sits on the `sd` side of the bar, the length on the other side; each text is aligned so that it
   // grows away from the bar: the text's "up" is +n when the reading direction follows the bar, -n when it is flipped
   const away = (sg) => (sg * flip > 0 ? 'B' : 'T');
@@ -1404,14 +1427,15 @@ export function officeBar(pl, S, it, phase) {
 function drawUEnds(pl, S, a, b, uEnd, layer) {
   const u = unit(a, b), n = perp(u);
   const { rot } = readableRot(u);
+  const ls = legSide(u, /BOT/.test(layer) ? 'B' : 'T'); // top bar: legs down / left; bottom bar: up / right
   for (const [on, p] of [[uEnd.start, a], [uEnd.end, b]]) {
     if (!on) continue;
-    const tick = add(p, n, -250);
-    pl.line(p, tick, { layer }); // the leg on the plan, on the lower / left side of the bar
-    // a U is drawn as a U: the 500 bottom leg comes back along the bar from the edge (an L keeps its single leg into the beam)
-    if (on === 'U') pl.line(tick, add(tick, p === a ? u : { x: -u.x, y: -u.y }, R.U_BOTTOM_LEG), { layer });
+    const tick = add(p, ls, 250);
+    // a U is drawn as a U: the leg and the 500 bottom leg coming back along the bar from the edge (an L keeps its single leg into the beam)
+    if (on === 'U') barLine(pl, [p, tick, add(tick, p === a ? u : { x: -u.x, y: -u.y }, R.U_BOTTOM_LEG)], layer);
+    else barLine(pl, [p, tick], layer);
     if (placer) { if (placer.uTags.some((q) => dist(q, p) < 400)) continue; placer.uTags.push(p); } // one tag where two bars end together
-    const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), n, -300 - 110), add(add({ x: 0, y: 0 }, u, k), n, 300)]);
+    const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), ls, 300 + 110), add(add({ x: 0, y: 0 }, u, k), ls, -300)]);
     const tag = on === 'L' ? `L${DEFAULT_U.beamLeg}` : `U${R.U_BOTTOM_LEG}`;
     placeText(pl, add(p, n, 0), tag, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' }, offs, S);
   }
@@ -1422,7 +1446,7 @@ export function drawExisting(pl, S, ex, faces) {
   const keep = (f) => faces.includes(f);
   for (const l of ex.lines.filter((x) => keep(x.face))) {
     const layer = /BOT/i.test(l.layer) || l.face === 'B' ? 'REO-BOT' : 'REO-TOP';
-    pl.line(l.a, l.b, { layer });
+    barLine(pl, [l.a, l.b], layer);
     if (l.uEnd && faces.includes('T')) drawUEnds(pl, S, l.a, l.b, l.uEnd, layer);
   }
   for (const it of (ex.items || []).filter((x) => keep(x.face))) officeBar(pl, S, it);
@@ -1611,7 +1635,7 @@ function punchingSheet(model, level, meta, adds) {
           const rowsIn = Math.round(len / p.s);
           for (let i = 0; i < ns; i++) {
             const t0 = t00 + pitch * i + (pitch - sw) / 2;
-            pl.rect(dir === 'x' ? { x: Math.min(face, face + sg * len), y: t0, w: len, h: sw } : { x: t0, y: Math.min(face, face + sg * len), w: sw, h: len }, { layer: 'REBAR-PUNCH' });
+            pl.rect(dir === 'x' ? { x: Math.min(face, face + sg * len), y: t0, w: len, h: sw } : { x: t0, y: Math.min(face, face + sg * len), w: sw, h: len }, { layer: 'REBAR-PUNCH', width: BAR_W });
             for (let r = 1; r <= rowsIn; r++) { const o = face + sg * r * p.s; if (dir === 'x') pl.line({ x: o, y: t0 }, { x: o, y: t0 + sw }, { layer: 'PS-ROW' }); else pl.line({ x: t0, y: o }, { x: t0 + sw, y: o }, { layer: 'PS-ROW' }); }
           }
           // "S" at the first row of the outer strip, with its dot

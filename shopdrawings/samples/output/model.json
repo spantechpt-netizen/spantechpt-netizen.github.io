@@ -109,7 +109,13 @@
       "uSpacing": 200,
       "uTotal": 2400,
       "longDia": 12,
-      "longSpacing": 150
+      "longSpacing": 150,
+      "wall": {
+        "uTotal": 2400,
+        "uSlab": 2000,
+        "longDia": 16,
+        "longCount": 7
+      }
     },
     "blockBeam": {
       "dia": 16,

@@ -144,7 +144,13 @@ export class Canvas {
   circle(cx, cy, r, o = {}) { return this.add({ t: 'circle', cx, cy, r, ...o }); }
   arc(cx, cy, r, a1, a2, o = {}) { return this.add({ t: 'arc', cx, cy, r, a1, a2, ...o }); }
   /** Single-line text. align: L|C|R, valign: B|M|T, h: height, rot: degrees. */
-  text(x, y, str, o = {}) { return this.add({ t: 'text', x, y, str: String(str), h: o.h || 2.5, rot: o.rot || 0, align: o.align || 'L', valign: o.valign || 'B', ...o }); }
+  text(x, y, str, o = {}) {
+    // no text is ever upside down: a rotation in (90, 270] is turned by 180° with the anchor mirrored, so the text
+    // keeps its place and reads left to right / bottom to top
+    let rot = ((Number(o.rot) || 0) % 360 + 360) % 360, align = o.align || 'L', valign = o.valign || 'B';
+    if (rot > 90.5 && rot <= 270.5) { rot -= 180; align = align === 'L' ? 'R' : align === 'R' ? 'L' : align; valign = valign === 'B' ? 'T' : valign === 'T' ? 'B' : valign; }
+    return this.add({ t: 'text', x, y, str: String(str), h: o.h || 2.5, ...o, rot, align, valign });
+  }
   /** Multi-line text, attached top-left, wrapped at width. */
   mtext(x, y, str, o = {}) { return this.add({ t: 'mtext', x, y, str: String(str), h: o.h || 2.5, width: o.width || 0, attach: o.attach || 1, ...o }); }
   /** Hatch a list of polygons (outer + islands). pattern: SOLID | ANSI31 | ANSI37 | DOTS. */

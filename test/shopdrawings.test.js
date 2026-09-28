@@ -547,7 +547,10 @@ test('the General Details add bars in the office convention at the places they r
   // the column, each as long as the drop (5000 along X; 3000 along Y is stretched to 1.5 m past the 700 column face)
   assert.equal(by('D4').length, 2, 'drop mesh both ways in the 280 zone');
   assert.ok(by('D4').every((it) => it.face === 'B' && it.l1 === 'T12-150 (B)' && it.posCands && it.dist));
-  assert.deepEqual(by('D4').map((it) => it.l2).sort(), ['L=3700', 'L=5000']);
+  // each drop bar is a U with an angled continuation: 45° crank over the 50 step (80) + 500 beyond the drop, both ends
+  const extra = 2 * (80 + 500);
+  assert.deepEqual(by('D4').map((it) => it.l2).sort(), [`L=${3700 + extra}`, `L=${5000 + extra}`]);
+  assert.ok(by('D4').every((it) => it.crank && it.crank.beyond === 500 && it.extra === extra));
   assert.ok(by('D4').every((it) => Math.abs(it.a.x + it.b.x - 4000) < 1 && Math.abs(it.a.y + it.b.y - 4000) < 1), 'the groups are centred on the column');
   assert.ok(by('D5').some((it) => it.l1 === '3T16-200 (T&B)'), 'diagonals at the core wall corners');
   assert.ok(by('D5').some((it) => it.l1 === '3T12-200 (T&B)'), 'diagonals at the re-entrant slab corner');
