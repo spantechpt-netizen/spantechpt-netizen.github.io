@@ -18,14 +18,22 @@ export const SCALES = [50, 75, 100, 125, 150, 200, 250, 300, 400, 500];
 export const DETAIL_SCALES = [5, 10, 12.5, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 250, 300];
 
 /** Fixed layout of an A1 sheet in paper mm (origin bottom-left). */
-export function layoutFor(size = 'A1') {
-  const { w, h } = SHEET_SIZES[size] || SHEET_SIZES.A1;
-  const right = 185;
-  const x0 = 20, y0 = 10, x1 = w - 10, y1 = h - 10;
+/**
+ * Frame options (`meta.frame`, paper mm): the right-hand strip width and the height of each of its boxes, the
+ * bottom detail strip, and which boxes are drawn (`keyplan`, `refs`, `schedule`, `details`); a box switched off
+ * gives its room to the notes. `size` picks A0 / A1 / A2.
+ */
+export const DEFAULT_FRAME = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true, margin: { left: 20, bottom: 10, right: 10, top: 10 } };
+
+export function layoutFor(size = 'A1', frameOpts = {}) {
+  const F = { ...DEFAULT_FRAME, ...frameOpts, margin: { ...DEFAULT_FRAME.margin, ...(frameOpts.margin || {}) } };
+  const { w, h } = SHEET_SIZES[size] || SHEET_SIZES[F.size] || SHEET_SIZES.A1;
+  const right = Math.max(120, Number(F.rightWidth) || 185);
+  const x0 = F.margin.left, y0 = F.margin.bottom, x1 = w - F.margin.right, y1 = h - F.margin.top;
   const rx = x1 - right;
-  const strip = 125;
-  const titleH = 150, refsH = 52, keyH = 46, schedH = 140;
-  const notesH = y1 - y0 - titleH - refsH - keyH - schedH;
+  const strip = F.details === false ? 0 : Math.max(0, Number(F.bottomStrip) || 125);
+  const titleH = Math.max(60, Number(F.titleH) || 150), refsH = F.refs === false ? 0 : Math.max(0, Number(F.refsH) || 52), keyH = F.keyplan === false ? 0 : Math.max(0, Number(F.keyH) || 46), schedH = F.schedule === false ? 0 : Math.max(0, Number(F.schedH) || 140);
+  const notesH = Math.max(40, y1 - y0 - titleH - refsH - keyH - schedH);
   const plan = { x: x0, y: y0 + strip, w: rx - x0, h: y1 - y0 - strip };
   return {
     w, h,
@@ -39,6 +47,7 @@ export function layoutFor(size = 'A1') {
     halves: [{ x: plan.x, y: plan.y, w: plan.w / 2, h: plan.h }, { x: plan.x + plan.w / 2, y: plan.y, w: plan.w / 2, h: plan.h }],
     strip: { x: x0, y: y0, w: rx - x0, h: strip },
     details: [0, 1, 2].map((i) => ({ x: x0 + (i * (rx - x0)) / 3, y: y0, w: (rx - x0) / 3, h: strip })),
+    opts: F,
   };
 }
 
@@ -52,13 +61,13 @@ const cx = (r) => r.x + r.w / 2;
 const cy = (r) => r.y + r.h / 2;
 
 export class Sheet {
-  constructor(root, { blockName, size = 'A1', scale = 100 }) {
+  constructor(root, { blockName, size = 'A1', scale = 100, frame = {} }) {
     this.root = root;
     this.blockName = blockName;
     this.blk = root.block(blockName);
     this.S = scale;
-    this.size = size;
-    this.L = layoutFor(size);
+    this.size = frame.size || size;
+    this.L = layoutFor(this.size, frame);
     const S = this.S;
     const blk = this.blk;
     const M = (p) => ({ x: p.x * S, y: p.y * S });
@@ -184,8 +193,32 @@ export class Sheet {
     }
     const { title, refs, notes, schedule, keyplan, plan, strip } = this.L;
     this.pp.line(title.x, frame.y, title.x, frame.y + frame.h, { layer: 'FRAME' });
-    this.pp.line(plan.x, strip.y + strip.h, plan.x + plan.w, strip.y + strip.h, { layer: 'FRAME' });
-    for (const r of [refs, notes, schedule, keyplan]) this.pp.line(r.x, r.y, r.x + r.w, r.y, { layer: 'FRAME' });
+    if (strip.h) this.pp.line(plan.x, strip.y + strip.h, plan.x + plan.w, strip.y + strip.h, { layer: 'FRAME' });
+    for (const r of [refs, notes, schedule, keyplan]) if (r.h) this.pp.line(r.x, r.y, r.x + r.w, r.y, { layer: 'FRAME' });
+  }
+
+  /**
+   * The office's own frame: the entities of a DXF drawn in paper mm (A1 origin at the bottom-left corner), placed on
+   * the sheet in place of the built-in frame, references block and title block. `<TOKENS>` in its texts are replaced
+   * with the sheet's data (PROJECT, PROJECT_CODE, CLIENT, CONSULTANT, CONTRACTOR, LOCATION, COMPANY, COMPANY_LINE,
+   * TITLE, LEVEL, DRAWING_NO, REV, DATE, SCALE, SHEET, PREPARED, CHECKED, APPROVED, STATUS, GRID_REF, INDEX).
+   */
+  customFrame(entities, fields = {}) {
+    const pp = this.pp;
+    // tokens are written <PROJECT>, %PROJECT% or {PROJECT} (AutoCAD treats braces in MTEXT as formatting, so the first two are safer)
+    const sub = (str) => String(str ?? '').replace(/[<{%]([A-Z][A-Z_]*)[>}%]/g, (m, k) => (fields[k] != null ? String(fields[k]) : m));
+    let n = 0;
+    for (const e of entities || []) {
+      const layer = e.layer && e.layer !== '0' ? `FRAME-${e.layer}` : 'FRAME';
+      if (e.type === 'LINE') { pp.line(e.x, e.y, e.x2, e.y2, { layer }); n++; }
+      else if (e.type === 'LWPOLYLINE' && e.pts?.length > 1) { pp.pline(e.pts, { layer, closed: !!e.closed }); n++; }
+      else if (e.type === 'CIRCLE') { pp.circle(e.x, e.y, e.r, { layer }); n++; }
+      else if (e.type === 'ARC') { pp.arc(e.x, e.y, e.r, e.a1 || 0, e.a2 || 360, { layer }); n++; }
+      else if (e.type === 'SOLID' || e.type === 'TRACE') { if (e.xs?.length >= 3) { pp.solid(e.xs.map((x, i) => ({ x, y: e.ys[i] })), { layer }); n++; } }
+      else if (e.type === 'TEXT' || e.type === 'ATTRIB' || e.type === 'ATTDEF') { const t = sub(e.text); if (t.trim()) { pp.text(e.x, e.y, t, { layer, h: e.height || 2.5, rot: e.rotation || 0, align: e.halign === 1 ? 'C' : e.halign === 2 ? 'R' : 'L', widthFactor: e.sx && e.sx < 2 ? e.sx : undefined }); n++; } }
+      else if (e.type === 'MTEXT') { const t = sub(e.text); if (t.trim()) { pp.mtext(e.x, e.y, t, { layer, h: e.height || 2.5, width: e.width || 0, rot: e.rotation || 0 }); n++; } }
+    }
+    return n;
   }
 
   /** Key plan box: the slab outline reduced into the box, with a north arrow. */

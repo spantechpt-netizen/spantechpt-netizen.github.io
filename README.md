@@ -80,7 +80,18 @@ numbers, and each RAM Concept `.cpt` uploaded for a level comes back as a
 numbered package — `SPAN-DD-P26-001-B1-02` is prefix, project code, level code,
 sheet — with previews, per-sheet DXF, the schedules and one ZIP. Revisions and
 serials are counted automatically per level; the office prefixes, company line,
-signatures and status texts live under **Settings → Drawings**. The step-by-step
+signatures, status texts and the **sheet frame** (strip sizes, boxes, or the
+office's own frame as a DXF with `<TOKENS>`) live under **Settings → Drawings**.
+Several RAM files can be generated in one go (each matched to its level from
+its file name), every run carries a change description and a status (draft →
+issued, the earlier issued run of the level becoming superseded), the project
+page keeps a **revision history** per level with the reinforcement weight
+change between runs, and a **documents** tab holds the original design files,
+the RAM models and the PT design / shop drawings (generated packages appear
+there automatically). An interactive **reinforcement editor** lets the
+engineer select bars on the plan, delete, lengthen / shorten or re-specify
+them, or add bars; the edits are kept on the level and a regeneration produces
+the next revision with them applied. The step-by-step
 office procedure (preparing the RAM model, registering, generating, reviewing,
 AutoCAD, revision cycle) is in
 [docs/RAM-DRAWINGS-WORKFLOW.md](docs/RAM-DRAWINGS-WORKFLOW.md) and opens from
@@ -503,7 +514,7 @@ public/
     views/        One module per screen
 test/
   api.test.js     End-to-end API tests against a throwaway database
-  drawings.test.js  The drawings module end to end (project → level → RAM upload → numbered package)
+  drawings.test.js  The drawings module end to end (project → level → RAM upload → numbered package → revisions, edits, documents, frame)
   shopdrawings.test.js  The generator itself
 docs/
   RAM-DRAWINGS-WORKFLOW.md  Office procedure for reinforcement drawings from RAM Concept (Arabic)

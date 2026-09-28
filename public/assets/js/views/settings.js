@@ -979,11 +979,55 @@ function drawingsPanel(settings) {
     field({ name: 'spec', label: t('dw_spec'), type: 'textarea', value: spec, rows: 4, dir: 'ltr', disabled: readOnly() }),
   ]);
 
+  // the sheet frame: strip sizes and boxes, and the office's own frame DXF
+  const fr = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true, ...(current.frame || {}) };
+  const frameForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-3', {}, [
+      field({ name: 'size', label: t('dw_frame_size'), type: 'select', value: fr.size, disabled: readOnly(), options: ['A0', 'A1', 'A2'].map((v) => ({ value: v, label: v })) }),
+      field({ name: 'rightWidth', label: t('dw_frame_right'), type: 'number', value: fr.rightWidth, min: 120, max: 400, step: 5, disabled: readOnly() }),
+      field({ name: 'bottomStrip', label: t('dw_frame_bottom'), type: 'number', value: fr.bottomStrip, min: 0, max: 300, step: 5, disabled: readOnly() }),
+      field({ name: 'titleH', label: t('dw_frame_title'), type: 'number', value: fr.titleH, min: 60, max: 300, step: 5, disabled: readOnly() }),
+      field({ name: 'refsH', label: t('dw_frame_refs'), type: 'number', value: fr.refsH, min: 0, max: 200, step: 2, disabled: readOnly() }),
+      field({ name: 'keyH', label: t('dw_frame_key'), type: 'number', value: fr.keyH, min: 0, max: 200, step: 2, disabled: readOnly() }),
+      field({ name: 'schedH', label: t('dw_frame_sched'), type: 'number', value: fr.schedH, min: 0, max: 400, step: 5, disabled: readOnly() }),
+    ]),
+    el('div.grid.grid-4', {}, [
+      field({ name: 'keyplan', label: t('dw_frame_keyplan'), type: 'checkbox', value: fr.keyplan !== false, disabled: readOnly() }),
+      field({ name: 'refs', label: t('dw_frame_refsbox'), type: 'checkbox', value: fr.refs !== false, disabled: readOnly() }),
+      field({ name: 'schedule', label: t('dw_frame_schedule'), type: 'checkbox', value: fr.schedule !== false, disabled: readOnly() }),
+      field({ name: 'details', label: t('dw_frame_details'), type: 'checkbox', value: fr.details !== false, disabled: readOnly() }),
+    ]),
+  ]);
+  const frameInput = el('input', { type: 'file', accept: '.dxf', style: { display: 'none' } });
+  const frameStatus = el('div.small', { text: current.frame_dxf ? `${t('dw_frame_current')}: ${current.frame_dxf_name || 'frame.dxf'} (${current.frame_dxf_entities || '?'} entities)` : t('dw_frame_none') });
+  frameInput.addEventListener('change', async () => {
+    const file = frameInput.files?.[0];
+    if (!file) return;
+    try {
+      const res = await api.uploadDrawingFrame(file);
+      current.frame_dxf = res.frame_dxf; current.frame_dxf_name = res.name; current.frame_dxf_entities = res.entities;
+      frameStatus.textContent = `${t('dw_frame_current')}: ${res.name} (${res.entities} entities)`;
+      toast(t('saved'), 'success');
+    } catch (error) { toastError(error); }
+  });
+
   return el('div.card', {}, [
     el('div.card-header', {}, [el('h3', { text: t('dw_settings') })]),
     el('div.card-body', {}, [
       el('div.alert.info', { text: t('dw_numbering_hint'), dir: 'ltr' }),
       form,
+      el('h4.mt-2', { text: t('dw_frame') }),
+      el('div.small.muted', { text: t('dw_frame_hint') }),
+      frameForm,
+      el('h4.mt-2', { text: t('dw_frame_dxf') }),
+      el('div.small.muted', { text: t('dw_frame_dxf_hint'), dir: 'ltr' }),
+      frameStatus,
+      readOnly() ? null : el('div.row.wrap.mt-1', {}, [
+        frameInput,
+        el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => frameInput.click() }, [icon('upload', 14), t('dw_frame_upload')]),
+        current.frame_dxf ? el('a.btn-secondary.btn.btn-sm', { href: api.drawingFrameUrl() }, [icon('download', 14), 'DXF']) : null,
+        el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: async () => { try { await api.deleteDrawingFrame(); current.frame_dxf = null; frameStatus.textContent = t('dw_frame_none'); toast(t('saved'), 'success'); } catch (error) { toastError(error); } } }, [icon('trash', 14), t('dw_frame_remove')]),
+      ]),
       readOnly() ? null : el('div.row.mt-2', {}, [
         el('button.btn', {
           type: 'button', text: t('save'),
@@ -994,7 +1038,9 @@ function drawingsPanel(settings) {
               try { parsed = JSON.parse(data.spec); } catch { toast(`${t('dw_spec')}: JSON`, 'error'); return; }
             }
             delete data.spec;
-            save('drawings', { ...current, ...data, spec: parsed });
+            const frame = readForm(frameForm);
+            for (const k of ['rightWidth', 'bottomStrip', 'titleH', 'refsH', 'keyH', 'schedH']) if (frame[k] == null) delete frame[k];
+            save('drawings', { ...current, ...data, spec: parsed, frame: { ...fr, ...frame } });
           },
         }),
         el('button.btn-secondary.btn', {

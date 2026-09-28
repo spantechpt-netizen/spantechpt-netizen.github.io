@@ -12,23 +12,49 @@ import {
   toast, toastError, pageHeader,
 } from '../ui.js';
 import { can } from '../app.js';
+import { editorPage } from './rebar-editor.js';
 
 const MODES = ['design', 'shop'];
 const BANDS = ['all', 'user', 'none'];
+const FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
 const filters = { q: '' };
+let projectTab = 'levels';
 
 export async function render({ params, navigate }) {
-  const [projectId, sub, runId] = params;
+  const [projectId, sub, runId, sub2] = params;
+  if (projectId && sub === 'run' && runId && sub2 === 'edit') return editorPage(projectId, runId, navigate);
   if (projectId && sub === 'run' && runId) return runPage(projectId, runId, navigate);
   if (projectId) return projectPage(projectId, navigate);
   return listPage(navigate);
+}
+
+const fmtBytes = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n || 0} B`);
+const fill = (key, vars) => Object.entries(vars).reduce((text, [k, v]) => text.replace(`{${k}}`, v), t(key));
+
+/** Top / bottom reinforcement weight of a run from its sheets (kg). */
+function runWeights(run) {
+  const w = { T: 0, B: 0 };
+  for (const s of run.sheets || []) {
+    if (!s.weight) continue;
+    if (/TOP/i.test(s.title)) w.T += s.weight; else if (/BOTTOM/i.test(s.title)) w.B += s.weight;
+  }
+  return w;
+}
+
+/** The level a file name points at: its code or name inside the file name, else the first level. */
+function guessLevel(fileName, levels) {
+  const name = fileName.toUpperCase().replace(/[_\-.]+/g, ' ');
+  const hit = levels.find((l) => new RegExp(`(^|\\s)${l.code.toUpperCase().replace(/[-]/g, ' ')}(\\s|$)`).test(name))
+    || levels.find((l) => l.name && name.includes(l.name.toUpperCase()))
+    || levels.find((l) => l.zone && name.includes(l.zone.toUpperCase()));
+  return hit || levels[0];
 }
 
 // ------------------------------------------------------------------ helpers
 const modeLabel = (mode) => t(mode === 'shop' ? 'dw_mode_shop' : 'dw_mode_design');
 const bandsLabel = (bands) => t(`dw_bands_${bands || 'all'}`);
 const statusBadge = (status) => el('span', {
-  class: `badge ${status === 'done' ? 'green' : status === 'failed' ? 'red' : 'amber'}`,
+  class: `badge ${status === 'issued' ? 'green' : status === 'failed' ? 'red' : status === 'superseded' ? 'grey' : status === 'running' ? 'amber' : 'blue'}`,
   text: t(`dw_status_${status || 'running'}`),
 });
 const levelLabel = (level) => [level.code, [level.name, level.zone].filter(Boolean).join(' - ')].filter(Boolean).join(' · ');
@@ -204,13 +230,28 @@ function openLevelForm(projectId, level, after) {
 
 // ----------------------------------------------------------- generate form
 function openGenerateForm(project, levels, settings, preselected, navigate) {
-  const fileInput = el('input', { type: 'file', name: 'file', accept: '.cpt,.dxf', required: true });
+  const fileInput = el('input', { type: 'file', name: 'files', accept: '.cpt,.dxf', multiple: true, required: true });
+  const mapHost = el('div');
   const status = el('div.small.muted.mt-1');
+  let picked = [];
+  fileInput.addEventListener('change', () => {
+    picked = [...(fileInput.files || [])].map((file) => ({ file, levelId: (picked.length === 0 && preselected && fileInput.files.length === 1 ? preselected : guessLevel(file.name, levels))?.id }));
+    clear(mapHost);
+    if (picked.length < 1) return;
+    mapHost.append(el('div.tiny.muted', { text: t('dw_files_map_hint') }));
+    mapHost.append(dataTable({
+      rows: picked,
+      columns: [
+        { label: t('dw_file'), render: (row) => el('span', { text: row.file.name, dir: 'ltr' }) },
+        { label: t('dw_file_size'), render: (row) => fmtBytes(row.file.size) },
+        {
+          label: t('dw_level'),
+          render: (row) => el('select', { onchange: (e) => { row.levelId = Number(e.target.value); } }, levels.map((l) => { const o = el('option', { value: l.id, text: levelLabel(l) }); if (l.id === row.levelId) o.selected = true; return o; })),
+        },
+      ],
+    }));
+  });
   const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
-    field({
-      name: 'level_id', label: t('dw_level'), type: 'select', value: preselected?.id || levels[0]?.id,
-      options: levels.map((l) => ({ value: l.id, label: levelLabel(l) })),
-    }),
     el('div.grid.grid-2', {}, [
       field({
         name: 'mode', label: t('dw_mode'), type: 'select', value: project.default_mode || settings.default_mode || 'design',
@@ -222,13 +263,16 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
       }),
     ]),
     field({ name: 'revision', label: t('dw_revision'), value: '', dir: 'ltr', hint: t('dw_revision_hint') }),
-    el('div.field', {}, [el('label', { text: t('dw_file') }), fileInput]),
+    field({ name: 'notes', label: t('dw_run_notes'), type: 'textarea', value: '', rows: 2, hint: t('dw_run_notes_hint') }),
+    el('div.field', {}, [el('label', { text: t('dw_files_multi') }), fileInput]),
+    mapHost,
     el('div.tiny.muted', { text: `${t('dw_numbering')}: ${exampleNo(settings, project, preselected || levels[0])}`, dir: 'ltr' }),
     status,
   ]);
 
   const { close } = openModal({
     title: `${t('dw_generate')} — ${project.code}`,
+    size: 'wide',
     body: form,
     footer: el('div.row', {}, [
       el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
@@ -237,22 +281,25 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
         onclick: async (event) => {
           const button = event.currentTarget;
           const data = readForm(form);
-          const file = fileInput.files?.[0];
-          if (!file) { fileInput.focus(); return; }
+          if (!picked.length) { fileInput.focus(); return; }
           button.disabled = true;
-          status.textContent = t('dw_generating');
-          try {
-            const { run } = await api.generateDrawings(data.level_id, file, {
-              mode: data.mode, ram_bands: data.ram_bands, revision: data.revision || undefined,
-            });
-            toast(t('dw_generated'), 'success');
-            close();
-            navigate(`drawings/${project.id}/run/${run.id}`);
-          } catch (error) {
-            toastError(error);
-            status.textContent = error.localised || error.message;
-            button.disabled = false;
+          const results = [];
+          for (let i = 0; i < picked.length; i++) {
+            const { file, levelId } = picked[i];
+            status.textContent = fill('dw_batch_progress', { n: i + 1, total: picked.length }) + ` ${file.name}`;
+            try {
+              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, revision: data.revision || undefined, notes: data.notes || undefined });
+              results.push({ ok: true, run, file });
+            } catch (error) {
+              results.push({ ok: false, error, file });
+            }
           }
+          const ok = results.filter((r) => r.ok);
+          status.textContent = fill('dw_batch_done', { ok: ok.length, fail: results.length - ok.length });
+          if (ok.length === results.length) toast(t('dw_generated'), 'success'); else toastError(results.find((r) => !r.ok).error);
+          if (results.length === 1 && ok.length === 1) { close(); navigate(`drawings/${project.id}/run/${ok[0].run.id}`); return; }
+          if (ok.length) { close(); navigate(`drawings/${project.id}`); return; }
+          button.disabled = false;
         },
       }, [icon('play', 16), t('dw_generate')]),
     ]),
@@ -307,49 +354,190 @@ async function projectPage(projectId, navigate) {
       ]),
     ]));
 
-    // levels
-    const levelsCard = el('div.card', {}, [
-      el('div.card-header', {}, [
-        el('h3', { text: t('dw_levels') }),
-        el('div.spacer'),
-        can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', onclick: () => openLevelForm(project.id, null, load) }, [icon('plus', 14), t('dw_new_level')]) : null,
-      ]),
-      el('div.card-body.flush', {}, [
-        levels.length ? dataTable({
-          rows: levels,
-          columns: [
-            { label: t('dw_sort_order'), className: 'num', render: (row) => row.sort_order },
-            { label: t('dw_level_code'), render: (row) => el('span.bold', { text: row.code, dir: 'ltr' }) },
-            { label: t('dw_level_name'), render: (row) => el('span', { text: [row.name, row.zone].filter(Boolean).join(' - '), dir: 'ltr' }) },
-            { label: t('dw_wall_thickness'), className: 'num', render: (row) => row.wall_thickness || '—' },
-            { label: t('dw_runs'), className: 'num', render: (row) => row.run_count },
-            { label: t('dw_last_rev'), render: (row) => (row.last_revision != null ? `REV ${row.last_revision}` : '—') },
-            { label: t('dw_last_run'), render: (row) => (row.last_run_at ? formatDate(row.last_run_at) : '—') },
-            {
-              label: t('actions'),
-              render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
-                can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', title: t('dw_generate'), onclick: () => openGenerateForm(project, levels, settings, row, navigate) }, [icon('play', 14), t('dw_generate_for')]) : null,
-                can('drawings.create') ? el('button.btn-secondary.btn.btn-sm.btn-icon', { type: 'button', title: t('edit'), onclick: () => openLevelForm(project.id, row, load) }, [icon('edit', 14)]) : null,
-                can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
-                  type: 'button', title: t('delete'),
-                  onclick: async () => {
-                    if (!(await confirmDialog(t('dw_delete_level_confirm')))) return;
-                    try { await api.deleteDrawingLevel(row.id); toast(t('deleted'), 'success'); load(); } catch (error) { toastError(error); }
-                  },
-                }, [icon('trash', 14)]) : null,
-              ]),
-            },
-          ],
-        }) : el('div.empty', {}, [icon('layers', 40), el('div', { text: t('dw_no_levels') })]),
-      ]),
-    ]);
-    body.append(levelsCard);
+    // tabs: levels & runs / project files / revision history
+    const tabs = el('div.tabs');
+    const panel = el('div');
+    const TABS = [
+      { key: 'levels', label: t('dw_tab_levels'), build: () => levelsPanel() },
+      { key: 'files', label: t('dw_tab_files'), build: () => filesPanel() },
+      { key: 'history', label: t('dw_tab_history'), build: () => historyPanel() },
+    ];
+    const draw = () => {
+      clear(tabs);
+      for (const tab of TABS) tabs.append(el('button', { type: 'button', class: tab.key === projectTab ? 'active' : '', text: tab.label, onclick: () => { projectTab = tab.key; draw(); clear(panel).append(tab.build()); } }));
+    };
+    draw();
+    panel.append((TABS.find((x) => x.key === projectTab) || TABS[0]).build());
+    body.append(tabs, panel);
 
-    // runs
-    body.append(el('div.card', {}, [
-      el('div.card-header', {}, [el('h3', { text: t('dw_runs') })]),
-      el('div.card-body.flush', {}, [runsTable(runs, project, navigate, load)]),
-    ]));
+    function levelsPanel() {
+      const host = el('div');
+      host.append(el('div.card', {}, [
+        el('div.card-header', {}, [
+          el('h3', { text: t('dw_levels') }),
+          el('div.spacer'),
+          can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', onclick: () => openLevelForm(project.id, null, load) }, [icon('plus', 14), t('dw_new_level')]) : null,
+        ]),
+        el('div.card-body.flush', {}, [
+          levels.length ? dataTable({
+            rows: levels,
+            columns: [
+              { label: t('dw_sort_order'), className: 'num', render: (row) => row.sort_order },
+              { label: t('dw_level_code'), render: (row) => el('span.bold', { text: row.code, dir: 'ltr' }) },
+              { label: t('dw_level_name'), render: (row) => el('span', { text: [row.name, row.zone].filter(Boolean).join(' - '), dir: 'ltr' }) },
+              { label: t('dw_wall_thickness'), className: 'num', render: (row) => row.wall_thickness || '—' },
+              { label: t('dw_runs'), className: 'num', render: (row) => row.run_count },
+              { label: t('dw_last_rev'), render: (row) => (row.last_revision != null ? `REV ${row.last_revision}` : '—') },
+              { label: t('dw_last_run'), render: (row) => (row.last_run_at ? formatDate(row.last_run_at) : '—') },
+              { label: t('dw_edits_list'), className: 'num', render: (row) => (row.edits?.length ? el('span.badge.amber', { text: String(row.edits.length) }) : '—') },
+              {
+                label: t('actions'),
+                render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
+                  can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', title: t('dw_generate'), onclick: () => openGenerateForm(project, levels, settings, row, navigate) }, [icon('play', 14), t('dw_generate_for')]) : null,
+                  can('drawings.create') ? el('button.btn-secondary.btn.btn-sm.btn-icon', { type: 'button', title: t('edit'), onclick: () => openLevelForm(project.id, row, load) }, [icon('edit', 14)]) : null,
+                  can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
+                    type: 'button', title: t('delete'),
+                    onclick: async () => {
+                      if (!(await confirmDialog(t('dw_delete_level_confirm')))) return;
+                      try { await api.deleteDrawingLevel(row.id); toast(t('deleted'), 'success'); load(); } catch (error) { toastError(error); }
+                    },
+                  }, [icon('trash', 14)]) : null,
+                ]),
+              },
+            ],
+          }) : el('div.empty', {}, [icon('layers', 40), el('div', { text: t('dw_no_levels') })]),
+        ]),
+      ]));
+      host.append(el('div.card', {}, [
+        el('div.card-header', {}, [el('h3', { text: t('dw_runs') })]),
+        el('div.card-body.flush', {}, [runsTable(runs, project, navigate, load)]),
+      ]));
+      return host;
+    }
+
+    function filesPanel() {
+      const host = el('div');
+      host.append(el('div.alert.info', { text: t('dw_files_hint') }));
+      for (const cat of FILE_CATEGORIES) {
+        const mine = (data.files || []).filter((f) => f.category === cat);
+        // the packages generated here belong to the PT sections
+        const generated = cat === 'pt_design' || cat === 'pt_shop' ? runs.filter((r) => r.status !== 'failed' && r.status !== 'running' && (cat === 'pt_design' ? r.mode === 'design' : r.mode === 'shop')) : [];
+        const rows = [
+          ...generated.map((r) => ({ generated: true, id: `run-${r.id}`, run: r, name: `${r.prefix}-${r.level_code}_REV${r.revision}.zip`, bytes: null, revision: r.revision, note: r.notes || t('dw_generated_package'), created_at: r.created_at, uploaded_by_name: r.created_by_name, uploaded_by_name_ar: r.created_by_name_ar, level_code: r.level_code, status: r.status })),
+          ...mine,
+        ];
+        host.append(el('div.card', {}, [
+          el('div.card-header', {}, [
+            el('h3', { text: t(`dw_files_${cat}`) }),
+            el('span.badge.grey', { text: String(rows.length) }),
+            el('div.spacer'),
+            can('drawings.create') ? uploadButton(cat) : null,
+          ]),
+          el('div.card-body.flush', {}, [rows.length ? dataTable({
+            rows,
+            columns: [
+              { label: t('dw_file_name'), render: (row) => el('div', {}, [el('div.bold', { text: row.name, dir: 'ltr' }), row.generated ? el('div.tiny.muted', { text: `${t('dw_run')} #${row.run.serial} · ${levelLabel({ code: row.run.level_code, name: row.run.level_name, zone: row.run.level_zone })}`, dir: 'ltr' }) : null]) },
+              { label: t('dw_level'), render: (row) => row.level_code || '—' },
+              { label: t('dw_file_rev'), render: (row) => row.revision || '—' },
+              { label: t('status'), render: (row) => (row.generated ? statusBadge(row.status) : '—') },
+              { label: t('dw_file_note'), render: (row) => row.note || '—' },
+              { label: t('dw_file_size'), render: (row) => (row.bytes != null ? fmtBytes(row.bytes) : '—') },
+              { label: t('dw_date'), render: (row) => formatDateTime(row.created_at) },
+              { label: t('dw_file_by'), render: (row) => pick(row, 'uploaded_by_name') || '—' },
+              {
+                label: t('actions'),
+                render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
+                  row.generated
+                    ? el('a.btn.btn-sm', { href: api.drawingRunZipUrl(row.run.id), title: t('dw_download_zip') }, [icon('download', 14), 'ZIP'])
+                    : el('a.btn.btn-sm', { href: api.drawingFileUrl(row.id), title: t('open') }, [icon('download', 14), t('open')]),
+                  row.generated ? el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => navigate(`drawings/${project.id}/run/${row.run.id}`) }, [icon('chevron', 14), t('open')]) : null,
+                  !row.generated && can('drawings.create') ? el('button.btn-secondary.btn.btn-sm.btn-icon', { type: 'button', title: t('edit'), onclick: () => openFileForm(row, load) }, [icon('edit', 14)]) : null,
+                  !row.generated && can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
+                    type: 'button', title: t('delete'),
+                    onclick: async () => {
+                      if (!(await confirmDialog(t('dw_delete_file_confirm')))) return;
+                      try { await api.deleteDrawingFile(row.id); toast(t('deleted'), 'success'); load(); } catch (error) { toastError(error); }
+                    },
+                  }, [icon('trash', 14)]) : null,
+                ]),
+              },
+            ],
+          }) : el('div.empty', {}, [icon('empty', 32), el('div', { text: t('dw_no_files') })])]),
+        ]));
+      }
+      return host;
+
+      function uploadButton(cat) {
+        const input = el('input', { type: 'file', multiple: true, style: { display: 'none' } });
+        input.addEventListener('change', async () => {
+          const files = [...(input.files || [])];
+          if (!files.length) return;
+          const levelId = levels.length === 1 ? levels[0].id : (levels.length ? null : null);
+          for (const file of files) {
+            try { await api.uploadDrawingFile(project.id, file, { category: cat, level_id: levelId || undefined }); } catch (error) { toastError(error); }
+          }
+          toast(t('saved'), 'success');
+          load();
+        });
+        return el('span', {}, [input, el('button.btn.btn-sm', { type: 'button', onclick: () => input.click() }, [icon('upload', 14), t('dw_upload_file')])]);
+      }
+    }
+
+    function openFileForm(file, after) {
+      const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+        field({ name: 'category', label: t('dw_file_category'), type: 'select', value: file.category, options: FILE_CATEGORIES.map((c) => ({ value: c, label: t(`dw_files_${c}`) })) }),
+        field({ name: 'level_id', label: t('dw_level'), type: 'select', value: file.level_id || '', options: [{ value: '', label: '—' }, ...levels.map((l) => ({ value: l.id, label: levelLabel(l) }))] }),
+        field({ name: 'revision', label: t('dw_file_rev'), value: file.revision || '', dir: 'ltr' }),
+        field({ name: 'note', label: t('dw_file_note'), type: 'textarea', value: file.note || '', rows: 2 }),
+      ]);
+      const { close } = openModal({
+        title: file.name,
+        body: form,
+        footer: el('div.row', {}, [
+          el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+          el('button.btn', { type: 'button', text: t('save'), onclick: async () => { try { const data = readForm(form); await api.updateDrawingFile(file.id, { ...data, level_id: data.level_id || null }); toast(t('saved'), 'success'); close(); after(); } catch (error) { toastError(error); } } }),
+        ]),
+      });
+    }
+
+    function historyPanel() {
+      const host = el('div');
+      host.append(el('div.alert.info', { text: t('dw_history_hint') }));
+      for (const level of levels) {
+        const mine = runs.filter((r) => r.level_id === level.id && r.status !== 'running').sort((a, b) => a.serial - b.serial);
+        if (!mine.length) continue;
+        let prev = null;
+        const rows = mine.map((r) => {
+          const w = runWeights(r);
+          const row = { ...r, w, dT: prev ? w.T - prev.T : null, dB: prev ? w.B - prev.B : null };
+          if (r.status !== 'failed') prev = w;
+          return row;
+        }).reverse();
+        const delta = (v) => (v == null ? '—' : el('span', { class: v > 0 ? 'badge amber' : v < 0 ? 'badge green' : 'badge grey', text: `${v > 0 ? '+' : ''}${Math.round(v).toLocaleString('en-US')}` }));
+        host.append(el('div.card', {}, [
+          el('div.card-header', {}, [el('h3', { text: levelLabel(level), dir: 'ltr' })]),
+          el('div.card-body.flush', {}, [dataTable({
+            rows,
+            onRowClick: (row) => navigate(`drawings/${project.id}/run/${row.id}`),
+            columns: [
+              { label: t('dw_serial'), className: 'num', render: (row) => `#${row.serial}` },
+              { label: t('dw_mode'), render: (row) => modeLabel(row.mode) },
+              { label: t('dw_revision'), render: (row) => `REV ${row.revision}` },
+              { label: t('status'), render: (row) => statusBadge(row.status) },
+              { label: t('dw_run_notes'), render: (row) => el('span', { text: row.notes || '—' }) },
+              { label: t('dw_sheets'), className: 'num', render: (row) => row.sheet_count },
+              { label: t('dw_weight_t'), className: 'num', render: (row) => el('span', {}, [String(Math.round(row.w.T).toLocaleString('en-US')), ' ', delta(row.dT)]) },
+              { label: t('dw_weight_b'), className: 'num', render: (row) => el('span', {}, [String(Math.round(row.w.B).toLocaleString('en-US')), ' ', delta(row.dB)]) },
+              { label: t('dw_edits_list'), className: 'num', render: (row) => (row.edits?.length ? row.edits.length : '—') },
+              { label: t('dw_date'), render: (row) => formatDateTime(row.created_at) },
+              { label: t('dw_by'), render: (row) => pick(row, 'created_by_name') || '—' },
+            ],
+          })]),
+        ]));
+      }
+      if (!host.querySelector('.card')) host.append(el('div.empty', {}, [icon('empty', 40), el('div', { text: t('dw_no_runs') })]));
+      return host;
+    }
   }
 
   await load();
@@ -368,12 +556,13 @@ function runsTable(runs, project, navigate, reload) {
       { label: t('dw_revision'), render: (row) => `REV ${row.revision}` },
       { label: t('dw_sheets'), className: 'num', render: (row) => row.sheet_count },
       { label: t('status'), render: (row) => statusBadge(row.status) },
+      { label: t('dw_run_notes'), render: (row) => el('span.small', { text: row.notes || '—' }) },
       { label: t('dw_date'), render: (row) => formatDateTime(row.created_at) },
       { label: t('dw_by'), render: (row) => pick(row, 'created_by_name') || '—' },
       {
         label: t('actions'),
         render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
-          row.status === 'done' ? el('a.btn.btn-sm', { href: api.drawingRunZipUrl(row.id), title: t('dw_download_zip') }, [icon('download', 14), 'ZIP']) : null,
+          row.status !== 'failed' && row.status !== 'running' ? el('a.btn.btn-sm', { href: api.drawingRunZipUrl(row.id), title: t('dw_download_zip') }, [icon('download', 14), 'ZIP']) : null,
           can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
             type: 'button', title: t('delete'),
             onclick: async () => {
@@ -398,9 +587,18 @@ async function runPage(projectId, runId, navigate) {
   const { run, project } = data;
   const level = { code: run.level_code, name: run.level_name, zone: run.level_zone };
 
+  const produced = run.status !== 'failed' && run.status !== 'running';
   page.append(pageHeader(`${project.code} · ${levelLabel(level)} · REV ${run.revision}`, [
     el('button.btn-secondary.btn', { type: 'button', onclick: () => navigate(`drawings/${project.id}`) }, [icon('back', 16), t('back')]),
-    run.status === 'done' ? el('a.btn', { href: api.drawingRunZipUrl(run.id) }, [icon('download', 16), t('dw_download_zip')]) : null,
+    produced && can('drawings.create') && run.mode === 'design' ? el('button.btn-secondary.btn', { type: 'button', onclick: () => navigate(`drawings/${project.id}/run/${run.id}/edit`) }, [icon('edit', 16), t('dw_edit_rebar')]) : null,
+    produced && can('drawings.create') && run.status !== 'issued' ? el('button.btn-success.btn', {
+      type: 'button',
+      onclick: async () => {
+        if (!(await confirmDialog(t('dw_issue_confirm'), { danger: false }))) return;
+        try { await api.updateDrawingRun(run.id, { status: 'issued' }); toast(t('saved'), 'success'); navigate(`drawings/${project.id}/run/${run.id}`); } catch (error) { toastError(error); }
+      },
+    }, [icon('check', 16), t('dw_issue')]) : null,
+    produced ? el('a.btn', { href: api.drawingRunZipUrl(run.id) }, [icon('download', 16), t('dw_download_zip')]) : null,
     can('drawings.delete') ? el('button.btn-danger.btn', {
       type: 'button',
       onclick: async () => {
@@ -423,6 +621,19 @@ async function runPage(projectId, runId, navigate) {
   if (run.status === 'failed') {
     page.append(el('div.alert.danger', { text: run.error || t('error') }));
   }
+  // revision notes and status
+  const notesBox = el('textarea', { rows: 2, placeholder: t('dw_run_notes_hint') });
+  notesBox.value = run.notes || '';
+  page.append(el('div.card', {}, [
+    el('div.card-header', {}, [el('h3', { text: t('dw_run_notes') }), el('div.spacer'), statusBadge(run.status)]),
+    el('div.card-body', {}, [
+      can('drawings.create') ? notesBox : el('div', { text: run.notes || '—' }),
+      can('drawings.create') ? el('div.row.mt-1', {}, [
+        el('button.btn.btn-sm', { type: 'button', text: t('dw_save_notes'), onclick: async () => { try { await api.updateDrawingRun(run.id, { notes: notesBox.value }); toast(t('saved'), 'success'); } catch (error) { toastError(error); } } }),
+        run.edits?.length ? el('span.badge.amber', { text: `${run.edits.length} ${t('dw_edits_list')}` }) : null,
+      ]) : null,
+    ]),
+  ]));
 
   const previewHost = el('div');
   const showPreview = (sheet) => {

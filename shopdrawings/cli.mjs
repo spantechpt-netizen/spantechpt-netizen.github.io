@@ -30,7 +30,7 @@ import { fromLibredwgJson } from './lib/libredwg-json.mjs';
 import { readRamConcept, ramToModel } from './lib/ram-concept.mjs';
 import { execFileSync } from 'node:child_process';
 import { basename, extname } from 'node:path';
-import { extractModel } from './lib/extract.mjs';
+import { extractModel, flatten } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
@@ -82,6 +82,8 @@ export function loadLayerStandard(path = DEFAULT_LAYER_STANDARD) {
 
 export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames, layerStandard, mode = 'shop' }) {
   meta = { layerStandard: layerStandard || loadLayerStandard(), ...meta, mode };
+  // the office's own sheet frame: a DXF in paper mm whose texts carry <TOKENS> (see Sheet.customFrame)
+  if (meta.frameDxf && existsSync(meta.frameDxf)) meta.frameEntities = frameEntities(readFileSync(meta.frameDxf, 'utf8'));
   let model;
   if (mode === 'design' && inputDxf && /\.cpt$/i.test(inputDxf)) {
     // design drawings straight from the RAM Concept model: its designed bands + the General Details rules
@@ -123,8 +125,17 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
   const maxScale = Math.max(...pack.sheets.map((s) => s.scale || 100));
   writeFileSync(join(out, mode === 'design' ? 'DESIGN_DRAWINGS_PACKAGE.dxf' : 'SHOP_DRAWINGS_PACKAGE.dxf'), toDxf(pack.pkg, { ltscale: maxScale / 4 }));
   writeFileSync(join(out, 'model.json'), JSON.stringify(serializable(model), null, 2));
+  if (pack.plan) writeFileSync(join(out, 'plan.json'), JSON.stringify(pack.plan));
   writeFileSync(join(out, 'REPORT.md'), report(model, pack));
   return { model, pack, files };
+}
+
+/** The entities of a frame DXF (paper mm, bottom-left origin), blocks exploded, ready for Sheet.customFrame. */
+export function frameEntities(text) {
+  const dxf = parseDxf(text);
+  const ents = flatten(dxf);
+  const k = 1; // a frame is drawn in paper millimetres
+  return ents.filter((e) => ['LINE', 'LWPOLYLINE', 'CIRCLE', 'ARC', 'TEXT', 'MTEXT', 'ATTRIB', 'ATTDEF', 'SOLID', 'TRACE'].includes(e.type)).map((e) => (k === 1 ? e : { ...e, x: e.x * k, y: e.y * k, x2: e.x2 != null ? e.x2 * k : e.x2, y2: e.y2 != null ? e.y2 * k : e.y2, r: e.r != null ? e.r * k : e.r, height: e.height != null ? e.height * k : e.height, pts: e.pts ? e.pts.map((q) => ({ ...q, x: q.x * k, y: q.y * k })) : e.pts }));
 }
 
 function serializable(model) {

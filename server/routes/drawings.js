@@ -13,24 +13,34 @@
  *   GET    /api/drawings/runs/:id                 sheets, assumptions, findings, report
  *   GET    /api/drawings/runs/:id/zip             the whole package as one zip
  *   GET    /api/drawings/runs/:id/files/:kind/:name   kind = dxf | preview | schedules
- *   DELETE /api/drawings/runs/:id
+*   DELETE /api/drawings/runs/:id
+ *   PATCH  /api/drawings/runs/:id                 notes / status (issued supersedes the earlier issued run of the level)
+ *   GET    /api/drawings/runs/:id/plan            the bars of the run for the editor (plan.json)
+ *   POST   /api/drawings/runs/:id/regenerate      a new run from the same model with the level's edits
+ *   PUT    /api/drawings/levels/:id/edits         the level's reinforcement edits
+ *   POST   /api/drawings/projects/:id/files?category=&name=&level_id=   a project document (raw body)
+ *   GET    /api/drawings/files/:id  PATCH  DELETE
+ *   GET/POST/DELETE /api/drawings/frame           the office's own sheet frame (DXF)
  */
 import { createReadStream } from 'node:fs';
 import { stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { all, get, insert, update, run as runSql, nextCounter, audit, transaction } from '../db.js';
+import { copyFile, mkdir, unlink } from 'node:fs/promises';
+import { extname } from 'node:path';
+import { all, get, insert, update, run as runSql, nextCounter, audit, transaction, getSetting, setSetting } from '../db.js';
 import { requirePermission } from '../auth.js';
 import { badRequest, notFound, conflict } from '../http.js';
 import { str, int, oneOf, jsonField, COUNTRIES } from '../validate.js';
 import {
-  drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, runMeta, levelTitle,
-  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS,
+  drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, saveUpload, runMeta, levelTitle,
+  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, FILE_CATEGORIES,
+  framePath, projectFile, projectDir,
 } from '../drawings.js';
 
 const PROJECT_COLUMNS = `p.*, u.name AS owner_name, u.name_ar AS owner_name_ar,
   (SELECT COUNT(*) FROM drawing_levels l WHERE l.project_id = p.id) AS level_count,
-  (SELECT COUNT(*) FROM drawing_runs r WHERE r.project_id = p.id AND r.status = 'done') AS run_count,
-  (SELECT MAX(r.created_at) FROM drawing_runs r WHERE r.project_id = p.id AND r.status = 'done') AS last_run_at`;
+  (SELECT COUNT(*) FROM drawing_runs r WHERE r.project_id = p.id AND r.status NOT IN ('failed', 'running')) AS run_count,
+  (SELECT MAX(r.created_at) FROM drawing_runs r WHERE r.project_id = p.id AND r.status NOT IN ('failed', 'running')) AS last_run_at`;
 
 function loadProject(id) {
   const row = get(`SELECT ${PROJECT_COLUMNS} FROM drawing_projects p LEFT JOIN users u ON u.id = p.owner_id WHERE p.id = ?`, id);
@@ -62,8 +72,40 @@ function publicRun(row, { withReport = false } = {}) {
     assumptions: parseJson(row.assumptions_json, []),
     findings: parseJson(row.findings_json, []),
   };
-  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json;
+  out.edits = parseJson(row.edits_json, []);
+  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json;
   if (!withReport) delete out.report_md;
+  return out;
+}
+
+function loadFile(id) {
+  const row = get('SELECT f.*, u.name AS uploaded_by_name, u.name_ar AS uploaded_by_name_ar, l.code AS level_code FROM drawing_files f LEFT JOIN users u ON u.id = f.uploaded_by LEFT JOIN drawing_levels l ON l.id = f.level_id WHERE f.id = ?', id);
+  if (!row) throw notFound('File not found', 'الملف مش موجود');
+  return row;
+}
+
+const EDIT_OPS = ['delete', 'length', 'spec', 'add'];
+/** Keeps only well-formed edits: an op the generator knows, an id (or two points for an add). */
+function cleanEdits(input) {
+  if (!Array.isArray(input)) throw badRequest('edits must be a list', 'التعديلات لازم تكون قائمة');
+  const out = [];
+  for (const e of input.slice(0, 5000)) {
+    if (!e || !EDIT_OPS.includes(e.op)) continue;
+    const item = { op: e.op };
+    if (e.level) item.level = String(e.level).slice(0, 20);
+    if (e.op === 'add') {
+      const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+      const a = e.a && { x: num(e.a.x), y: num(e.a.y) }, b = e.b && { x: num(e.b.x), y: num(e.b.y) };
+      if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null) continue;
+      item.a = a; item.b = b; item.face = ['T', 'B', 'TB'].includes(e.face) ? e.face : 'T'; item.l1 = String(e.l1 || 'T12-150 (T)').slice(0, 40);
+    } else {
+      if (!e.id || typeof e.id !== 'string') continue;
+      item.id = e.id.slice(0, 80);
+      if (e.op === 'length') { item.start = Math.round(Number(e.start) || 0); item.end = Math.round(Number(e.end) || 0); }
+      if (e.op === 'spec') { if (!e.l1) continue; item.l1 = String(e.l1).slice(0, 40); }
+    }
+    out.push(item);
+  }
   return out;
 }
 
@@ -170,9 +212,9 @@ export function register(router) {
     const project = loadProject(params.id);
     const levels = all(
       `SELECT l.*,
-         (SELECT COUNT(*) FROM drawing_runs r WHERE r.level_id = l.id AND r.status = 'done') AS run_count,
-         (SELECT MAX(r.revision) FROM drawing_runs r WHERE r.level_id = l.id AND r.status = 'done') AS last_revision,
-         (SELECT MAX(r.created_at) FROM drawing_runs r WHERE r.level_id = l.id AND r.status = 'done') AS last_run_at
+         (SELECT COUNT(*) FROM drawing_runs r WHERE r.level_id = l.id AND r.status NOT IN ('failed', 'running')) AS run_count,
+         (SELECT MAX(r.revision) FROM drawing_runs r WHERE r.level_id = l.id AND r.status NOT IN ('failed', 'running')) AS last_revision,
+         (SELECT MAX(r.created_at) FROM drawing_runs r WHERE r.level_id = l.id AND r.status NOT IN ('failed', 'running')) AS last_run_at
        FROM drawing_levels l WHERE l.project_id = ? ORDER BY l.sort_order, l.id`,
       project.id,
     );
@@ -181,7 +223,14 @@ export function register(router) {
        WHERE r.project_id = ? ORDER BY r.serial DESC`,
       project.id,
     ).map((r) => publicRun(r));
-    return { project: publicProject(project), levels, runs, settings: drawingSettings() };
+    const files = all(
+      `SELECT f.*, u.name AS uploaded_by_name, u.name_ar AS uploaded_by_name_ar, l.code AS level_code
+       FROM drawing_files f LEFT JOIN users u ON u.id = f.uploaded_by LEFT JOIN drawing_levels l ON l.id = f.level_id
+       WHERE f.project_id = ? ORDER BY f.category, f.created_at DESC`,
+      project.id,
+    );
+    for (const l of levels) l.edits = parseJson(l.edits_json, []);
+    return { project: publicProject(project), levels, runs, files, settings: drawingSettings() };
   });
 
   router.patch('/api/drawings/projects/:id', ({ params, body, user }) => {
@@ -247,33 +296,43 @@ export function register(router) {
   });
 
   // ----------------------------------------------------------------- runs
-  router.post('/api/drawings/levels/:id/runs', async ({ req, params, query, user }) => {
-    requirePermission(user, 'drawings.create');
-    const level = loadLevel(params.id);
-    const project = loadProject(level.project_id);
+  /**
+   * One generation: the model file comes from the request body (`req`) or is copied from an earlier run
+   * (`sourceRun`); the level's reinforcement edits are applied; the package is zipped when done.
+   */
+  async function startRun({ req, sourceRun, level, project, user, query = {}, body = {} }) {
     const settings = drawingSettings();
-
-    const mode = oneOf(query.mode, 'mode', MODES, { fallback: project.default_mode || settings.default_mode || 'design' });
-    const ramBands = oneOf(query.ram_bands, 'ram_bands', RAM_BANDS, { fallback: project.ram_bands || settings.ram_bands || 'all' });
-    let revision = str(query.revision, 'revision', { max: 6, fallback: null });
+    const mode = oneOf(query.mode ?? body.mode, 'mode', MODES, { fallback: sourceRun?.mode || project.default_mode || settings.default_mode || 'design' });
+    const ramBands = oneOf(query.ram_bands ?? body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: sourceRun?.ram_bands || project.ram_bands || settings.ram_bands || 'all' });
+    let revision = str(query.revision ?? body.revision, 'revision', { max: 6, fallback: null });
     if (revision === null) {
-      const previous = get("SELECT COUNT(*) AS n FROM drawing_runs WHERE level_id = ? AND mode = ? AND status = 'done'", level.id, mode).n;
+      const previous = get("SELECT COUNT(*) AS n FROM drawing_runs WHERE level_id = ? AND mode = ? AND status <> 'failed' AND status <> 'running'", level.id, mode).n;
       revision = String(previous).padStart(2, '0');
     } else {
       revision = /^\d{1,2}$/.test(revision) ? revision.padStart(2, '0') : revision.toUpperCase();
     }
+    const notes = str(query.notes ?? body.notes, 'notes', { max: 2000, fallback: null });
+    const edits = parseJson(level.edits_json, []);
 
     const meta = runMeta({ settings, project, level, mode, revision });
     const serial = nextCounter(`drawing_runs:${project.id}`);
     const runId = insert('drawing_runs', {
-      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands,
-      prefix: meta.prefix, source_name: str(query.name, 'name', { max: 200, fallback: null }), status: 'running', created_by: user.id,
+      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, notes,
+      prefix: meta.prefix, source_name: str(query.name ?? body.name, 'name', { max: 200, fallback: sourceRun?.source_name || null }), status: 'running', created_by: user.id,
+      edits_json: edits.length ? JSON.stringify(edits) : null,
     });
 
     const dir = runDir(project.id, runId);
     const out = join(dir, 'out');
     try {
-      const source = await saveSource(req, dir, query.name || 'model.cpt');
+      let source;
+      if (req) source = await saveSource(req, dir, query.name || 'model.cpt');
+      else {
+        if (!sourceRun?.source_file) throw badRequest('The earlier run kept no model file', 'الإصدار القديم مفيهوش ملف الموديل');
+        await mkdir(dir, { recursive: true });
+        await copyFile(runFile(sourceRun.project_id, sourceRun.id, sourceRun.source_file), join(dir, sourceRun.source_file));
+        source = { file: sourceRun.source_file, bytes: sourceRun.source_bytes };
+      }
       update('drawing_runs', runId, { source_file: source.file, source_bytes: source.bytes });
 
       const spec = {
@@ -281,11 +340,9 @@ export function register(router) {
         ...parseJson(project.spec_json, {}),
         ramBands,
         ...(level.wall_thickness ? { wallThickness: level.wall_thickness } : {}),
+        ...(edits.length ? { edits } : {}),
       };
-      const result = await runGeneration({
-        input: join(dir, source.file), out, meta, spec, levelNames: [levelTitle(level)], mode,
-      });
-
+      const result = await runGeneration({ input: join(dir, source.file), out, meta, spec, levelNames: [levelTitle(level)], mode });
       if (!result.levels.length) {
         throw badRequest(
           'No slab was found in this file: it is not a RAM Concept model with a meshed slab (or not the plan DXF the generator reads).',
@@ -296,9 +353,8 @@ export function register(router) {
       await writeRunZip(out, join(dir, 'package.zip'), folder);
       let report = null;
       try { report = await readFile(join(out, 'REPORT.md'), 'utf8'); } catch { /* optional */ }
-
       update('drawing_runs', runId, {
-        status: 'done',
+        status: 'draft',
         sheet_count: result.sheets.length,
         sheets_json: JSON.stringify(result.sheets),
         assumptions_json: JSON.stringify(result.assumptions),
@@ -306,18 +362,143 @@ export function register(router) {
         report_md: report,
         duration_ms: result.duration_ms,
       });
-      audit(user.id, 'drawing_run', runId, 'generate', { serial, mode, revision, sheets: result.sheets.length });
-      return { run: publicRun(loadRun(runId)) };
+      audit(user.id, 'drawing_run', runId, 'generate', { serial, mode, revision, sheets: result.sheets.length, edits: edits.length });
+      return publicRun(loadRun(runId));
     } catch (error) {
       const message = String(error?.message || error).split('\n')[0].slice(0, 500);
       update('drawing_runs', runId, { status: 'failed', error: message });
       if (error?.status) throw error;
-      throw badRequest(
-        `The generator could not read this model: ${message}`,
-        `الجينيريتور معرفش يقرا الموديل ده: ${message}`,
-      );
+      throw badRequest(`The generator could not read this model: ${message}`, `الجينيريتور معرفش يقرا الموديل ده: ${message}`);
     }
+  }
+
+  router.post('/api/drawings/levels/:id/runs', async ({ req, params, query, user }) => {
+    requirePermission(user, 'drawings.create');
+    const level = loadLevel(params.id);
+    const project = loadProject(level.project_id);
+    return { run: await startRun({ req, level, project, user, query }) };
   }, { rawBody: true });
+
+  router.post('/api/drawings/runs/:id/regenerate', async ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const sourceRun = loadRun(params.id);
+    const level = loadLevel(sourceRun.level_id);
+    const project = loadProject(level.project_id);
+    return { run: await startRun({ sourceRun, level, project, user, body }) };
+  });
+
+  router.patch('/api/drawings/runs/:id', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const run = loadRun(params.id);
+    const fields = { notes: str(body.notes, 'notes', { max: 2000, fallback: undefined }) };
+    if (body.status !== undefined) {
+      const status = oneOf(body.status, 'status', RUN_STATUS);
+      if (run.status === 'failed' || run.status === 'running') throw badRequest('This run produced no drawings', 'الإصدار ده مطلعش لوحات');
+      fields.status = status;
+      // one issued revision per level and type: issuing this one supersedes the earlier issued ones
+      if (status === 'issued') runSql("UPDATE drawing_runs SET status = 'superseded', updated_at = datetime('now') WHERE level_id = ? AND mode = ? AND status = 'issued' AND id <> ?", run.level_id, run.mode, run.id);
+    }
+    update('drawing_runs', run.id, fields);
+    audit(user.id, 'drawing_run', run.id, 'update', fields);
+    return { run: publicRun(loadRun(run.id)) };
+  });
+
+  router.get('/api/drawings/runs/:id/plan', async ({ params, user, res }) => {
+    requirePermission(user, 'drawings.view');
+    const run = loadRun(params.id);
+    await sendFile(res, runFile(run.project_id, run.id, 'out', 'plan.json'), 'application/json; charset=utf-8');
+  });
+
+  router.put('/api/drawings/levels/:id/edits', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const level = loadLevel(params.id);
+    const edits = cleanEdits(body.edits);
+    update('drawing_levels', level.id, { edits_json: edits.length ? JSON.stringify(edits) : null });
+    audit(user.id, 'drawing_level', level.id, 'edits', { count: edits.length });
+    return { level: { ...loadLevel(level.id), edits } };
+  });
+
+  // ---------------------------------------------------------------- documents
+  router.post('/api/drawings/projects/:id/files', async ({ req, params, query, user }) => {
+    requirePermission(user, 'drawings.create');
+    const project = loadProject(params.id);
+    const category = oneOf(query.category, 'category', FILE_CATEGORIES, { fallback: 'design' });
+    const name = str(query.name, 'name', { required: true, max: 200 });
+    const ext = extname(name).toLowerCase().slice(0, 12);
+    const levelId = query.level_id ? int(query.level_id, 'level_id', { min: 1 }) : null;
+    if (levelId && !get('SELECT id FROM drawing_levels WHERE id = ? AND project_id = ?', levelId, project.id)) throw notFound('Level not found', 'الدور مش موجود');
+    const id = insert('drawing_files', { project_id: project.id, level_id: levelId, category, name, ext, stored: 'pending', uploaded_by: user.id, note: str(query.note, 'note', { max: 500, fallback: null }), revision: str(query.revision, 'revision', { max: 20, fallback: null }) });
+    const stored = `${id}${ext}`;
+    try {
+      const saved = await saveUpload(req, join(projectDir(project.id), 'files'), stored, ext);
+      update('drawing_files', id, { stored, bytes: saved.bytes });
+    } catch (error) {
+      runSql('DELETE FROM drawing_files WHERE id = ?', id);
+      throw error;
+    }
+    audit(user.id, 'drawing_file', id, 'upload', { category, name });
+    return { file: loadFile(id) };
+  }, { rawBody: true });
+
+  router.get('/api/drawings/files/:id', async ({ params, user, res }) => {
+    requirePermission(user, 'drawings.view');
+    const file = loadFile(params.id);
+    await sendFile(res, projectFile(file.project_id, file.stored), 'application/octet-stream', file.name);
+  });
+
+  router.patch('/api/drawings/files/:id', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const file = loadFile(params.id);
+    const fields = {
+      note: str(body.note, 'note', { max: 500, fallback: undefined }),
+      revision: str(body.revision, 'revision', { max: 20, fallback: undefined }),
+      category: body.category === undefined ? undefined : oneOf(body.category, 'category', FILE_CATEGORIES),
+      level_id: body.level_id === undefined ? undefined : (body.level_id ? int(body.level_id, 'level_id', { min: 1 }) : null),
+    };
+    update('drawing_files', file.id, fields);
+    return { file: loadFile(file.id) };
+  });
+
+  router.delete('/api/drawings/files/:id', async ({ params, user }) => {
+    requirePermission(user, 'drawings.delete');
+    const file = loadFile(params.id);
+    runSql('DELETE FROM drawing_files WHERE id = ?', file.id);
+    try { await unlink(projectFile(file.project_id, file.stored)); } catch { /* already gone */ }
+    audit(user.id, 'drawing_file', file.id, 'delete', { name: file.name });
+    return { ok: true };
+  });
+
+  // -------------------------------------------------------------- sheet frame
+  router.get('/api/drawings/frame', async ({ user, res }) => {
+    requirePermission(user, 'drawings.view');
+    const settings = drawingSettings();
+    if (!settings.frame_dxf) throw notFound('No frame uploaded', 'مفيش فريم مرفوع');
+    await sendFile(res, framePath(), 'application/dxf', 'frame.dxf');
+  });
+
+  router.post('/api/drawings/frame', async ({ req, query, user }) => {
+    requirePermission(user, 'settings.edit');
+    const name = str(query.name, 'name', { max: 200, fallback: 'frame.dxf' });
+    if (extname(name).toLowerCase() !== '.dxf') throw badRequest('The frame must be a DXF file (paper mm, A1 origin bottom-left)', 'الفريم لازم يكون ملف DXF (بالملليمتر على الورق، أصل A1 في الركن الأسفل الأيسر)');
+    const dir = framePath().replace(/[\\/]frame\.dxf$/, '');
+    const saved = await saveUpload(req, dir, 'frame.dxf', '.dxf');
+    // sanity: the generator must be able to read it
+    const { frameEntities } = await import('../../shopdrawings/cli.mjs');
+    const ents = frameEntities(await readFile(framePath(), 'utf8'));
+    if (!ents.length) { await unlink(framePath()).catch(() => {}); throw badRequest('No drawable entities found in that DXF', 'مفيش عناصر مرسومة في الملف ده'); }
+    const current = getSetting('drawings', {}) || {};
+    setSetting('drawings', { ...current, frame_dxf: 'frame.dxf', frame_dxf_name: name, frame_dxf_entities: ents.length, frame_dxf_bytes: saved.bytes });
+    audit(user.id, 'settings', null, 'frame', { name, entities: ents.length });
+    return { frame_dxf: 'frame.dxf', name, entities: ents.length, bytes: saved.bytes };
+  }, { rawBody: true });
+
+  router.delete('/api/drawings/frame', async ({ user }) => {
+    requirePermission(user, 'settings.edit');
+    const current = getSetting('drawings', {}) || {};
+    setSetting('drawings', { ...current, frame_dxf: null, frame_dxf_name: null, frame_dxf_entities: null, frame_dxf_bytes: null });
+    try { await unlink(framePath()); } catch { /* already gone */ }
+    return { ok: true };
+  });
 
   router.get('/api/drawings/runs/:id', ({ params, user }) => {
     requirePermission(user, 'drawings.view');
@@ -328,7 +509,7 @@ export function register(router) {
   router.get('/api/drawings/runs/:id/zip', async ({ params, user, res }) => {
     requirePermission(user, 'drawings.view');
     const run = loadRun(params.id);
-    if (run.status !== 'done') throw notFound('This run produced no package', 'الإصدار ده مطلعش لوحات');
+    if (run.status === 'failed' || run.status === 'running') throw notFound('This run produced no package', 'الإصدار ده مطلعش لوحات');
     const name = `${run.prefix}-${run.level_code}_REV${run.revision}.zip`;
     await sendFile(res, runFile(run.project_id, run.id, 'package.zip'), 'application/zip', name);
   });

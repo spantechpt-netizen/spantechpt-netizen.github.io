@@ -633,3 +633,49 @@ test('office rule: a slab at another top-of-concrete level is a separate slab; t
   assert.ok(adds.items.some((it) => it.detail === 'D6' && Math.abs(it.a.x - 8000) < 1), 'perimeter U-bars along the step');
   assert.ok(model.assumptions.some((a) => /top-of-concrete levels/.test(a.text)));
 });
+
+test('the app edits (delete / lengthen / re-spec / add) apply to bars by id, plan.json carries the bars, and a custom frame DXF replaces the title block', async () => {
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const { prepareRamDesign, composeDesignPackage } = await import('../shopdrawings/lib/design.mjs');
+  const { frameEntities } = await import('../shopdrawings/cli.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ram-edit-'));
+  const cpt = await buildSyntheticCpt(dir);
+  const ram = readRamConcept(cpt);
+  const model0 = prepareRamDesign(ramToModel(ram, { levelName: 'EDIT TEST', spec: {} }), { levelName: 'EDIT TEST' });
+  const pack0 = composeDesignPackage(model0, { prefix: 'T' });
+  const plan = pack0.plan[0];
+  assert.ok(plan.bars.length > 5 && plan.outline.length >= 4 && plan.columns.length === 5, 'plan.json: bars, outline, columns');
+  const office = plan.bars.find((b) => b.kind === 'office' && b.face === 'T');
+  const ramBar = plan.bars.find((b) => b.kind === 'ram');
+  assert.ok(office && ramBar);
+  const edits = [
+    { op: 'delete', id: office.id },
+    { op: 'length', id: ramBar.id, start: 500, end: 500 },
+    { op: 'spec', id: ramBar.id, l1: 'T20-100 (B)' },
+    { op: 'add', face: 'T', a: { x: 1000, y: 6000 }, b: { x: 5000, y: 6000 }, l1: 'T16-200 (T)' },
+    { op: 'delete', id: 'NOPE:1,1-2,2' },
+  ];
+  const model1 = prepareRamDesign(ramToModel(ram, { levelName: 'EDIT TEST', spec: { edits } }), { levelName: 'EDIT TEST' });
+  const pack1 = composeDesignPackage(model1, { prefix: 'T' });
+  const plan1 = pack1.plan[0];
+  assert.ok(!plan1.bars.some((b) => b.id === office.id), 'deleted bar gone');
+  const rb = plan1.bars.find((b) => b.l1 === 'T20-100 (B)');
+  assert.ok(rb && rb.edited, 're-specified bar kept with its new call-out');
+  const len0 = Math.hypot(ramBar.b.x - ramBar.a.x, ramBar.b.y - ramBar.a.y), len1 = Math.hypot(rb.b.x - rb.a.x, rb.b.y - rb.a.y);
+  assert.ok(Math.abs(len1 - len0 - 1000) < 2, `lengthened by 500 each end: ${len0} -> ${len1}`);
+  assert.ok(plan1.bars.some((b) => b.l1 === 'T16-200 (T)' && b.zone === 'EDIT'), 'added bar');
+  assert.ok(model1.assumptions.some((a) => /4 reinforcement edits .* 1 edits matched no bar/.test(a.text)), model1.assumptions.map((a) => a.text).join('\n'));
+  // a custom frame: a rectangle and a title text with tokens, in paper mm
+  const frameDxf = toDxf((() => { const c = new Canvas(); c.rect(0, 0, 841, 594, { layer: 'FRAME' }); c.text(650, 20, 'DRG <DRAWING_NO> REV <REV>', { layer: 'TITLE', h: 4 }); c.text(650, 30, '%PROJECT% - <CLIENT>', { layer: 'TITLE', h: 3 }); return c; })());
+  const ents = frameEntities(frameDxf);
+  assert.equal(ents.length, 3);
+  const pack2 = composeDesignPackage(model0, { prefix: 'T', project: 'My Tower', client: 'ACME', frameEntities: ents, frame: { rightWidth: 200, keyplan: false } });
+  const sheet = pack2.sheets[1];
+  const texts = [];
+  for (const e of sheet.root.blocks.get(sheet.blockName).entities || []) if (e.t === 'text') texts.push(e.str);
+  assert.ok(texts.some((t) => t === `DRG ${sheet.drawingNo} REV 00`), `token substitution: ${texts.filter((t) => /DRG/.test(t)).join('|')}`);
+  assert.ok(texts.some((t) => t === 'MY TOWER - ACME'));
+  assert.ok(!texts.some((t) => t === 'KEY PLAN'), 'key plan switched off');
+  assert.ok(!texts.some((t) => t === 'THE CLIENT'), 'the built-in title block gives way to the custom frame');
+  assert.equal(sheet.sheet.L.title.w, 200, 'strip width from the frame options');
+});

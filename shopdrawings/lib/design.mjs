@@ -1773,6 +1773,88 @@ function designCover(model, sheets, meta) {
   };
 }
 
+// ------------------------------------------------------------------ edits from the app
+/** A stable id for a bar: its detail / face and its geometry (rounded to 10 mm), so an edit finds the same bar on the next run. */
+export function barId(it, prefix = '') {
+  const r = (v) => Math.round(v / 10);
+  return `${prefix}${it.detail || (it.ram ? 'RB' : it.face || 'X')}:${r(it.a.x)},${r(it.a.y)}-${r(it.b.x)},${r(it.b.y)}`;
+}
+
+/**
+ * Applies the reinforcement edits made in the app to this level: `spec.edits` is a list of
+ *   { op: 'delete', id }                       remove the bar
+ *   { op: 'length', id, start, end }           move the start / end along the bar (mm, + = longer), the length re-written
+ *   { op: 'spec', id, l1 }                     new call-out ("T16-150 (T)")
+ *   { op: 'add', face, a, b, l1, level? }      a new bar between two points
+ * Ids are those of `planData` (barId). Edits that match no bar are reported on the sheet.
+ */
+export function applyEdits(level, adds, edits, assumptions = []) {
+  const list = (edits || []).filter((e) => e && (!e.level || e.level === level.id));
+  const pools = [
+    { name: 'items', arr: adds.items },
+    { name: 'ram', arr: level.existing?.items || [] },
+    { name: 'lines', arr: level.existing?.lines || [] },
+  ];
+  for (const pool of pools) for (const it of pool.arr) if (!it.id) it.id = barId(it, pool.name === 'lines' ? 'X' : '');
+  let applied = 0;
+  const unmatched = [];
+  const relabel = (it) => { const L = Math.round((dist(it.a, it.b) + (it.extra || 0)) / 10) * 10; if (it.l2 != null) it.l2 = `L=${L}`; if (it.length != null) it.length = L; };
+  for (const e of list) {
+    if (e.op === 'add') {
+      if (!e.a || !e.b) continue;
+      const a = { x: Number(e.a.x), y: Number(e.a.y) }, b = { x: Number(e.b.x), y: Number(e.b.y) };
+      if (dist(a, b) < 100) continue;
+      const it = { detail: null, face: e.face === 'B' ? 'B' : e.face === 'TB' ? 'TB' : 'T', a, b, l1: e.l1 || 'T12-150 (T)', l2: `L=${Math.round(dist(a, b) / 10) * 10}`, side: 1, noTag: true, edited: true, zone: 'EDIT' };
+      if (it.face !== 'B') it.uEnd = { start: false, end: false };
+      adds.items.push(it); it.id = barId(it); applied++;
+      continue;
+    }
+    let found = null;
+    for (const pool of pools) { const it = pool.arr.find((x) => x.id === e.id); if (it) { found = { pool, it }; break; } }
+    if (!found) { unmatched.push(e.id); continue; }
+    const { pool, it } = found;
+    if (e.op === 'delete') { pool.arr.splice(pool.arr.indexOf(it), 1); applied++; }
+    else if (e.op === 'length') {
+      const u = unit(it.a, it.b);
+      const ds = Number(e.start) || 0, de = Number(e.end) || 0;
+      if (dist(it.a, it.b) - ds - de < 200) { unmatched.push(e.id); continue; }
+      it.a = add(it.a, u, -ds); it.b = add(it.b, u, de);
+      relabel(it); it.edited = true; applied++;
+    } else if (e.op === 'spec') { if (e.l1) { it.l1 = String(e.l1); it.edited = true; applied++; } }
+  }
+  if (applied || unmatched.length) {
+    level.edits = { applied, unmatched };
+    assumptions.push({ level: level.id, text: `${applied} reinforcement edits made by the engineer in the app applied to ${level.name} (bars deleted, re-lengthed, re-specified or added; the bar schedules count the generated bars only)${unmatched.length ? `; ${unmatched.length} edits matched no bar on this run and were skipped` : ''}.` });
+  }
+  return { applied, unmatched };
+}
+
+/** What the app's editor needs: the slab, its supports and every bar with its id. */
+export function planData(level, adds) {
+  const pools = [
+    { name: 'items', arr: adds.items, kind: 'office' },
+    { name: 'ram', arr: level.existing?.items || [], kind: 'ram' },
+    { name: 'lines', arr: (level.existing?.lines || []).filter((l) => !l.tick), kind: 'design' },
+  ];
+  const bars = [];
+  for (const pool of pools) for (const it of pool.arr) {
+    if (!it.id) it.id = barId(it, pool.name === 'lines' ? 'X' : '');
+    bars.push({ id: it.id, kind: pool.kind, detail: it.detail || null, face: it.face || 'T', a: { x: Math.round(it.a.x), y: Math.round(it.a.y) }, b: { x: Math.round(it.b.x), y: Math.round(it.b.y) }, l1: it.l1 || '', l2: it.l2 || '', zone: it.zone || '', edited: !!it.edited });
+  }
+  const poly = (o) => (o.polygon ? o.polygon : R.regionPolygon(o)).map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+  return {
+    id: level.id, name: level.name, thickness: level.thickness, bbox: level.bbox,
+    outline: level.outline.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+    openings: (level.openings || []).map((o) => ({ id: o.id, polygon: poly(o) })),
+    columns: (level.columns || []).map((c) => ({ id: c.id, cx: Math.round(c.cx), cy: Math.round(c.cy), w: Math.round(c.shape === 'circle' ? c.d : c.w), h: Math.round(c.shape === 'circle' ? c.d : c.h), shape: c.shape })),
+    walls: (level.walls || []).filter((w) => w.polygon).map((w) => ({ id: w.id, polygon: poly(w) })),
+    beams: (level.beams || []).filter((b) => b.polygon).map((b) => ({ id: b.id, polygon: poly(b), interior: !!b.interior })),
+    thickZones: (level.thickZones || []).map((z) => ({ id: z.id, thickness: z.thickness, polygon: poly(z) })),
+    grid: level.grid ? { x: (level.grid.x || []).map((g) => ({ label: g.label, x: Math.round(g.x) })), y: (level.grid.y || []).map((g) => ({ label: g.label, y: Math.round(g.y) })) } : null,
+    bars,
+  };
+}
+
 // ------------------------------------------------------------------ package
 export function composeDesignPackage(model, metaIn = {}) {
   const meta = {
@@ -1804,6 +1886,9 @@ export function composeDesignPackage(model, metaIn = {}) {
       }
       level.existing.dims = level.existing.dims.filter((d) => !d.dropped);
     }
+    // the engineer's edits from the app (delete / lengthen / re-spec / add bars), by stable bar id
+    applyEdits(level, adds, model.spec.edits, model.assumptions);
+    level.planData = planData(level, adds);
     level.additions = { items: adds.items.length, weight: { T: adds.bars.T.totals().weight_kg, B: adds.bars.B.totals().weight_kg } };
     const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet, dcablat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'design' }), dcablon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'design' }) };
     for (const def of DESIGN_SHEETS) {
@@ -1816,10 +1901,13 @@ export function composeDesignPackage(model, metaIn = {}) {
   const sheets = jobs.map((j, i) => buildSheet({ model, level: j.level, def: j.def, meta, index: i + 2, total, draw: j.draw }));
   const cover = buildSheet({ model, level: null, def: { key: 'cover', base: 'DESIGN_DRAWINGS_COVER_INDEX', title: 'COVER SHEET / DRAWING INDEX', no: '000' }, meta, index: 1, total, draw: designCover(model, sheets, meta) });
   const all = [cover, ...sheets];
+  const plan = model.levels.map((l) => l.planData).filter(Boolean);
   for (const s of all) {
     for (const [n, d] of Object.entries(OFFICE_LAYERS)) s.root.layer(n, d);
     s.root.textStyleDef(OFFICE_TEXT_STYLE.name, { font: OFFICE_TEXT_STYLE.font, widthFactor: OFFICE_TEXT_STYLE.widthFactor });
     s.root.dimStyleDef('DIM100', DIM100);
   }
-  return packSheets(all, meta, { textStyles: { [OFFICE_TEXT_STYLE.name]: { font: OFFICE_TEXT_STYLE.font, widthFactor: OFFICE_TEXT_STYLE.widthFactor } } });
+  const pack = packSheets(all, meta, { textStyles: { [OFFICE_TEXT_STYLE.name]: { font: OFFICE_TEXT_STYLE.font, widthFactor: OFFICE_TEXT_STYLE.widthFactor } } });
+  pack.plan = plan;
+  return pack;
 }

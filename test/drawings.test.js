@@ -145,7 +145,7 @@ test('uploading a RAM model generates the numbered package for the level', async
   const result = await upload(`/api/drawings/levels/${level.id}/runs?name=basement.cpt&mode=design&ram_bands=all`, cpt);
   assert.equal(result.status, 201, JSON.stringify(result.body));
   firstRun = result.body.run;
-  assert.equal(firstRun.status, 'done');
+  assert.equal(firstRun.status, 'draft');
   assert.equal(firstRun.serial, 1);
   assert.equal(firstRun.revision, '00');
   assert.equal(firstRun.prefix, `SPAN-DD-${project.code}`);
@@ -205,6 +205,96 @@ test('the next run of the same level and type takes the next revision and serial
   assert.equal(detail.body.levels.find((l) => l.code === 'B1').run_count, 3);
 }, { timeout: 180000 });
 
+test('revision management: notes, issuing supersedes the earlier issued run, history in the project', async () => {
+  const detail = await api('GET', `/api/drawings/projects/${project.id}`);
+  const done = detail.body.runs.filter((r) => r.status === 'draft');
+  assert.equal(done.length, 3, 'runs are drafts until issued');
+  const [latest, earlier] = done;
+  const noted = await api('PATCH', `/api/drawings/runs/${earlier.id}`, { notes: 'first issue', status: 'issued' });
+  assert.equal(noted.status, 200, JSON.stringify(noted.body));
+  assert.equal(noted.body.run.status, 'issued');
+  assert.equal(noted.body.run.notes, 'first issue');
+  const reissued = await api('PATCH', `/api/drawings/runs/${latest.id}`, { status: 'issued' });
+  assert.equal(reissued.body.run.status, 'issued');
+  const after = await api('GET', `/api/drawings/projects/${project.id}`);
+  assert.equal(after.body.runs.find((r) => r.id === earlier.id).status, 'superseded', 'the earlier issued run is superseded');
+  assert.equal(after.body.runs.filter((r) => r.status === 'issued').length, 1);
+  const zip = await download(`/api/drawings/runs/${earlier.id}/zip`);
+  assert.equal(zip.status, 200, 'a superseded run keeps its package');
+});
+
+test('the reinforcement editor: plan.json, edits saved on the level, regeneration applies them', async () => {
+  const plan = await api('GET', `/api/drawings/runs/${firstRun.id}/plan`);
+  assert.equal(plan.status, 200);
+  const part = plan.body[0];
+  assert.ok(part.bars.length > 5 && part.outline.length >= 4, 'plan with bars and outline');
+  const office = part.bars.find((b) => b.kind === 'office' && b.face === 'T');
+  const edits = [{ op: 'delete', id: office.id }, { op: 'add', face: 'B', a: { x: 1000, y: 7000 }, b: { x: 5000, y: 7000 }, l1: 'T16-200 (B)' }, { op: 'bogus', id: 'x' }, { op: 'spec', id: 'missing' }];
+  const saved = await api('PUT', `/api/drawings/levels/${level.id}/edits`, { edits });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.level.edits.length, 2, 'malformed edits dropped');
+  const regen = await api('POST', `/api/drawings/runs/${firstRun.id}/regenerate`, { notes: 'with edits' });
+  assert.equal(regen.status, 201, JSON.stringify(regen.body));
+  const fresh = regen.body.run;
+  assert.equal(fresh.status, 'draft');
+  assert.equal(fresh.edits.length, 2, 'the run records the edits it applied');
+  assert.equal(fresh.notes, 'with edits');
+  assert.ok(fresh.assumptions.some((a) => /reinforcement edits/.test(a)), 'the sheets say the edits were applied');
+  const plan2 = await api('GET', `/api/drawings/runs/${fresh.id}/plan`);
+  assert.ok(!plan2.body[0].bars.some((b) => b.id === office.id), 'deleted bar gone on the new run');
+  assert.ok(plan2.body[0].bars.some((b) => b.l1 === 'T16-200 (B)'), 'added bar drawn on the new run');
+}, { timeout: 120000 });
+
+test('project documents: upload into a section, list, edit, download, delete', async () => {
+  const up = await upload(`/api/drawings/projects/${project.id}/files?category=design&name=ARCH-PLAN.dwg&note=arch%20set&revision=B`, Buffer.from('AC1027 fake dwg bytes'));
+  assert.equal(up.status, 201, JSON.stringify(up.body));
+  assert.equal(up.body.file.category, 'design');
+  assert.equal(up.body.file.ext, '.dwg');
+  assert.equal(up.body.file.bytes, 21);
+  const bad = await upload(`/api/drawings/projects/${project.id}/files?category=nope&name=x.pdf`, Buffer.from('x'));
+  assert.equal(bad.status, 400);
+  const detail = await api('GET', `/api/drawings/projects/${project.id}`);
+  assert.equal(detail.body.files.length, 1);
+  const edited = await api('PATCH', `/api/drawings/files/${up.body.file.id}`, { category: 'ram', level_id: level.id, note: 'moved' });
+  assert.equal(edited.body.file.category, 'ram');
+  assert.equal(edited.body.file.level_code, 'B1');
+  const dl = await download(`/api/drawings/files/${up.body.file.id}`);
+  assert.equal(dl.status, 200);
+  assert.equal(dl.bytes.toString('utf8'), 'AC1027 fake dwg bytes');
+  assert.ok(dl.headers.get('content-disposition').includes('ARCH-PLAN.dwg'));
+  const gone = await api('DELETE', `/api/drawings/files/${up.body.file.id}`);
+  assert.equal(gone.status, 200);
+  assert.equal((await download(`/api/drawings/files/${up.body.file.id}`)).status, 404);
+});
+
+test('the office frame DXF is uploaded once and used on every sheet', async () => {
+  const { Canvas } = await import('../shopdrawings/lib/canvas.mjs');
+  const { toDxf } = await import('../shopdrawings/lib/dxf-writer.mjs');
+  const c = new Canvas();
+  c.rect(0, 0, 841, 594, { layer: 'FRAME' });
+  c.text(650, 20, 'OFFICE FRAME <DRAWING_NO> REV <REV>', { layer: 'TITLE', h: 4 });
+  const badUp = await upload('/api/drawings/frame?name=frame.pdf', Buffer.from('%PDF'));
+  assert.equal(badUp.status, 400);
+  const up = await upload('/api/drawings/frame?name=office-frame.dxf', Buffer.from(toDxf(c)));
+  assert.equal(up.status, 201, JSON.stringify(up.body));
+  assert.equal(up.body.entities, 2);
+  const settings = await api('GET', '/api/settings');
+  assert.equal(settings.body.settings.drawings.frame_dxf, 'frame.dxf');
+  const dl = await download('/api/drawings/frame');
+  assert.equal(dl.status, 200);
+  const cpt = readFileSync(join(workDir, 'synthetic.cpt'));
+  const result = await upload(`/api/drawings/levels/${level.id}/runs?name=framed.cpt&mode=design`, cpt);
+  assert.equal(result.status, 201, JSON.stringify(result.body));
+  const sheet = result.body.run.sheets[1];
+  const dxf = await download(`/api/drawings/runs/${result.body.run.id}/files/dxf/${encodeURIComponent(sheet.file)}.dxf`);
+  const text = dxf.bytes.toString('utf8');
+  assert.ok(text.includes(`OFFICE FRAME ${sheet.no} REV `), 'the frame tokens are filled on the sheet');
+  assert.ok(!text.includes('THE ENGINEER (CONSULTANT)'), 'the built-in title block is replaced');
+  const removed = await api('DELETE', '/api/drawings/frame');
+  assert.equal(removed.status, 200);
+  assert.equal((await download('/api/drawings/frame')).status, 404);
+}, { timeout: 120000 });
+
 test('a bad file is refused and the run is recorded as failed', async () => {
   const wrong = await upload(`/api/drawings/levels/${level.id}/runs?name=plan.pdf`, Buffer.from('%PDF-1.4'));
   assert.equal(wrong.status, 400);
@@ -212,7 +302,7 @@ test('a bad file is refused and the run is recorded as failed', async () => {
   assert.equal(broken.status, 400, JSON.stringify(broken.body));
   const detail = await api('GET', `/api/drawings/projects/${project.id}`);
   assert.ok(detail.body.runs.some((r) => r.status === 'failed'));
-  assert.equal(detail.body.runs.filter((r) => r.status === 'done').length, 3);
+  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 5, 'three uploads, one regeneration, one framed run');
 });
 
 test('deleting the project removes its levels, runs and files', async () => {

@@ -46,6 +46,11 @@ addColumn('study_drawings', 'updated_at', 'TEXT');
 addColumn('quotations', 'labour_scope', "TEXT NOT NULL DEFAULT 'spantech'");
 // The cost comparison study sent to the owner, and the drawings attached to it.
 addColumn('quotations', 'study_json', 'TEXT');
+// Drawing runs carry the engineer's revision notes and an issue status; a level keeps its reinforcement edits.
+addColumn('drawing_runs', 'notes', 'TEXT');
+addColumn('drawing_runs', 'status', "TEXT NOT NULL DEFAULT 'draft'");
+addColumn('drawing_runs', 'edits_json', 'TEXT');
+addColumn('drawing_levels', 'edits_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

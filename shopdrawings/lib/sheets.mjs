@@ -10,7 +10,7 @@
  * stand-alone DXF (Xref) and also collected into the package DXF.
  */
 import { Canvas } from './canvas.mjs';
-import { Sheet, chooseScale, layoutFor } from './sheet.mjs';
+import { Sheet, chooseScale, layoutFor, DEFAULT_FRAME } from './sheet.mjs';
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import * as RC from './ram-concept.mjs';
@@ -270,7 +270,8 @@ export const levelAssumptions = (model, level) => model.assumptions.filter((a) =
 export function buildSheet({ model, level, def, meta, index, total, draw }) {
   const root = new Canvas();
   const blockName = level ? `${def.base}_${level.id}` : def.base;
-  const L = layoutFor('A1');
+  const frameOpts = meta.frame || {};
+  const L = layoutFor(frameOpts.size || 'A1', frameOpts);
   // plan margin: room for the grid bubbles (3000 + 2 x 4S) plus a little air; the
   // scale is picked with a provisional margin and the margin re-fitted to it.
   const marginFor = (sc) => 3000 + 8 * (sc / 100) + 400;
@@ -284,14 +285,15 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
   let areas = pick();
   let scale = level ? Math.max(...areas.map((a) => chooseScale(pb, a))) : 100;
   if (level) { pb = expandBbox(level.bbox, marginFor(scale)); areas = pick(); scale = Math.max(...areas.map((a) => chooseScale(pb, a))); }
-  const sheet = new Sheet(root, { blockName, scale });
-  sheet.frame();
+  const sheet = new Sheet(root, { blockName, scale, frame: frameOpts });
+  const custom = Array.isArray(meta.frameEntities) && meta.frameEntities.length > 0;
+  if (!custom) sheet.frame();
   const pens = level ? areas.map((a) => sheet.setPlan(pb, a)) : [];
   const r = draw(sheet, pens) || {};
   const drawingNo = level ? `${meta.prefix}-${level.id}-${def.no}` : `${meta.prefix}-000`;
 
   let leftover = [];
-  if (r.rows) {
+  if (r.rows && sheet.L.schedule.h > 0) {
     const Sc = sheet.L.schedule;
     const maxRows = Math.floor((Sc.h - 6 - 6 - 5 - 6) / 4);
     const res = sheet.table(Sc.x, Sc.y + Sc.h - 3, r.cols || SCHEDULE_COLS, r.rows, { title: r.scheduleTitle || 'BAR BENDING SCHEDULE', maxRows, totals: r.totals || null });
@@ -307,10 +309,9 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
       leftover = res2.leftover;
     }
   }
-  sheet.keyPlan(level ? level.outline : (model.levels[0] && model.levels[0].outline));
+  if (sheet.L.keyplan.h > 0) sheet.keyPlan(level ? level.outline : (model.levels[0] && model.levels[0].outline));
   sheet.notes({ general: r.general || [], assumptions: r.assumptions || [], codeRef: codeText(model), legend: r.legend || [], extra: r.extra || [] });
-  sheet.refsBlock(meta);
-  sheet.titleBlock({
+  const titleData = {
     ...meta,
     title: def.title,
     level: level ? `${level.id} - ${level.name}` : 'ALL LEVELS',
@@ -320,7 +321,18 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
     gridRef: level ? `${level.grid.x[0]?.label}-${level.grid.x[level.grid.x.length - 1]?.label} / ${level.grid.y[0]?.label}-${level.grid.y[level.grid.y.length - 1]?.label}` : 'ALL',
     index: `${meta.prefix}-000`,
     codeRef: model.code_reference ? `${model.code_reference} (ON DRAWINGS)` : 'SBC 304-18 (ASSUMED)',
-  });
+  };
+  if (custom) {
+    // the office's own frame carries the title block and references; the sheet's data fills its {TOKENS}
+    sheet.customFrame(meta.frameEntities, {
+      PROJECT: (meta.project || '').toUpperCase(), PROJECT_CODE: meta.projectCode || '', CLIENT: meta.client || '', CONSULTANT: meta.engineer || '', ENGINEER: meta.engineer || '', CONTRACTOR: meta.contractor || '',
+      LOCATION: meta.location || '', COMPANY: meta.company || '', COMPANY_LINE: meta.company_line || '', TITLE: def.title, LEVEL: titleData.level, LEVEL_NAME: level ? level.name : '', DRAWING_NO: drawingNo, REV: meta.revision || '00',
+      DATE: meta.date || '', SCALE: titleData.scale, SHEET: titleData.sheet, PREPARED: meta.prepared || '', CHECKED: meta.checked || '', APPROVED: meta.approved || '', STATUS: meta.status || '', GRID_REF: titleData.gridRef, INDEX: titleData.index, CODE_REF: titleData.codeRef,
+    });
+  } else {
+    if (sheet.L.refs.h > 0) sheet.refsBlock(meta);
+    sheet.titleBlock(titleData);
+  }
   if (level) {
     const titles = r.planTitles || [def.title];
     areas.forEach((a, i) => sheet.planTitleAt(a, i + 1, `${level.name} - ${titles[i] || def.title}`, `SCALE : 1:${scale}`));

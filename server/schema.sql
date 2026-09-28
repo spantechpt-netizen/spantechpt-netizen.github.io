@@ -454,3 +454,21 @@ CREATE TABLE IF NOT EXISTS drawing_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_drawing_runs_project ON drawing_runs(project_id, serial);
 CREATE INDEX IF NOT EXISTS idx_drawing_runs_level   ON drawing_runs(level_id, created_at);
+
+-- project documents: the original design files, the RAM models, and the PT drawings (design / shop) kept per project
+CREATE TABLE IF NOT EXISTS drawing_files (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES drawing_projects(id) ON DELETE CASCADE,
+  level_id    INTEGER REFERENCES drawing_levels(id) ON DELETE SET NULL,
+  category    TEXT NOT NULL DEFAULT 'design',
+  name        TEXT NOT NULL,
+  ext         TEXT,
+  bytes       INTEGER NOT NULL DEFAULT 0,
+  stored      TEXT NOT NULL,
+  revision    TEXT,
+  note        TEXT,
+  uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_files_project ON drawing_files(project_id, category, created_at);

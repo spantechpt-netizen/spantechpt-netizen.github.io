@@ -94,6 +94,19 @@ const qs = (params = {}) => {
   return string ? `?${string}` : '';
 };
 
+/** Posts a file as the raw request body (the server reads the stream itself); options go in the query string. */
+async function rawUpload(url, file) {
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
+  } catch {
+    throw new ApiError(0, await networkFailure());
+  }
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, payload);
+  return payload;
+}
+
 export const api = {
   get: (path, params) => request('GET', `${path}${qs(params)}`),
   post: (path, body) => request('POST', path, body ?? {}),
@@ -226,6 +239,17 @@ export const api = {
   drawingRunZipUrl: (id) => `/api/drawings/runs/${id}/zip`,
   drawingRunFileUrl: (id, kind, name, download = false) =>
     `/api/drawings/runs/${id}/files/${kind}/${encodeURIComponent(name)}${download ? '?download=1' : ''}`,
+  updateDrawingRun: (id, data) => request('PATCH', `/api/drawings/runs/${id}`, data),
+  regenerateDrawingRun: (id, data) => request('POST', `/api/drawings/runs/${id}/regenerate`, data ?? {}),
+  drawingRunPlan: (id) => request('GET', `/api/drawings/runs/${id}/plan`),
+  saveDrawingEdits: (levelId, edits) => request('PUT', `/api/drawings/levels/${levelId}/edits`, { edits }),
+  drawingFileUrl: (id) => `/api/drawings/files/${id}`,
+  updateDrawingFile: (id, data) => request('PATCH', `/api/drawings/files/${id}`, data),
+  deleteDrawingFile: (id) => request('DELETE', `/api/drawings/files/${id}`),
+  uploadDrawingFile: (projectId, file, options = {}) => rawUpload(`/api/drawings/projects/${projectId}/files${qs({ name: file.name, ...options })}`, file),
+  drawingFrameUrl: () => '/api/drawings/frame',
+  uploadDrawingFrame: (file) => rawUpload(`/api/drawings/frame${qs({ name: file.name })}`, file),
+  deleteDrawingFrame: () => request('DELETE', '/api/drawings/frame'),
   /** The model file is the request body (see server/drawings.js); options travel in the query string. */
   generateDrawings: async (levelId, file, options = {}) => {
     const url = `/api/drawings/levels/${levelId}/runs${qs({ name: file.name, ...options })}`;

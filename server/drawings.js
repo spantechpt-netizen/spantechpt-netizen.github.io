@@ -23,6 +23,11 @@ export const MAX_SOURCE_BYTES = 300 * 1024 * 1024;
 export const SOURCE_EXTENSIONS = ['.cpt', '.dxf'];
 export const MODES = ['design', 'shop'];
 export const RAM_BANDS = ['all', 'user', 'none'];
+export const RUN_STATUS = ['draft', 'issued', 'superseded'];
+/** Project document sections: the original design files, the RAM models, the PT design drawings, the PT shop drawings. */
+export const FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
+/** Sheet frame defaults (paper mm); see shopdrawings/lib/sheet.mjs DEFAULT_FRAME. */
+export const FRAME_DEFAULTS = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true };
 
 /** Office defaults behind the "Drawings" settings tab. */
 export const DRAWING_DEFAULTS = {
@@ -39,11 +44,24 @@ export const DRAWING_DEFAULTS = {
   default_mode: 'design',
   ram_bands: 'all',
   spec: {},
+  frame: FRAME_DEFAULTS,
+  frame_dxf: null,
 };
 
 export function drawingSettings() {
   const stored = getSetting('drawings', {}) || {};
-  return { ...DRAWING_DEFAULTS, ...stored, spec: { ...(DRAWING_DEFAULTS.spec || {}), ...(stored.spec || {}) } };
+  return { ...DRAWING_DEFAULTS, ...stored, spec: { ...(DRAWING_DEFAULTS.spec || {}), ...(stored.spec || {}) }, frame: { ...FRAME_DEFAULTS, ...(stored.frame || {}) } };
+}
+
+/** Where the office's own frame DXF is kept once uploaded. */
+export const framePath = () => resolve(join(DRAWINGS_ROOT, 'frame.dxf'));
+
+/** A project document on disk. */
+export function projectFile(projectId, stored) {
+  const root = resolve(join(projectDir(projectId), 'files'));
+  const target = resolve(join(root, basename(String(stored || ''))));
+  if (!target.startsWith(root + '/') && !target.startsWith(root + '\\')) throw badRequest('Bad file path', 'مسار ملف غير صالح');
+  return target;
 }
 
 /** P26-001, P26-002 … — one sequence per year, so the code says when the project was registered. */
@@ -89,6 +107,11 @@ export async function saveSource(req, dir, originalName) {
       `الملف "${originalName || ''}" مش مدعوم. ارفع موديل الرام (.cpt) أو المسقط بصيغة DXF.`,
     );
   }
+  return saveUpload(req, dir, `source${ext}`, ext);
+}
+
+/** Any project document (DWG, PDF, RAM model, spreadsheet ...) streamed to `dir/<fileName>`. */
+export async function saveUpload(req, dir, fileName, ext) {
   const declared = Number(req.headers['content-length'] || 0);
   if (declared > MAX_SOURCE_BYTES) {
     throw badRequest(
@@ -98,7 +121,7 @@ export async function saveSource(req, dir, originalName) {
   }
 
   await mkdir(dir, { recursive: true });
-  const target = join(dir, `source${ext}`);
+  const target = join(dir, fileName);
   const written = await new Promise((resolvePromise, reject) => {
     const out = createWriteStream(target);
     let bytes = 0;
@@ -126,7 +149,7 @@ export async function saveSource(req, dir, originalName) {
     await unlink(target).catch(() => {});
     throw badRequest('The file was empty.', 'الملف فاضي.');
   }
-  return { file: `source${ext}`, ext, bytes: written };
+  return { file: fileName, ext, bytes: written };
 }
 
 /** The title-block data of one run, assembled from the settings, the project and the level. */
@@ -149,6 +172,9 @@ export function runMeta({ settings, project, level, mode, revision, date }) {
     revision,
     date: date || new Date().toISOString().slice(0, 10),
     levelId: level.code,
+    // the sheet frame: the office's strip sizes / boxes, and its own frame DXF when one was uploaded
+    frame: settings.frame,
+    frameDxf: settings.frame_dxf ? framePath() : null,
   };
 }
 
