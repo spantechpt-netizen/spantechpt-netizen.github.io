@@ -7,7 +7,7 @@
  *
  * Options
  *   --project "…"  --client "…"  --location "…"  --company "…"
- *   --prefix ST-SD  --rev 00  --date YYYY-MM-DD
+ *   --prefix SPAN-SD  --rev 00  --date YYYY-MM-DD
  *   --prepared "…"  --checked "…"  --approved "…"
  *   --config file.json      project meta and spec overrides ({ meta: {...}, spec: {...}, layers: "path" })
  *   --layers file.json      layer standard (default: shopdrawings/layers.spantech.json)

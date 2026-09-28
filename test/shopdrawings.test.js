@@ -563,7 +563,7 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   assert.ok(L.walls.every((w) => w.polygon && w.id), 'walls get a body and an id');
   assert.equal(model.spec.uEdge.spacing, 150, 'office perimeter rule, not the G.A. assumption');
   assert.equal(L.rcTags.length, 1, 'the slab thickness is tagged once; the thickened zone carries its own THK label');
-  const pack = composeDesignPackage(model, { project: 'RAM', prefix: 'ST-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
+  const pack = composeDesignPackage(model, { project: 'RAM', prefix: 'SPAN-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
   assert.equal(pack.sheets.length, 5);
   const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);
   assert.ok(dxfTop.includes('\n1\nT16-150 (T)\n') && dxfTop.includes('\n1\nT12-150 U-BAR\n'), 'RAM band call-out and the perimeter U-bars on the top sheet');
@@ -576,9 +576,9 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
 test('the design package is written in the office layers and text style, on the shop-drawing frame', () => {
   const dxf = parseDxf(toDxf(buildOfficePlan()));
   const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
-  const pack = composeDesignPackage(model, { project: 'TEST', prefix: 'ST-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
+  const pack = composeDesignPackage(model, { project: 'TEST', prefix: 'SPAN-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
   assert.equal(pack.sheets.length, 5);
-  assert.deepEqual(pack.sheets.map((s) => s.drawingNo), ['ST-DD-000', 'ST-DD-L01-01', 'ST-DD-L01-02', 'ST-DD-L01-03', 'ST-DD-L01-04']);
+  assert.deepEqual(pack.sheets.map((s) => s.drawingNo), ['SPAN-DD-000', 'SPAN-DD-L01-01', 'SPAN-DD-L01-02', 'SPAN-DD-L01-03', 'SPAN-DD-L01-04']);
   const top = pack.sheets.find((s) => s.key === 'dtop');
   const dxfOut = toDxf(top.root);
   for (const layer of ['REO-TOP', 'REO-TXT', 'diamension', 'DOTS', 'DETAIL-REF']) assert.ok(dxfOut.includes(`\n8\n${layer}\n`), `${layer} used`);

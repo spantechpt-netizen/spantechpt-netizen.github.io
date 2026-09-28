@@ -29,11 +29,20 @@
     },
     "topColumns": {
       "dia": 16,
-      "spacing": 150
+      "spacing": 150,
+      "rule": "office",
+      "length": 4000,
+      "edgeFactor": 0.7,
+      "dropMargin": 0,
+      "dropMax": 6000,
+      "minBeyond": 1500
     },
     "uEdge": {
       "dia": 12,
-      "spacing": 200,
+      "spacing": 150,
+      "total": 4000,
+      "beamLeg": 400,
+      "beamTop": 3600,
       "leg": 1200
     },
     "uCircle": {
@@ -73,6 +82,15 @@
       "dia": 10,
       "legSpacing": 100,
       "extentFactor": 2
+    },
+    "walls": {
+      "parallelBars": false,
+      "cornerDiagonals": false
+    },
+    "perimSpan": 12000,
+    "thicknessMesh": {
+      "dia": 10,
+      "spacing": 200
     },
     "code_reference": "SBC 304-18",
     "sources": {
@@ -815,7 +833,7 @@
       "text": "Bottom mesh not specified: T12@200 both ways assumed as bonded reinforcement in PT zones."
     },
     {
-      "text": "Edge U-bars not specified: T12@200 with 1200 mm legs assumed at PT anchorage edges."
+      "text": "Edge U-bars not specified: T12@150 with 1200 mm legs assumed at PT anchorage edges."
     },
     {
       "text": "Opening trimmers not specified: 2T16 T&B each side + 2T12 diagonals at corners assumed."

@@ -883,7 +883,7 @@ function coverSheet(model, sheets, meta) {
 export function composePackage(model, metaIn = {}) {
   const meta = {
     company: 'SPAN TECH CONTRACTING', company_line: 'POST-TENSIONED SLABS · KSA · EGYPT · QATAR',
-    project: 'PROJECT NAME', client: '', engineer: '', contractor: '', location: '', prefix: 'ST-SD', revision: '00',
+    project: 'PROJECT NAME', client: '', engineer: '', contractor: '', location: '', prefix: 'SPAN-SD', revision: '00',
     date: new Date().toISOString().slice(0, 10), prepared: '', checked: '', approved: '', status: 'SHOP DRAWING - FOR CONSULTANT APPROVAL',
     ...metaIn,
   };

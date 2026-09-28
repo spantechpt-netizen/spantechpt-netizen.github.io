@@ -159,7 +159,7 @@ its call-outs (`(T)`, `(B)`, `T&B` decide the sheet), DIMENSION entities on `dia
   REPORT.md                     findings, assumptions, lengths, sheet list
 ```
 
-Per slab level (drawing numbers `ST-SD-<LEVEL>-nn`):
+Per slab level (drawing numbers `SPAN-SD-<LEVEL>-nn`):
 
 | nn | Block / Xref name | Content |
 |---|---|---|
@@ -174,7 +174,7 @@ Per slab level (drawing numbers `ST-SD-<LEVEL>-nn`):
 | 07 | `CABLES_SCHEDULE_EMPTY_TEMPLATE_<L>` | **empty** tendon schedule, profile and stressing-record templates; filled after the PT design |
 | 08 | `FRAMING_REBAR_PUNCHING_LINKS_<L>` | preliminary punching links per column face (rows at d/2, legs at 100 mm, 2h extent), PS types; to be confirmed against the punching design |
 
-Plus `ST-SD-000` `SHOP_DRAWINGS_COVER_INDEX`: drawing list, levels read, lap
+Plus `SPAN-SD-000` `SHOP_DRAWINGS_COVER_INDEX`: drawing list, levels read, lap
 table, how to use the blocks.
 
 Every sheet carries an A1 frame with zone rulers and, in the right-hand
