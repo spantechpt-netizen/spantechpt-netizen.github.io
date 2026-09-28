@@ -1128,6 +1128,7 @@ function attachPlacer(pl, S, level) {
   pl.text = (p, str, o = {}) => { placer.add(textBox(p, str, (o.h || 2.5) * S, o.rot || 0, o.align || 'L', o.valign || 'B', o.widthFactor || 1)); return text0(p, str, o); };
   for (const c of level.columns || []) placer.add(c.shape === 'circle' ? { minX: c.cx - c.d / 2, minY: c.cy - c.d / 2, maxX: c.cx + c.d / 2, maxY: c.cy + c.d / 2 } : { minX: c.cx - c.w / 2, minY: c.cy - c.h / 2, maxX: c.cx + c.w / 2, maxY: c.cy + c.h / 2 });
   for (const w of level.walls || []) if (w.polygon) placer.add(bbox(w.polygon));
+  for (const o of level.openings || []) placer.add(bbox(R.regionPolygon(o))); // a bar symbol never sits in an opening
   return placer;
 }
 
