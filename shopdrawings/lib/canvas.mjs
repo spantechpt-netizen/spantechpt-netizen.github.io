@@ -64,6 +64,7 @@ export const STANDARD_LAYERS = {
   'Dimensions-Sec-A': { color: 1, ltype: 'CONTINUOUS' }, 'Dimensions-Sec-B': { color: 1, ltype: 'CONTINUOUS' },
   'Details-A': { color: 4, ltype: 'CONTINUOUS' }, 'Details-B': { color: 4, ltype: 'CONTINUOUS' },
   'PT-Notes': { color: 7, ltype: 'CONTINUOUS' },
+  'PT-Cross-A': { color: 4, ltype: 'CONTINUOUS', lw: 35 }, 'PT-Cross-B': { color: 5, ltype: 'CONTINUOUS', lw: 35 }, 'PT-Cross-Gap': { color: 8, ltype: 'CONTINUOUS' }, 'PT-Cross-Tight': { color: 2, ltype: 'CONTINUOUS' }, 'PT-Cross-Clash': { color: 1, ltype: 'CONTINUOUS' }, 'PT-Cross-Mark': { color: 3, ltype: 'CONTINUOUS' }, 'PT-Cross-Text': { color: 2, ltype: 'CONTINUOUS' },
   BEAM: { color: 3, ltype: 'CONTINUOUS', lw: 25 },
   SUNKEN: { color: 4, ltype: 'CONTINUOUS' },
   'SUNKEN-HATCH': { color: 8, ltype: 'CONTINUOUS' },

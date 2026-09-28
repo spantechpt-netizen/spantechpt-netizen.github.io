@@ -37,6 +37,7 @@ export const SHEET_DEFS = [
   // from a RAM model the cables come one direction per sheet, with the chair heights along every tendon (no tendon sections)
   { key: 'cables_lat', base: 'CABLES_LATITUDE_SHOP', title: 'PT CABLES - LATITUDE (DIRECTION 1) - LAYOUT, CHAIRS AND SCHEDULE', no: '07A', ramOnly: true, set: 'latitude' },
   { key: 'cables_lon', base: 'CABLES_LONGITUDE_SHOP', title: 'PT CABLES - LONGITUDE (DIRECTION 2) - LAYOUT, CHAIRS AND SCHEDULE', no: '07B', ramOnly: true, set: 'longitude' },
+  { key: 'cables_cross', base: 'CABLES_CROSSINGS_SHOP', title: 'PT CABLES - TENDON CROSSINGS - WHICH TENDON PASSES OVER', no: '07C', ramOnly: true },
   { key: 'punching', base: 'FRAMING_REBAR_PUNCHING_LINKS', title: 'PUNCHING SHEAR REINFORCEMENT PLAN (PRELIMINARY)', no: '08' },
 ];
 
@@ -914,20 +915,13 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     const outline = level.outline || [];
     const openings = (level.openings || []).map((o) => R.regionPolygon(o)).filter((p) => p && p.length >= 3);
     const zones = (level.thickZones || []).filter((z) => z.polygon && z.thickness);
-    const thicknessAt = (p) => { for (const z of zones) if (pointInPolygon(p, z.polygon)) return z.thickness; return level.thickness; };
+    const thicknessAt = thicknessFn(level);
     const outsideSlab = (p) => (outline.length >= 3 && !pointInPolygon(p, outline)) || openings.some((o) => pointInPolygon(p, o));
     const tendons = level.ram.tendons.filter((t) => t.spanSet === set);
     const samplesOf = new Map(tendons.map((t) => [t, cableStations(t, thicknessAt, { cgs: design })]));
     // marks: tendons of one strand count and one profile (high / low / end stations within 100 mm and 5 mm) share one
-    const sigToMark = new Map();
-    const markOf = new Map();
-    for (const t of tendons) {
-      const smp = samplesOf.get(t);
-      const sig = `${t.strands}|${smp.filter((x) => x.kind).map((x) => `${x.kind}${Math.round(x.s / 100)}:${x.h}`).join(',')}|${smp.length ? '' : Math.round(t.length / 100)}`;
-      let mark = sigToMark.get(sig);
-      if (!mark) { mark = `${fam}.${String(sigToMark.size + 1).padStart(2, '0')}`; sigToMark.set(sig, mark); }
-      markOf.set(t, mark);
-    }
+    // (always from the chair stations, so the design and shop sheets and the crossings plan name a tendon alike)
+    const markOf = cableMarksOf(tendons, fam, thicknessAt);
     const seqOf = (t) => Number((t.id || '').split('-')[1]) || tendons.indexOf(t) + 1;
     const ang = (u) => (Math.atan2(u.y, u.x) * 180) / Math.PI;
 
@@ -1146,6 +1140,185 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
   };
 }
 
+/** The marks of one direction: tendons of one strand count and one profile (chair stations) share a mark; keyed by tendon. */
+function cableMarksOf(tendons, fam, thicknessAt) {
+  const sigToMark = new Map();
+  const markOf = new Map();
+  for (const t of tendons) {
+    const smp = cableStations(t, thicknessAt);
+    const sig = `${t.strands}|${smp.filter((x) => x.kind).map((x) => `${x.kind}${Math.round(x.s / 100)}:${x.h}`).join(',')}|${smp.length ? '' : Math.round(t.length / 100)}`;
+    let mark = sigToMark.get(sig);
+    if (!mark) { mark = `${fam}.${String(sigToMark.size + 1).padStart(2, '0')}`; sigToMark.set(sig, mark); }
+    markOf.set(t, mark);
+  }
+  return markOf;
+}
+
+/** Local thickness at a plan point: the thickened zone it falls in, else the slab. */
+function thicknessFn(level) {
+  const zones = (level.thickZones || []).filter((z) => z.polygon && z.thickness);
+  return (p) => { for (const z of zones) if (pointInPolygon(p, z.polygon)) return z.thickness; return level.thickness; };
+}
+
+// ------------------------------------------------------------------ tendon crossings: which tendon passes over
+const CROSS = { duct: 20, tol: 10, endClear: 50, gapPaper: 1.6 };
+
+function segCross(a0, a1, b0, b1) {
+  const dx1 = a1.x - a0.x, dy1 = a1.y - a0.y, dx2 = b1.x - b0.x, dy2 = b1.y - b0.y;
+  const den = dx1 * dy2 - dy1 * dx2;
+  if (Math.abs(den) < 1e-12) return null;
+  const ex = b0.x - a0.x, ey = b0.y - a0.y;
+  let ta = (ex * dy2 - ey * dx2) / den, tb = (ex * dy1 - ey * dx1) / den;
+  if (ta < -1e-9 || ta > 1 + 1e-9 || tb < -1e-9 || tb > 1 + 1e-9) return null;
+  ta = Math.max(0, Math.min(1, ta)); tb = Math.max(0, Math.min(1, tb));
+  return { x: a0.x + ta * dx1, y: a0.y + ta * dy1, ta, tb };
+}
+
+/**
+ * Every crossing of two tendons in plan (office rule): where it is, the station on each tendon, each tendon's depth
+ * from the top there (from the same profile the chair heights come from), the gap and which one passes over.
+ * Clash = gap under `tol` (10 mm: the two ducts sit at one level); tight = under the duct height (20) but no clash.
+ * An end standing on another tendon (within `endClear`) is not a crossing.
+ */
+export function tendonCrossings(level, thicknessAt = thicknessFn(level)) {
+  const tendons = (level.ram?.tendons || []).filter((t) => t.heights && t.pts.length >= 2);
+  const geo = tendons.map((t) => { const st = [0]; for (let i = 1; i < t.pts.length; i++) st.push(st[i - 1] + dist(t.pts[i - 1], t.pts[i])); return { t, st, total: st[st.length - 1], bb: bbox(t.pts) }; });
+  const out = [];
+  for (let i = 0; i < geo.length; i++) {
+    const gi = geo[i];
+    for (let j = i + 1; j < geo.length; j++) {
+      const gj = geo[j];
+      if (gi.bb.maxX < gj.bb.minX || gj.bb.maxX < gi.bb.minX || gi.bb.maxY < gj.bb.minY || gj.bb.maxY < gi.bb.minY) continue;
+      const seen = new Set();
+      for (let a = 0; a + 1 < gi.t.pts.length; a++) for (let b = 0; b + 1 < gj.t.pts.length; b++) {
+        const hit = segCross(gi.t.pts[a], gi.t.pts[a + 1], gj.t.pts[b], gj.t.pts[b + 1]);
+        if (!hit) continue;
+        const sa = gi.st[a] + hit.ta * (gi.st[a + 1] - gi.st[a]), sb = gj.st[b] + hit.tb * (gj.st[b + 1] - gj.st[b]);
+        if (sa < CROSS.endClear || sa > gi.total - CROSS.endClear || sb < CROSS.endClear || sb > gj.total - CROSS.endClear) continue;
+        const key = `${Math.round(hit.x)},${Math.round(hit.y)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const pt = { x: hit.x, y: hit.y };
+        const th = thicknessAt(pt);
+        const ha = RC.tendonHeightAt(gi.t, sa), hb = RC.tendonHeightAt(gj.t, sb);
+        if (ha == null || hb == null) continue;
+        const da = Math.round(th - ha), db = Math.round(th - hb);
+        const gap = Math.abs(da - db);
+        const over = da < db ? 'a' : db < da ? 'b' : '=';
+        out.push({ pt, a: gi.t, b: gj.t, sa, sb, da, db, gap, over, clash: gap < CROSS.tol, tight: gap >= CROSS.tol && gap < CROSS.duct });
+      }
+    }
+  }
+  return out;
+}
+
+/** The tendon's polyline with a gap of `half` each side of every station in `cuts` taken out. */
+function cutTendon(t, cuts, half) {
+  const st = [0];
+  for (let i = 1; i < t.pts.length; i++) st.push(st[i - 1] + dist(t.pts[i - 1], t.pts[i]));
+  const total = st[st.length - 1];
+  const gaps = [];
+  for (const s of [...cuts].sort((p, q) => p - q)) {
+    const a = Math.max(0, s - half), b = Math.min(total, s + half);
+    if (gaps.length && a <= gaps[gaps.length - 1][1]) gaps[gaps.length - 1][1] = Math.max(gaps[gaps.length - 1][1], b); else gaps.push([a, b]);
+  }
+  const keep = [];
+  let u = 0;
+  for (const [a, b] of gaps) { if (a > u + 1e-6) keep.push([u, a]); u = b; }
+  if (total > u + 1e-6) keep.push([u, total]);
+  return keep.map(([u0, u1]) => [alongTendon(t, u0).p, ...t.pts.filter((_, k) => u0 + 1e-6 < st[k] && st[k] < u1 - 1e-6), alongTendon(t, u1).p]).filter((pc) => pc.length >= 2);
+}
+
+/**
+ * The crossings sheet (office convention): both directions on one plan, the tendon that passes over drawn
+ * continuous and the one under broken at the crossing, the gap in mm at every crossing with the family on top,
+ * tight gaps in yellow, clashes in a red circle; the marks at both ends of every tendon; the clashes and tight
+ * crossings listed in the schedule.
+ */
+export function ramCrossingsSheet(model, level, meta) {
+  return (sheet, [pl]) => {
+    const S = sheet.S, TH = CAB.txt * S;
+    sheet.blk.root.textStyleDef('PT-PROFILE', { font: 'romans.shx', widthFactor: 0.75 });
+    drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false, regionLabels: false, ubarRegions: false });
+    const thicknessAt = thicknessFn(level);
+    const famOf = (t) => (t.spanSet === 'latitude' ? 'A' : 'B');
+    const marks = new Map([...cableMarksOf(level.ram.tendons.filter((t) => t.spanSet === 'latitude'), 'A', thicknessAt), ...cableMarksOf(level.ram.tendons.filter((t) => t.spanSet !== 'latitude'), 'B', thicknessAt)]);
+    const crossings = tendonCrossings(level, thicknessAt);
+    const under = new Map();
+    for (const c of crossings) {
+      if (c.over === 'a') { if (!under.has(c.b)) under.set(c.b, []); under.get(c.b).push(c.sb); }
+      else if (c.over === 'b') { if (!under.has(c.a)) under.set(c.a, []); under.get(c.a).push(c.sa); }
+    }
+    const half = Math.max(200, CROSS.gapPaper * S);
+    const ang = (u) => (Math.atan2(u.y, u.x) * 180) / Math.PI;
+    for (const t of level.ram.tendons) {
+      if (t.pts.length < 2) continue;
+      const layer = `PT-Cross-${famOf(t)}`;
+      for (const pc of cutTendon(t, under.get(t) || [], half)) pl.pline(pc, { layer });
+      for (const [end, nxt] of [[t.pts[0], t.pts[1]], [t.pts[t.pts.length - 1], t.pts[t.pts.length - 2]]]) {
+        const L = dist(end, nxt) || 1, u = { x: (end.x - nxt.x) / L, y: (end.y - nxt.y) / L };
+        pl.text({ x: end.x + u.x * TH * 2.2, y: end.y + u.y * TH * 2.2 }, marks.get(t) || t.id, { layer: 'PT-Cross-Mark', h: CAB.txt * 0.8, rot: ang(u), align: 'C', valign: 'M', ...PT_TEXT });
+      }
+    }
+    for (const c of crossings) {
+      if (c.clash) {
+        pl.circle(c.pt, TH * 1.3, { layer: 'PT-Cross-Clash' });
+        pl.text({ x: c.pt.x, y: c.pt.y + TH * 1.6 }, `CLASH ${c.gap}`, { layer: 'PT-Cross-Clash', h: CAB.txt * 0.8, align: 'C', valign: 'B', ...PT_TEXT });
+      } else {
+        const top = c.over === 'a' ? c.a : c.b;
+        pl.text({ x: c.pt.x + TH * 0.45, y: c.pt.y + TH * 0.45 }, `${famOf(top)} ${c.gap}`, { layer: c.tight ? 'PT-Cross-Tight' : 'PT-Cross-Gap', h: CAB.txt * (c.tight ? 0.8 : 0.65), align: 'L', valign: 'B', ...PT_TEXT });
+      }
+    }
+    const clashes = crossings.filter((c) => c.clash), tight = crossings.filter((c) => c.tight);
+    const rowOf = (c) => ({ a: marks.get(c.a) || c.a.id, b: marks.get(c.b) || c.b.id, ida: c.a.id, idb: c.b.id, grid: gridRef(level, bbox([c.pt])), da: c.da, db: c.db, gap: c.gap, over: c.over === '=' ? '-' : famOf(c.over === 'a' ? c.a : c.b), status: c.clash ? 'CLASH' : 'TIGHT' });
+    const rows = [...clashes, ...tight].map(rowOf);
+    const cols = [
+      { key: 'a', title: 'MARK\nA', w: 16 }, { key: 'ida', title: 'TENDON\nA', w: 18 }, { key: 'b', title: 'MARK\nB', w: 16 }, { key: 'idb', title: 'TENDON\nB', w: 18 }, { key: 'grid', title: 'GRID', w: 24 },
+      { key: 'da', title: 'DEPTH A\n(mm)', w: 18 }, { key: 'db', title: 'DEPTH B\n(mm)', w: 18 }, { key: 'gap', title: 'GAP\n(mm)', w: 16 }, { key: 'over', title: 'OVER', w: 15 }, { key: 'status', title: 'STATUS', w: 26 },
+    ];
+    // 1: legend of the plan; 2: how to read it and the count per direction
+    const d1 = sheet.detailBox(0, 'LEGEND', 'N.T.S.');
+    const pp = sheet.pp;
+    const legend = [
+      ['PT-Cross-A', 'line', 'CONTINUOUS LINE = THE TENDON THAT PASSES OVER (A = DIRECTION A / LATITUDE, B = DIRECTION B / LONGITUDE)'],
+      ['PT-Cross-B', 'broken', 'BROKEN LINE = THE TENDON THAT PASSES UNDER (BROKEN AT THE CROSSING)'],
+      ['PT-Cross-Gap', 'circle', 'FIGURE AT THE CROSSING = THE DIRECTION ON TOP AND THE VERTICAL GAP BETWEEN THE TWO DUCT CENTRES, mm'],
+      ['PT-Cross-Tight', 'circle', `YELLOW FIGURE = TIGHT: GAP UNDER THE DUCT HEIGHT (${CROSS.duct} mm) - THE LOWER DUCT BENDS A LITTLE`],
+      ['PT-Cross-Clash', 'circle', `RED CIRCLE = CLASH: GAP UNDER ${CROSS.tol} mm, THE TWO DUCTS SIT AT THE SAME LEVEL - THE PROFILE IS TO BE CORRECTED`],
+      ['PT-Cross-Mark', 'text', 'MARK AT BOTH ENDS OF EVERY TENDON (AS ON THE CABLE SHEETS)'],
+    ];
+    legend.forEach(([layer, kind, text], i) => {
+      const y = d1.y + d1.h - 14 - i * 6, x = d1.x + 4;
+      if (kind === 'line') pp.line(x, y + 0.6, x + 10, y + 0.6, { layer });
+      else if (kind === 'broken') { pp.line(x, y + 0.6, x + 3.5, y + 0.6, { layer }); pp.line(x + 6.5, y + 0.6, x + 10, y + 0.6, { layer }); }
+      else if (kind === 'circle') pp.circle(x + 5, y + 0.6, 1.2, { layer });
+      else pp.text(x + 5, y, 'A.01', { layer, h: 1.6, align: 'C' });
+      pp.mtext(x + 13, y + 2.2, text, { layer: 'NOTES', h: 1.5, width: d1.w - 20 });
+    });
+    const d2 = sheet.detailBox(1, 'CROSSINGS SUMMARY', '');
+    const nA = level.ram.tendons.filter((t) => t.spanSet === 'latitude').length, nB = level.ram.tendons.length - nA;
+    const overA = crossings.filter((c) => famOf(c.over === 'a' ? c.a : c.b) === 'A' && c.over !== '=').length;
+    [`${nA} TENDONS IN DIRECTION A AND ${nB} IN DIRECTION B: ${crossings.length} CROSSINGS. DIRECTION A PASSES OVER AT ${overA}, DIRECTION B AT ${crossings.length - overA - crossings.filter((c) => c.over === '=').length}.`,
+      `${clashes.length} CLASHES (GAP UNDER ${CROSS.tol} mm) AND ${tight.length} TIGHT CROSSINGS (UNDER THE ${CROSS.duct} mm DUCT HEIGHT) - LISTED IN THE SCHEDULE. A CLASH MEANS THE TWO DUCTS CANNOT BOTH SIT AT THEIR PROFILE: THE MORE LIGHTLY LOADED TENDON IS TO BE LOWERED UNDER (OR RAISED OVER) THE OTHER BY ONE DUCT HEIGHT IN RAM AND THE SHEETS RE-ISSUED.`,
+      `A TIGHT CROSSING IS NOT A DESIGN ERROR: IN A SLAB TENDONED BOTH WAYS THE TWO PROFILES MUST PASS THROUGH ONE LEVEL SOMEWHERE ON THE SLOPE; THE LOWER DUCT BENDS A LITTLE ON SITE.`,
+      'DEPTHS ARE FROM THE TOP OF THE SLAB (OR OF THE DROP PANEL WHERE THE CROSSING FALLS INSIDE ONE) TO THE DUCT CENTRE, FROM THE SAME PROFILE THE CHAIR HEIGHTS ARE TAKEN FROM.'].forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 13, h, { layer: 'NOTES', h: 1.6, width: d2.w - 8 }));
+    return {
+      rows, cols, rowH: 3, scheduleTitle: 'TENDON CROSSINGS - CLASHES AND TIGHT GAPS', detailsUsed: 2,
+      totals: `${crossings.length} CROSSINGS · ${clashes.length} CLASHES (< ${CROSS.tol} mm) · ${tight.length} TIGHT (< ${CROSS.duct} mm)`,
+      planTitles: ['TENDON CROSSINGS - WHICH TENDON PASSES OVER (BOTH DIRECTIONS)'],
+      general: [
+        commonNotes(model, level)[0],
+        'BOTH TENDON DIRECTIONS ARE DRAWN TOGETHER: AT EVERY CROSSING THE TENDON DRAWN CONTINUOUS PASSES OVER AND THE ONE DRAWN BROKEN PASSES UNDER; THE FIGURE GIVES THE DIRECTION ON TOP AND THE GAP BETWEEN THE DUCT CENTRES IN mm.',
+        `CROSSINGS UNDER ${CROSS.tol} mm ARE CLASHES (RED CIRCLE) AND ARE LISTED IN THE SCHEDULE WITH BOTH DEPTHS; CROSSINGS UNDER THE ${CROSS.duct} mm DUCT HEIGHT ARE TIGHT (YELLOW).`,
+        'THE CHAIR HEIGHTS, EXTENSIONS AND SCHEDULES OF EACH DIRECTION ARE ON ITS OWN SHEET (07A / 07B); THIS SHEET IS FOR THE PLACING SEQUENCE AND THE PROFILE CHECK ONLY.',
+      ],
+      assumptions: levelAssumptions(model, level).slice(0, 3),
+      legend: [['PT-Cross-A', 'TENDON, DIRECTION A - CONTINUOUS WHERE IT PASSES OVER', 'thick'], ['PT-Cross-B', 'TENDON, DIRECTION B - CONTINUOUS WHERE IT PASSES OVER', 'thick'], ['PT-Cross-Gap', 'GAP AT THE CROSSING (mm) + DIRECTION ON TOP', 'line'], ['PT-Cross-Tight', 'TIGHT GAP (UNDER THE DUCT HEIGHT)', 'line'], ['PT-Cross-Clash', 'CLASH (RED CIRCLE)', 'line'], ['PT-Cross-Mark', 'TENDON MARK', 'line'], ['COLUMN-HATCH', 'COLUMN', 'solid']],
+      checks: [`${crossings.length} tendon crossings: ${clashes.length} clashes under ${CROSS.tol} mm, ${tight.length} tight under the ${CROSS.duct} mm duct.`],
+    };
+  };
+}
+
 function cablesSheet(model, level, meta) {
   return (sheet, [pl]) => {
     drawBase(sheet, pl, level, { gridTag: meta.gridTag, columnIds: true, regionLabels: true, ubarRegions: false });
@@ -1222,7 +1395,7 @@ export function composePackage(model, metaIn = {}) {
     date: new Date().toISOString().slice(0, 10), prepared: '', checked: '', approved: '', status: 'SHOP DRAWING - FOR CONSULTANT APPROVAL',
     ...metaIn,
   };
-  const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, addbottom: (m, l, mt) => ramBarsSheet(m, l, mt, 'B'), addtop: (m, l, mt) => ramBarsSheet(m, l, mt, 'T'), ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, cables_lat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'shop' }), cables_lon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'shop' }), punching: punchingSheet };
+  const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, addbottom: (m, l, mt) => ramBarsSheet(m, l, mt, 'B'), addtop: (m, l, mt) => ramBarsSheet(m, l, mt, 'T'), ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, cables_lat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'shop' }), cables_lon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'shop' }), cables_cross: ramCrossingsSheet, punching: punchingSheet };
   const jobs = [];
   for (const level of model.levels) for (const def of SHEET_DEFS) {
     if (def.ramOnly && !level.ram) continue;

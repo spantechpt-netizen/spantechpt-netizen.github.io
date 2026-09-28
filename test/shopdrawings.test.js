@@ -311,7 +311,7 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
 
   const { composePackage } = await import('../shopdrawings/lib/sheets.mjs');
   const pkg = composePackage(model, { project: 'SYNTHETIC', prefix: 'T', company: 'SPAN TECH' });
-  assert.equal(pkg.sheets.length, 12, '7 standard sheets + 2 RAM additional sheets + 2 cable sheets (one per direction) + cover');
+  assert.equal(pkg.sheets.length, 13, '7 standard sheets + 2 RAM additional sheets + 2 cable sheets (one per direction) + the crossings plan + cover');
   assert.ok(pkg.sheets.find((s) => s.key === 'bottom').rows.some((r) => r.mark.startsWith('B1-') || r.mark.startsWith('B2-')), 'standard bottom mesh drawn on the RAM slab too');
   assert.ok(pkg.sheets.find((s) => s.key === 'top').rows.some((r) => r.mark.startsWith('T1-') || r.mark.startsWith('T2-')), 'standard top bars over columns drawn on the RAM slab too');
   const addb = pkg.sheets.find((s) => s.key === 'addbottom');
@@ -324,6 +324,25 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
   assert.ok(cables[0].rows.every((r) => /^[AB]\.\d\d$/.test(r.mark) && r.qty >= 1 && r.anchors), 'one schedule row per mark, the tendon numbers of the mark listed as anchor numbers');
   assert.ok(cables[0].rows.some((r) => r.chairs > 0), 'chair stations counted along the tendons with a profile');
   assert.ok(!pkg.sheets.some((s) => s.key === 'cables'), 'the empty template gives way to the RAM cable sheets');
+  // the crossings plan (office convention): the X tendon (2100 high at x = 6000, sloping to 1250 at its ends) meets
+  // the Y tendon (1250 at both ends: 1250 above the soffit throughout) at (3000, 2000); the X tendon is the higher
+  // one there, so it passes over and the Y tendon is drawn broken at the crossing
+  const { tendonCrossings } = await import('../shopdrawings/lib/sheets.mjs');
+  const L = model.levels[0];
+  const cr = tendonCrossings(L);
+  assert.equal(cr.length, 1, 'one crossing between the two directions');
+  assert.ok(Math.abs(cr[0].pt.x - 3000) < 1 && Math.abs(cr[0].pt.y - 2000) < 1);
+  const xt = cr[0].a.spanSet === 'latitude' ? 'a' : 'b';
+  assert.equal(cr[0].over, xt, 'the X tendon passes over (higher CGS at the crossing)');
+  assert.ok(cr[0].gap > 20 && !cr[0].clash && !cr[0].tight, `gap ${cr[0].gap} mm, neither clash nor tight`);
+  const cross = pkg.sheets.find((s) => s.key === 'cables_cross');
+  assert.ok(cross && cross.drawingNo.endsWith('-07C'), 'the crossings sheet is 07C');
+  assert.equal(cross.rows.length, 0, 'no clash or tight crossing to list');
+  const dxfCross = toDxf(cross.root);
+  assert.ok(dxfCross.includes('\n8\nPT-Cross-A\n') && dxfCross.includes('\n8\nPT-Cross-B\n') && dxfCross.includes('\n8\nPT-Cross-Gap\n'), 'both directions on the office crossing layers with the gap figure');
+  assert.ok(/\n1\nA \d+\n/.test(dxfCross), 'the figure at the crossing names the direction on top (A) and the gap');
+  const bPieces = (dxfCross.match(/\n8\nPT-Cross-B\n/g) || []).length;
+  assert.ok(bPieces >= 2, 'the tendon under is drawn in two pieces, broken at the crossing');
 });
 
 test('walls, drop panels, pour strips and stepped zones are read from their layers', () => {
