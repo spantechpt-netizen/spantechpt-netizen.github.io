@@ -123,13 +123,17 @@ export function drawBase(sheet, pl, level, o = {}) {
         const label = `${bm.id} BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}`;
         const off = (bm.t || 300) / 2 + 350;
         const side = sp.alongX ? { x: 0, y: 1 } : { x: -1, y: 0 };
+        const H = 1.8, widthOf = (text) => text.length * H * sheet.S * 0.9; // the label's length on the plan (model mm)
         for (const span of sp.spans) {
           const t0 = span.t0 + (span.support0 ? span.support0.along / 2 : 0), t1 = span.t1 - (span.support1 ? span.support1.along / 2 : 0);
           if (t1 - t0 < 1200) continue;
+          // a short span between two supports takes the mark alone, so neighbouring labels never run into each other
+          const text = widthOf(label) + 300 <= t1 - t0 ? label : widthOf(bm.id) + 300 <= t1 - t0 ? bm.id : null;
+          if (!text) continue;
           const m = { x: bm.a.x + sp.u.x * (t0 + t1) / 2, y: bm.a.y + sp.u.y * (t0 + t1) / 2 };
           let at = { x: m.x + side.x * off, y: m.y + side.y * off };
           if (!pointInPolygon(at, level.outline)) at = { x: m.x - side.x * off, y: m.y - side.y * off }; // an edge beam: the label on the slab side
-          pl.text(at, label, { layer: 'BEAM', h: 1.8, align: 'C', valign: 'M', rot });
+          pl.text(at, text, { layer: 'BEAM', h: H, align: 'C', valign: 'M', rot });
         }
       }
     }
