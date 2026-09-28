@@ -14,7 +14,7 @@ import { Sheet, chooseScale, layoutFor, DEFAULT_FRAME } from './sheet.mjs';
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import * as RC from './ram-concept.mjs';
-import { bbox, expandBbox, edges, rectPolygon, circlePolygon, dist, pointInPolygon, centroid } from './geometry.mjs';
+import { bbox, expandBbox, edges, rectPolygon, circlePolygon, dist, pointInPolygon, centroid, polygonArea } from './geometry.mjs';
 
 /** Column outline as a polygon (rotated columns supported). */
 export function columnPolygon(c) {
@@ -295,8 +295,9 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
   let leftover = [];
   if (r.rows && sheet.L.schedule.h > 0) {
     const Sc = sheet.L.schedule;
-    const maxRows = Math.floor((Sc.h - 6 - 6 - 5 - 6) / 4);
-    const res = sheet.table(Sc.x, Sc.y + Sc.h - 3, r.cols || SCHEDULE_COLS, r.rows, { title: r.scheduleTitle || 'BAR BENDING SCHEDULE', maxRows, totals: r.totals || null });
+    const rowH = r.rowH || 4;
+    const maxRows = Math.floor((Sc.h - 6 - 6 - 5 - 6) / rowH);
+    const res = sheet.table(Sc.x, Sc.y + Sc.h - 3, r.cols || SCHEDULE_COLS, r.rows, { title: r.scheduleTitle || 'BAR BENDING SCHEDULE', maxRows, rowH, h: r.rowH ? Math.min(1.7, r.rowH * 0.45) : 1.7, totals: r.totals || null });
     leftover = res.leftover;
     if (leftover.length && (r.detailsUsed ?? 3) >= 3) {
       sheet.pp.text(Sc.x + 2, Sc.y + 1.5, `+ ${leftover.length} MORE ROWS - SEE THE SCHEDULE FILE OF THIS SHEET`, { layer: 'SCHEDULE-TEXT', h: 1.6 });
@@ -305,7 +306,7 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
       const box = sheet.L.details[Math.min(used, 2)];
       sheet.pp.rect(box.x, box.y, box.w, box.h, { layer: 'FRAME' });
       const cols = (r.cols || SCHEDULE_COLS).map((c) => ({ ...c, w: (c.w * (box.w - 6)) / 185 }));
-      const res2 = sheet.table(box.x + 3, box.y + box.h - 3, cols, leftover, { title: (r.scheduleTitle || 'BAR BENDING SCHEDULE') + ' (CONT.)', maxRows: Math.floor((box.h - 22) / 4), totals: r.totals || null });
+      const res2 = sheet.table(box.x + 3, box.y + box.h - 3, cols, leftover, { title: (r.scheduleTitle || 'BAR BENDING SCHEDULE') + ' (CONT.)', maxRows: Math.floor((box.h - 22) / rowH), rowH, h: r.rowH ? Math.min(1.7, r.rowH * 0.45) : 1.7, totals: r.totals || null });
       leftover = res2.leftover;
     }
   }
@@ -780,111 +781,367 @@ function punchingSheet(model, level, meta) {
  *   variant 'design' - the design sheet: tendon paths and strand counts with the high / low points and their CGS
  *                      heights only; no elongations, no jacking forces, no stressing record
  */
+// ------------------------------------------------------------------ office cable drawings (design 05/06, shop 07A/07B)
+// The conventions of the office's cable shop-drawing program (Auto PT Suite, ShopOnly build): chair-height stations
+// along every tendon, the odd spacing dimensioned, high / low points on their own layers with a circle on the point,
+// live / dead anchor blocks, the five-cell tag on every tendon, anchor spacing dimensioned at the face, one schedule
+// row per mark (tendons of one strand count and one profile share a mark), the chair / duct / quantity schedules and
+// the seven general notes.
+const CAB = {
+  step: 1000, minStation: 500, roundH: 5, chairDrop: 10, anchorSet: 6, dimSkip: [980, 1020],
+  txt: 2.0, dimTxt: 1.6, tick: 0.8, tagClear: 250, tagXs: [800, 1131.3, 1773.2, 2608.5, 3387.5, 3979], tagLead: 750, tagHalf: 175,
+  smallDuctMax: 3, ductSmall: '20x50', ductLarge: '20x70', anchorAllowance: 300,
+};
+const CAB_NOTES = [
+  'ALL DIMENSIONS ARE IN MILLIMETRES UNLESS NOTED OTHERWISE.',
+  'FIGURES ALONG EACH TENDON ARE CHAIR HEIGHTS TO THE UNDERSIDE OF THE DUCT, MEASURED FROM THE SOFFIT OF THE SLAB (OR OF THE DROP PANEL WHERE THE POINT FALLS INSIDE ONE).',
+  'STATIONS ARE AT 1000 mm CENTRES; THE ODD SPACING BEFORE A HIGH OR LOW POINT IS DIMENSIONED.',
+  'HIGH POINTS AND LOW POINTS ARE ON THEIR OWN LAYERS AND COLOURS.',
+  'EXTENSIONS ARE TAKEN FROM THE ANALYSIS. ONE LIVE END: THE CALCULATED VALUE LESS 6 mm SEATING. TWO LIVE ENDS: THE SUM OF BOTH ENDS WITH NO DEDUCTION.',
+  'ANCHOR NUMBERS ARE FILLED ON SITE AGAINST THE STRESSING RECORD.',
+  'DO NOT CUT STRAND TAILS BEFORE THE STRESSING RECORD IS APPROVED.',
+];
+const STRAND_DIA = { 98.7: '12.7', 140: '15.24', 150: '15.7', 100: '12.9' };
+const PT_TEXT = { style: 'PT-PROFILE', widthFactor: 0.75 };
+
+/** The point and unit tangent at `s` along a tendon. */
+function alongTendon(t, s) {
+  const pts = t.pts;
+  let acc = 0;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const L = dist(pts[i], pts[i + 1]);
+    if (s <= acc + L + 1e-6 || i + 2 >= pts.length) {
+      const u = L > 0 ? { x: (pts[i + 1].x - pts[i].x) / L, y: (pts[i + 1].y - pts[i].y) / L } : { x: 1, y: 0 };
+      const d = Math.max(0, Math.min(L, s - acc));
+      return { p: { x: pts[i].x + u.x * d, y: pts[i].y + u.y * d }, u };
+    }
+    acc += L;
+  }
+  return { p: pts[pts.length - 1], u: { x: 1, y: 0 } };
+}
+
+/**
+ * The chair-height stations of a tendon (office rule): every profile node, and exactly 1000 between them from each
+ * node on, the remainder before the next node kept as the one odd spacing (merged into the last metre when it is
+ * under 500). Height = CGS above the soffit less the chair drop (the chair carries the underside of the duct),
+ * rounded to 5 and never above the slab; `cgs` gives the profile height itself (design sheets).
+ */
+function cableStations(t, thicknessAt, { chairDrop = CAB.chairDrop, cgs = false } = {}) {
+  if (!t.heights) return [];
+  const st = [0];
+  for (let i = 1; i < t.pts.length; i++) st.push(st[i - 1] + dist(t.pts[i - 1], t.pts[i]));
+  const ext = new Map(RC.tendonExtremes(t).map((e) => [e.i, e.kind]));
+  const stations = [0];
+  for (let i = 0; i + 1 < st.length; i++) {
+    const a = st[i], b = st[i + 1], L = b - a;
+    if (L <= 1e-9) continue;
+    let n = Math.floor(L / CAB.step + 1e-9);
+    const tail = L - n * CAB.step;
+    if (n >= 1 && tail < CAB.minStation - 1e-9) n--;
+    for (let k = 1; k <= n; k++) stations.push(a + k * CAB.step);
+    stations.push(b);
+  }
+  const out = [];
+  const seen = new Set();
+  for (const s of stations) {
+    const key = Math.round(s);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const { p, u } = alongTendon(t, s);
+    let iNode = -1;
+    for (let i = 0; i < st.length; i++) if (Math.abs(st[i] - s) < 1e-3) { iNode = i; break; }
+    // (an anchor is an anchor, never a high / low point: the office profile flags come from the control points between)
+    const kind = iNode < 0 ? '' : iNode === 0 || iNode === st.length - 1 ? 'end' : ext.get(iNode) === 'H' ? 'high' : ext.get(iNode) === 'L' ? 'low' : '';
+    const th = (iNode >= 0 && t.thks?.[iNode]) || thicknessAt(p);
+    const cg = RC.tendonHeightAt(t, s);
+    if (cg == null) continue;
+    let h = cgs ? cg : cg - chairDrop;
+    h = Math.max(0, Math.min(h, th));
+    h = Math.round(h / CAB.roundH) * CAB.roundH;
+    out.push({ s, p, u, h, kind, i: iNode, th });
+  }
+  return out;
+}
+
+/** The written extension (office rule): two live ends = the sum of both RAM figures; one = RAM's figure less 6 mm seating. */
+function cableExtension(t) {
+  const es = (t.elongations || []).filter((v) => v != null);
+  if (es.length >= 2) return Math.round(es.reduce((a, b) => a + b, 0));
+  if (es.length === 1) return Math.max(0, Math.round(es[0] - CAB.anchorSet));
+  return t.elongation != null ? Math.round(t.elongation) : null;
+}
+
+/** The office anchor and tag blocks (geometry of the office template, in model mm at 1:100, scaled by G to the sheet scale). */
+function cableBlocks(root, G) {
+  const P = (pts) => pts.map(([x, y]) => ({ x: x * G, y: y * G }));
+  if (!root.blocks.has('LiveEnd')) {
+    const b = root.block('LiveEnd');
+    b.pline(P([[90, -110], [0, -125], [0, 125], [90, 110]]), { layer: '0' });
+    b.pline(P([[300, 55], [300, -55], [310, -55], [310, 55]]), { layer: '0', closed: true });
+    b.pline(P([[90, -126], [107, -125], [109, -111], [109, 111], [107, 125], [90, 126]]), { layer: '0' });
+    b.pline(P([[310, 35], [800, 35], [800, -35], [310, -35]]), { layer: '0', closed: true });
+    b.pline(P([[195, -91], [205, -91], [205, 91], [195, 91]]), { layer: '0', closed: true });
+    b.circle(149 * G, 0, 12.5 * G, { layer: '0' });
+  }
+  if (!root.blocks.has('DeadEnd')) {
+    const b = root.block('DeadEnd');
+    b.pline(P([[70, 35], [500, 35], [500, -35], [70, -35]]), { layer: '0', closed: true });
+    b.pline(P([[0, -125], [0, 125], [70, 125], [70, -125]]), { layer: '0', closed: true });
+  }
+}
+
+/**
+ * The cable sheet of one tendon direction from the RAM Concept model, in the office convention.
+ *   variant 'design' (sheets 05 / 06): tendons, anchors, tags without extension, the high / low points with the
+ *     CGS height of the profile - no chairs, no extension;
+ *   variant 'shop' (07A / 07B): the chair heights at every station, the odd spacings dimensioned, extensions on
+ *     the tags and in the schedule, chair / duct / quantity schedules and the stressing record.
+ */
 export function ramCablesSheet(model, level, meta, { set = 'latitude', variant = 'shop' } = {}) {
   return (sheet, [pl]) => {
-    const S = sheet.S;
+    const S = sheet.S, G = S / 100; // paper mm -> model mm; block geometry drawn for 1:100 scales with the sheet
     const pt = level.ram.pt;
     const design = variant === 'design';
-    const chairSp = model.spec.pt?.chairSpacing || 1000;
-    const ductH = pt.ductHeight || model.spec.pt?.ductHeight || 20;
-    const chairOf = (cgs) => Math.max(0, Math.round((cgs - ductH / 2) / 5) * 5);
+    const fam = set === 'latitude' ? 'A' : 'B';
+    const TH = CAB.txt * S, TICK = CAB.tick * S * 0.6;
+    const root = sheet.blk.root;
+    root.textStyleDef('PT-PROFILE', { font: 'romans.shx', widthFactor: 0.75 });
+    cableBlocks(root, G);
+    const dimStation = { txt: CAB.dimTxt * S, tsz: CAB.tick * S, asz: CAB.tick * S, exe: 1.2 * S, exo: 0.8 * S, gap: 0.8 * S, tad: 1, clrt: 2, clrd: 256, clre: 256, dec: 0, txsty: 'PT-PROFILE' };
+    const dimSpacing = { ...dimStation, txt: CAB.dimTxt * 1.25 * S };
     drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false, regionLabels: false, ubarRegions: false });
-    const rows = [];
+
+    const outline = level.outline || [];
+    const openings = (level.openings || []).map((o) => R.regionPolygon(o)).filter((p) => p && p.length >= 3);
+    const zones = (level.thickZones || []).filter((z) => z.polygon && z.thickness);
+    const thicknessAt = (p) => { for (const z of zones) if (pointInPolygon(p, z.polygon)) return z.thickness; return level.thickness; };
+    const outsideSlab = (p) => (outline.length >= 3 && !pointInPolygon(p, outline)) || openings.some((o) => pointInPolygon(p, o));
     const tendons = level.ram.tendons.filter((t) => t.spanSet === set);
-    let hlCount = 0, chairCount = 0, noProfile = 0;
-    const along = (t, i) => { const p = t.pts[i], q = t.pts[Math.min(i + 1, t.pts.length - 1)] || p; const q0 = i + 1 < t.pts.length ? q : t.pts[i - 1] || p; let a = (Math.atan2(q0.y - p.y, q0.x - p.x) * 180) / Math.PI; if (i + 1 >= t.pts.length) a += 180; if (a >= 89.5 || a < -90.5) a += 180; return a; };
+    const samplesOf = new Map(tendons.map((t) => [t, cableStations(t, thicknessAt, { cgs: design })]));
+    // marks: tendons of one strand count and one profile (high / low / end stations within 100 mm and 5 mm) share one
+    const sigToMark = new Map();
+    const markOf = new Map();
     for (const t of tendons) {
-      pl.pline(t.pts, { layer: 'CABLE' });
-      const [a, b] = [t.pts[0], t.pts[t.pts.length - 1]];
-      const endSym = (p, q, live) => {
-        const L = dist(p, q) || 1, ux = (q.x - p.x) / L, uy = (q.y - p.y) / L;
-        if (live) pl.solid([{ x: p.x, y: p.y }, { x: p.x + ux * 1.2 * S - uy * 0.5 * S, y: p.y + uy * 1.2 * S + ux * 0.5 * S }, { x: p.x + ux * 1.2 * S + uy * 0.5 * S, y: p.y + uy * 1.2 * S - ux * 0.5 * S }, { x: p.x, y: p.y }], { layer: 'CABLE-LIVE' });
-        else pl.circle(p, 0.5 * S, { layer: 'CABLE-LIVE' });
-      };
-      endSym(a, t.pts[1], t.live[0]); endSym(b, t.pts[t.pts.length - 2], t.live[1]);
-      const mi = Math.floor(t.pts.length / 2);
-      const m1 = t.pts[mi - 1] || a, m2 = t.pts[mi] || b;
-      let rotd = (Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180) / Math.PI; if (rotd >= 89.5 || rotd < -90.5) rotd += 180;
-      pl.text({ x: (m1.x + m2.x) / 2, y: (m1.y + m2.y) / 2 + 0.5 * S }, `${t.id} (${t.strands}S)`, { layer: 'CABLE-TEXT', h: 1.7, rot: rotd, align: 'C' });
-      // high / low points with their CGS height above the soffit (both variants)
-      const ext = RC.tendonExtremes(t);
+      const smp = samplesOf.get(t);
+      const sig = `${t.strands}|${smp.filter((x) => x.kind).map((x) => `${x.kind}${Math.round(x.s / 100)}:${x.h}`).join(',')}|${smp.length ? '' : Math.round(t.length / 100)}`;
+      let mark = sigToMark.get(sig);
+      if (!mark) { mark = `${fam}.${String(sigToMark.size + 1).padStart(2, '0')}`; sigToMark.set(sig, mark); }
+      markOf.set(t, mark);
+    }
+    const seqOf = (t) => Number((t.id || '').split('-')[1]) || tendons.indexOf(t) + 1;
+    const ang = (u) => (Math.atan2(u.y, u.x) * 180) / Math.PI;
+
+    let stationCount = 0, dimCount = 0, skipped = 0, noProfile = 0;
+    const anchors = [];
+    const chairCounts = new Map();
+    const rowsByMark = new Map();
+    const rows = [];
+    for (const t of tendons) {
+      const smp = samplesOf.get(t);
       if (!t.heights) noProfile++;
-      for (const e of ext) {
-        const rotp = along(t, e.i);
-        const nrm = { x: -Math.sin((rotp * Math.PI) / 180), y: Math.cos((rotp * Math.PI) / 180) };
-        pl.line({ x: e.p.x - nrm.x * 0.4 * S, y: e.p.y - nrm.y * 0.4 * S }, { x: e.p.x + nrm.x * 0.4 * S, y: e.p.y + nrm.y * 0.4 * S }, { layer: 'CABLE-HL' });
-        pl.text({ x: e.p.x - nrm.x * 0.7 * S, y: e.p.y - nrm.y * 0.7 * S }, `${e.kind}${e.h}`, { layer: 'CABLE-HL', h: 1.4, rot: rotp, align: 'C', valign: 'T' });
-        hlCount++;
-      }
-      let chairs = 0;
-      if (!design && t.heights) {
-        // chairs every `chairSp` from the start of the tendon: a tick across the tendon and the chair height beside it
-        for (let sAlong = chairSp; sAlong < t.length - chairSp / 2; sAlong += chairSp) {
-          let acc = 0, i = 0;
-          while (i + 1 < t.pts.length && acc + dist(t.pts[i], t.pts[i + 1]) < sAlong) { acc += dist(t.pts[i], t.pts[i + 1]); i++; }
-          const p0 = t.pts[i], p1 = t.pts[Math.min(i + 1, t.pts.length - 1)];
-          const seg = dist(p0, p1) || 1;
-          const u = { x: (p1.x - p0.x) / seg, y: (p1.y - p0.y) / seg };
-          const q = { x: p0.x + u.x * (sAlong - acc), y: p0.y + u.y * (sAlong - acc) };
-          const cgs = RC.tendonHeightAt(t, sAlong);
-          if (cgs == null) continue;
-          const nrm = { x: -u.y, y: u.x };
-          let rotc = (Math.atan2(u.y, u.x) * 180) / Math.PI; if (rotc >= 89.5 || rotc < -90.5) rotc += 180;
-          pl.line({ x: q.x - nrm.x * 0.25 * S, y: q.y - nrm.y * 0.25 * S }, { x: q.x + nrm.x * 0.25 * S, y: q.y + nrm.y * 0.25 * S }, { layer: 'CABLE-CHAIR' });
-          pl.text({ x: q.x + nrm.x * 0.35 * S, y: q.y + nrm.y * 0.35 * S }, String(chairOf(cgs)), { layer: 'CABLE-CHAIR', h: 1.2, rot: rotc, align: 'C', valign: 'B' });
-          chairs++; chairCount++;
+      pl.pline(t.pts, { layer: `Tendons-${fam}` });
+      // the stations: a tick across the tendon, the height parallel to it; high / low points bigger, on their own
+      // layers, with the circle on the point itself (design sheets: the high / low points only, as the profile)
+      const shown = design ? smp.filter((x) => x.kind === 'high' || x.kind === 'low') : smp;
+      shown.forEach((x) => {
+        const k = smp.indexOf(x);
+        const a = smp[Math.max(k - 1, 0)].p, b = smp[Math.min(k + 1, smp.length - 1)].p;
+        const L = dist(a, b);
+        const n = L > 1e-9 ? { x: -(b.y - a.y) / L, y: (b.x - a.x) / L } : { x: 0, y: 1 };
+        const suffix = x.kind === 'high' ? '-HIGH' : x.kind === 'low' ? '-LOW' : '';
+        const big = suffix ? 1.35 : 1;
+        pl.line({ x: x.p.x - n.x * TICK * big, y: x.p.y - n.y * TICK * big }, { x: x.p.x + n.x * TICK * big, y: x.p.y + n.y * TICK * big }, { layer: `Hline-Profile-${fam}${suffix}` });
+        if (suffix) pl.circle(x.p, TICK * 0.55, { layer: `PT-HighLow-${fam}` });
+        const off = TH * 0.35 * big;
+        pl.text({ x: x.p.x + n.x * off, y: x.p.y + n.y * off }, `${design && suffix ? (x.kind === 'high' ? 'H' : 'L') : ''}${x.h}`, { layer: `Text-Profile-${fam}${suffix}`, h: CAB.txt, rot: ang({ x: n.y, y: -n.x }), align: 'C', valign: 'B', ...PT_TEXT });
+        stationCount++;
+        if (!design) chairCounts.set(x.h, (chairCounts.get(x.h) || 0) + 1);
+      });
+      // the odd spacings: a dimension along the tendon between consecutive stations, except the regular metre
+      if (!design) {
+        for (let k = 0; k + 1 < smp.length; k++) {
+          const a = smp[k].p, b = smp[k + 1].p;
+          const gap = smp[k + 1].s - smp[k].s;
+          if (gap >= CAB.dimSkip[0] && gap <= CAB.dimSkip[1]) { skipped++; continue; }
+          const L = dist(a, b);
+          if (L < 1) continue;
+          const n = { x: -(b.y - a.y) / L, y: (b.x - a.x) / L };
+          const m = { x: (a.x + b.x) / 2 - n.x * TH * 2.5, y: (a.y + b.y) / 2 - n.y * TH * 2.5 };
+          pl.dimension(a, b, m, { style: 'PT-DIM-STATION', styleDef: dimStation, layer: `Dimensions-Profile-${fam}` });
+          dimCount++;
         }
       }
-      const hl = ext.map((e) => `${e.kind}${e.h}`).join(' ');
-      if (design) rows.push({ id: t.id, type: `${pt.ductType || 'bonded'} ${t.harped ? 'H' : ''}`.trim(), strands: t.strands, length: (t.length / 1000).toFixed(2), live: t.live.filter(Boolean).length === 2 ? 'BOTH' : t.live[0] ? 'START' : t.live[1] ? 'END' : '-', hl: hl || (t.heights ? 'STRAIGHT' : 'N/A'), qty: 1 });
-      else rows.push({ id: t.id, type: `${pt.ductType || 'bonded'} ${t.harped ? 'H' : ''}`.trim(), strands: t.strands, length: (t.length / 1000).toFixed(2), live: t.live.filter(Boolean).length === 2 ? 'BOTH' : t.live[0] ? 'START' : t.live[1] ? 'END' : '-', jack: t.jackForce ?? '', elong: t.elongation ?? '', chairs, qty: 1, remarks: hl ? `${hl}` : `${t.segments} SEG.` });
+      // the anchors: the live-end block where a jack sits in the model, the dead-end block elsewhere
+      const p0 = t.pts[0], p1 = t.pts[1] || p0, q0 = t.pts[t.pts.length - 1], q1 = t.pts[t.pts.length - 2] || q0;
+      const out0 = ang({ x: p0.x - p1.x, y: p0.y - p1.y }), out1 = ang({ x: q0.x - q1.x, y: q0.y - q1.y });
+      for (const [p, a, live] of [[p0, out0, t.live[0]], [q0, out1, t.live[1]]]) {
+        const Q = pl.P(p);
+        sheet.blk.insert(live ? 'LiveEnd' : 'DeadEnd', Q.x, Q.y, { rot: a + 180, layer: `Details-${fam}` });
+      }
+      // the tag on the tendon line, out of its live end (the start when both or neither are live): five cells on a
+      // leader; where the box would sit in the slab it steps 250 aside towards the outside
+      const ext = design ? null : cableExtension(t);
+      const lengthM = (t.length / 1000).toFixed(1);
+      const [tagAt, tagAng] = t.live[0] || !t.live[1] ? [p0, out0] : [q0, out1];
+      const u = { x: Math.cos((tagAng * Math.PI) / 180), y: Math.sin((tagAng * Math.PI) / 180) }, n = { x: -u.y, y: u.x };
+      const xs = CAB.tagXs.map((v) => v * G);
+      let ins = tagAt;
+      const centre = { x: tagAt.x + u.x * (xs[0] + xs[5]) / 2, y: tagAt.y + u.y * (xs[0] + xs[5]) / 2 };
+      if (!outsideSlab(centre)) {
+        const probe = 3000;
+        const outPos = outsideSlab({ x: centre.x + n.x * probe, y: centre.y + n.y * probe }), outNeg = outsideSlab({ x: centre.x - n.x * probe, y: centre.y - n.y * probe });
+        const sign = outPos && !outNeg ? 1 : outNeg && !outPos ? -1 : 1;
+        ins = { x: tagAt.x + n.x * CAB.tagClear * G * sign, y: tagAt.y + n.y * CAB.tagClear * G * sign };
+        pl.line(tagAt, ins, { layer: `Details-${fam}` });
+      }
+      const at = (x, y) => ({ x: ins.x + u.x * x + n.x * y, y: ins.y + u.y * x + n.y * y });
+      const hh = CAB.tagHalf * G;
+      pl.line(at(0, 0), at(CAB.tagLead * G, 0), { layer: `Details-${fam}` });
+      pl.line(at(xs[0], -hh), at(xs[5], -hh), { layer: `Details-${fam}` });
+      pl.line(at(xs[0], hh), at(xs[5], hh), { layer: `Details-${fam}` });
+      for (const x of xs) pl.line(at(x, -hh), at(x, hh), { layer: `Details-${fam}` });
+      const cells = [String(t.strands), ext == null ? '' : String(ext), lengthM, markOf.get(t), String(seqOf(t))];
+      cells.forEach((v, i) => { if (v) pl.text(at((xs[i] + xs[i + 1]) / 2, -100 * G), v, { layer: `Details-${fam}`, h: CAB.txt, rot: tagAng, align: 'C', valign: 'B', color: 3, ...PT_TEXT }); });
+      anchors.push({ p: p0, live: t.live[0] }, { p: q0, live: t.live[1] });
+      // one schedule row per mark
+      const mark = markOf.get(t);
+      let row = rowsByMark.get(mark);
+      if (!row) {
+        row = { mark, qty: 0, seqs: [], strands: t.strands, length: lengthM, live: t.live.filter(Boolean).length, elong: ext == null ? '' : ext, chairs: 0, type: '', guts: '', jack: '', _t: t };
+        rowsByMark.set(mark, row); rows.push(row);
+      }
+      row.qty++; row.seqs.push(seqOf(t)); row.chairs += smp.length;
     }
-    const cols = design ? [
-      { key: 'id', title: 'TENDON\nID', w: 16 }, { key: 'type', title: 'TYPE', w: 18 }, { key: 'strands', title: 'No.\nSTR.', w: 12 },
-      { key: 'length', title: 'LENGTH\n(m)', w: 17 }, { key: 'live', title: 'LIVE\nEND', w: 16 }, { key: 'hl', title: 'HIGH / LOW POINTS (CGS ABOVE SOFFIT, mm)', w: 94, align: 'L' }, { key: 'qty', title: 'QTY', w: 12 },
-    ] : [
-      { key: 'id', title: 'TENDON\nID', w: 16 }, { key: 'type', title: 'TYPE', w: 16 }, { key: 'strands', title: 'No.\nSTR.', w: 12 },
-      { key: 'length', title: 'LENGTH\n(m)', w: 17 }, { key: 'live', title: 'LIVE\nEND', w: 16 }, { key: 'jack', title: 'JACK\n(kN)', w: 17 }, { key: 'elong', title: 'ELONG.\n(mm)', w: 17 }, { key: 'chairs', title: 'No.\nCHAIRS', w: 14 }, { key: 'qty', title: 'QTY', w: 10 }, { key: 'remarks', title: 'H / L POINTS', w: 50, align: 'L' },
+    // the strand line of the schedule: type, breaking load and the jacking force per strand
+    const area = pt.strandArea || 140, fpu = pt.fpu || 1860;
+    const jackRatio = (tendons[0]?.jackStress || pt.jackStress || 0.78 * fpu) / fpu;
+    const dia = STRAND_DIA[Math.round(area * 10) / 10] || STRAND_DIA[Math.round(area)] || '15.24';
+    for (const r of rows) {
+      const chunks = []; const seqs = [...r.seqs].sort((a, b) => a - b);
+      for (let i = 0; i < seqs.length; i += 6) chunks.push(seqs.slice(i, i + 6).join(','));
+      r.anchors = chunks.join(' / ');
+      r.type = dia; r.guts = Math.round((area * fpu) / 1000); r.jack = Math.round((area * jackRatio * fpu) / 1000);
+      delete r._t;
+    }
+    // the anchor spacing at every face line, dimensioned perpendicular to the tendons, outside the slab
+    const axis = fam === 'A' ? 'y' : 'x', across = fam === 'A' ? 'x' : 'y';
+    const groups = new Map();
+    for (const a of anchors) { const key = Math.round(a.p[across] / 2000); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(a.p); }
+    for (const g of groups.values()) {
+      if (g.length < 2) continue;
+      g.sort((p, q) => p[axis] - q[axis]);
+      for (let i = 0; i + 1 < g.length; i++) {
+        const p = g[i], q = g[i + 1];
+        if (Math.abs(q[axis] - p[axis]) < 200) continue;
+        const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+        const perp = fam === 'A' ? { x: 1, y: 0 } : { x: 0, y: 1 };
+        const d = TH * 4;
+        const plus = { x: mid.x + perp.x * d, y: mid.y + perp.y * d }, minus = { x: mid.x - perp.x * d, y: mid.y - perp.y * d };
+        const dl = outsideSlab(plus) && !outsideSlab(minus) ? plus : minus;
+        pl.dimension(p, q, dl, { style: 'PT-DIM-SPACING', styleDef: dimSpacing, angle: fam === 'A' ? 90 : 0, layer: `Dimensions-Sec-${fam}` });
+      }
+    }
+
+    // ---- schedule and details
+    const dirTitle = fam === 'A' ? 'DIRECTION A (LATITUDE)' : 'DIRECTION B (LONGITUDE)';
+    const cols = [
+      { key: 'mark', title: 'MARK\nNO.', w: 16 }, { key: 'qty', title: 'QTY', w: 10 }, { key: 'anchors', title: 'ANCHOR NO.\n(SEE NOTE 6)', w: 30, align: 'L' }, { key: 'strands', title: 'NO. OF\nSTRANDS', w: 14 },
+      { key: 'length', title: 'LENGTH\n(M)', w: 16 }, { key: 'live', title: 'NO. OF\nLIVE ENDS', w: 16 },
+      ...(design ? [] : [{ key: 'elong', title: 'EXTENSION\n(MM)', w: 18 }]),
+      { key: 'type', title: 'STRAND\nTYPE', w: 16 }, { key: 'guts', title: 'GUTS\n(KN)', w: 16 },
+      ...(design ? [] : [{ key: 'jack', title: 'JACKING FORCE\nPER STRAND (KN)', w: 33 }]),
     ];
-    const totalStrandM = tendons.reduce((s, t) => s + (t.length / 1000) * t.strands, 0);
-    const d1 = sheet.detailBox(design ? 0 : 0, 'TENDON SYMBOLS', 'N.T.S.');
-    const det1 = D.tendonLegend();
-    det1.draw(sheet.detailPen(d1, 12, det1.bbox));
-    const dirTitle = set === 'latitude' ? 'LATITUDE (DIRECTION 1)' : 'LONGITUDE (DIRECTION 2)';
-    let detailsUsed = 1;
+    const W = cols.reduce((s, c) => s + c.w, 0);
+    if (design) cols[2].w += 185 - W; else if (W !== 185) cols[2].w += 185 - W;
+    const strands = tendons.reduce((s, t) => s + t.strands, 0);
+    const liveEnds = anchors.filter((a) => a.live).length;
+    const strandM = tendons.reduce((s, t) => s + (t.length / 1000) * t.strands, 0);
+    const kgPerM = (area * 7850) / 1e6;
+    let detailsUsed = 2;
     if (!design) {
-      const d2 = sheet.detailBox(1, 'CHAIR HEIGHTS', '');
-      const pp = sheet.detailPen(d2, 1, { minX: 0, maxX: d2.w, minY: 0, maxY: d2.h, cx: d2.w / 2, cy: d2.h / 2 });
-      [`CHAIR HEIGHT = TENDON CGS ABOVE SOFFIT - DUCT HEIGHT / 2 (${ductH} mm DUCT), ROUNDED TO 5 mm; WRITTEN ALONG EVERY TENDON AT ${chairSp} mm FROM ITS START (${chairCount} CHAIRS ON THIS SHEET).`,
-        'H### / L### = HIGH / LOW POINT OF THE CGS PROFILE (mm ABOVE SOFFIT) AT THE SUPPORTS / MID-SPANS; THE CHAIRS BETWEEN THEM FOLLOW THE RAM REVERSE-CURVE PROFILE.',
-        'CHAIRS: BAR CHAIRS AT 1.0 m c/c TIED TO THE DUCT, HEIGHTS AS WRITTEN; DUCT SUPPORTED ON EVERY CHAIR AND AT EVERY HIGH POINT.'].forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 12, h, { layer: 'NOTES', h: 1.7, width: d2.w - 8 }));
-      const manyTendons = tendons.length > 30;
-      if (!manyTendons) {
-        const d3 = sheet.detailBox(2, 'STRESSING RECORD', '');
-        const recCols = [{ key: 'a', title: 'TENDON', w: 24 }, { key: 'b', title: 'DATE', w: 26 }, { key: 'c', title: 'GAUGE\n(bar)', w: 26 }, { key: 'd', title: 'ELONG.\nCALC.', w: 30 }, { key: 'e', title: 'ELONG.\nMEAS.', w: 30 }, { key: 'f', title: '%', w: 18 }, { key: 'g', title: 'SIGN', w: d3.w - 6 - 154 }];
-        sheet.table(d3.x + 3, d3.y + d3.h - 10, recCols, tendons.map((t) => ({ a: t.id, d: t.elongation ?? '' })), { maxRows: Math.floor((d3.h - 18) / 3.2), headH: 6, rowH: 3.2, h: 1.3 });
-        detailsUsed = 3;
-      } else detailsUsed = 2;
+      // 1: chair height schedule (the dead-end chairs, 300 wide, on their own rows)
+      const d1 = sheet.detailBox(0, 'CHAIR HEIGHT SCHEDULE', '');
+      const base = level.thickness;
+      const dead = new Map();
+      for (const t of tendons) for (const [p, live] of [[t.pts[0], t.live[0]], [t.pts[t.pts.length - 1], t.live[1]]]) {
+        if (live) continue;
+        const th = thicknessAt(p);
+        const h = Math.round(Math.max(0, th > base + 1e-6 ? th - base / 2 - 10 : base / 2 - 10));
+        dead.set(h, (dead.get(h) || 0) + 1);
+      }
+      const chairRows = [...chairCounts.entries()].sort((a, b) => a[0] - b[0]).map(([h, n]) => ({ h: String(h), n }));
+      for (const [h, n] of [...dead.entries()].sort((a, b) => a[0] - b[0])) chairRows.push({ h: `${h} DEAD END`, n });
+      const chairCols = [{ key: 'h', title: 'HEIGHT\n(mm)', w: 26 }, { key: 'n', title: 'QTY', w: 14 }];
+      const perCol = Math.max(1, Math.floor((d1.h - 18) / 3.2));
+      let left = chairRows, cx0 = d1.x + 3;
+      while (left.length && cx0 + 40 <= d1.x + d1.w) {
+        const res = sheet.table(cx0, d1.y + d1.h - 10, chairCols, left, { maxRows: perCol, headH: 6, rowH: 3.2, h: 1.3 });
+        left = res.leftover; cx0 += 44;
+      }
+      sheet.pp.text(d1.x + 3, d1.y + 2, `DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10). CHAIR SET ${CAB.chairDrop} mm BELOW THE TENDON CENTRELINE.`, { layer: 'NOTES', h: 1.4 });
+      // 2: duct schedule and bill of quantities
+      const d2 = sheet.detailBox(1, 'DUCT SCHEDULE AND BILL OF QUANTITIES', '');
+      const ductLen = (t) => Math.max(0, t.length / 1000 - (t.live.filter(Boolean).length === 1 ? 1 : 0));
+      const small = tendons.filter((t) => t.strands <= CAB.smallDuctMax), large = tendons.filter((t) => t.strands > CAB.smallDuctMax);
+      const ductCols = [{ key: 'a', title: 'DUCT SIZE\n(mm)', w: 24 }, { key: 'b', title: 'STRANDS', w: 20 }, { key: 'c', title: 'TENDONS', w: 18 }, { key: 'd', title: 'LENGTH\n(m)', w: 22 }];
+      const r1 = sheet.table(d2.x + 3, d2.y + d2.h - 10, ductCols, [
+        { a: CAB.ductSmall, b: `UP TO ${CAB.smallDuctMax}`, c: small.length, d: Math.round(small.reduce((s, t) => s + ductLen(t), 0)) },
+        { a: CAB.ductLarge, b: `OVER ${CAB.smallDuctMax}`, c: large.length, d: Math.round(large.reduce((s, t) => s + ductLen(t), 0)) },
+      ], { headH: 6, rowH: 3.5, h: 1.4 });
+      const netArea = Math.abs(polygonArea(outline)) / 1e6 - openings.reduce((s, o) => s + Math.abs(polygonArea(o)) / 1e6, 0);
+      const cutting = tendons.reduce((s, t) => s + t.strands * (t.length / 1000 + (CAB.anchorAllowance / 1000) * Math.max(1, t.live.filter(Boolean).length)), 0);
+      const kg = cutting * kgPerM;
+      const boqCols = [{ key: 'a', title: 'ITEM', w: 56, align: 'L' }, { key: 'b', title: 'VALUE', w: 28, align: 'R' }];
+      sheet.table(d2.x + 3, r1.y - 4, boqCols, [
+        { a: 'TENDONS', b: tendons.length }, { a: 'STRANDS', b: strands }, { a: 'STRAND LENGTH (CUT, 300 PER ANCHOR)', b: `${Math.round(cutting)} m` },
+        { a: 'NET SLAB AREA (OPENINGS DEDUCTED)', b: `${netArea.toFixed(1)} m2` }, { a: 'STRAND WEIGHT', b: `${Math.round(kg)} kg` },
+        { a: 'RATE', b: `${netArea ? (kg / netArea).toFixed(2) : '-'} kg/m2` }, { a: 'RATE', b: `${netArea ? (cutting / netArea).toFixed(2) : '-'} strand-m/m2` },
+      ], { headH: 5, rowH: 3.2, h: 1.3 });
+      // 3: stressing record (unless the schedule needs the box for its continuation)
+      const maxRows = Math.floor((sheet.L.schedule.h - 23) / 3);
+      if (rows.length > maxRows) { detailsUsed = 2; } else {
+      const d3 = sheet.detailBox(2, 'STRESSING RECORD', '');
+      const recCols = [{ key: 'a', title: 'TENDON', w: 22 }, { key: 'm', title: 'MARK', w: 16 }, { key: 'b', title: 'DATE', w: 24 }, { key: 'c', title: 'GAUGE\n(bar)', w: 22 }, { key: 'd', title: 'EXT.\nCALC.', w: 22 }, { key: 'e', title: 'EXT.\nMEAS.', w: 22 }, { key: 'f', title: '%', w: 14 }, { key: 'g', title: 'SIGN', w: Math.max(20, d3.w - 6 - 142) }];
+      sheet.table(d3.x + 3, d3.y + d3.h - 10, recCols, tendons.map((t) => ({ a: t.id, m: markOf.get(t), d: cableExtension(t) ?? '' })), { maxRows: Math.floor((d3.h - 18) / 3.2), headH: 6, rowH: 3.2, h: 1.3 });
+      detailsUsed = 3;
+      }
     } else {
-      const d2 = sheet.detailBox(1, 'PROFILE POINTS', '');
-      const pp = sheet.detailPen(d2, 1, { minX: 0, maxX: d2.w, minY: 0, maxY: d2.h, cx: d2.w / 2, cy: d2.h / 2 });
-      ['H### = HIGH POINT, L### = LOW POINT OF THE TENDON CGS PROFILE, mm ABOVE THE SLAB SOFFIT, AS DESIGNED IN RAM CONCEPT; INTERMEDIATE HEIGHTS FOLLOW THE REVERSE-CURVE PROFILE AND ARE GIVEN ON THE SHOP DRAWINGS.',
-        'DESIGN DRAWING: STRAND COUNTS, PATHS, STRESSING ENDS AND PROFILE POINTS ONLY. JACKING FORCES, ELONGATIONS AND CHAIRS ARE ON THE SHOP DRAWINGS.'].forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.7, width: d2.w - 8 }));
-      detailsUsed = 2;
+      const d1 = sheet.detailBox(0, 'PROFILE POINTS', '');
+      const pp = sheet.pp;
+      ['H### = HIGH POINT, L### = LOW POINT OF THE TENDON CGS PROFILE, mm ABOVE THE SLAB SOFFIT, AS DESIGNED IN RAM CONCEPT (THE CIRCLE MARKS THE POINT ITSELF). THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.',
+        'DESIGN DRAWING: STRAND COUNTS, PATHS, STRESSING ENDS AND PROFILE POINTS ONLY. EXTENSIONS, JACKING FORCES AND CHAIRS ARE ON THE SHOP DRAWINGS.'].forEach((h, i) => pp.mtext(d1.x + 4, d1.y + d1.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.7, width: d1.w - 8 }));
+      const d2 = sheet.detailBox(1, 'TENDON SYMBOLS', 'N.T.S.');
+      const det = D.tendonLegend();
+      det.draw(sheet.detailPen(d2, 12, det.bbox));
     }
+    const cover = model.spec.cover || 25;
+    const drop = zones.length ? Math.max(...zones.map((z) => z.thickness)) : null;
+    const notes = design ? [
+      commonNotes(model, level)[0],
+      `PT SYSTEM: ${pt.system || ''} - ${pt.ductType || 'bonded'} FLAT DUCT ${pt.ductWidth ? `${pt.ductWidth} x ${pt.ductHeight} mm` : ''}, ${pt.strandsPerDuct || ''} STRANDS PER DUCT MAX. STRAND ${dia} mm, Aps = ${area} mm², fpu = ${Math.round(fpu)} MPa.`,
+      `TENDON PATHS, STRAND COUNTS, STRESSING ENDS AND THE HIGH / LOW POINTS OF THE PROFILE ARE READ FROM THE RAM CONCEPT MODEL (${stationCount} PROFILE POINTS ON THIS SHEET${noProfile ? `; ${noProfile} TENDONS CARRY NO PROFILE IN THE MODEL` : ''}). THE TAG ON EVERY TENDON READS STRANDS / LENGTH / MARK / No.; TENDONS OF ONE STRAND COUNT AND ONE PROFILE SHARE A MARK. THE OTHER DIRECTION IS ON ITS OWN SHEET.`,
+      'DESIGN DRAWING - NOT FOR FABRICATION. EXTENSIONS, JACKING FORCES AND CHAIR HEIGHTS ARE GIVEN ON THE SHOP DRAWINGS.',
+    ] : [
+      ...CAB_NOTES,
+      `SLAB ${level.thickness}${drop ? ` / DROP ${drop}` : ''} · COVER TOP ${cover} BOTTOM ${cover} · CHAIR SET ${CAB.chairDrop} mm BELOW THE TENDON CENTRELINE. STRAND ${dia} mm, Aps = ${area} mm², fpu = ${Math.round(fpu)} MPa, JACKING ${Math.round(jackRatio * 100)} % fpu. THE TAG ON EVERY TENDON READS STRANDS / EXTENSION / LENGTH / MARK / No. THE OTHER DIRECTION IS ON ITS OWN SHEET.${noProfile ? ` ${noProfile} TENDONS CARRY NO PROFILE IN THE MODEL: THEIR CHAIRS ARE TO BE SET FROM THE RAM PROFILE REPORT.` : ''}`,
+    ];
     return {
-      rows, cols, scheduleTitle: `PT CABLES SCHEDULE - ${dirTitle}${design ? ' (DESIGN)' : ''}`, detailsUsed, totals: `${tendons.length} TENDONS · ${Math.round(totalStrandM)} m STRAND · ${tendons.filter((t) => t.live[0]).length + tendons.filter((t) => t.live[1]).length} LIVE ENDS`,
-      planTitles: [`PT TENDON LAYOUT - ${dirTitle}${design ? ' - DESIGN (HIGH / LOW POINTS)' : ' - WITH CHAIR HEIGHTS'}`],
-      general: [
-        commonNotes(model, level)[0],
-        `PT SYSTEM: ${pt.system || ''} - ${pt.ductType || 'bonded'} FLAT DUCT ${pt.ductWidth ? `${pt.ductWidth} x ${pt.ductHeight} mm` : ''}, ${pt.strandsPerDuct || ''} STRANDS PER DUCT MAX. STRAND ${Math.round(Math.sqrt((4 * pt.strandArea) / Math.PI) * 10) / 10} mm, Aps = ${pt.strandArea} mm², fpu = ${Math.round(pt.fpu || 1860)} MPa${design ? '' : `, JACKING STRESS ${Math.round(tendons[0]?.jackStress || pt.jackStress || 0)} MPa (${Math.round(((tendons[0]?.jackStress || pt.jackStress || 0) / (pt.fpu || 1860)) * 100)} % fpu), EFFECTIVE STRESS ${Math.round(pt.fse || 0)} MPa`}.`,
-        design
-          ? `TENDON PATHS, STRAND COUNTS, STRESSING ENDS AND THE HIGH / LOW POINTS OF THE PROFILE ARE READ FROM THE RAM CONCEPT MODEL (${hlCount} PROFILE POINTS ON THIS SHEET${noProfile ? `; ${noProfile} TENDONS CARRY NO PROFILE IN THE MODEL` : ''}). LIVE (STRESSING) ENDS ARE SHOWN WITH AN ARROW, DEAD ENDS WITH A CIRCLE. THE OTHER DIRECTION IS ON ITS OWN SHEET.`
-          : `TENDON PATHS, STRAND COUNTS, STRESSING ENDS, JACKING FORCES, CALCULATED ELONGATIONS AND THE CGS PROFILE ARE READ FROM THE RAM CONCEPT MODEL. LIVE (STRESSING) ENDS ARE SHOWN WITH AN ARROW, DEAD ENDS WITH A CIRCLE. THE OTHER DIRECTION IS ON ITS OWN SHEET.${noProfile ? ` ${noProfile} TENDONS CARRY NO PROFILE IN THE MODEL: THEIR CHAIRS ARE TO BE SET FROM THE RAM PROFILE REPORT.` : ''}`,
-        design ? 'DESIGN DRAWING - NOT FOR FABRICATION. ELONGATIONS, JACKING FORCES AND CHAIR HEIGHTS ARE GIVEN ON THE SHOP DRAWINGS.' : 'STRESSING AT NOT LESS THAN THE SPECIFIED TRANSFER STRENGTH; ELONGATION TOLERANCE ±7 % (SBC 304-18 §20.3.2 / PTI). RECORD EVERY TENDON IN DETAIL 3.',
+      rows, cols, rowH: 3, scheduleTitle: `TENDON SCHEDULE (${fam})${design ? ' - DESIGN' : ''}`, detailsUsed,
+      totals: `${tendons.length} TENDONS · ${strands} STRANDS · ${Math.round(strandM)} m STRAND · ${liveEnds} LIVE ENDS${design ? '' : ` · ${stationCount} CHAIRS`}`,
+      weight: Math.round(strandM * kgPerM),
+      planTitles: [design ? `PT TENDON LAYOUT - ${dirTitle} - DESIGN (HIGH / LOW POINTS)` : `CHAIR HEIGHTS - ${dirTitle}`],
+      general: notes,
+      assumptions: levelAssumptions(model, level).slice(0, 3),
+      legend: [
+        [`Tendons-${fam}`, `TENDON, ${dirTitle}`, 'thick'],
+        [`Text-Profile-${fam}-HIGH`, design ? 'HIGH POINT (H + CGS HEIGHT)' : 'HIGH POINT CHAIR HEIGHT', 'line'],
+        [`Text-Profile-${fam}-LOW`, design ? 'LOW POINT (L + CGS HEIGHT)' : 'LOW POINT CHAIR HEIGHT', 'line'],
+        ...(design ? [] : [[`Text-Profile-${fam}`, 'INTERMEDIATE CHAIR HEIGHT (1000 STATIONS)', 'line'], [`Dimensions-Profile-${fam}`, 'ODD STATION SPACING', 'line']]),
+        [`Details-${fam}`, 'LIVE END (BLOCK) / DEAD END (BLOCK) / TENDON TAG', 'line'],
+        [`Dimensions-Sec-${fam}`, 'ANCHOR SPACING AT THE FACE', 'line'],
+        ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL', 'WALL BELOW', 'thick'],
       ],
-      assumptions: levelAssumptions(model, level).slice(0, 4),
-      legend: [['CABLE', 'TENDON', 'thick'], ['CABLE-LIVE', 'LIVE END (ARROW) / DEAD END (CIRCLE)', 'line'], ['CABLE-HL', 'HIGH / LOW POINT + CGS HEIGHT', 'line'], ...(design ? [] : [['CABLE-CHAIR', 'CHAIR + HEIGHT (mm)', 'line']]), ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL', 'WALL BELOW', 'thick']],
+      checks: skipped ? [`${skipped} regular 1000 mm station spacings left undimensioned; ${dimCount} odd spacings dimensioned.`] : [],
     };
   };
 }

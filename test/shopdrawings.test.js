@@ -320,8 +320,9 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
   const cables = pkg.sheets.filter((s) => s.key === 'cables_lat' || s.key === 'cables_lon');
   assert.equal(cables.length, 2, 'one cable sheet per tendon direction');
   assert.ok(cables.every((c) => c.rows.length >= 1), 'cables schedules filled from the RAM tendons');
-  assert.ok(cables[0].csvCols.some((c) => c.key === 'elong') && cables[0].csvCols.some((c) => c.key === 'chairs'), 'the shop cable sheet carries elongations and chairs');
-  assert.ok(cables[0].rows.some((r) => r.chairs > 0), 'chair heights written along the tendons with a profile');
+  assert.ok(cables[0].csvCols.some((c) => c.key === 'elong') && cables[0].csvCols.some((c) => c.key === 'jack'), 'the shop cable sheet carries extensions and the jacking force per strand (office schedule)');
+  assert.ok(cables[0].rows.every((r) => /^[AB]\.\d\d$/.test(r.mark) && r.qty >= 1 && r.anchors), 'one schedule row per mark, the tendon numbers of the mark listed as anchor numbers');
+  assert.ok(cables[0].rows.some((r) => r.chairs > 0), 'chair stations counted along the tendons with a profile');
   assert.ok(!pkg.sheets.some((s) => s.key === 'cables'), 'the empty template gives way to the RAM cable sheets');
 });
 
@@ -541,7 +542,10 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   const dc = pack.sheets.filter((s) => s.key === 'dcablat' || s.key === 'dcablon');
   assert.equal(dc.length, 2);
   assert.ok(dc.every((c) => !c.csvCols.some((k) => k.key === 'elong' || k.key === 'jack')), 'design cable sheets carry no elongation or jacking force');
-  assert.ok(dc.find((c) => c.key === 'dcablat').rows.some((r) => /H210/.test(r.hl) && /L125/.test(r.hl)), `high / low points from the profile: ${JSON.stringify(dc[0].rows.map((r) => r.hl))}`);
+  const dxfCab = toDxf(dc.find((c) => c.key === 'dcablat').root);
+  assert.ok(dxfCab.includes('\n1\nH210\n') && !dxfCab.includes('\n1\nL125\n'), 'the high point written at the point (H + CGS height); the anchors at 125 are ends, not low points');
+  assert.ok(dxfCab.includes('\n8\nText-Profile-A-HIGH\n') && dxfCab.includes('\n8\nPT-HighLow-A\n') && dxfCab.includes('\n2\nLiveEnd\n'), 'office cable layers and anchor blocks');
+  assert.ok(dc.every((c) => c.rows.every((r) => /^[AB]\.\d\d$/.test(r.mark))), 'design cable schedule keyed by mark');
   const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);
   assert.ok(dxfTop.includes('\n1\nT16-150 (T)\n') && dxfTop.includes('\n1\nT12-150 U-BAR\n'), 'RAM band call-out and the perimeter U-bars on the top sheet');
   assert.ok(/\n0\nDIMENSION\n[\s\S]*?\n3\nDIM100\n/.test(dxfTop), 'distribution DIMENSIONs in DIM100');
