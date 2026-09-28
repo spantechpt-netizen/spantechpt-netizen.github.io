@@ -37,7 +37,7 @@ export const DEFAULT_SPEC = {
   thicknessMesh: { dia: 10, spacing: 200 }, // office rule: the bottom mesh written at every change of slab thickness (per the design)
   drops: { dia: 12, spacing: 150, leg: 500 }, // office rule: the bottom mesh inside a column drop (detail 4 groups through the column, 500 legs at both ends)
   barOffset: 500, // design mode: the bar symbol sits beside the column (a vertical bar to its left, a horizontal one above it)
-  pourStrip: { dia: 16, spacing: 200, length: 3000, uDia: 12, uSpacing: 200, uTotal: 2400, longDia: 12, longSpacing: 150 }, // PT details 3: the office pour strip detail
+  pourStrip: { dia: 16, spacing: 200, length: 3000, uDia: 12, uSpacing: 200, uTotal: 2400, longDia: 12, longSpacing: 150, wall: { uTotal: 2400, uSlab: 2000, longDia: 16, longCount: 7 } }, // PT details 3: the office pour strip detail (+ the variant against a retaining wall)
   blockBeam: { dia: 16, count: 2, linkDia: 12, linkSpacing: 200, minWidth: 150, maxGap: 500 }, // detail 9 (office): a slab strip of 150..500 between two openings gets 2T16 T&B with T12@200 links
 };
 

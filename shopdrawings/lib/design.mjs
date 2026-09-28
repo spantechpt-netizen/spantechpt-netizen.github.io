@@ -1114,29 +1114,40 @@ export function designAdditions(level, spec, opts = {}) {
     const ref = gridRef(level, b);
     const zone = `D8 ${ps.id} ${ref}`;
     const nAcross = Math.floor(Ls / sp8.spacing) + 1;
+    // a strip cast against a retaining wall (a wall along one of its long faces) takes the office's wall variant
+    // ("reinforcement details of pour strip with retaining wall"): U-bars T12@200 from the wall face, U-bars 2 m from
+    // the slab side, T16@200 across, 7T16 top and bottom along the strip, bonding agent at the joint faces
+    const faceOf = (sg) => [add(add(c, along, -Ls / 2), acr, sg * Ws / 2), add(add(c, along, Ls / 2), acr, sg * Ws / 2)];
+    const wallSg = [-1, 1].find((sg) => R.sideLining(level, ...faceOf(sg)) === 'wall') ?? 0;
+    const sw = sp8.wall || {};
     // straight bars across the strip, top and bottom, one symbol each at 35 % along, distributed over the strip length
     const at = add(c, along, -Ls * 0.15);
     const half = sp8.length / 2;
     const distP = add(c, along, -Ls / 2), distQ = add(c, along, Ls / 2);
-    const dOff = Ws / 2 + 400;
+    const dOff = (Ws / 2 + 400) * (wallSg ? -wallSg : 1); // the distribution on the slab side, never over the wall
     items.push({ detail: 'D8', face: 'T', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (T)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at });
     items.push({ detail: 'D8', face: 'B', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (B)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at });
     addBar('T', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
     addBar('B', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
-    // U-bars from each face of the strip (2400 total), one symbol per face at 65 % along
-    const uLegS = ceilTo((sp8.uTotal - (h - 2 * cover)) / 2, 10);
+    // U-bars from each face of the strip, one symbol per face at 65 % along (from the wall face: `wall.uTotal`,
+    // 2400; from the slab side of a wall strip: `wall.uSlab`, 2 m; a plain strip: `uTotal` both sides)
     const atU = add(c, along, Ls * 0.15);
     for (const sg of [-1, 1]) {
+      const total = wallSg ? (sg === wallSg ? sw.uTotal || sp8.uTotal : sw.uSlab || 2000) : sp8.uTotal;
+      const uLegS = ceilTo((total - (h - 2 * cover)) / 2, 10);
       const face = add(atU, acr, sg * Ws / 2);
       const inward = { x: -sg * acr.x, y: -sg * acr.y };
-      items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, inward, uLegS), l1: `T${sp8.uDia}-${sp8.uSpacing} U-BAR`, l2: `L=${sp8.uTotal}`, hairpin: true, side: 1, zone, noTag: true });
-      addBar('T', { dia: sp8.uDia, shape: `U ${uLegS}/${h - 2 * cover}/${uLegS}`, length: sp8.uTotal, qty: Math.floor(Ls / sp8.uSpacing) + 1, spacing: sp8.uSpacing, zone: `${zone} U` });
+      items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, inward, uLegS), l1: `T${sp8.uDia}-${sp8.uSpacing} U-BAR${wallSg && sg === wallSg ? ' (WALL)' : ''}`, l2: `L=${total}`, hairpin: true, side: 1, zone, noTag: true });
+      addBar('T', { dia: sp8.uDia, shape: `U ${uLegS}/${h - 2 * cover}/${uLegS}`, length: total, qty: Math.floor(Ls / sp8.uSpacing) + 1, spacing: sp8.uSpacing, zone: `${zone} U${wallSg && sg === wallSg ? ' WALL' : ''}` });
     }
-    // longitudinal bars along the strip, top and bottom, fixed before the infill pour
-    const nLong = Math.floor(Ws / sp8.longSpacing) + 1;
-    items.push({ detail: 'D8', face: 'TB', a: add(c, along, -Ls / 2), b: add(c, along, Ls / 2), l1: `T${sp8.longDia}-${sp8.longSpacing} (T&B) ALONG STRIP`, l2: `L=${Math.round(Ls)}`, dist: { p: add(add(c, along, Ls * 0.4), acr, -Ws / 2), q: add(add(c, along, Ls * 0.4), acr, Ws / 2) }, side: -1, zone, noTag: true });
-    addBar('TB', { dia: sp8.longDia, shape: 'STR', length: Math.round(Ls), qty: nLong, spacing: sp8.longSpacing, zone: `${zone} ALONG` });
-    assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG - ADD T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS IT, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sp8.uTotal} TOTAL) FROM EACH FACE, T${sp8.longDia}@${sp8.longSpacing} T&B ALONG IT FIXED BEFORE THE INFILL POUR; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
+    // longitudinal bars along the strip, top and bottom, fixed before the infill pour (7T16 each layer at a wall)
+    const longDia = wallSg ? sw.longDia || 16 : sp8.longDia;
+    const nLong = wallSg ? sw.longCount || 7 : Math.floor(Ws / sp8.longSpacing) + 1;
+    const longLabel = wallSg ? `${nLong}T${longDia} (T&B) ALONG STRIP` : `T${longDia}-${sp8.longSpacing} (T&B) ALONG STRIP`;
+    items.push({ detail: 'D8', face: 'TB', a: add(c, along, -Ls / 2), b: add(c, along, Ls / 2), l1: longLabel, l2: `L=${Math.round(Ls)}`, dist: { p: add(add(c, along, Ls * 0.4), acr, -Ws / 2), q: add(add(c, along, Ls * 0.4), acr, Ws / 2) }, side: -1, zone, noTag: true });
+    addBar('TB', { dia: longDia, shape: 'STR', length: Math.round(Ls), qty: nLong, spacing: wallSg ? undefined : sp8.longSpacing, zone: `${zone} ALONG` });
+    if (wallSg) assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG, CAST AGAINST A RETAINING WALL - WALL VARIANT: U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sw.uTotal || sp8.uTotal} TOTAL) FROM THE WALL FACE, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sw.uSlab || 2000} TOTAL) FROM THE SLAB SIDE, T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS, ${nLong}T${longDia} TOP AND BOTTOM ALONG IT; BONDING AGENT ON THE JOINT FACES; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
+    else assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG - ADD T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS IT, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sp8.uTotal} TOTAL) FROM EACH FACE, T${sp8.longDia}@${sp8.longSpacing} T&B ALONG IT FIXED BEFORE THE INFILL POUR; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
   }
 
   // ---- D9 blockwork support beam through the void between two openings: a strip of the slab between two openings
