@@ -743,7 +743,7 @@ SPAN-COL-HATCH
 70
 0
 62
-7
+8
 6
 CONTINUOUS
 370
@@ -5584,8 +5584,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -5684,8 +5682,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -5784,8 +5780,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -5884,8 +5878,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -5984,8 +5976,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6084,8 +6074,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6184,8 +6172,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6284,8 +6270,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6384,8 +6368,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6484,8 +6466,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6584,8 +6564,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6684,8 +6662,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6784,8 +6760,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6884,8 +6858,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -6984,8 +6956,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -7084,8 +7054,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -7184,8 +7152,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -7284,8 +7250,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -7384,8 +7348,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -7484,8 +7446,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -17472,8 +17432,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -17572,8 +17530,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -17672,8 +17628,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -17772,8 +17726,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -17872,8 +17824,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -17972,8 +17922,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18072,8 +18020,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18172,8 +18118,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18272,8 +18216,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18372,8 +18314,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18472,8 +18412,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18572,8 +18510,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18672,8 +18608,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18772,8 +18706,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18872,8 +18804,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -18972,8 +18902,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -19072,8 +19000,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -19172,8 +19098,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -19272,8 +19196,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10
@@ -19372,8 +19294,6 @@ HATCH
 AcDbEntity
 8
 SPAN-COL-HATCH
-62
-7
 100
 AcDbHatch
 10

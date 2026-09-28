@@ -80,7 +80,7 @@
     },
     "COLUMN-HATCH": {
       "name": "SPAN-COL-HATCH",
-      "color": 7
+      "color": 8
     },
     "BEAM": {
       "name": "SPAN-BEAM",

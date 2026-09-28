@@ -173,64 +173,64 @@
 <path d="M17050 -23650 L49550 -23650 L49550 -49650 L17050 -49650 Z" stroke="#1ec8d8" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
 <text x="17650" y="-48750" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1ec8d8" transform="rotate(0 17650 -48750)">PT1 - PT SLAB ZONE</text>
 <path d="M18250 -48350 L18850 -48350 L18850 -48950 L18250 -48950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M18250 -48350 L18850 -48350 L18850 -48950 L18250 -48950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M18250 -48350 L18850 -48350 L18850 -48950 L18250 -48950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="19000" y="-49100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 19000 -49100)">A/4</text>
 <path d="M25750 -48350 L26350 -48350 L26350 -48950 L25750 -48950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M25750 -48350 L26350 -48350 L26350 -48950 L25750 -48950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M25750 -48350 L26350 -48350 L26350 -48950 L25750 -48950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="26500" y="-49100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 26500 -49100)">B/4</text>
 <path d="M33250 -48350 L33850 -48350 L33850 -48950 L33250 -48950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M33250 -48350 L33850 -48350 L33850 -48950 L33250 -48950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M33250 -48350 L33850 -48350 L33850 -48950 L33250 -48950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="34000" y="-49100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 34000 -49100)">C/4</text>
 <path d="M40750 -48350 L41350 -48350 L41350 -48950 L40750 -48950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M40750 -48350 L41350 -48350 L41350 -48950 L40750 -48950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M40750 -48350 L41350 -48350 L41350 -48950 L40750 -48950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="41500" y="-49100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 41500 -49100)">D/4</text>
 <path d="M48250 -48350 L48850 -48350 L48850 -48950 L48250 -48950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M48250 -48350 L48850 -48350 L48850 -48950 L48250 -48950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M48250 -48350 L48850 -48350 L48850 -48950 L48250 -48950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="49000" y="-49100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 49000 -49100)">E/4</text>
 <path d="M18250 -40350 L18850 -40350 L18850 -40950 L18250 -40950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M18250 -40350 L18850 -40350 L18850 -40950 L18250 -40950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M18250 -40350 L18850 -40350 L18850 -40950 L18250 -40950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="19000" y="-41100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 19000 -41100)">A/3</text>
 <path d="M25750 -40350 L26350 -40350 L26350 -40950 L25750 -40950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M25750 -40350 L26350 -40350 L26350 -40950 L25750 -40950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M25750 -40350 L26350 -40350 L26350 -40950 L25750 -40950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="26500" y="-41100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 26500 -41100)">B/3</text>
 <path d="M33250 -40350 L33850 -40350 L33850 -40950 L33250 -40950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M33250 -40350 L33850 -40350 L33850 -40950 L33250 -40950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M33250 -40350 L33850 -40350 L33850 -40950 L33250 -40950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="34000" y="-41100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 34000 -41100)">C/3</text>
 <path d="M40750 -40350 L41350 -40350 L41350 -40950 L40750 -40950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M40750 -40350 L41350 -40350 L41350 -40950 L40750 -40950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M40750 -40350 L41350 -40350 L41350 -40950 L40750 -40950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="41500" y="-41100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 41500 -41100)">D/3</text>
 <path d="M48250 -40350 L48850 -40350 L48850 -40950 L48250 -40950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M48250 -40350 L48850 -40350 L48850 -40950 L48250 -40950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M48250 -40350 L48850 -40350 L48850 -40950 L48250 -40950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="49000" y="-41100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 49000 -41100)">E/3</text>
 <path d="M18250 -32350 L18850 -32350 L18850 -32950 L18250 -32950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M18250 -32350 L18850 -32350 L18850 -32950 L18250 -32950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M18250 -32350 L18850 -32350 L18850 -32950 L18250 -32950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="19000" y="-33100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 19000 -33100)">A/2</text>
 <path d="M25750 -32350 L26350 -32350 L26350 -32950 L25750 -32950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M25750 -32350 L26350 -32350 L26350 -32950 L25750 -32950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M25750 -32350 L26350 -32350 L26350 -32950 L25750 -32950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="26500" y="-33100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 26500 -33100)">B/2</text>
 <path d="M33250 -32350 L33850 -32350 L33850 -32950 L33250 -32950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M33250 -32350 L33850 -32350 L33850 -32950 L33250 -32950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M33250 -32350 L33850 -32350 L33850 -32950 L33250 -32950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="34000" y="-33100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 34000 -33100)">C/2</text>
 <path d="M40750 -32350 L41350 -32350 L41350 -32950 L40750 -32950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M40750 -32350 L41350 -32350 L41350 -32950 L40750 -32950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M40750 -32350 L41350 -32350 L41350 -32950 L40750 -32950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="41500" y="-33100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 41500 -33100)">D/2</text>
 <path d="M48250 -32350 L48850 -32350 L48850 -32950 L48250 -32950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M48250 -32350 L48850 -32350 L48850 -32950 L48250 -32950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M48250 -32350 L48850 -32350 L48850 -32950 L48250 -32950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="49000" y="-33100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 49000 -33100)">E/2</text>
 <path d="M18250 -24350 L18850 -24350 L18850 -24950 L18250 -24950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M18250 -24350 L18850 -24350 L18850 -24950 L18250 -24950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M18250 -24350 L18850 -24350 L18850 -24950 L18250 -24950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="19000" y="-25100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 19000 -25100)">A/1</text>
 <path d="M25750 -24350 L26350 -24350 L26350 -24950 L25750 -24950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M25750 -24350 L26350 -24350 L26350 -24950 L25750 -24950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M25750 -24350 L26350 -24350 L26350 -24950 L25750 -24950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="26500" y="-25100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 26500 -25100)">B/1</text>
 <path d="M33250 -24350 L33850 -24350 L33850 -24950 L33250 -24950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M33250 -24350 L33850 -24350 L33850 -24950 L33250 -24950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M33250 -24350 L33850 -24350 L33850 -24950 L33250 -24950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="34000" y="-25100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 34000 -25100)">C/1</text>
 <path d="M40750 -24350 L41350 -24350 L41350 -24950 L40750 -24950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M40750 -24350 L41350 -24350 L41350 -24950 L40750 -24950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M40750 -24350 L41350 -24350 L41350 -24950 L40750 -24950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="41500" y="-25100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 41500 -25100)">D/1</text>
 <path d="M48250 -24350 L48850 -24350 L48850 -24950 L48250 -24950 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M48250 -24350 L48850 -24350 L48850 -24950 L48250 -24950 Z" fill="#1c1c1c" fill-rule="evenodd" stroke="none" opacity="1"/>
+<path d="M48250 -24350 L48850 -24350 L48850 -24950 L48250 -24950 Z" fill="#8a8a8a" fill-rule="evenodd" stroke="none" opacity="1"/>
 <text x="49000" y="-25100" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 49000 -25100)">E/1</text>
 <path d="M28050 -34150 L31050 -34150 L31050 -39150 L28050 -39150 Z" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="28050" y1="-34150" x2="31050" y2="-39150" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -792,7 +792,7 @@
 <line x1="64900" y1="-33295" x2="82800" y2="-33295" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="64900" y1="-32995" x2="65700" y2="-32995" stroke="#22b14c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="65900" y="-32945" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 65900 -32945)">TENDON (TO BE ADDED)</text>
-<polygon points="64900,-32564.999999999996 65700,-32564.999999999996 65700,-32825 64900,-32825" fill="#1c1c1c" stroke="none"/>
+<polygon points="64900,-32564.999999999996 65700,-32564.999999999996 65700,-32825 64900,-32825" fill="#8a8a8a" stroke="none"/>
 <text x="65900" y="-32645" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 65900 -32645)">COLUMN</text>
 <line x1="64900" y1="-32395" x2="65700" y2="-32395" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="65900" y="-32345" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 65900 -32345)">OPENING</text>

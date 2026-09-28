@@ -287,7 +287,7 @@ async function buildSyntheticCpt(dir) {
   insert('QuadSlabElement', quads);
   create('Column', ['UID', 'Point0', 'B', 'D', 'Angle', 'SupportSet']);
   insert('Column', [
-    { UID: 31, Point0: P(0, 0), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' }, { UID: 32, Point0: P(12000, 0), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' },
+    { UID: 31, Point0: P(0, 0), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' }, { UID: 32, Point0: P(12000, 0), B: 4000, D: 8000, Angle: Math.PI / 2, SupportSet: 'below' }, // the second one turned 90°
     { UID: 33, Point0: P(0, 8000), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' }, { UID: 34, Point0: P(12000, 8000), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' },
     { UID: 35, Point0: P(6000, 4000), B: 0, D: 6000, Angle: 0, SupportSet: 'below' },
   ]);
@@ -312,6 +312,12 @@ async function buildSyntheticCpt(dir) {
   insert('IndividualBars', [{ UID: 401, BarFace: 2, SpanDirection: 1, Point0: ys5.map((y) => P(0, y)).join(''), Point1: ys5.map((y) => P(12000, y)).join(''), AbsoluteElevation: -2000 }]);
   create('TransverseRebarRegion', ['UID', 'Point0', 'Point1', 'BarType', 'StirrupLegs', 'StirrupSpacing']);
   insert('TransverseRebarRegion', [{ UID: 501, Point0: P(4000, 4000), Point1: P(8000, 4000), BarType: 11, StirrupLegs: 2, StirrupSpacing: 1500 }]);
+  // stud rails designed by RAM at the middle column: 4 rails of 10 studs @100 leaving every face
+  create('SsrSystem', ['UID', 'Name', 'StudArea']); insert('SsrSystem', [{ UID: 14, Name: '10mm SSR', StudArea: 7850 }]);
+  create('SsrSet', ['UID', 'Point0', 'Point1', 'DesignedBy', 'SsrSystem', 'StudSpacingFirst', 'StudSpacingTypical', 'StudCount', 'LocationPoint']);
+  const rails0 = [], rails1 = [];
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (let k = 0; k < 4; k++) { const t = -150 + k * 100; const a = { x: 6000 + dx * 300 + (dx ? 0 : t), y: 4000 + dy * 300 + (dy ? 0 : t) }; rails0.push(P(a.x, a.y)); rails1.push(P(a.x + dx * 1000, a.y + dy * 1000)); }
+  insert('SsrSet', [{ UID: 701, Point0: rails0.join(''), Point1: rails1.join(''), DesignedBy: 2, SsrSystem: 14, StudSpacingFirst: 1000, StudSpacingTypical: 1000, StudCount: rails0.map(() => '[10]').join(''), LocationPoint: P(6000, 4000) }]);
   create('PunchCheck', ['UID', 'Name', 'Point0', 'SsrSystem', 'CoverToCGS', 'TopCover', 'BottomCover']);
   insert('PunchCheck', [{ UID: 601, Name: 'PC1', Point0: P(6000, 4000), SsrSystem: 'SSR', CoverToCGS: 350, TopCover: 350, BottomCover: 250 }]);
   db.close();
@@ -465,6 +471,9 @@ function buildOfficePlan() {
   // an MEP void 1.2 x 0.8 m, crossed
   c.pline([{ x: 6500, y: 6500 }, { x: 7700, y: 6500 }, { x: 7700, y: 7300 }, { x: 6500, y: 7300 }], { layer: 'S-OPENING', closed: true });
   c.line(6500, 6500, 7700, 7300, { layer: 'S-OPENING' }); c.line(7700, 6500, 6500, 7300, { layer: 'S-OPENING' });
+  // a second void 500 mm above it with nothing between them: the strip carries blockwork (detail 9)
+  c.pline([{ x: 6500, y: 7800 }, { x: 7700, y: 7800 }, { x: 7700, y: 8600 }, { x: 6500, y: 8600 }], { layer: 'S-OPENING', closed: true });
+  c.line(6500, 7800, 7700, 8600, { layer: 'S-OPENING' }); c.line(7700, 7800, 6500, 8600, { layer: 'S-OPENING' });
   // the designer's own top bars over a column, in a block like the office's "TOP REN" blocks
   const ren = c.block('TOP REN');
   ren.line(6800, 2000, 9200, 2000, { layer: 'REO-TOP' });
@@ -504,7 +513,7 @@ test('the office design plan is read with its walls, thickness zone, edge beam, 
   assert.equal(L.thickZones.length, 1);
   assert.equal(L.thickZones[0].thickness, 280);
   assert.equal(L.sunken.length, 0, 'the 280 outline is not a sunken zone');
-  assert.equal(L.openings.length, 1);
+  assert.equal(L.openings.length, 2);
   assert.ok(L.edges.some((e) => e.beam), 'the bottom edge carries an edge beam');
   assert.equal(L.edges.filter((e) => e.beam).length, 1);
   assert.deepEqual(L.meshSpec, [10, 150]);
@@ -534,8 +543,12 @@ test('the General Details add bars in the office convention at the places they r
   assert.ok(by('D6').length >= 1 && by('D6').every((it) => it.l1 === 'T12-150 U-BAR' && it.l2 === 'L=4000'), 'U-bars of 4 m at the free edges');
   assert.ok(by('D2').some((it) => it.l1 === 'T12-200 U-BAR'), 'U-bars at the core wall faces');
   assert.ok(by('D2').some((it) => it.l1 === '10T12 (T&B)'), 'parallel bars along the wall');
-  assert.equal(by('D4').length, 2, 'extra bottom bars both ways in the 280 zone');
-  assert.ok(by('D4').every((it) => it.face === 'B' && it.l1 === 'T12-250 (B) EXTRA'));
+  // the 280 zone holds the column at 2000,2000: a drop panel, so its bottom mesh T12@150 is the two D4 groups through
+  // the column, each as long as the drop (5000 along X; 3000 along Y is stretched to 1.5 m past the 700 column face)
+  assert.equal(by('D4').length, 2, 'drop mesh both ways in the 280 zone');
+  assert.ok(by('D4').every((it) => it.face === 'B' && it.l1 === 'T12-150 (B)' && it.posCands && it.dist));
+  assert.deepEqual(by('D4').map((it) => it.l2).sort(), ['L=3700', 'L=5000']);
+  assert.ok(by('D4').every((it) => Math.abs(it.a.x + it.b.x - 4000) < 1 && Math.abs(it.a.y + it.b.y - 4000) < 1), 'the groups are centred on the column');
   assert.ok(by('D5').some((it) => it.l1 === '3T16-200 (T&B)'), 'diagonals at the core wall corners');
   assert.ok(by('D5').some((it) => it.l1 === '3T12-200 (T&B)'), 'diagonals at the re-entrant slab corner');
   const d7 = by('D7');
@@ -543,6 +556,13 @@ test('the General Details add bars in the office convention at the places they r
   const row = VOID_TABLE.find((r) => 1.2 <= r.max);
   assert.ok(d7.some((it) => it.l1 === `${row.long.n}T${row.long.dia}-${row.long.s} (T&B)`), 'void bars follow the size table');
   assert.equal(adds.punching.length, 6);
+  // detail 9: the 500 strip between the two voids (no beam / wall) is a blockwork support beam 2T20 T&B + T12-200 links, TA beyond each void
+  const d9 = by('D9');
+  assert.equal(d9.length, 1);
+  assert.equal(d9[0].l1, '2T20 (T&B) + T12-200 LINKS');
+  assert.ok(Math.abs(d9[0].blockBeam.gap - 500) < 1 && Math.abs(d9[0].a.y - d9[0].b.y) < 1, 'along the strip between the voids');
+  assert.equal(Math.round(dist2(d9[0].a, d9[0].b)), 1200 + 2 * d9[0].blockBeam.ta, 'the 1200 overlap + TA each side');
+  assert.ok(adds.bars.T.rows().some((r) => /^LINK/.test(r.shape) && r.dia === 12), 'links in the schedule');
   assert.ok(adds.punching.every((p) => /^\d+R-4-T12$/.test(p.tag)));
   assert.ok(adds.bars.T.totals().weight_kg > 0 && adds.bars.B.totals().weight_kg > 0);
   assert.ok(adds.notes.some((n) => /LAP 500/.test(n.text)), 'lap note at the thickness step');
@@ -570,6 +590,14 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   assert.ok(/\n0\nDIMENSION\n[\s\S]*?\n3\nDIM100\n/.test(dxfTop), 'distribution DIMENSIONs in DIM100');
   const dxfBot = toDxf(pack.sheets.find((s) => s.key === 'dbottom').root);
   assert.ok(dxfBot.includes('\n1\nT12-200 (B)\n') && dxfBot.includes('BOTTOM MESH T10@200'), 'RAM bottom band and the mesh indication at the thickness change');
+  // a column turned 90° in RAM is stored with its plan sizes along X / Y
+  const turned = L.columns.find((c) => Math.abs(c.cx - 12000) < 1 && Math.abs(c.cy) < 1);
+  assert.equal(turned.w, 800); assert.equal(turned.h, 400); assert.equal(turned.angle, 0);
+  // punching: only the column with stud rails in RAM gets the office PS detail - 10 rows @100 covering the 1000 rails, 4 legs
+  const dxfPS = toDxf(pack.sheets.find((s) => s.key === 'dpunch').root);
+  assert.ok(dxfPS.includes('\n1\nPS1\n') && dxfPS.includes('\n1\n10R-4-T12\n'), 'PS1 = 10R-4-T12 from the RAM stud rails');
+  assert.ok(!dxfPS.includes('\n1\nPS2\n'), 'columns without stud rails in RAM carry no punching reinforcement');
+  assert.ok(dxfPS.includes('\n8\nPS-ROW\n'), 'the stirrup rows are drawn');
   function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 });
 
@@ -595,5 +623,8 @@ test('the design package is written in the office layers and text style, on the 
   assert.ok(/\n0\nLAYER\n[\s\S]*?\n2\nREO-TOP\n[\s\S]*?\n6\nHIDDEN\n/.test(dxfOut), 'REO-TOP is a hidden-line layer');
   assert.ok(dxfOut.includes('\n8\nSPAN-GRID\n'), 'sheet furniture on the SPAN standard');
   const bottom = pack.sheets.find((s) => s.key === 'dbottom');
-  assert.ok(toDxf(bottom.root).includes('\n1\nT12-250 (B) EXTRA\n'));
+  const bottomDxf = toDxf(bottom.root);
+  assert.ok(bottomDxf.includes('\n1\nT12-150 (B)\n'), 'the drop mesh groups on the bottom sheet');
+  assert.ok(bottomDxf.includes('\n1\nBOTTOM MESH T12@150 (D4)\n'), 'the drop mesh written in the drop');
+  assert.ok(!bottomDxf.includes('\n1\nT12-150 U-BAR\n'), 'the bottom sheet carries no T&B bars (they are on the top sheet)');
 });

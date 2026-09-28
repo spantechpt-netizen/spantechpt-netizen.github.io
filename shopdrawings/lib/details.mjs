@@ -270,3 +270,71 @@ export function punchingLink({ h, cover, dia, rowSpacing, legSpacing, rows }) {
     },
   };
 }
+
+/**
+ * The office punching detail (PS types): stirrup strips leaving every column face, `legs` legs (legs / 2 closed
+ * stirrups side by side) in `rows` rows at S from the face. Plan at the column, the strip section (number of legs)
+ * and the strip elevation (number of rows) with the tag key.
+ */
+export function punchingStrips({ h, cover, dia, s, rows, legs }) {
+  const ns = Math.max(1, legs / 2);
+  const c1 = 700, len = rows * s, pitch = c1 / ns, sw = pitch - 60;
+  const web = h - 2 * cover;
+  return {
+    bbox: { minX: -c1 / 2 - len - 350, maxX: c1 / 2 + len + 1500, minY: -c1 / 2 - len - 700, maxY: c1 / 2 + len + 950, cx: 500, cy: 0 },
+    draw(pen) {
+      // plan
+      pen.solid([{ x: -c1 / 2, y: -c1 / 2 }, { x: c1 / 2, y: -c1 / 2 }, { x: c1 / 2, y: c1 / 2 }, { x: -c1 / 2, y: c1 / 2 }], { layer: 'COLUMN-HATCH' });
+      pen.rect({ x: -c1 / 2, y: -c1 / 2, w: c1, h: c1 }, { layer: 'COLUMN' });
+      for (const dir of ['x', 'y']) for (const sg of [-1, 1]) for (let i = 0; i < ns; i++) {
+        const t0 = -c1 / 2 + pitch * i + 30;
+        const face = sg * c1 / 2;
+        const r = dir === 'x' ? { x: Math.min(face, face + sg * len), y: t0, w: len, h: sw } : { x: t0, y: Math.min(face, face + sg * len), w: sw, h: len };
+        pen.rect(r, { layer: 'REBAR-PUNCH', lw: 35 });
+        for (let k = 1; k <= rows; k++) { const o = face + sg * k * s; if (dir === 'x') pen.line({ x: o, y: t0 }, { x: o, y: t0 + sw }, { layer: 'DETAIL' }); else pen.line({ x: t0, y: o }, { x: t0 + sw, y: o }, { layer: 'DETAIL' }); }
+      }
+      pen.dim({ x: c1 / 2, y: -c1 / 2 - 150 }, { x: c1 / 2 + s, y: -c1 / 2 - 150 }, -3, { text: `S=${s}` });
+      pen.dim({ x: c1 / 2, y: c1 / 2 + 150 }, { x: c1 / 2 + len, y: c1 / 2 + 150 }, 3, { text: `${rows} ROWS` });
+      pen.text({ x: 0, y: -c1 / 2 - len - 380 }, `PLAN: ${rows}R-${legs}-T${dia} EACH SIDE, S=${s}`, { layer: 'REBAR-TEXT', h: 1.7, align: 'C' });
+      // strip section: the closed stirrups side by side (number of legs) - to the right
+      const ox = c1 / 2 + len + 350, oy = -c1 / 2 - len - 100;
+      pen.rect({ x: ox, y: oy, w: ns * pitch + 60, h: web + 2 * cover }, { layer: 'DETAIL', lw: 35 });
+      for (let i = 0; i < ns; i++) {
+        const x0 = ox + 30 + pitch * i + 30;
+        pen.rect({ x: x0, y: oy + cover, w: sw, h: web }, { layer: 'REBAR-PUNCH', lw: 50 });
+        for (const [xx, yy] of [[x0, oy + cover], [x0 + sw, oy + cover], [x0, oy + cover + web], [x0 + sw, oy + cover + web]]) pen.circle({ x: xx, y: yy }, 12, { layer: 'REBAR-PUNCH' });
+      }
+      pen.text({ x: ox + (ns * pitch + 60) / 2, y: oy - 260 }, `SECTION: ${legs} LEGS (${ns} STIRRUPS T${dia})`, { layer: 'REBAR-TEXT', h: 1.6, align: 'C' });
+      // strip elevation: the rows - above the section
+      const ey = oy + web + 2 * cover + 350;
+      pen.rect({ x: ox, y: ey, w: len + 200, h: web + 2 * cover }, { layer: 'DETAIL', lw: 35 });
+      for (let k = 1; k <= rows; k++) pen.line({ x: ox + k * s, y: ey + cover }, { x: ox + k * s, y: ey + cover + web }, { layer: 'REBAR-PUNCH', lw: 50 });
+      pen.dim({ x: ox, y: ey + web + 2 * cover + 40 }, { x: ox + rows * s, y: ey + web + 2 * cover + 40 }, 3, { text: `${rows} ROWS @ S=${s}` });
+      pen.text({ x: ox + (len + 200) / 2, y: ey - 220 }, 'ELEVATION: NO. OF ROWS FROM THE COLUMN FACE', { layer: 'REBAR-TEXT', h: 1.6, align: 'C' });
+    },
+  };
+}
+
+/** Detail 9: blockwork support beam through the void between two openings - section through the strip. */
+export function blockBeamSection({ h, cover, width, dia, count, linkDia, linkSpacing, ta }) {
+  const w = Math.max(width, 150);
+  return {
+    bbox: { minX: -w / 2 - 900, maxX: w / 2 + 900, minY: -700, maxY: h + 1100, cx: 0, cy: h / 2 },
+    draw(pen) {
+      pen.rect({ x: -w / 2, y: 0, w, h }, { layer: 'DETAIL', lw: 35 });
+      conc(pen, rectPolygon({ x: -w / 2, y: 0, w, h }));
+      pen.rect({ x: -w / 2 - 800, y: 0, w: 800, h }, { layer: 'DETAIL' }); pen.rect({ x: w / 2, y: 0, w: 800, h }, { layer: 'DETAIL' });
+      pen.text({ x: -w / 2 - 400, y: h / 2 }, 'VOID', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'M' }); pen.text({ x: w / 2 + 400, y: h / 2 }, 'VOID', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'M' });
+      // blockwork above
+      for (let y = h; y < h + 600; y += 200) pen.rect({ x: -w / 2, y, w, h: 200 }, { layer: 'DETAIL' });
+      pen.text({ x: 0, y: h + 700 }, 'BLOCKWORK WALL ABOVE', { layer: 'TEXT', h: 1.6, align: 'C' });
+      // link and bars
+      pen.rect({ x: -w / 2 + cover, y: cover, w: w - 2 * cover, h: h - 2 * cover }, { layer: 'REBAR-PUNCH', lw: 50 });
+      const xs = count > 1 ? [-w / 2 + cover + dia, w / 2 - cover - dia] : [0];
+      for (const x of xs) { pen.circle({ x, y: cover + dia }, dia / 2 + 2, { layer: 'REBAR-BOT' }); pen.circle({ x, y: h - cover - dia }, dia / 2 + 2, { layer: 'REBAR-TOP' }); }
+      pen.dim({ x: -w / 2, y: -120 }, { x: w / 2, y: -120 }, -4, { text: `${Math.round(width)} (150 MIN.)` });
+      pen.dim({ x: w / 2 + 850, y: 0 }, { x: w / 2 + 850, y: h }, -4, { text: `${h}` });
+      pen.text({ x: 0, y: -520 }, `${count}T${dia} TOP & BOTTOM, EXTEND TA = ${ta} BEYOND EACH VOID · T${linkDia}@${linkSpacing} LINKS`, { layer: 'REBAR-TEXT', h: 1.7, align: 'C' });
+    },
+  };
+}

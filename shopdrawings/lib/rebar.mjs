@@ -31,10 +31,13 @@ export const DEFAULT_SPEC = {
   voids: { dia: 12, count: 2 }, // trimmer bars each side of a void, top and bottom
   openings: { dia: 16, count: 2, diagDia: 12, diagCount: 2, uDia: 12, uSpacing: 200, uLeg: 600 },
   sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, // trimmers and hairpins at sunken-slab steps
-  punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 }, // preliminary punching links around columns
+  punching: { dia: 10, legSpacing: 100, extentFactor: 2.0, psDia: 12, rowSpacing: 100 }, // shop: preliminary links; design: the office PS detail (rows - legs - T12 @ rowSpacing)
   walls: { parallelBars: false, cornerDiagonals: false }, // design mode: the wall face gets the U-bars only unless these are switched on
   perimSpan: 12000, // design mode: one perimeter bar symbol every 12 m on a long indication line along the edge
   thicknessMesh: { dia: 10, spacing: 200 }, // office rule: the bottom mesh written at every change of slab thickness (per the design)
+  drops: { dia: 12, spacing: 150 }, // office rule: the bottom mesh inside a column drop (detail 4 groups through the column)
+  barOffset: 500, // design mode: the bar symbol sits beside the column (a vertical bar to its left, a horizontal one above it)
+  blockBeam: { dia: 20, count: 2, linkDia: 12, linkSpacing: 200, minWidth: 150, maxGap: 1500 }, // detail 9: blockwork support beam through the void between two openings
 };
 
 export const BAR_AREA = (dia) => (Math.PI * dia * dia) / 4;
@@ -459,7 +462,8 @@ export function topAtColumns(level, spec) {
         else {
           const other = -edgeSign;
           ext[edgeSign] = Math.max(toEdges[edgeSign] - c1 / 2, 0); hooks[edgeSign] = true;
-          ext[other] = Math.max(ceilTo((s.edgeFactor ?? 0.7) * Lint, 50) - ext[edgeSign] - c1, beyond);
+          // the far side still reaches the drop panel edge (the interior half) and at least `minBeyond` past the face
+          ext[other] = Math.max(ceilTo((s.edgeFactor ?? 0.7) * Lint, 50) - ext[edgeSign] - c1, beyond, drop ? half : 0);
           if (toEdges[other] - c1 / 2 < ext[other]) { ext[other] = Math.max(toEdges[other] - c1 / 2, 0); hooks[other] = true; } // corner column: U both ends
         }
       } else {

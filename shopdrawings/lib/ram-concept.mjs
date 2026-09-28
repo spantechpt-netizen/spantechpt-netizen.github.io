@@ -69,8 +69,11 @@ export function readRamConcept(path) {
   // ---------------------------------------------------------------- supports
   const columns = rows('Column').map((r, i) => {
     const p = point(r.Point0);
-    const w = L(r.B), h = L(r.D), angle = (r.Angle || 0) * 180 / Math.PI;
+    let w = L(r.B), h = L(r.D), angle = ((((r.Angle || 0) * 180) / Math.PI) % 180 + 180) % 180;
     if (w < 1) return { id: `C${i + 1}`, shape: 'circle', cx: p.x, cy: p.y, d: h, w: h, h, angle: 0, below: r.SupportSet === 'below' };
+    // an orthogonal column is stored with its plan sizes along X / Y (a column turned 90° swaps B and D):
+    // every rule (top bars, punching, U-bars) then reads w along X and h along Y
+    if (Math.abs(angle - 90) < 2) { [w, h] = [h, w]; angle = 0; } else if (angle < 2 || angle > 178) angle = 0;
     return { id: `C${i + 1}`, shape: 'rect', cx: p.x, cy: p.y, w, h, angle, below: r.SupportSet === 'below' };
   });
   // a column above and a column below at the same point are one column on the plan (the one below drawn)
@@ -184,6 +187,19 @@ export function readRamConcept(path) {
     return { id: `SR${i + 1}`, a: point(r.Point0), b: point(r.Point1), dia: type.dia, legs: r.StirrupLegs, spacing: Math.round(L(r.StirrupSpacing)), length: Math.round(dist(point(r.Point0), point(r.Point1))) };
   });
   const punching = punchChecks.map((r) => ({ name: r.Name, p: point(r.Point0), ssr: r.SsrSystem, coverToCgs: L(r.CoverToCGS) }));
+  // stud rail sets (SSR) designed by RAM (or drawn by the user) at the columns that need punching reinforcement:
+  // the rails (start / end per rail), the studs per rail and the stud spacing; the office draws its stirrup detail instead
+  const ssrSystems = byUid(rows('SsrSystem'));
+  const ssr = rows('SsrSet').filter((r) => r.Point0 && r.Point1 && r.LocationPoint).map((r, i) => {
+    const p0 = points(r.Point0), p1 = points(r.Point1);
+    const counts = String(r.StudCount || '').match(/-?\d+/g)?.map(Number) || [];
+    const sys = ssrSystems.get(r.SsrSystem) || {};
+    return {
+      id: `SSR${i + 1}`, loc: point(r.LocationPoint), designedBy: r.DesignedBy === 2 ? 'program' : 'user',
+      first: L(r.StudSpacingFirst || 0), typ: L(r.StudSpacingTypical || 0), studArea: sys.StudArea ? mm2(sys.StudArea) : 78.5, studDia: Math.round(Math.sqrt((4 * (sys.StudArea ? mm2(sys.StudArea) : 78.5)) / Math.PI)),
+      rails: p0.map((a, k) => ({ a, b: p1[k] || a, count: counts[k] || Math.max(0, ...counts) })),
+    };
+  });
 
   // background DXF geometry imported into RAM (for reference only)
   const background = [];
@@ -196,7 +212,7 @@ export function readRamConcept(path) {
     materials: { fc, fcu: concrete.FcuFinal ? Math.round(MPa(concrete.FcuFinal)) : null, fy, coverTop, coverBot, concreteName: concrete.Name, rebarTypes: [...rebarTypes.values()].map((t) => ({ name: t.Name, dia: t.dia, area: t.area })) },
     pt: { system: ptSystem.Name, strandArea, fpu: strand.Fpu ? MPa(strand.Fpu) : null, jackStress: anchor.JackStress ? MPa(anchor.JackStress) : null, strandsPerDuct: duct.StrandsPerDuct, ductType: duct.PTSystemType, ductWidth: duct.DuctWidth ? L(duct.DuctWidth) : null, ductHeight: duct.DuctHeight ? L(duct.DuctHeight) : null, fse: ptSystem.Fse ? MPa(ptSystem.Fse) : null },
     slab: { outline, holes, allLoops, baseThickness, thicknesses: thicknesses.map(([thk, n]) => ({ thickness: thk, elements: n })), thickZones, areas: slabAreas, elements },
-    columns, walls, tendons, bands, shear, punching, background,
+    columns, walls, tendons, bands, shear, punching, ssr, background,
   };
 }
 
@@ -255,6 +271,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides =
         tendons: ram.tendons.filter((t) => t.pts.some((p) => inside(p, body))).map((t) => ({ ...t, pts: t.pts.map(R) })),
         shear: ram.shear.filter((s) => inside({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, body)).map((s) => ({ ...s, a: R(s.a), b: R(s.b) })),
         punching: ram.punching.filter((p) => near(p.p, body, 500)).map((p) => ({ ...p, p: R(p.p) })),
+        ssr: (ram.ssr || []).filter((st) => near(st.loc, body, 500)).map((st) => ({ ...st, loc: R(st.loc), rails: st.rails.map((r) => ({ ...r, a: R(r.a), b: R(r.b) })) })),
         pt: ram.pt,
       },
     };

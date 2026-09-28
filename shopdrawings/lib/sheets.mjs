@@ -126,7 +126,7 @@ export function drawBase(sheet, pl, level, o = {}) {
   for (const c of level.columns) {
     const poly = columnPolygon(c);
     if (c.shape === 'circle') pl.circle({ x: c.cx, y: c.cy }, c.d / 2, { layer: 'COLUMN' }); else pl.pline(poly, { layer: 'COLUMN', closed: true });
-    pl.hatch([poly], { layer: 'COLUMN-HATCH', pattern: 'SOLID', color: 7 });
+    pl.hatch([poly], { layer: o.columnHatchLayer || 'COLUMN-HATCH', pattern: 'SOLID' }); // solid grey, by layer (the office's s-hatch look)
     if (o.columnIds) pl.text({ x: c.cx + c.w / 2 + 150, y: c.cy + c.h / 2 + 150 }, c.id, { layer: 'TEXT', h: 1.5 });
   }
   // openings: crossed

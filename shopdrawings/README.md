@@ -118,7 +118,8 @@ thickness, and the rules below are added on top exactly as for an RFT plan.
 
 Each slab outline of the plan becomes a PART (the office splits its plans the same way) with four sheets:
 01 framing (outline, columns, walls, openings, thickness zones, edge beams, levels, camber), 02 bottom and 03 top
-(the designer's bars + the additions, schedule of the additions only), 04 punching (PS tags per column, preliminary),
+(the designer's bars + the additions, schedule of the additions only; the bottom sheet carries the bottom bars only, every
+T&B bar - trimmers, U-bars, diagonals - is drawn on the top sheet), 04 punching (PS types per column),
 plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF per sheet as before.
 
 | Detail | Rule applied | Where |
@@ -127,18 +128,22 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 | Bar ends (office rule) | every top bar ending at the outer slab edge ends in a U with a 500 mm bottom leg (`U500`) where the edge is free, in an L 400 mm down into the beam (`L400`) where the outer edge carries a beam parallel to it; at an opening always a U | designer's bars and additions |
 | Column top bars (office rule) | two perpendicular groups along the column axis (or the tendon direction), each exactly as long as the drop panel (`dropMax` 6 m tells a drop from a thickened strip) or 4 m and at least 1.5 m past the face each way (`minBeyond`), edge columns 70 % with the U / L at the edge; an isolated wall is reinforced the same way, a core wall (three or more walls around an opening) gets the wall U-bars instead; the designer's bars over the column are re-lengthed and their `L=` rewritten, missing groups added, and each group is distributed over the length of the crossing group (the designer's dimension is re-measured or one is added) | every column |
 | Inside the slab | bars and distribution dimensions never leave the slab outline (clipped; perimeter dimensions sit 350 mm inside the edge) and a distribution dimension stops before an opening | everything added |
-| D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it); the 10T12 (T&B) parallel bars only with `walls.parallelBars` | every wall face that looks onto the slab |
+| D2 slab edge at core / retaining wall | T12@200 U-bar starting at the opening (core) face, through the wall and LA into the slab (LB 1200, LC = t − cover, LA from the designer's wall bar next to it); the 10T12 (T&B) parallel bars only with `walls.parallelBars` | every core-wall face that looks onto the slab |
 | D3 varying thickness | lap 500 at the step (note) | thickness zones |
-| D4 column drop / thickened zone | T12@250 (B) extra reinforcement both ways, 50 Ø beyond the zone | nested outline with a thickness written inside (e.g. `280`) |
+| D4 column drop / thickened zone | in a column drop the bottom mesh is `spec.drops` T12@150 (the base slab keeps T10@200), drawn as two groups through the column, each exactly as long as the drop (4 m without one) and at least 1.5 m past the column face, distributed over the crossing group; a thickened strip without a column gets T12@150 extra bars 50 Ø beyond it | nested outline with a thickness written inside (e.g. `280`), RAM slab areas |
 | D5 corners | 3T12 diagonals 2 m T&B at re-entrant slab corners; 3T16 at wall corners only with `walls.cornerDiagonals` | outline (and walls when asked) |
 | D7 MEP voids | three groups: G1 / G2 longitudinal T&B parallel to the sides, G3 diagonals at 45° crossing both, per the void size table, with the count of crossing bars | openings **not** enclosed by concrete walls / beams / column faces and not already trimmed by the designer (T&B bars next to them) |
 | Enclosed openings | no trimmers: an L-bar `T12-150 LBAR (T)` (400 into the beam + 3600 on top) along every side that runs along a beam, the wall U-bars along the sides at walls | openings enclosed by beams / walls / columns |
 | Bottom mesh indication | `BOTTOM MESH T10@200` (optional, `thicknessMesh`) | at every change of slab thickness (thickened zones, RC tags) |
-| D12 punching | PS1 10R-4-T12 (interior) / PS2 12R-4-T12 (edge), s = 100, with the schedule | every column, to be confirmed by the punching design |
+| D9 blockwork support beam through void | a slab strip between two openings (150 min, up to `blockBeam.maxGap` 1.5 m) with no beam / concrete wall in it: 2T20 top & bottom along the strip, TA (tension anchorage) beyond each void, T12@200 links, section on the top sheet | every such pair of openings |
+| D12 punching | the office PS detail: closed-stirrup strips leaving every column face, tagged `rows - legs - T12` per direction (short / long), S = 100, with the schedule of PS types; from a RAM model only the columns RAM designed stud rails for (rows cover the rail length, legs match the stud area per face), the others carry none; from an RFT plan PS1 10R-4-T12 / PS2 12R-4-T12 placeholders | every column with a punching design |
 
 Every added call-out looks for a free place: the pair `T12-150 U-BAR` / `L=4000` slides along its bar (and may swap
-sides), the `D#` tag and the `U500` tags move likewise, the perimeter distribution dimensions sit just outside the slab
-edge, and the wall U-bar dimension picks the freest of three offsets. Everything already on the plan (the designer's
+sides), the `D#` tag, the `U500` tags and the zone tags (`THK 360` / `BOTTOM MESH ...`) move likewise, the perimeter
+distribution dimensions sit just inside the slab edge. A column bar symbol is drawn beside the column, not through
+its centre (a vertical bar half a metre to the left, a horizontal one half a metre above, `spec.barOffset`) unless that
+place is taken; the dot sits where the bar crosses its distribution dimension. Columns are filled solid grey (the
+office's `s-hatch`). Everything already on the plan (the designer's
 call-outs and dimensions, columns, walls, notes) is an obstacle; when no free place exists the least-overlapping one is
 used. Anchorage-dependent details (slab edge at live anchors, bursting spirals, pan-box trimmers) need the tendon layout and
 are left out on purpose; site-specific details (blockwork support beam, crane and placing-boom openings) apply only

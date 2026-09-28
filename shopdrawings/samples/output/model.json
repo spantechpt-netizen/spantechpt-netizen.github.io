@@ -81,7 +81,9 @@
     "punching": {
       "dia": 10,
       "legSpacing": 100,
-      "extentFactor": 2
+      "extentFactor": 2,
+      "psDia": 12,
+      "rowSpacing": 100
     },
     "walls": {
       "parallelBars": false,
@@ -91,6 +93,19 @@
     "thicknessMesh": {
       "dia": 10,
       "spacing": 200
+    },
+    "drops": {
+      "dia": 12,
+      "spacing": 150
+    },
+    "barOffset": 500,
+    "blockBeam": {
+      "dia": 20,
+      "count": 2,
+      "linkDia": 12,
+      "linkSpacing": 200,
+      "minWidth": 150,
+      "maxGap": 1500
     },
     "code_reference": "SBC 304-18",
     "sources": {
