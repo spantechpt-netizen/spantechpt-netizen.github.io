@@ -16,6 +16,8 @@ import * as D from './details.mjs';
 import * as RC from './ram-concept.mjs';
 import { bbox, expandBbox, edges, rectPolygon, circlePolygon, dist, pointInPolygon, centroid, polygonArea } from './geometry.mjs';
 import { size50 } from './beam-strips.mjs';
+/** The office distribution-dimension style (DIM100): the value on the line, no extension lines. */
+const DIM_ZONE = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'BW', se1: true, se2: true };
 
 /** Column outline as a polygon (rotated columns supported). */
 export function columnPolygon(c) {
@@ -116,8 +118,18 @@ export function drawBase(sheet, pl, level, o = {}) {
   if (o.thickZones !== false) for (const z of level.thickZones || []) {
     pl.pline(z.polygon, { layer: 'SLAB-THK', closed: true });
     pl.hatch([z.polygon], { layer: 'SLAB-THK-HATCH', pattern: 'ANSI31', spacing: 3 });
-    // (the zone tag sits in the zone's lower-right corner, clear of the column at its centre)
-    if (o.regionLabels) { const zb = bbox(z.polygon); pl.text({ x: zb.maxX - 150, y: zb.minY + 150 }, z.thickness ? `${z.id} THK=${z.thickness}` : `${z.id} DROP`, { layer: 'SLAB-THK', h: 1.5, align: 'R', valign: 'B' }); }
+    // the office look of a drop on the framing plan: `THK=400` in the zone's lower-left corner (no id, clear of the
+    // column at its centre) and the zone's two sizes dimensioned inside it - the width along its top edge, the
+    // height along its right edge (DIM100 style, the value on the line)
+    if (o.regionLabels) {
+      const zb = bbox(z.polygon);
+      pl.text({ x: zb.minX + 300, y: zb.minY + 250 }, z.thickness ? `THK=${z.thickness}` : 'DROP', { layer: 'SLAB-THK', h: 2.2, align: 'L', valign: 'B' });
+      const S = sheet.S, inset = Math.min(700, zb.h / 4, zb.w / 4);
+      const top = { y: zb.maxY - inset }, right = { x: zb.maxX - inset };
+      pl.dimension({ x: zb.minX, y: top.y }, { x: zb.maxX, y: top.y }, { x: zb.minX, y: top.y }, { style: 'DIM100', styleDef: DIM_ZONE, layer: 'diamension', text: String(Math.round(zb.w)) });
+      pl.dimension({ x: right.x, y: zb.minY }, { x: right.x, y: zb.maxY }, { x: right.x, y: zb.minY }, { style: 'DIM100', styleDef: DIM_ZONE, layer: 'diamension', text: String(Math.round(zb.h)) });
+      void S;
+    }
   }
   // pour strips: dashed outline, light hatch, label on the framing plan only
   if (o.pourStrips !== false) for (const ps of level.pourStrips || []) {

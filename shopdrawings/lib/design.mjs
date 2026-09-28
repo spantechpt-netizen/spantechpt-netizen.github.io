@@ -422,7 +422,35 @@ export function prepareRamDesign(model, options = {}) {
     const c0 = centroid(outline);
     const inside = pointInPolygon(c0, outline) ? c0 : (() => { const b = bbox(outline); return { x: b.minX + 1500, y: b.maxY - 1500 }; })();
     // the slab thickness once, away from any column; the thickened zones carry their own THK labels
-    const tagAt = (() => { const cols = level.columns || []; for (const cand of [inside, { x: inside.x + 1500, y: inside.y + 1500 }, { x: inside.x - 1500, y: inside.y - 1500 }, { x: inside.x + 1500, y: inside.y - 1500 }]) if (!cols.some((c) => Math.abs(c.cx - cand.x) < 900 && Math.abs(c.cy - cand.y) < 900) && !(level.thickZones || []).some((z) => pointInPolygon(cand, z.polygon))) return cand; return inside; })();
+    // the boxed slab tag (3.6 x 1.2 m at 1:100) goes where the slab is clear: the candidate on a 1 m grid inside the
+    // outline with the largest clearance from columns, walls, openings, thickened zones and pour strips, nearest to
+    // the middle among the equally clear ones (never over a core, an opening or a column)
+    const tagAt = (() => {
+      const b = bbox(outline);
+      const obstacles = [
+        ...(level.columns || []).map((c) => rectPolygon({ x: c.cx - (c.w || c.d || 500) / 2, y: c.cy - (c.h || c.d || 500) / 2, w: c.w || c.d || 500, h: c.h || c.d || 500 })),
+        ...(level.walls || []).filter((w) => w.polygon).map((w) => w.polygon),
+        ...(level.openings || []).map((o) => R.regionPolygon(o)),
+        ...(level.thickZones || []).map((z) => z.polygon),
+        ...(level.pourStrips || []).map((ps) => ps.polygon),
+      ].filter((poly) => poly && poly.length >= 3);
+      const halfW = 1900, halfH = 700;
+      const clearance = (p) => {
+        if (!pointInPolygon(p, outline)) return -1;
+        let m = Math.min(distToPolygon(p, outline), 6000);
+        for (const poly of obstacles) { if (pointInPolygon(p, poly)) return -1; m = Math.min(m, distToPolygon(p, poly)); }
+        return m;
+      };
+      let best = null;
+      for (let x = b.minX + halfW; x <= b.maxX - halfW; x += 1000) for (let y = b.minY + halfH; y <= b.maxY - halfH; y += 1000) {
+        const p = { x, y };
+        const c = clearance(p);
+        if (c < 0) continue;
+        const score = Math.min(c, 4000) - dist(p, inside) / 40; // clearance first (capped at 4 m), then nearness to the middle
+        if (!best || score > best.score) best = { p, score };
+      }
+      return best ? best.p : inside;
+    })();
     level.rcTags = [{ x: tagAt.x, y: tagAt.y, thickness: level.thickness }];
     level.levelTags = level.tos != null ? [{ x: inside.x, y: inside.y - 400, label: 'T.O.C', value: String(level.tos) }] : [];
     level.camber = level.camber || [];
@@ -1770,9 +1798,25 @@ function drawDesignerNotes(pl, S, level, o = {}) {
   for (const c of level.camber || []) pl.text({ x: c.x, y: c.y }, c.text, { layer: 'TEXT-4', h: 200 / S, style: 'BW', widthFactor: 0.8 });
   for (const t of level.levelTags || []) { pl.text({ x: t.x, y: t.y }, `${t.label} ${t.value}`, { layer: 'TEXT-4', h: 190 / S, style: 'BW', widthFactor: 0.8 }); }
   if (o.thickness !== false) {
-    if (o.zones !== false) for (const z of level.thickZones || []) { const b = bbox(z.polygon); pl.text({ x: b.minX + 500, y: b.maxY - 450 }, `THK ${z.thickness || 'DROP'}`, { layer: 'S-TEXT', h: 200 / S, align: 'L', valign: 'M', style: 'BW', widthFactor: 0.8 }); }
-    for (const t of level.rcTags || []) pl.text({ x: t.x, y: t.y }, `RC ${t.thickness}`, { layer: 'S-TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+    if (o.zones !== false && !o.regionLabels) for (const z of level.thickZones || []) { const b = bbox(z.polygon); pl.text({ x: b.minX + 500, y: b.maxY - 450 }, `THK ${z.thickness || 'DROP'}`, { layer: 'S-TEXT', h: 200 / S, align: 'L', valign: 'M', style: 'BW', widthFactor: 0.8 }); }
+    for (const t of level.rcTags || []) slabTag(pl, S, t, level);
   }
+}
+
+/**
+ * The slab tag (office style): a boxed two-line label in the slab - `POST TENSION SLAB` (or `RC SLAB`) over the
+ * thickness `250 mm` - readable at a glance; the mesh labels of the reinforcement sheets go under the box (`t.below`).
+ */
+function slabTag(pl, S, t, level) {
+  const pt = (level.pt?.zones?.length || 0) > 0 || (level.ram?.tendons?.length || 0) > 0;
+  const lines = [pt ? 'POST TENSION SLAB' : 'RC SLAB', `${t.thickness} mm`];
+  const H = 260, gap = 140, pad = 200; // model mm at 1:100 (2.6 mm text on paper)
+  const tw = Math.max(...lines.map((l) => l.length)) * H * 0.8 * 0.85 + 2 * pad;
+  const th = lines.length * H + (lines.length - 1) * gap + 2 * pad;
+  pl.rect({ x: t.x - tw / 2, y: t.y - th / 2, w: tw, h: th }, { layer: 'S-TEXT' });
+  lines.forEach((text, i) => pl.text({ x: t.x, y: t.y + th / 2 - pad - H / 2 - i * (H + gap) }, text, { layer: 'S-TEXT', h: H / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 }));
+  t.below = t.y - th / 2 - 250; // where the next label under the box goes
+  return t.below;
 }
 
 /**
@@ -1868,7 +1912,7 @@ function rebarSheet(model, level, meta, adds, face) {
       const tm = model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh;
       const label = `BOTTOM MESH T${tm.dia}@${tm.spacing}`;
       // (inside a thickened zone the mesh is written with the zone tag after the bars, see zoneLabels: the drop mesh of detail 4 in a column drop)
-      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.y - 350 }, label, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.below ?? t.y - 350 }, label, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
     }
     const mine = adds.items.filter((it) => faces.includes(it.face));
     for (const it of mine) officeBar(pl, S, it, 'bars');   // bars and dimensions first ...
@@ -1880,7 +1924,7 @@ function rebarSheet(model, level, meta, adds, face) {
     }
     if (face === 'T' && level.topMesh && level.meshSpec) {
       // the top mesh is written at the thickness tag like the bottom one (slab mesh option: both faces)
-      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.y - 350 }, `TOP MESH T${(level.topMeshSpec || level.meshSpec)[0]}@${(level.topMeshSpec || level.meshSpec)[1]}`, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.below ?? t.y - 350 }, `TOP MESH T${(level.topMeshSpec || level.meshSpec)[0]}@${(level.topMeshSpec || level.meshSpec)[1]}`, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
     }
     placer = null;
     const list = adds.bars[face];
