@@ -15,7 +15,7 @@ import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import * as RC from './ram-concept.mjs';
 import { bbox, expandBbox, edges, rectPolygon, circlePolygon, dist, pointInPolygon, centroid, polygonArea } from './geometry.mjs';
-import { size50 } from './beam-strips.mjs';
+import { size50, beamSpans } from './beam-strips.mjs';
 /** The office distribution-dimension style (DIM100): the value on the line, no extension lines. */
 const DIM_ZONE = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'BW', se1: true, se2: true };
 
@@ -112,7 +112,27 @@ export function drawBase(sheet, pl, level, o = {}) {
   }
   pl.pline(level.outline, { layer: 'OUTLINE', closed: true, color: 3 });
   for (const bm of level.beams || []) {
-    if (bm.polygon && !bm.band) { pl.pline(bm.polygon, { layer: 'BEAM', closed: true }); if (o.regionLabels && bm.interior) { const c = centroid(bm.polygon); pl.text({ x: c.x, y: c.y }, `${bm.id} BEAM ${Math.round(bm.t)}${bm.depth ? 'x' + Math.round(bm.depth) : ''}`, { layer: 'BEAM', h: 1.5, align: 'C', valign: 'M', rot: Math.abs(bm.b.x - bm.a.x) >= Math.abs(bm.b.y - bm.a.y) ? 0 : 90 }); } }
+    if (bm.polygon && !bm.band) {
+      pl.pline(bm.polygon, { layer: 'BEAM', closed: true });
+      // the beam's name beside it (above a horizontal beam, left of a vertical one - never inside it), once per
+      // span between the columns / walls crossing it: a support divides the beam, so one RAM beam with a column
+      // in it reads as separate beams either side
+      if (o.regionLabels) {
+        const sp = beamSpans(bm, level.columns || [], level.walls || [], level.beams || []);
+        const rot = sp.alongX ? 0 : 90;
+        const label = `${bm.id} BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}`;
+        const off = (bm.t || 300) / 2 + 350;
+        const side = sp.alongX ? { x: 0, y: 1 } : { x: -1, y: 0 };
+        for (const span of sp.spans) {
+          const t0 = span.t0 + (span.support0 ? span.support0.along / 2 : 0), t1 = span.t1 - (span.support1 ? span.support1.along / 2 : 0);
+          if (t1 - t0 < 1200) continue;
+          const m = { x: bm.a.x + sp.u.x * (t0 + t1) / 2, y: bm.a.y + sp.u.y * (t0 + t1) / 2 };
+          let at = { x: m.x + side.x * off, y: m.y + side.y * off };
+          if (!pointInPolygon(at, level.outline)) at = { x: m.x - side.x * off, y: m.y - side.y * off }; // an edge beam: the label on the slab side
+          pl.text(at, label, { layer: 'BEAM', h: 1.8, align: 'C', valign: 'M', rot });
+        }
+      }
+    }
     else if (!bm.polygon) pl.line(bm.a, bm.b, { layer: 'BEAM' });
   }
   if (o.thickZones !== false) for (const z of level.thickZones || []) {

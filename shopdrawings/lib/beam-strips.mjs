@@ -38,7 +38,7 @@ function maxUid(db) {
 /** Beam sizes are written to the nearest 50 mm with no decimals (office convention): 350x600. */
 export const size50 = (v) => Math.round((Number(v) || 0) / 50) * 50;
 
-export function beamSpans(beam, columns, walls) {
+export function beamSpans(beam, columns, walls, beams = []) {
   const L = dist(beam.a, beam.b);
   const u = { x: (beam.b.x - beam.a.x) / L, y: (beam.b.y - beam.a.y) / L }, n = { x: -u.y, y: u.x };
   const alongX = Math.abs(u.x) >= Math.abs(u.y);
@@ -57,6 +57,16 @@ export function beamSpans(beam, columns, walls) {
     const ex = w.a.x - beam.a.x, ey = w.a.y - beam.a.y;
     const t = (ex * dy - ey * dx) / den, s = (ex * u.y - ey * u.x) / den;
     if (s >= -1e-6 && s <= 1 + 1e-6 && t >= -100 && t <= L + 100) supports.push({ t: Math.max(0, Math.min(L, t)), along: w.t || 250, across: Math.hypot(dx, dy), kind: 'wall' });
+  }
+  // a deeper beam crossing this one carries it: it is a support too (office rule), the span breaks at its axis
+  for (const ob of beams || []) {
+    if (ob === beam || ob.id === beam.id || !ob.a || !ob.b || !((ob.depth || 0) > (beam.depth || 0))) continue;
+    const dx = ob.b.x - ob.a.x, dy = ob.b.y - ob.a.y;
+    const den = u.x * dy - u.y * dx;
+    if (Math.abs(den) < 1e-9) continue;
+    const ex = ob.a.x - beam.a.x, ey = ob.a.y - beam.a.y;
+    const t = (ex * dy - ey * dx) / den, s = (ex * u.y - ey * u.x) / den;
+    if (s >= -1e-6 && s <= 1 + 1e-6 && t >= -100 && t <= L + 100) supports.push({ t: Math.max(0, Math.min(L, t)), along: ob.t || 300, across: Math.hypot(dx, dy), kind: 'beam', beam: ob.id });
   }
   supports.sort((p, q) => p.t - q.t);
   // merge supports closer than half a metre (a wall meeting a column)
@@ -111,7 +121,7 @@ export function writeBeamStrips(src, out, ram, { designSystem = 'beam', splitter
     };
     const frameNo = { latitude: 0, longitude: 0 };
     for (const beam of ram.beams || []) {
-      const { spans, n, spanSet } = beamSpans(beam, ram.columns || [], ram.walls || []);
+      const { spans, n, spanSet } = beamSpans(beam, ram.columns || [], ram.walls || [], ram.beams || []);
       if (!spans.length) continue;
       const segCat = catOf('SpanSegmentCategory', spanSet), stripCat = catOf('SpanSegmentStripCategory', spanSet), boundCat = catOf('StripBoundaryCategory', spanSet);
       if (!segCat) { summary.missing.push(`${beam.id}: no ${spanSet} span segment category`); continue; }

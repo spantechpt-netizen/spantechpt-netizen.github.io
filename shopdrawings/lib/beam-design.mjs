@@ -240,7 +240,7 @@ export function designBeams(level, spec = {}) {
   const distToSeg = (p, a, b) => { const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2; const t = L2 ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / L2)) : 0; return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y))); };
   const atJoint = (p) => joints.some((e) => distToSeg(p, e.a, e.b) < 400) || Boolean(pc && ((pc.joints?.lo && Math.abs(p[pc.axis] - (pc.lo - (pc.overlap ?? 600))) < 400) || (pc.joints?.hi && Math.abs(p[pc.axis] - (pc.hi + (pc.overlap ?? 600))) < 400)));
   for (const bm of beams) {
-    const sp = beamSpans(bm, level.columns || [], level.walls || []);
+    const sp = beamSpans(bm, level.columns || [], level.walls || [], beams); // (a deeper beam crossing it is a support)
     const L = dist(bm.a, bm.b);
     const mid = { x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 };
     const q = {};

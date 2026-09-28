@@ -1171,3 +1171,18 @@ test('beam sizes are written to the nearest 50 mm with no decimals (350x600)', a
   assert.equal(size50(612.4), 600);
   assert.equal(`${size50(349.999)}x${size50(600.0001)}`, '350x600');
 });
+
+test('a beam crossing a deeper beam is carried by it: the span breaks there, like at a column or a wall', async () => {
+  const { beamSpans } = await import('../shopdrawings/lib/beam-strips.mjs');
+  const shallow = { id: 'BM1', a: { x: 0, y: 5000 }, b: { x: 12000, y: 5000 }, t: 300, depth: 500 };
+  const deep = { id: 'BM2', a: { x: 6000, y: 0 }, b: { x: 6000, y: 10000 }, t: 400, depth: 800 };
+  const same = { id: 'BM3', a: { x: 9000, y: 0 }, b: { x: 9000, y: 10000 }, t: 300, depth: 500 };
+  const sp = beamSpans(shallow, [], [], [shallow, deep, same]);
+  assert.equal(sp.spans.length, 2, 'two spans either side of the deeper beam; the equal beam is no support');
+  assert.equal(sp.supports.length, 1);
+  assert.equal(sp.supports[0].kind, 'beam');
+  assert.equal(Math.round(sp.supports[0].t), 6000);
+  assert.equal(Math.round(sp.supports[0].along), 400, 'the support is as wide as the deeper beam');
+  const back = beamSpans(deep, [], [], [shallow, deep]);
+  assert.equal(back.spans.length, 1, 'the deeper beam is not carried by the shallow one');
+});
