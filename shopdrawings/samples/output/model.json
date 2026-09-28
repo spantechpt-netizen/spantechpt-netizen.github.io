@@ -100,12 +100,12 @@
     },
     "barOffset": 500,
     "blockBeam": {
-      "dia": 20,
+      "dia": 16,
       "count": 2,
       "linkDia": 12,
       "linkSpacing": 200,
       "minWidth": 150,
-      "maxGap": 1500
+      "maxGap": 500
     },
     "code_reference": "SBC 304-18",
     "sources": {

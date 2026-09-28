@@ -471,7 +471,7 @@ export function applyColumnRule(level, spec, assumptions = []) {
         }
       } else if (s.addMissing !== false) {
         const cAcross = span(across);
-        const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: barOffsets(spec, size[across], cAcross.hi - cAcross.lo) };
+        const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: barOffsets(spec, size[across], cAcross.hi - cAcross.lo), keep: cc };
         added.push(item);
         groups[dir] = [{ a: pt(lo, 0), b: pt(hi, 0), added: true, item }];
         missing++;
@@ -577,9 +577,31 @@ function outsideOpenings(level, p, q, keep) {
   return best ? [add(p, u, L * best.t0), add(p, u, L * best.t1)] : null;
 }
 
+/**
+ * A bar never runs into an opening: it stops at the opening edge and ends there in a U (the piece at the column / the
+ * bar's own reference `keep` is kept); its written length and cutting length follow. Returns null when nothing is left.
+ */
+export function clipAtOpenings(level, it, uAllow) {
+  if (it.hairpin || it.ind) return it;
+  const os = outsideOpenings(level, it.a, it.b, it.keep || mid(it.a, it.b));
+  if (!os || dist(os[0], os[1]) < 100) return null;
+  const oA = dist(os[0], it.a) > 1, oB = dist(os[1], it.b) > 1;
+  if (!oA && !oB) return it;
+  const oldL = dist(it.a, it.b), newL = dist(os[0], os[1]);
+  it.a = os[0]; it.b = os[1];
+  it.uEnd = { ...(it.uEnd || {}) };
+  if (oA) it.uEnd.start = 'U';
+  if (oB) it.uEnd.end = 'U';
+  if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(newL)}`;
+  if (it.length) it.length = Math.round(it.length - (oldL - newL) + ((oA ? 1 : 0) + (oB ? 1 : 0)) * uAllow);
+  it.clippedOpening = true;
+  return it;
+}
+
 /** Nothing is drawn outside the slab: bars and distribution lines are clipped to the outline (an item fully outside is dropped). */
-function clipToSlab(level, items) {
+function clipToSlab(level, items, spec = {}) {
   const outline = level.outline;
+  const uAllow = R.U_BOTTOM_LEG + (level.thickness - 2 * (spec.cover || 25)); // what a U end adds to the cutting length
   const longest = (a, b) => { const parts = clipSegmentToPolygon(a, b, outline).filter(([p, q]) => dist(p, q) > 50); return parts.sort((p, q) => dist(q[0], q[1]) - dist(p[0], p[1]))[0] || null; };
   const out = [];
   // a cut that falls on a drawing joint with the neighbouring part is no cut: the slab (and the bar) continue there
@@ -590,6 +612,7 @@ function clipToSlab(level, items) {
     if (!seg) continue;
     const cutA = dist(seg[0], it.a) > 1, cutB = dist(seg[1], it.b) > 1;
     if ((cutA && !atJoint(seg[0])) || (cutB && !atJoint(seg[1]))) { it.a = cutA && !atJoint(seg[0]) ? seg[0] : it.a; it.b = cutB && !atJoint(seg[1]) ? seg[1] : it.b; it.clipped = true; }
+    if (clipAtOpenings(level, it, uAllow) === null) continue;
     if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
     // the distribution never runs into an opening: it stops before it (the piece at the bar is kept)
     if (it.dist) { const os = outsideOpenings(level, it.dist.p, it.dist.q, mid(it.a, it.b)); if (!os || dist(os[0], os[1]) < 200) delete it.dist; else if (dist(os[0], it.dist.p) > 1 || dist(os[1], it.dist.q) > 1) { it.dist.p = os[0]; it.dist.q = os[1]; delete it.dist.textAt; } }
@@ -835,7 +858,7 @@ export function designAdditions(level, spec, opts = {}) {
         const s0 = Math.max(-L / 2 + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700)); // clear of the crossing bar beside the column
         const dp = dir === 'x' ? { x: cc.x + s0, y: cc.y - W / 2 } : { x: cc.x - W / 2, y: cc.y + s0 };
         const dq = dir === 'x' ? { x: cc.x + s0, y: cc.y + W / 2 } : { x: cc.x + W / 2, y: cc.y + s0 };
-        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y' });
+        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc });
         addBar('B', { dia: sd.dia, shape: 'STR', length: L, qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
       }
       continue;
@@ -1122,8 +1145,10 @@ class LabelPlacer {
 let placer = null;
 
 /** Start a placer for a plan pen: every text drawn through the pen registers its box. */
-function attachPlacer(pl, S, level) {
+function attachPlacer(pl, S, level, spec = {}) {
   placer = new LabelPlacer();
+  placer.level = level;
+  placer.uAllow = R.U_BOTTOM_LEG + (level.thickness - 2 * (spec.cover || 25));
   const text0 = pl.text.bind(pl);
   pl.text = (p, str, o = {}) => { placer.add(textBox(p, str, (o.h || 2.5) * S, o.rot || 0, o.align || 'L', o.valign || 'B', o.widthFactor || 1)); return text0(p, str, o); };
   for (const c of level.columns || []) placer.add(c.shape === 'circle' ? { minX: c.cx - c.d / 2, minY: c.cy - c.d / 2, maxX: c.cx + c.d / 2, maxY: c.cy + c.d / 2 } : { minX: c.cx - c.w / 2, minY: c.cy - c.h / 2, maxX: c.cx + c.w / 2, maxY: c.cy + c.h / 2 });
@@ -1162,6 +1187,7 @@ export function officeBar(pl, S, it, phase) {
     const k = placer ? placer.pick(it.posCands, boxOf) : it.posCands[0];
     it.a = add(it.a, n0, k); it.b = add(it.b, n0, k);
     delete it.posCands;
+    if (placer?.level) clipAtOpenings(placer.level, it, placer.uAllow || 800); // in its final place the bar still stops at an opening
     if (placer) placer.add(bbox([add(it.a, n0, -40), add(it.a, n0, 40), add(it.b, n0, -40), add(it.b, n0, 40)])); // later writing keeps off the bar
   }
   const u = unit(it.a, it.b), n = perp(u);
@@ -1228,7 +1254,10 @@ function drawUEnds(pl, S, a, b, uEnd, layer) {
   const { rot } = readableRot(u);
   for (const [on, p] of [[uEnd.start, a], [uEnd.end, b]]) {
     if (!on) continue;
-    pl.line(p, add(p, n, -250), { layer }); // the leg tick on the plan, on the lower / left side of the bar
+    const tick = add(p, n, -250);
+    pl.line(p, tick, { layer }); // the leg on the plan, on the lower / left side of the bar
+    // a U is drawn as a U: the 500 bottom leg comes back along the bar from the edge (an L keeps its single leg into the beam)
+    if (on === 'U') pl.line(tick, add(tick, p === a ? u : { x: -u.x, y: -u.y }, R.U_BOTTOM_LEG), { layer });
     if (placer) { if (placer.uTags.some((q) => dist(q, p) < 400)) continue; placer.uTags.push(p); } // one tag where two bars end together
     const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), n, -300 - 110), add(add({ x: 0, y: 0 }, u, k), n, 300)]);
     const tag = on === 'L' ? `L${DEFAULT_U.beamLeg}` : `U${R.U_BOTTOM_LEG}`;
@@ -1356,7 +1385,7 @@ function rebarSheet(model, level, meta, adds, face) {
   return (sheet, [pl]) => {
     const S = sheet.S;
     drawBase(sheet, pl, level, { columnHatchLayer: 's-hatch', gridTag: meta.gridTag, dims: false, pt: false, ubarRegions: false, regionLabels: false });
-    attachPlacer(pl, S, level); // everything written from here on is kept clear of what is already there
+    attachPlacer(pl, S, level, model.spec); // everything written from here on is kept clear of what is already there
     drawDesignerNotes(pl, S, level, { thickness: true, zones: false }); // the zone tags are placed after the bars (zoneLabels)
     // office rule: the top sheet carries the top bars and every T&B bar (trimmers, U-bars, diagonals); the bottom sheet the bottom bars only
     const faces = face === 'B' ? ['B'] : ['T', 'TB'];
@@ -1501,11 +1530,13 @@ export function composeDesignPackage(model, metaIn = {}) {
     if (cores.isolated) model.assumptions.push({ level: level.id, text: `${cores.isolated} isolated walls in ${level.name} carry the column top bars (two groups over the wall, the drop panel / 4 m across, at least 1.5 m past the wall face each way); ${cores.core} core walls carry the wall U-bars.` });
     const rule = applyColumnRule(level, model.spec, model.assumptions);
     const adds = designAdditions(level, model.spec);
-    for (const it of rule.added) { adds.items.push(it); adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `COLUMN ${it.column} ${it.dir.toUpperCase()}` }); }
-    adds.items = clipToSlab(level, adds.items);
+    for (const it of rule.added) adds.items.push(it);
+    adds.items = clipToSlab(level, adds.items, model.spec);
+    // the column groups are scheduled after the clipping (a bar stopped at an opening is shorter and ends in a U)
+    for (const it of rule.added) if (adds.items.includes(it)) adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.clippedOpening ? `${it.shape} (U AT OPENING)` : it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `COLUMN ${it.column} ${it.dir.toUpperCase()}` });
     if (level.existing) {
-      level.existing.lines = clipToSlab(level, level.existing.lines);
-      if (level.existing.items) level.existing.items = clipToSlab(level, level.existing.items);
+      level.existing.lines = clipToSlab(level, level.existing.lines, model.spec);
+      if (level.existing.items) level.existing.items = clipToSlab(level, level.existing.items, model.spec);
       // the designer's / the column rule's distribution DIMENSIONs stop before an opening as well
       for (const d of level.existing.dims || []) {
         if (d.x3 == null) continue;

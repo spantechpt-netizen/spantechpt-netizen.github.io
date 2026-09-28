@@ -449,7 +449,7 @@ test('HATCH records carry no pixel-size group, which AutoCAD rejects on non-deri
 });
 
 // ---------------------------------------------------------------- design drawings (office convention)
-import { extractDesign, designAdditions, composeDesignPackage, VOID_TABLE } from '../shopdrawings/lib/design.mjs';
+import { extractDesign, designAdditions, composeDesignPackage, clipAtOpenings, VOID_TABLE } from '../shopdrawings/lib/design.mjs';
 
 /** A small office-style design plan: RC slab outline, columns, a U core wall, an edge beam, a void, a 280 zone and the designer's own top bars. */
 function buildOfficePlan() {
@@ -559,7 +559,7 @@ test('the General Details add bars in the office convention at the places they r
   // detail 9: the 500 strip between the two voids (no beam / wall) is a blockwork support beam 2T20 T&B + T12-200 links, TA beyond each void
   const d9 = by('D9');
   assert.equal(d9.length, 1);
-  assert.equal(d9[0].l1, '2T20 (T&B) + T12-200 LINKS');
+  assert.equal(d9[0].l1, '2T16 (T&B) + T12-200 LINKS');
   assert.ok(Math.abs(d9[0].blockBeam.gap - 500) < 1 && Math.abs(d9[0].a.y - d9[0].b.y) < 1, 'along the strip between the voids');
   assert.equal(Math.round(dist2(d9[0].a, d9[0].b)), 1200 + 2 * d9[0].blockBeam.ta, 'the 1200 overlap + TA each side');
   assert.ok(adds.bars.T.rows().some((r) => /^LINK/.test(r.shape) && r.dia === 12), 'links in the schedule');
@@ -616,6 +616,12 @@ test('the design package is written in the office layers and text style, on the 
   assert.ok(dxfOut.includes('\n1\nT12-150 U-BAR\n'), 'free edge U-bar call-out');
   assert.ok(dxfOut.includes('\n1\nD1\n') && dxfOut.includes('\n1\nD6\n'), 'detail references');
   assert.ok(dxfOut.includes('\n1\nU500\n'), "the designer's top bar ending at the slab edge gets the U500 end");
+  // a bar never runs into an opening: a column bar through the void (x 6500..7700 at y 7000) stops at the void edge
+  // with a U, the piece at the column (8000,7000) kept, and its written / cutting lengths follow
+  const bar = { a: { x: 6000, y: 7000 }, b: { x: 10000, y: 7000 }, l2: 'L=4000', length: 4000, keep: { x: 8000, y: 7000 }, uEnd: { start: false, end: false } };
+  const cut = clipAtOpenings(model.levels[0], bar, 800);
+  assert.ok(cut && Math.abs(cut.a.x - 7700) < 1 && Math.abs(cut.b.x - 10000) < 1, 'stopped at the void edge, the column side kept');
+  assert.equal(cut.uEnd.start, 'U'); assert.equal(cut.l2, 'L=2300'); assert.equal(cut.length, 2300 + 800);
   // the distribution indicator is a real DIMENSION in style DIM100 with its picture block
   assert.ok(/\n0\nDIMENSION\n[\s\S]*?\n3\nDIM100\n/.test(dxfOut), 'DIMENSION entities in style DIM100');
   assert.ok(/\n0\nDIMSTYLE\n[\s\S]*?\n2\nDIM100\n[\s\S]*?\n44\n0\n[\s\S]*?\n140\n250\n[\s\S]*?\n142\n150\n[\s\S]*?\n75\n1\n76\n1\n[\s\S]*?\n178\n3\n/.test(dxfOut), 'DIM100 record: text 250, oblique tick 150, green text, no extension lines');
