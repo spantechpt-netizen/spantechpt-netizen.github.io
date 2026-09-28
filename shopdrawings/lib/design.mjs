@@ -242,6 +242,24 @@ export function extractDesign(dxf, options = {}) {
     if (!tag) A(level, `Slab thickness of ${level.name} not tagged on the plan: ${level.thickness} mm used.`);
     if (!walls.length) A(level, `No walls read in ${level.name}: details 2 and 5 (core walls) not applied.`);
   });
+  // parts of one plan overlap where the office split it: an edge of one part that runs inside another part is a drawing
+  // joint, not a slab edge (no perimeter bars, no U ends there)
+  for (const level of model.levels) {
+    const others = model.levels.filter((o) => o !== level);
+    let joints = 0;
+    for (const e of level.edges) {
+      const m = mid(e.a, e.b);
+      const q1 = add(m, unit(e.a, e.b), Math.min(300, dist(e.a, e.b) / 3)), q2 = add(m, unit(e.b, e.a), Math.min(300, dist(e.a, e.b) / 3));
+      e.joint = others.some((o) => [m, q1, q2].every((q) => pointInPolygon(q, o.outline) || distToPolygon(q, o.outline) < 60));
+      if (e.joint) { e.beam = false; joints++; }
+    }
+    if (joints) {
+      level.jointEdges = level.edges.filter((e) => e.joint);
+      const jl = level.jointEdges.reduce((t, e) => t + dist(e.a, e.b), 0);
+      model.findings.push(`${level.id} ${level.name}: ${joints} edges (${Math.round(jl / 1000)} m) are drawing joints with the neighbouring part, not slab edges: no perimeter bars or U ends there.`);
+      for (const l of level.existing.lines) if (l.uEnd) for (const k of ['start', 'end']) { const p = k === 'start' ? l.a : l.b; if (l.uEnd[k] && level.jointEdges.some((e) => distToSeg(p, e.a, e.b) < spec0.cover + 300)) l.uEnd[k] = false; }
+    }
+  }
   const notForDesign = /Top bars over columns not specified|Edge U-bars not specified|Opening trimmers not specified|Void trimmers not specified|Stock bar length|No plan title found near slab/;
   model.assumptions = model.assumptions.filter((a) => !notForDesign.test(a.text) && !(a.text.startsWith('Slab thickness not stated') && model.levels.some((l) => l.id === a.level && l.thicknessSource)));
   model.design = { units: model.source.units };
@@ -599,7 +617,7 @@ export function designAdditions(level, spec, opts = {}) {
   const su = spec.uEdge;
   const web = h - 2 * cover;
   const uLegTop = ceilTo((su.total - web) / 2, 10);
-  for (const e of level.edges || []) {
+  for (const e of (level.edges || []).filter((x) => !x.joint)) {
     // the edge as a path (one facet for a straight edge, several for a curved one), runs in arc length
     const pts = e.pts || [e.a, e.b];
     const facets = [];

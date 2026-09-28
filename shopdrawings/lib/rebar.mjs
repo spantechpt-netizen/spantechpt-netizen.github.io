@@ -303,6 +303,7 @@ export const U_BOTTOM_LEG = 500;
  */
 export function edgeEndAt(level, spec, p) {
   const u = topEdgeEnd(level, spec);
+  if ((level.jointEdges || []).some((e) => { const L = dist(e.a, e.b) || 1; const t = Math.max(0, Math.min(L, ((p.x - e.a.x) * (e.b.x - e.a.x) + (p.y - e.a.y) * (e.b.y - e.a.y)) / L)); return Math.hypot(p.x - (e.a.x + (e.b.x - e.a.x) / L * t), p.y - (e.a.y + (e.b.y - e.a.y) / L * t)) < 600; })) return { type: null, leg: 0, label: '', note: 'continues into the neighbouring part' };
   const outline = level.outline || [];
   let best = null;
   for (let i = 0; i < outline.length; i++) {
@@ -492,7 +493,8 @@ export function topAtColumns(level, spec) {
       for (const sign of [-1, 1]) {
         if (!hooks[sign]) continue;
         const endPt = dir === 'x' ? { x: col.cx + sign * (c1 / 2 + ext[sign]), y: col.cy } : { x: col.cx, y: col.cy + sign * (c1 / 2 + ext[sign]) };
-        ends[sign] = edgeEndAt(level, spec, endPt);
+        const end = edgeEndAt(level, spec, endPt);
+        if (end.type) ends[sign] = end; else hooks[sign] = false; // the bar simply continues into the neighbouring part
       }
       const legs = (ends[-1]?.leg || 0) + (ends[1]?.leg || 0);
       const length = ceilTo(straight + legs, 10);
