@@ -424,7 +424,12 @@ export function topAtColumns(level, spec) {
       const nbs = {}, toEdges = {};
       for (const sign of [-1, 1]) {
         const nb = neighbour(level, col, dir, sign);
-        const toEdge = edgeDistance(level, col, dir, sign, cover);
+        let toEdge = edgeDistance(level, col, dir, sign, cover);
+        // a drawing joint with the neighbouring part is not a slab edge: the slab goes on
+        if (level.jointEdges?.length) {
+          const hit = dir === 'x' ? { x: col.cx + sign * (toEdge + c1 / 2), y: col.cy } : { x: col.cx, y: col.cy + sign * (toEdge + c1 / 2) };
+          if (level.jointEdges.some((e) => { const L = dist(e.a, e.b) || 1; const t = Math.max(0, Math.min(L, ((hit.x - e.a.x) * (e.b.x - e.a.x) + (hit.y - e.a.y) * (e.b.y - e.a.y)) / L)); return Math.hypot(hit.x - (e.a.x + (e.b.x - e.a.x) / L * t), hit.y - (e.a.y + (e.b.y - e.a.y) / L * t)) < 400; })) toEdge = 1e9;
+        }
         nbs[sign] = nb; toEdges[sign] = toEdge;
         if (nb) spans.push(nb.d); else { const cap = ceilTo(Math.max(level.maxSpan || 0, 6 * 1.5 * h) / 6, 50); spans.push(2 * Math.min(toEdge, cap * 6)); }
       }

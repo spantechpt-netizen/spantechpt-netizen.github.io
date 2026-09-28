@@ -212,6 +212,7 @@ export function extractDesign(dxf, options = {}) {
       else if (e.type === 'LWPOLYLINE') for (let i = 0; i + 1 < e.pts.length; i++) segs.push({ a: e.pts[i], b: e.pts[i + 1], layer: e.layer });
     }
     const lines = segs.filter((s) => dist(s.a, s.b) > 200 && inWin(segMid(s)));
+    for (const l of lines) if (dist(l.a, l.b) <= 350) l.tick = true; // the designer's short leg symbols at bar ends, not bars
     const callouts = texts.filter((t) => /REO|S-TEXT|TXT/i.test(t.layer) && /T\d+|L\s*=|\(T\)|\(B\)|T&B/i.test(textOf(t)) && inWin(t))
       .map((t) => ({ x: t.x, y: t.y, text: textOf(t), h: t.height || CALL_H, rot: t.rotation || 0, halign: t.halign || 0, widthFactor: t.sx && t.sx < 2 ? t.sx : undefined, style: t.style }));
     const faceOfText = (s) => (/\(B\)|BOT/i.test(s) ? 'B' : /T\s*&\s*B|T&B/i.test(s) ? 'TB' : /\(T\)|TOP/i.test(s) ? 'T' : null);
@@ -228,7 +229,7 @@ export function extractDesign(dxf, options = {}) {
     // office rule: a top bar ending at the outer slab edge or at an opening ends in a U (500 bottom leg)
     // office rule: a top bar ending at the outer slab edge ends in a U (500 bottom leg), or in an L where the edge carries a beam; at an opening always a U
     const atBoundary = (p) => ((level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300) ? 'U' : distToPolygon(p, outline) < spec0.cover + 300 ? R.edgeEndAt(level, spec0, p).type : false);
-    for (const l of lines) if (l.face !== 'B') l.uEnd = { start: atBoundary(l.a), end: atBoundary(l.b) };
+    for (const l of lines) if (l.face !== 'B' && !l.tick) l.uEnd = { start: atBoundary(l.a), end: atBoundary(l.b) };
     const dims = raw.filter((e) => e.type === 'DIMENSION' && inWin(e)).map((e) => ({ ...e }));
     const dots = raw.filter((e) => e.type === 'INSERT' && /^DOT/i.test(e.name || '') && inWin(e)).map((e) => ({ x: e.x, y: e.y }));
     const faceNearLine = (p, r) => { const l = lines.filter((s) => distToSeg(p, s.a, s.b) < r).sort((s1, s2) => distToSeg(p, s1.a, s1.b) - distToSeg(p, s2.a, s2.b))[0]; return l ? l.face : 'T'; };
@@ -436,10 +437,13 @@ export function applyColumnRule(level, spec, assumptions = []) {
     const groups = {};
     for (const dir of ['x', 'y']) {
       const across = dir === 'x' ? 'y' : 'x';
+      // the bars of this direction are spread over the crossing group's length: every parallel top bar within that
+      // half-width of the column centre (and crossing the column along its length) belongs to the group
+      const halfBand = Math.max(size[across] / 2 + 400, 800, per[across].straight / 2);
       groups[dir] = ex.lines.filter((l) => {
-        if (!isTop(l.face) || Math.abs(dot(unit(l.a, l.b), U[dir])) < 0.98) return false;
+        if (!isTop(l.face) || l.tick || Math.abs(dot(unit(l.a, l.b), U[dir])) < 0.98) return false;
         const A = loc(l.a), B = loc(l.b);
-        return Math.abs(A[across]) <= Math.max(size[across] / 2 + 400, 800) && Math.min(A[dir], B[dir]) < size[dir] / 2 + 100 && Math.max(A[dir], B[dir]) > -size[dir] / 2 - 100; // the designer draws the bar beside a thin column
+        return Math.abs(A[across]) <= halfBand && Math.min(A[dir], B[dir]) < size[dir] / 2 + 100 && Math.max(A[dir], B[dir]) > -size[dir] / 2 - 100;
       });
     }
     for (const dir of ['x', 'y']) {
@@ -447,6 +451,7 @@ export function applyColumnRule(level, spec, assumptions = []) {
       const p = per[dir], { lo, hi } = span(dir);
       const pt = (along, t) => (dir === 'x' ? glob(along, t) : glob(t, along));
       if (groups[dir].length) {
+        const olds = groups[dir].map((l) => ({ a: { ...l.a }, b: { ...l.b } }));
         for (const l of groups[dir]) {
           const old = { a: { ...l.a }, b: { ...l.b } };
           const t = loc(l.a)[across];
@@ -454,10 +459,12 @@ export function applyColumnRule(level, spec, assumptions = []) {
           l.a = pt(fwd ? lo : hi, t); l.b = pt(fwd ? hi : lo, t);
           l.uEnd = fwd ? { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false } : { start: p.hookTypes[1] || false, end: p.hookTypes[-1] || false };
           l.office = true;
-          const m = mid(old.a, old.b);
-          const co = ex.callouts.filter((c) => /^L\s*=\s*\d+/i.test(c.text) && distToSeg(c, old.a, old.b) < 600).sort((c1, c2) => dist(c1, m) - dist(c2, m))[0];
-          if (co && !co.office) { co.text = `L=${p.straight}`; co.office = true; }
           changed++;
+        }
+        // every length call-out next to any bar of the group (parallel bars share one call-out) now reads the office length
+        for (const c of ex.callouts) {
+          if (!/^L\s*=\s*\d+/i.test(c.text) || (c.rot != null && Math.abs(dot({ x: Math.cos((c.rot * Math.PI) / 180), y: Math.sin((c.rot * Math.PI) / 180) }, U[dir])) < 0.9)) continue;
+          if (olds.some((o) => distToSeg(c, o.a, o.b) < 600)) { c.text = `L=${p.straight}`; c.office = true; }
         }
       } else if (s.addMissing !== false) {
         added.push({ detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape });
@@ -520,10 +527,14 @@ function clipToSlab(level, items) {
   const outline = level.outline;
   const longest = (a, b) => { const parts = clipSegmentToPolygon(a, b, outline).filter(([p, q]) => dist(p, q) > 50); return parts.sort((p, q) => dist(q[0], q[1]) - dist(p[0], p[1]))[0] || null; };
   const out = [];
+  // a cut that falls on a drawing joint with the neighbouring part is no cut: the slab (and the bar) continue there
+  const joints = level.jointEdges || [];
+  const atJoint = (p) => joints.some((e) => distToSeg(p, e.a, e.b) < 100);
   for (const it of items) {
     const seg = longest(it.a, it.b);
     if (!seg) continue;
-    if (dist(seg[0], it.a) > 1 || dist(seg[1], it.b) > 1) { it.a = seg[0]; it.b = seg[1]; it.clipped = true; }
+    const cutA = dist(seg[0], it.a) > 1, cutB = dist(seg[1], it.b) > 1;
+    if ((cutA && !atJoint(seg[0])) || (cutB && !atJoint(seg[1]))) { it.a = cutA && !atJoint(seg[0]) ? seg[0] : it.a; it.b = cutB && !atJoint(seg[1]) ? seg[1] : it.b; it.clipped = true; }
     if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
     if (it.ind) { const kept = []; for (let i = 0; i + 1 < it.ind.length; i++) for (const [p, q] of clipSegmentToPolygon(it.ind[i], it.ind[i + 1], outline)) { if (dist(p, q) < 20) continue; if (kept.length && dist(kept[kept.length - 1], p) < 1) kept.push(q); else kept.push(p, q); } it.ind = kept.length >= 2 ? kept : undefined; }
     out.push(it);
