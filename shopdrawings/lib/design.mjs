@@ -611,10 +611,16 @@ export function applyColumnRule(level, spec, assumptions = []) {
           if (!/^L\s*=\s*\d+/i.test(c.text) || (c.rot != null && Math.abs(dot({ x: Math.cos((c.rot * Math.PI) / 180), y: Math.sin((c.rot * Math.PI) / 180) }, U[dir])) < 0.9)) continue;
           if (olds.some((o) => distToSeg(c, o.a, o.b) < 600)) { c.text = `L=${p.straight}`; c.office = true; }
         }
-      } else if (s.addMissing !== false && !(col.isWall && col.skipAlong === dir)) {
-        // (a long isolated wall gets the group across it only: its own reinforcement runs along it; a beam likewise)
+      } else if (s.addMissing !== false && !(col.isWall && col.skipAlong === dir) && p.straight >= 1000) {
+        // (a long isolated wall gets the group across it only: its own reinforcement runs along it; a beam likewise;
+        // a bar clipped to a stub, as at a column buried in an edge wall, is not drawn: the wall bars cover it)
         const cAcross = span(across);
-        const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: barOffsets(spec, size[across], cAcross.hi - cAcross.lo), keep: cc, beam: col.isBeam ? col.id : undefined };
+        // the symbol beside the column stays within the group it stands for (the crossing bars' extent, which is
+        // one-sided at an edge column), so the dot on its distribution dimension always lands on the dimension
+        const sgn = dir === 'x' ? 1 : -1; // the bar's left normal points +across for an x bar and -across for a y bar
+        const clampK = (k) => sgn * Math.max(cAcross.lo + 150, Math.min(cAcross.hi - 150, sgn * k));
+        const cands = [...new Set(barOffsets(spec, size[across], cAcross.hi - cAcross.lo).map(clampK))];
+        const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: cands, keep: cc, beam: col.isBeam ? col.id : undefined };
         added.push(item);
         groups[dir] = [{ a: pt(lo, 0), b: pt(hi, 0), added: true, item }];
         missing++;
@@ -645,7 +651,10 @@ export function applyColumnRule(level, spec, assumptions = []) {
         // an added group carries its own distribution (drawn with the bar, the dot where the bar finally sits)
         // clear of the crossing bar beside the column; a beam's dimension goes on its other side, away from the
         // dimensions of the columns that sit on the beam axis
-        const st = col.isBeam ? Math.min(hi - 200, size[dir] / 2 + (spec.barOffset ?? 500) + 700) : Math.max(lo + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700));
+        // (at an edge column the dimension goes on the side where the bar runs into the slab, never off the edge)
+        const off = (spec.barOffset ?? 500) + 700;
+        const minus = Math.max(lo + 200, -(size[dir] / 2 + off)), plus = Math.min(hi - 200, size[dir] / 2 + off);
+        const st = col.isBeam || per[dir].ext[-1] < per[dir].ext[1] ? plus : minus;
         const pA = dir === 'x' ? glob(st, c.lo) : glob(c.lo, st), pB = dir === 'x' ? glob(st, c.hi) : glob(c.hi, st);
         groups[dir][0].item.dist = { p: pA, q: pB };
         addedDims++;
@@ -755,6 +764,17 @@ function clipToSlab(level, items, spec = {}) {
   const joints = level.jointEdges || [];
   const atJoint = (p) => joints.some((e) => distToSeg(p, e.a, e.b) < 100);
   for (const it of items) {
+    // a column symbol that may still slide beside the column is judged where it will finally sit: when the slab
+    // outline would cut it to a stub at the column axis (a column standing proud of an edge wall), it moves now to
+    // the first candidate place where the bar lies in the slab, so the office length survives the clip
+    if (it.posCands && it.posCands.length > 1) {
+      const u0 = unit(it.a, it.b), n0 = perp(u0), L0 = dist(it.a, it.b);
+      const keptAt = (k) => { const sg = longest(add(it.a, n0, k), add(it.b, n0, k)); return sg ? dist(sg[0], sg[1]) : 0; };
+      if (keptAt(0) < Math.min(L0, 1000)) {
+        const k0 = it.posCands.find((k) => keptAt(k) >= Math.min(L0, 1000) - 1);
+        if (k0 != null) { it.a = add(it.a, n0, k0); it.b = add(it.b, n0, k0); it.posCands = it.posCands.filter((k) => keptAt(k) >= Math.min(L0, 1000) - 1).map((k) => k - k0); }
+      }
+    }
     const seg = longest(it.a, it.b);
     if (!seg) continue;
     const cutA = dist(seg[0], it.a) > 1, cutB = dist(seg[1], it.b) > 1;
@@ -767,6 +787,7 @@ function clipToSlab(level, items, spec = {}) {
       if (it.length) it.length = Math.round(it.length - (oldL - newL));
     }
     if (clipAtOpenings(level, it, uAllow) === null) continue;
+    if (it.column && dist(it.a, it.b) < 1000) continue; // a column bar cut to a stub between an opening and the edge is not worth drawing
     if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
     // the distribution never runs into an opening: it stops before it (the piece at the bar is kept)
     if (it.dist) { const os = outsideOpenings(level, it.dist.p, it.dist.q, mid(it.a, it.b)); if (!os || dist(os[0], os[1]) < 200) delete it.dist; else if (dist(os[0], it.dist.p) > 1 || dist(os[1], it.dist.q) > 1) { it.dist.p = os[0]; it.dist.q = os[1]; delete it.dist.textAt; } }
@@ -948,24 +969,24 @@ export function designAdditions(level, spec, opts = {}) {
       if (e.beam) addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: count, spacing: su.spacing, zone: `D1 EDGE BEAM ${zoneOf(t1, t2)}` });
       else addBar('T', { dia: su.dia, shape: `U ${uLegTop}/${web}/${uLegTop}`, length: su.total, qty: count, spacing: su.spacing, zone: `D6 FREE EDGE ${zoneOf(t1, t2)}` });
     }
-    // ... but the plan shows one long indication line offset inside the edge and one bar symbol every `perimSpan`
+    // ... and the plan shows one bar symbol per run between supports, on each facet the run crosses: every symbol
+    // carries its own distribution dimension (the run on that facet, 350 inside the edge) with the dot where the
+    // bar crosses it - the office rule that no bar is drawn without its distribution dimension
     if (!runs.length) continue;
-    const total = s0;
-    const fpts = [facets[0].a, ...facets.map((f) => f.b)];
-    const nInAt = (i) => { const f0 = facets[Math.max(0, i - 1)], f1 = facets[Math.min(facets.length - 1, i)]; const n0 = inward(f0.a, f0.b, outline), n1 = inward(f1.a, f1.b, outline); return unit({ x: 0, y: 0 }, { x: n0.x + n1.x, y: n0.y + n1.y }); };
-    const ind = fpts.map((p, i) => add(p, nInAt(i), PERIM_DIM_IN));
-    const span = spec.perimSpan || 12000;
-    const nSym = Math.max(1, Math.round(total / span));
-    for (let k = 0; k < nSym; k++) {
-      const sv = total * (k + 0.5) / nSym;
-      // put the symbol on the nearest run (never on a column's own bars)
-      const run = runs.reduce((best, r) => { const d = sv < r[0] ? r[0] - sv : sv > r[1] ? sv - r[1] : 0; return !best || d < best.d ? { r, d } : best; }, null).r;
-      const sAt = Math.max(run[0] + 200, Math.min(run[1] - 200, sv));
-      const mm = at(sAt);
-      const nIn = inward(mm.f.a, mm.f.b, outline);
-      const zone = zoneOf(run[0], run[1]);
-      if (e.beam) items.push({ detail: 'D1', face: 'T', a: mm.p, b: add(mm.p, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, ind: k === 0 ? ind : undefined, side: 1, zone, legEnd: 'start', noTag: k > 0 });
-      else items.push({ detail: 'D6', face: 'TB', a: mm.p, b: add(mm.p, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, ind: k === 0 ? ind : undefined, side: 1, zone, hairpin: true, noTag: k > 0 });
+    let k = 0;
+    for (const run of runs) {
+      for (const f of facets) {
+        const s1 = Math.max(run[0], f.s0), s2 = Math.min(run[1], f.s0 + f.L);
+        if (s2 - s1 < Math.max(800, 2 * su.spacing)) continue;
+        const sv = (s1 + s2) / 2;
+        const mm = at(sv);
+        const nIn = inward(f.a, f.b, outline);
+        const zone = zoneOf(s1, s2);
+        const dd = { p: add(at(s1).p, nIn, PERIM_DIM_IN), q: add(at(s2).p, nIn, PERIM_DIM_IN) };
+        if (e.beam) items.push({ detail: 'D1', face: 'T', a: mm.p, b: add(mm.p, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: dd, side: 1, zone, legEnd: 'start', noTag: k > 0 });
+        else items.push({ detail: 'D6', face: 'TB', a: mm.p, b: add(mm.p, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: dd, side: 1, zone, hairpin: true, noTag: k > 0 });
+        k++;
+      }
     }
   }
 
@@ -1404,6 +1425,16 @@ function placeText(pl, p, str, o, offsets, S) {
   return pl.text(q, str, o);
 }
 
+/** The width a bar's own distribution dimension spans: (count - 1) x spacing for a counted group, the spacing of a single bar. */
+function distWidthOf(it) {
+  const l1 = String(it.l1 || '');
+  const count = /^(\d+)\s*T\d+/i.exec(l1);
+  const sp = /-(\d{2,4})\b/.exec(l1);
+  const spacing = sp ? Number(sp[1]) : 200;
+  if (count && Number(count[1]) > 1) return Math.max(spacing, 100) * (Number(count[1]) - 1);
+  return Math.max(spacing, 100);
+}
+
 /** The distribution indicator: a real DIMENSION in style DIM100 (red lines, oblique ticks, green number). */
 function officeDim(pl, S, p, q, opts = {}) {
   if (dist(p, q) < 1) return;
@@ -1453,16 +1484,40 @@ export function officeBar(pl, S, it, phase) {
       const boxOf = (d) => { const du = unit(d.p, d.q), dn = perp(du); return [textBox(d.textAt || add(mid(d.p, d.q), dn, DIM100.gap + DIM100.txt / 2), d.text || String(Math.round(dist(d.p, d.q))), DIM100.txt, readableRot(du).rot, 'C', 'M', 0.8)]; };
       it.dist = placer ? placer.pick(it.distCands, boxOf) : it.distCands[0];
     }
+    // office rule: every drawn bar carries a distribution dimension with the dot that ties them together.
+    // A bar with an indication line takes the segment of it that it crosses as its dimension; any other bar
+    // gets one across it at its symbol, as wide as its group (count x spacing, or the spacing of a single bar).
+    if (!it.dist && it.ind && it.ind.length >= 2) {
+      let best = null;
+      for (let i = 0; i + 1 < it.ind.length; i++) { const d = distToSeg(m0, it.ind[i], it.ind[i + 1]); if (!best || d < best.d) best = { d, p: it.ind[i], q: it.ind[i + 1] }; }
+      it.dist = { p: best.p, q: best.q };
+      it.ind = null;
+    }
+    if (!it.dist) {
+      const w = distWidthOf(it);
+      it.dist = { p: add(m0, n, -w / 2), q: add(m0, n, w / 2) };
+      it.distAuto = true;
+    }
     if (it.ind) pl.pline(it.ind, { layer: 'diamension' }); // long indication line offset inside the edge: "this bar all along here"
     if (it.dist) {
-      officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text, textAt: it.dist.textAt });
-      // the dot where the bar axis crosses the distribution line (none when the axis misses the line)
+      // the dot where the bar axis crosses the distribution line; a bar whose axis misses its line by more than a
+      // little (the symbol slid away from a clipped group dimension) takes the dimension across itself instead,
+      // so that no bar is ever drawn without the dimension and the dot that tie the two together
+      let dotAt = null;
       const du = unit(it.dist.p, it.dist.q), Ld = dist(it.dist.p, it.dist.q);
       const den = u.x * du.y - u.y * du.x;
       if (Math.abs(den) > 1e-6) {
         const t = ((m0.x - it.dist.p.x) * u.y - (m0.y - it.dist.p.y) * u.x) / -den;
-        if (t >= -1 && t <= Ld + 1) officeDot(pl, S, add(it.dist.p, du, Math.max(0, Math.min(Ld, t))));
+        if (t >= -300 && t <= Ld + 300) dotAt = add(it.dist.p, du, Math.max(0, Math.min(Ld, t)));
       }
+      if (!dotAt) {
+        const w = distWidthOf(it);
+        it.dist = { p: add(m0, n, -w / 2), q: add(m0, n, w / 2) };
+        it.distAuto = true;
+        dotAt = m0;
+      }
+      officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text, textAt: it.dist.textAt });
+      officeDot(pl, S, dotAt);
     }
     if (phase === 'bars') return;
   }

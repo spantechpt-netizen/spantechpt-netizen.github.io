@@ -155,12 +155,14 @@ export function readRamConcept(path) {
     let node = start; let seg = first;
     const pts = [point(node)];
     const heights = [nodeElev.get(node)?.h ?? null];
+    const thks = [nodeElev.get(node)?.thickness ?? null];
     const segsOfTendon = [];
     while (seg && !used.has(seg.UID)) {
       used.add(seg.UID); segsOfTendon.push(seg);
       node = seg.TendonNode0 === node ? seg.TendonNode1 : seg.TendonNode0;
       pts.push(point(node));
       heights.push(nodeElev.get(node)?.h ?? null);
+      thks.push(nodeElev.get(node)?.thickness ?? null);
       seg = (adj.get(node) || []).find((s) => !used.has(s.UID));
     }
     const strands = Math.max(...segsOfTendon.map((s) => s.NumStrands));
@@ -173,9 +175,11 @@ export function readRamConcept(path) {
       live: [!!jackByNode.get(start), !!jackByNode.get(node)],
       jackStress: jackEnds.length ? MPa(jackEnds[0].JackStress) : null,
       elongation: jackEnds.length ? Math.round(jackEnds.reduce((s, j) => s + L(j.Elongation), 0)) : null,
+      elongations: [start, node].map((n) => (jackByNode.get(n) ? Math.round(L(jackByNode.get(n).Elongation)) : null)), // per end (null at a dead end)
       harped: !!segsOfTendon[0].Harped,
       // the CGS profile: height above the soffit at every node (null when the model carries none), reverse-curve ratio
       heights: heights.every((h) => h == null) ? null : heights,
+      thks: thks.every((h) => h == null) ? null : thks,
       inflection: segsOfTendon[0].InflectionRatio || 0.2,
       thickness: nodeElev.get(start)?.thickness || null,
     });

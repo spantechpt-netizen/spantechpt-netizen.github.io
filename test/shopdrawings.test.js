@@ -478,9 +478,14 @@ test('the General Details add bars in the office convention at the places they r
   const adds = designAdditions(L, model.spec);
   const by = (d) => adds.items.filter((it) => it.detail === d);
   assert.ok(by('D1').length >= 1, 'L-bars along the edge beam, one per run between supports');
-  const ind = by('D1').find((it) => it.ind).ind;
-  assert.equal(Math.round(Math.abs(ind[ind.length - 1].x - ind[0].x)), 16000, 'one indication line along the whole edge beam');
-  assert.ok(ind.every((p) => Math.abs(p.y - 350) < 1), 'the indication line sits 350 mm inside the slab edge');
+  // every L-bar symbol carries its own distribution dimension: the run between the column bars it stands for, 350 mm
+  // inside the slab edge, with the symbol in the middle of that run
+  assert.ok(by('D1').every((it) => it.dist && !it.ind), 'a distribution dimension per run, no indication line');
+  const runs = by('D1').map((it) => [Math.min(it.dist.p.x, it.dist.q.x), Math.max(it.dist.p.x, it.dist.q.x)]).sort((u, v) => u[0] - v[0]);
+  assert.ok(runs.every(([x1, x2]) => x1 >= 0 && x2 <= 16000 && x2 - x1 >= 800), 'the runs lie along the 16 m edge beam');
+  assert.ok(runs.every(([x1, x2], i) => i === 0 || x1 >= runs[i - 1][1] - 1), 'the runs do not overlap');
+  assert.ok(by('D1').every((it) => Math.abs(it.a.x - (it.dist.p.x + it.dist.q.x) / 2) < 1), 'the symbol sits in the middle of its run');
+  assert.ok(by('D1').every((it) => Math.abs(it.dist.p.y - 350) < 1 && Math.abs(it.dist.q.y - 350) < 1), 'the dimension sits 350 mm inside the slab edge');
   assert.ok(by('D1').every((it) => it.face === 'T' && it.l1 === 'T12-150 LBAR (T)' && it.l2 === 'L=4000' && Math.round(dist2(it.a, it.b)) === 3600), 'L-bar 4 m total: 400 into the beam + 3600 on top');
   assert.ok(by('D6').length >= 1 && by('D6').every((it) => it.l1 === 'T12-150 U-BAR' && it.l2 === 'L=4000'), 'U-bars of 4 m at the free edges');
   assert.ok(by('D2').some((it) => it.l1 === 'T12-200 U-BAR'), 'U-bars at the core wall faces');
