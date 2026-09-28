@@ -1032,7 +1032,7 @@ test('the app edits (delete / lengthen / re-spec / add) apply to bars by id, pla
 
 test('every drawn bar is one continuous polyline: a U-bar (hairpin), a bar with U / L ends, an L leg and a bent drop bar', async () => {
   const { officeBar, drawExisting } = await import('../shopdrawings/lib/design.mjs');
-  const rec = () => { const plines = [], texts = []; return { plines, texts, pline: (pts, o) => plines.push({ pts, layer: o.layer }), text: (p, str) => texts.push(str), circle() {}, line() {}, dimension() {}, hatch() {} }; };
+  const rec = () => { const plines = [], texts = []; return { plines, texts, pline: (pts, o) => { const e = { pts, layer: o.layer }; plines.push(e); return e; }, text: (p, str) => { texts.push(str); return { str }; }, circle() { return {}; }, line() { return {}; }, dimension() { return {}; }, hatch() { return {}; } }; };
   const S = 100;
   // a hairpin (pour strip / wall U-bar): leg - closing bar - leg in ONE polyline of 4 vertices
   let pl = rec();
@@ -1185,4 +1185,47 @@ test('a beam crossing a deeper beam is carried by it: the span breaks there, lik
   assert.equal(Math.round(sp.supports[0].along), 400, 'the support is as wide as the deeper beam');
   const back = beamSpans(deep, [], [], [shallow, deep]);
   assert.equal(back.spans.length, 1, 'the deeper beam is not carried by the shallow one');
+});
+
+test('every entity of a bar carries the bar tag (XDATA): the sheet reads back bar by bar, and an edited sheet moves the take-off by the difference', async () => {
+  const { readBars, takeoffFromBars, applyTakeoff, barFigures } = await import('../shopdrawings/lib/dxf-bars.mjs');
+  const { XDATA_APP } = await import('../shopdrawings/lib/dxf-writer.mjs');
+  const dxf = parseDxf(toDxf(buildOfficePlan()));
+  const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
+  const pack = composeDesignPackage(model, { project: 'TEST', prefix: 'SPAN-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
+  const top = pack.sheets.find((s) => s.key === 'dtop');
+  const text = toDxf(top.root);
+  assert.ok(text.includes(`\n1001\n${XDATA_APP}\n`), 'extended data under the registered application');
+  const parsed = parseDxf(text);
+  const bars = readBars(parsed);
+  assert.ok(bars.length >= 5, `bars read back: ${bars.length}`);
+  assert.ok(bars.every((b) => b.now.pl > 0 && b.now.l1 && b.now.dw != null), 'every bar has its line, its call-out and its distribution dimension linked');
+  assert.ok(bars.every((b) => b.payload.dia > 0 && b.payload.L > 0 && b.payload.lv === 'L01'), 'the figures travel with the tag');
+  const untouched = takeoffFromBars(bars);
+  assert.equal(untouched.changed, 0, 'an untouched sheet changes nothing');
+  assert.equal(untouched.delta.kg, 0);
+  // the engineer stretches one bar by a metre and re-writes another call-out from T12 to T16: the take-off follows
+  const ents = [...parsed.entities, ...[...parsed.blocks.values()].flatMap((b) => b.entities)];
+  const tagged = (role) => ents.filter((e) => { const x = e.xdata?.[XDATA_APP]; const strs = x ? x.filter(([c]) => c === 1000).map(([, v]) => v) : []; return strs[0] === 'BAR' && strs[2] === role; });
+  const line = tagged('BAR').find((e) => e.type === 'LWPOLYLINE' && e.pts.length === 2);
+  const u = { x: line.pts[1].x - line.pts[0].x, y: line.pts[1].y - line.pts[0].y }; const L0 = Math.hypot(u.x, u.y);
+  line.pts[1] = { x: line.pts[1].x + (u.x / L0) * 1000, y: line.pts[1].y + (u.y / L0) * 1000, bulge: 0 };
+  const lineId = line.xdata[XDATA_APP].filter(([c]) => c === 1000)[1][1];
+  const call = tagged('CALLOUT').find((e) => !e.xdata[XDATA_APP].some(([, v]) => v === lineId) && /T12-/.test(e.text));
+  const callId = call.xdata[XDATA_APP].filter(([c]) => c === 1000)[1][1];
+  call.text = call.text.replace('T12-', 'T16-');
+  const edited = takeoffFromBars(readBars(parsed));
+  assert.equal(edited.changed, 2, 'two bars changed');
+  const stretched = edited.list.find((f) => f.id === lineId), heavier = edited.list.find((f) => f.id === callId);
+  assert.equal(stretched.after.L, stretched.before.L + 1000, 'the cutting length follows the drawn line');
+  assert.equal(heavier.after.dia, 16);
+  assert.ok(heavier.after.kg > heavier.before.kg && edited.delta.kg > 0);
+  // applied to the run's take-off: the level's steel and the project totals move by the difference
+  const q = { levels: [{ id: 'L01', steel: { kg: 1000, top_kg: 600, bottom_kg: 400, other_kg: 0, byDia: [{ dia: 12, kg: 500, total_m: 560, count: 100 }, { dia: 16, kg: 500, total_m: 320, count: 50 }] }, concrete: { net_area_m2: 100, total_m3: 25 } }], totals: { steel: { kg: 1000 }, concrete: { net_area_m2: 100 } } };
+  const q2 = applyTakeoff(q, 'L01', edited, { file: 'top.dxf', by: 'Eng. Test', date: '2026-09-28' });
+  assert.equal(q2.levels[0].steel.kg, Math.round((1000 + edited.delta.kg) * 10) / 10);
+  assert.equal(q2.totals.steel.kg, q2.levels[0].steel.kg);
+  assert.equal(q2.levels[0].edited[0].bars, 2);
+  assert.equal(q.levels[0].steel.kg, 1000, 'the original is left alone');
+  void barFigures;
 });

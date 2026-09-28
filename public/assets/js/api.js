@@ -240,6 +240,7 @@ export const api = {
   drawingRunFileUrl: (id, kind, name, download = false) =>
     `/api/drawings/runs/${id}/files/${kind}/${encodeURIComponent(name)}${download ? '?download=1' : ''}`,
   updateDrawingRun: (id, data) => request('PATCH', `/api/drawings/runs/${id}`, data),
+  updateDrawingTakeoff: (id, file) => rawUpload(`/api/drawings/runs/${id}/takeoff${qs({ name: file.name })}`, file),
   regenerateDrawingRun: (id, data) => request('POST', `/api/drawings/runs/${id}/regenerate`, data ?? {}),
   drawingRunPlan: (id) => request('GET', `/api/drawings/runs/${id}/plan`),
   saveDrawingEdits: (levelId, edits) => request('PUT', `/api/drawings/levels/${levelId}/edits`, { edits }),

@@ -1566,12 +1566,33 @@ function attachPlacer(pl, S, level, spec = {}) {
 
 /** A text placed at the first of the candidate anchors that overlaps nothing (candidates = offsets of p). */
 function placeText(pl, p, str, o, offsets, S) {
-  if (!placer) { pl.text(p, str, o); return p; }
+  if (!placer) { placeText.last = pl.text(p, str, o); return p; }
   const h = (o.h || 2.5) * S;
   const q = placer.pick(offsets.map((d) => ({ x: p.x + d.x, y: p.y + d.y })), (c) => [textBox(c, str, h, o.rot || 0, o.align || 'L', o.valign || 'B', o.widthFactor || 1)]);
-  pl.text(q, str, o);
+  placeText.last = pl.text(q, str, o); // (the entity, for the bar tags)
   return q;
 }
+
+/**
+ * The bar tag written as extended data on every entity of a bar (its line, call-out, length, distribution dimension,
+ * dot and detail tag): `BAR`, the bar id, the entity's role and the bar's figures as JSON - call-out, length text,
+ * diameter, spacing, count (0 = a run of bars: the count follows the distribution width), face, cutting length,
+ * the drawn polyline length, the distribution width and the level. An edited sheet (a stretched bar, a re-written
+ * call-out) is read back by these tags to update the take-off (`lib/dxf-bars.mjs`).
+ */
+function barTag(it, role, extra = {}) {
+  const l1 = String(it.l1 || '');
+  const m = /(\d+)?\s*T(\d+)(?:-(\d+))?/i.exec(l1);
+  const dia = m ? Number(m[2]) : 0, s = m && m[3] ? Number(m[3]) : 0;
+  const n = it.n > 0 ? it.n : m && m[1] ? Number(m[1]) : 0;
+  const L = it.length || Number((/L\s*=\s*(\d+)/i.exec(String(it.l2 || '')) || [])[1]) || Math.round(dist(it.a, it.b));
+  const dw = it.dist ? Math.round(dist(it.dist.p, it.dist.q)) : 0;
+  const payload = { l1, l2: String(it.l2 || ''), dia, s, n, face: it.face || 'T', L, pl: Math.round(it._plen || 0), dw, lv: placer?.level?.id || '', ...extra };
+  return [[1000, 'BAR'], [1000, it.id || barId(it)], [1000, role], [1000, JSON.stringify(payload)]];
+}
+const tagEntity = (e, it, role, extra) => { if (e && typeof e === 'object') { e._role = role; e.xdata = barTag(it, role, extra); } return e; };
+/** Every entity of the bar re-tagged with the bar's final figures (the distribution is decided after the line is drawn). */
+const retagBar = (it) => { for (const e of it._ents || []) if (e && typeof e === 'object') e.xdata = barTag(it, e._role || 'BAR'); };
 
 /** The width a bar's own distribution dimension spans: (count - 1) x spacing for a counted group, the spacing of a single bar. */
 function distWidthOf(it) {
@@ -1594,12 +1615,11 @@ function officeDim(pl, S, p, q, opts = {}) {
   // a dimension shorter than its own text (a 400 group of three bars) carries the text past its end, where it reads
   if (!textAt && L < DIM100.txt * (String(opts.text || Math.round(L)).length * 0.8 + 1.5)) textAt = add(add(q, u, DIM100.txt * 0.6 + (String(opts.text || Math.round(L)).length * DIM100.txt * 0.8) / 2), n, DIM100.gap + DIM100.txt / 2);
   if (placer) { const tm = textAt || add(mid(p, q), n, DIM100.gap + DIM100.txt / 2); placer.add(textBox(tm, opts.text || String(Math.round(L)), DIM100.txt, readableRot(u).rot, 'C', 'M', 0.8)); }
-  pl.dimension(p, q, opts.dl || p, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', textMid: textAt, text: opts.text });
+  return pl.dimension(p, q, opts.dl || p, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', textMid: textAt, text: opts.text });
 }
 
 function officeDot(pl, S, p) {
-  pl.circle(p, DOT_R, { layer: 'DOTS' });
-  pl.hatch([R.regionPolygon({ kind: 'circle', cx: p.x, cy: p.y, r: DOT_R })], { layer: 'DOTS', pattern: 'SOLID' });
+  return [pl.circle(p, DOT_R, { layer: 'DOTS' }), pl.hatch([R.regionPolygon({ kind: 'circle', cx: p.x, cy: p.y, r: DOT_R })], { layer: 'DOTS', pattern: 'SOLID' })];
 }
 
 /** One added bar in the office convention. */
@@ -1642,10 +1662,12 @@ export function officeBar(pl, S, it, phase) {
     if (it.legEnd === 'start' && !it.uEnd?.start) ends.pre = [add(it.a, ls, 250)];
     if (it.legEnd === 'end' && !it.uEnd?.end) ends.post = [add(it.b, ls, 250)];
     if (it.bend) { ends.pre = []; ends.post = []; } // a bent drop bar already ends in its own legs
-    barLine(pl, [...ends.pre, ...pts, ...ends.post], layer);
-    if (it.uEnd) uEndTags(pl, S, it.a, it.b, it.uEnd, layer);
-    if (it.triple) { barLine(pl, [add(it.a, n, 200), add(it.b, n, 200)], layer); barLine(pl, [add(it.a, n, -200), add(it.b, n, -200)], layer); }
-    if (it.pairOff) barLine(pl, [add(it.a, n, -it.pairOff), add(it.b, n, -it.pairOff)], layer); // the second bar of a pair (blockwork beam)
+    const line = [...ends.pre, ...pts, ...ends.post];
+    it._plen = line.reduce((sum, p, i) => (i ? sum + dist(line[i - 1], p) : 0), 0);
+    it._ents = [tagEntity(barLine(pl, line, layer), it, 'BAR')];
+    if (it.uEnd) { uEndTags(pl, S, it.a, it.b, it.uEnd, layer, it); }
+    if (it.triple) { it._ents.push(tagEntity(barLine(pl, [add(it.a, n, 200), add(it.b, n, 200)], layer), it, 'BAR2'), tagEntity(barLine(pl, [add(it.a, n, -200), add(it.b, n, -200)], layer), it, 'BAR2')); }
+    if (it.pairOff) it._ents.push(tagEntity(barLine(pl, [add(it.a, n, -it.pairOff), add(it.b, n, -it.pairOff)], layer), it, 'BAR2')); // the second bar of a pair (blockwork beam)
     if (it.distCands && !it.dist) {
       const boxOf = (d) => { const du = unit(d.p, d.q), dn = perp(du); return [textBox(d.textAt || add(mid(d.p, d.q), dn, DIM100.gap + DIM100.txt / 2), d.text || String(Math.round(dist(d.p, d.q))), DIM100.txt, readableRot(du).rot, 'C', 'M', 0.8)]; };
       it.dist = placer ? placer.pick(it.distCands, boxOf) : it.distCands[0];
@@ -1664,7 +1686,7 @@ export function officeBar(pl, S, it, phase) {
       it.dist = { p: add(m0, n, -w / 2), q: add(m0, n, w / 2) };
       it.distAuto = true;
     }
-    if (it.ind) pl.pline(it.ind, { layer: 'diamension' }); // long indication line offset inside the edge: "this bar all along here"
+    if (it.ind) it._ents.push(tagEntity(pl.pline(it.ind, { layer: 'diamension' }), it, 'IND')); // long indication line offset inside the edge: "this bar all along here"
     if (it.dist) {
       // the dot where the bar axis crosses the distribution line; a bar whose axis misses its line by more than a
       // little (the symbol slid away from a clipped group dimension) takes the dimension across itself instead,
@@ -1689,9 +1711,10 @@ export function officeBar(pl, S, it, phase) {
         it.distAuto = true;
         dotAt = m0;
       }
-      officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text, textAt: it.dist.textAt });
-      officeDot(pl, S, dotAt);
+      it._ents.push(tagEntity(officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text, textAt: it.dist.textAt }), it, 'DIST'));
+      for (const e of officeDot(pl, S, dotAt)) it._ents.push(tagEntity(e, it, 'DOT'));
     }
+    retagBar(it);
     if (phase === 'bars') return;
   }
   // the call-out pair slides along the bar (and may swap sides) to the first place free of other writing
@@ -1717,16 +1740,20 @@ export function officeBar(pl, S, it, phase) {
     return [[above, it.l1, CALL_H, 'B', 'L'], [below, it.l2, LEN_H, 'T', 'L']];
   };
   const best = placer ? placer.pick(cands, (c) => pair(c).map(([p, str, h, va, al]) => textBox(p, str, h, rot, al, va, 0.8))) : { k: 0, sd: side, j: 0 };
-  for (const [p, str, h, va, al] of pair(best)) pl.text(p, str, { ...to, h: h / S, valign: va, align: al });
+  it._ents = it._ents || [];
+  pair(best).forEach(([p, str, h, va, al], i) => it._ents.push(tagEntity(pl.text(p, str, { ...to, h: h / S, valign: va, align: al }), it, i === 0 ? 'CALLOUT' : 'LENGTH')));
   const m = add(add(m0, u, best.k), n, best.j || 0);
   if (it.detail && !it.noTag) {
     const tagAt = (k, sg) => add(add(add(m0, u, k), n, best.j || 0), n, sg * 520);
     const tagCands = []; for (const k of [0, 600, -600, 1200, -1200, 1800, -1800]) for (const sg of [best.sd, -best.sd]) tagCands.push(tagAt(best.k + k, sg));
     const c = placer ? placer.pick(tagCands, (q) => [{ minX: q.x - 150, minY: q.y - 150, maxX: q.x + 150, maxY: q.y + 150 }]) : tagAt(best.k, best.sd);
-    pl.circle(c, 150, { layer: 'DETAIL-REF' });
-    pl.text(c, it.detail, { layer: 'DETAIL-REF', h: 130 / S, align: 'C', valign: 'M', bold: true });
+    it._ents.push(tagEntity(pl.circle(c, 150, { layer: 'DETAIL-REF' }), it, 'TAG'));
+    it._ents.push(tagEntity(pl.text(c, it.detail, { layer: 'DETAIL-REF', h: 130 / S, align: 'C', valign: 'M', bold: true }), it, 'TAG'));
     if (placer) placer.add({ minX: c.x - 150, minY: c.y - 150, maxX: c.x + 150, maxY: c.y + 150 });
   }
+  retagBar(it);
+  // the bar with its writing and its distribution as one group (selectable together where the sheet is not a block)
+  if (pl.group && it._ents.length > 1) pl.group(`BAR_${(it.id || barId(it)).replace(/[^A-Za-z0-9_:,.-]/g, '_')}`, it._ents, String(it.l1 || ''));
 }
 
 /**
@@ -1745,7 +1772,7 @@ function uEndPoints(a, b, uEnd, layer) {
   };
   return { pre: legs(uEnd.start, a, u).reverse(), post: legs(uEnd.end, b, { x: -u.x, y: -u.y }) };
 }
-function uEndTags(pl, S, a, b, uEnd, layer) {
+function uEndTags(pl, S, a, b, uEnd, layer, it = null) {
   const u = unit(a, b), n = perp(u);
   const { rot } = readableRot(u);
   const ls = legSide(u, /BOT/.test(layer) ? 'B' : 'T');
@@ -1755,6 +1782,7 @@ function uEndTags(pl, S, a, b, uEnd, layer) {
     const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), ls, 300 + 110), add(add({ x: 0, y: 0 }, u, k), ls, -300)]);
     const tag = on === 'L' ? `L${DEFAULT_U.beamLeg}` : `U${R.U_BOTTOM_LEG}`;
     placeText(pl, add(p, n, 0), tag, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' }, offs, S);
+    if (it && placeText.last) it._ents.push(tagEntity(placeText.last, it, 'UTAG'));
   }
 }
 

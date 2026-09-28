@@ -1242,6 +1242,24 @@ async function runPage(projectId, runId, navigate) {
       },
     }, [icon('check', 16), t('dw_issue')]) : null,
     produced ? el('a.btn', { href: api.drawingRunZipUrl(run.id) }, [icon('download', 16), t('dw_download_zip')]) : null,
+    produced && can('drawings.create') && run.quantities ? el('button.btn-secondary.btn', {
+      type: 'button', title: t('dw_takeoff_hint'),
+      onclick: () => {
+        // the edited sheet (DXF) comes back: the bars are found by their tags and the take-off moves by the difference
+        const input = el('input', { type: 'file', accept: '.dxf' });
+        input.onchange = async () => {
+          const file = input.files && input.files[0];
+          if (!file) return;
+          try {
+            const res = await api.updateDrawingTakeoff(run.id, file);
+            const d = res.takeoff;
+            toast(fill('dw_takeoff_updated', { changed: d.changed, bars: d.bars, kg: (d.delta.kg >= 0 ? '+' : '') + d.delta.kg }), 'success');
+            navigate(`drawings/${project.id}/run/${run.id}`);
+          } catch (error) { toastError(error); }
+        };
+        input.click();
+      },
+    }, [icon('upload', 16), t('dw_takeoff_update')]) : null,
     can('drawings.delete') ? el('button.btn-danger.btn', {
       type: 'button',
       onclick: async () => {

@@ -154,6 +154,13 @@ export class Canvas {
     return e;
   }
 
+  /** A named group of entities (selected together in AutoCAD): a bar with its texts and its distribution dimension. */
+  group(name, entities, desc) {
+    const root = this.root;
+    if (!root.groups) root.groups = [];
+    root.groups.push({ name, desc, entities: entities.filter(Boolean) });
+  }
+
   line(x1, y1, x2, y2, o = {}) { return this.add({ t: 'line', x1, y1, x2, y2, ...o }); }
   pline(pts, o = {}) { return this.add({ t: 'pline', pts: pts.map((p) => ({ x: p.x, y: p.y, bulge: p.bulge || 0 })), closed: !!o.closed, ...o }); }
   rect(x, y, w, h, o = {}) { return this.pline([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], { ...o, closed: true }); }

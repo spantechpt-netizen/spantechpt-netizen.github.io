@@ -38,7 +38,13 @@ const NUMERIC = (code) => (code >= 10 && code <= 59) || (code >= 60 && code <= 7
 function buildEntity(type, groups) {
   const e = { type, layer: '0', xs: [], ys: [], bulges: [], _codes: groups };
   let textBuf = '';
+  let xapp = null; // the application of the extended data being read (codes 1000-1071 after a 1001)
   for (const [code, raw] of groups) {
+    if (code >= 1000) {
+      if (code === 1001) { xapp = raw.trim(); e.xdata = e.xdata || {}; e.xdata[xapp] = e.xdata[xapp] || []; }
+      else if (xapp && code !== 1002) e.xdata[xapp].push([code, code === 1000 || code === 1003 || code === 1005 ? raw.trim() : parseFloat(raw)]);
+      continue;
+    }
     const v = NUMERIC(code) ? parseFloat(raw) : raw;
     switch (code) {
       case 8: e.layer = raw.trim(); break;

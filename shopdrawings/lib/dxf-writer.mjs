@@ -40,6 +40,9 @@ class Handles {
   next() { return (this.n++).toString(16).toUpperCase(); }
 }
 
+/** The application name the bar tags (XDATA) are registered under. */
+export const XDATA_APP = 'SPANTECH';
+
 export function toDxf(root, opts = {}) {
   const H = new Handles();
   const L = [];
@@ -149,6 +152,9 @@ export function toDxf(root, opts = {}) {
   table('UCS', []);
   table('APPID', [(owner) => {
     tag(0, 'APPID'); tag(5, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbRegAppTableRecord'); tag(2, 'ACAD'); tag(70, 0);
+  }, (owner) => {
+    // the application the bar tags (XDATA) are registered under: every entity of a bar carries its id and figures
+    tag(0, 'APPID'); tag(5, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbRegAppTableRecord'); tag(2, XDATA_APP); tag(70, 0);
   }]);
   const dimStyles = [...(root.dimStyles || new Map()).entries()].filter(([n]) => n !== 'STANDARD');
   table('DIMSTYLE', [(owner) => {
@@ -180,7 +186,9 @@ export function toDxf(root, opts = {}) {
 
   // ------------------------------------------------------------ entities
   const entityHeader = (type, e, owner, paper = false) => {
-    tag(0, type); tag(5, H.next()); tag(330, owner); tag(100, 'AcDbEntity');
+    const h = H.next();
+    e._h = h; // kept for the GROUP objects
+    tag(0, type); tag(5, h); tag(330, owner); tag(100, 'AcDbEntity');
     if (paper) tag(67, 1);
     tag(8, e.layer || '0');
     if (e.ltype) tag(6, e.ltype);
@@ -296,7 +304,13 @@ export function toDxf(root, opts = {}) {
         tag(41, num(e.sx || 1)); tag(42, num(e.sy || e.sx || 1)); tag(43, 1); tag(50, num(e.rot || 0));
         break;
       default:
-        break;
+        return;
+    }
+    // extended data (the bar tags): after every normal group of the entity, under the registered application
+    if (e.xdata && e.xdata.length) {
+      tag(1001, XDATA_APP); tag(1002, '{');
+      for (const [code, value] of e.xdata) tag(code, code === 1000 ? encodeText(String(value)).slice(0, 255) : num(value));
+      tag(1002, '}');
     }
   };
 
@@ -330,7 +344,16 @@ export function toDxf(root, opts = {}) {
   tag(3, 'ACAD_GROUP'); tag(350, hGroupDict);
   tag(3, 'ACAD_LAYOUT'); tag(350, hLayoutDict);
   tag(3, 'ACAD_PLOTSTYLENAME'); tag(350, hPlotDict);
+  // the groups (a bar with its call-out, length, distribution dimension and dot as one selectable group): only the
+  // entities that were written (model space) can be grouped; entities inside a block definition cannot
+  const groups = (root.groups || []).map((g) => ({ ...g, handles: g.entities.filter((e) => e._h && root.entities.includes(e)).map((e) => e._h) })).filter((g) => g.handles.length > 1);
+  const hGroups = groups.map(() => H.next());
   tag(0, 'DICTIONARY'); tag(5, hGroupDict); tag(330, hRootDict); tag(100, 'AcDbDictionary'); tag(281, 1);
+  groups.forEach((g, i) => { tag(3, g.name); tag(350, hGroups[i]); });
+  groups.forEach((g, i) => {
+    tag(0, 'GROUP'); tag(5, hGroups[i]); tag(330, hGroupDict); tag(100, 'AcDbGroup'); tag(300, g.desc || g.name); tag(70, 0); tag(71, 1);
+    for (const h of g.handles) tag(340, h);
+  });
   tag(0, 'ACDBDICTIONARYWDFLT'); tag(5, hPlotDict); tag(330, hRootDict); tag(100, 'AcDbDictionary'); tag(281, 1);
   tag(3, 'Normal'); tag(350, hPlaceholder); tag(100, 'AcDbDictionaryWithDefault'); tag(340, hPlaceholder);
   tag(0, 'ACDBPLACEHOLDER'); tag(5, hPlaceholder); tag(330, hPlotDict);
