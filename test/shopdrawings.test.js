@@ -65,10 +65,13 @@ test('office rule: interior column bars run 4 m (or cover the drop), edge column
   assert.equal(p.hookLabel, 'U500');
   const uLeg = level.thickness - 2 * model.spec.cover + 500;
   assert.equal(p.hookLeg, uLeg);
-  // top straight length from the edge = 70 % of 4 m
+  // top straight length from the edge = 70 % of 4 m, but never less than 1.5 m past the inner face of the column
+  const edgeSide = p.hooks[-1] ? -1 : 1;
   const straight = p.ext[-1] + p.c1 + p.ext[1];
-  assert.equal(straight, 2800);
-  assert.equal(p.length, Math.ceil((2800 + uLeg) / 10) * 10);
+  const expected = Math.max(2800, p.ext[edgeSide] + p.c1 + 1500);
+  assert.equal(straight, expected);
+  assert.ok(p.ext[-edgeSide] >= 1500, 'at least 1.5 m past the inner face');
+  assert.equal(p.length, Math.ceil((expected + uLeg) / 10) * 10);
   // a drop panel at the column stretches the interior bar over it
   level.thickZones = [{ id: 'D1', polygon: [{ x: interior.col.cx - 2500, y: interior.col.cy - 2000 }, { x: interior.col.cx + 2500, y: interior.col.cy - 2000 }, { x: interior.col.cx + 2500, y: interior.col.cy + 2000 }, { x: interior.col.cx - 2500, y: interior.col.cy + 2000 }], thickness: 300 }];
   const res2 = topAtColumns(level, model.spec);

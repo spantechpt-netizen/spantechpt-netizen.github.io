@@ -423,7 +423,7 @@ export function applyColumnRule(level, spec, assumptions = []) {
   const added = [];
   let changed = 0, addedDims = 0, missing = 0, rotated = 0;
   for (const { col, per } of res.columns) {
-    if (col.isWall) continue;
+    if (col.isWall && col.core) continue; // a core wall keeps its U-bars; an isolated wall gets the column groups
     const cc = { x: col.cx, y: col.cy };
     // the two groups are perpendicular, along the column's own axes (a rotated column) or the tendon direction
     const theta = columnAxis(level, col);
@@ -522,6 +522,32 @@ function columnAxis(level, col) {
   return best ? norm(best.ang) : 0;
 }
 
+/** The part of the segment p->q that lies outside every opening and contains (or is nearest to) the point `keep`. */
+function outsideOpenings(level, p, q, keep) {
+  const polys = (level.openings || []).map((o) => R.regionPolygon(o));
+  if (!polys.length) return [p, q];
+  const L = dist(p, q) || 1, u = unit(p, q);
+  const ts = [0, 1];
+  for (const poly of polys) for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length];
+    const dx = q.x - p.x, dy = q.y - p.y, ex = b.x - a.x, ey = b.y - a.y;
+    const den = dx * ey - dy * ex; if (Math.abs(den) < 1e-9) continue;
+    const t = ((a.x - p.x) * ey - (a.y - p.y) * ex) / den, v = ((a.x - p.x) * dy - (a.y - p.y) * dx) / den;
+    if (t > 0 && t < 1 && v >= 0 && v <= 1) ts.push(t);
+  }
+  ts.sort((x, y) => x - y);
+  const tk = Math.max(0, Math.min(1, ((keep.x - p.x) * u.x + (keep.y - p.y) * u.y) / L));
+  let best = null;
+  for (let i = 0; i + 1 < ts.length; i++) {
+    const t0 = ts[i], t1 = ts[i + 1]; if (t1 - t0 < 1e-6) continue;
+    const m = add(p, u, L * (t0 + t1) / 2);
+    if (polys.some((poly) => pointInPolygon(m, poly))) continue;
+    const d = tk < t0 ? t0 - tk : tk > t1 ? tk - t1 : 0;
+    if (!best || d < best.d) best = { d, t0, t1 };
+  }
+  return best ? [add(p, u, L * best.t0), add(p, u, L * best.t1)] : null;
+}
+
 /** Nothing is drawn outside the slab: bars and distribution lines are clipped to the outline (an item fully outside is dropped). */
 function clipToSlab(level, items) {
   const outline = level.outline;
@@ -536,6 +562,8 @@ function clipToSlab(level, items) {
     const cutA = dist(seg[0], it.a) > 1, cutB = dist(seg[1], it.b) > 1;
     if ((cutA && !atJoint(seg[0])) || (cutB && !atJoint(seg[1]))) { it.a = cutA && !atJoint(seg[0]) ? seg[0] : it.a; it.b = cutB && !atJoint(seg[1]) ? seg[1] : it.b; it.clipped = true; }
     if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
+    // the distribution never runs into an opening: it stops before it (the piece at the bar is kept)
+    if (it.dist) { const os = outsideOpenings(level, it.dist.p, it.dist.q, mid(it.a, it.b)); if (!os || dist(os[0], os[1]) < 200) delete it.dist; else if (dist(os[0], it.dist.p) > 1 || dist(os[1], it.dist.q) > 1) { it.dist.p = os[0]; it.dist.q = os[1]; delete it.dist.textAt; } }
     if (it.ind) { const kept = []; for (let i = 0; i + 1 < it.ind.length; i++) for (const [p, q] of clipSegmentToPolygon(it.ind[i], it.ind[i + 1], outline)) { if (dist(p, q) < 20) continue; if (kept.length && dist(kept[kept.length - 1], p) < 1) kept.push(q); else kept.push(p, q); } it.ind = kept.length >= 2 ? kept : undefined; }
     out.push(it);
   }
@@ -550,6 +578,34 @@ function convexHull(pts) {
   const lower = []; for (const p of P) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p); }
   const upper = []; for (const p of [...P].reverse()) { while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p); }
   return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+/**
+ * Office rule: a concrete wall is treated like a column for the top bars over it, unless it belongs to a
+ * core: three or more wall faces (of one or several walls) around an opening. Marks `w.core`.
+ */
+export function markCoreWalls(level) {
+  const walls = (level.walls || []).filter((w) => w.polygon);
+  for (const w of walls) w.core = false;
+  for (const o of level.openings || []) {
+    const poly = R.regionPolygon(o);
+    const facesAt = [];
+    for (const w of walls) for (let i = 0; i < w.polygon.length; i++) {
+      const a = w.polygon[i], b = w.polygon[(i + 1) % w.polygon.length];
+      if (dist(a, b) < 800) continue;
+      if (distToPolygon(mid(a, b), poly) < 400) facesAt.push(w);
+    }
+    if (new Set(facesAt).size + facesAt.length >= 4 && facesAt.length >= 3) for (const w of facesAt) w.core = true;
+  }
+  // a single U / L shaped wall polygon wrapping a void (a stair or lift core drawn as one outline) is a core as well
+  for (const w of walls) {
+    if (w.core) continue;
+    const hull = convexHull(w.polygon);
+    const enclosed = Math.abs(polygonArea(hull)) - Math.abs(polygonArea(w.polygon));
+    if (w.polygon.length >= 6 && enclosed > 1e6 && enclosed > 0.5 * Math.abs(polygonArea(w.polygon))) w.core = true;
+  }
+  const n = walls.filter((w) => w.core).length;
+  return { core: n, isolated: walls.length - n };
 }
 
 /** Chained wall segments (RAM line supports drawn as short pieces) joined into straight walls. */
@@ -605,6 +661,7 @@ function scaleEnt(e, k) {
  * items in the office convention plus a bar list per face.
  */
 export function designAdditions(level, spec, opts = {}) {
+  if ((level.walls || []).some((w) => w.polygon && w.core === undefined)) markCoreWalls(level);
   const items = [];
   const bars = { T: new R.BarList('DT'), B: new R.BarList('DB') };
   const notes = [];
@@ -672,7 +729,7 @@ export function designAdditions(level, spec, opts = {}) {
   // ---- D2 core walls: U-bars T12@200 + 10T12 (T&B) along the wall face
   const lc = ceilTo(h - cover, 10);
   const noLA = new Set();
-  for (const w of level.walls || []) {
+  for (const w of (level.walls || []).filter((x) => x.core)) { // core walls only: an isolated wall is reinforced like a column
     const poly = w.polygon;
     for (let i = 0; i < poly.length; i++) {
       const a = poly[i], b = poly[(i + 1) % poly.length];
@@ -1077,7 +1134,7 @@ const designNotes = (model, level) => [
   `SLAB THICKNESS ${level.thickness} mm${level.tos ? `, ${level.levelTags[0].label} ${level.tos}` : ''}${level.thickZones?.length ? `; THICKENED ZONES ${[...new Set(level.thickZones.map((z) => z.thickness))].join(' / ')} mm HATCHED` : ''}. CONCRETE f'c = ${model.spec.fc} MPa, REINFORCEMENT fy = ${model.spec.fy} MPa, COVER ${model.spec.cover} mm (${model.spec.sources.cover}).`,
   'BAR CALL-OUT (OFFICE CONVENTION): "T10-200 (T)" = BAR SIZE - SPACING (LAYER), "L=2400" = BAR LENGTH; THE RED DIMENSION ACROSS THE BARS IS THE WIDTH OVER WHICH THEY ARE DISTRIBUTED; (T) TOP, (B) BOTTOM, T&B BOTH.',
   'THE REINFORCEMENT DESIGNED BY THE OFFICE IS SHOWN AS DRAWN ON THE DESIGN PLAN. BARS MARKED WITH A CIRCLED "D#" ARE ADDED FROM THE GENERAL DETAILS SHEET (DETAIL NUMBER IN THE CIRCLE) AT THE LOCATIONS THE DETAIL REFERS TO; THE DETAIL GOVERNS FOR SHAPE AND ANCHORAGE.',
-  `EVERY TOP BAR THAT ENDS AT THE OUTER SLAB EDGE OR AT AN OPENING ENDS IN A U WHERE THE EDGE IS FREE: DOWN THE SLAB DEPTH AND ${R.U_BOTTOM_LEG} mm BACK AT THE BOTTOM ("U${R.U_BOTTOM_LEG}" AT THE BAR END), OR IN AN L ${DEFAULT_U.beamLeg} mm DOWN INTO THE BEAM WHERE THE OUTER EDGE CARRIES A BEAM PARALLEL TO IT ("L${DEFAULT_U.beamLeg}"); ADD THE LEGS TO THE CUTTING LENGTH. TOP BARS OVER COLUMNS: TWO PERPENDICULAR GROUPS (ALONG THE COLUMN AXIS / TENDON DIRECTION), EACH AS LONG AS THE DROP PANEL OR 4 m, DISTRIBUTED OVER THE LENGTH OF THE CROSSING GROUP; 70 % ON TOP AT AN EDGE COLUMN. NOTHING IS DRAWN OUTSIDE THE SLAB OUTLINE. PERIMETER BARS T${DEFAULT_U.dia}@${DEFAULT_U.spacing} BETWEEN THE COLUMN TOP BARS: A ${DEFAULT_U.total} mm U WITH EQUAL LEGS AT A FREE EDGE, AN L (${DEFAULT_U.beamLeg} mm INTO THE BEAM + ${DEFAULT_U.beamTop} mm ON TOP) AT AN EDGE BEAM. OPENINGS ENCLOSED BY WALLS OR BEAMS GET NO ADDITIONAL TRIMMERS; ELSEWHERE THREE GROUPS: G1 / G2 PARALLEL TO THE SIDES, G3 DIAGONALS AT 45°.`,
+  `EVERY TOP BAR THAT ENDS AT THE OUTER SLAB EDGE OR AT AN OPENING ENDS IN A U WHERE THE EDGE IS FREE: DOWN THE SLAB DEPTH AND ${R.U_BOTTOM_LEG} mm BACK AT THE BOTTOM ("U${R.U_BOTTOM_LEG}" AT THE BAR END), OR IN AN L ${DEFAULT_U.beamLeg} mm DOWN INTO THE BEAM WHERE THE OUTER EDGE CARRIES A BEAM PARALLEL TO IT ("L${DEFAULT_U.beamLeg}"); ADD THE LEGS TO THE CUTTING LENGTH. TOP BARS OVER COLUMNS AND ISOLATED WALLS: TWO PERPENDICULAR GROUPS (ALONG THE COLUMN AXIS / TENDON DIRECTION), EACH AS LONG AS THE DROP PANEL OR 4 m AND AT LEAST 1.5 m PAST THE FACE EACH WAY, DISTRIBUTED OVER THE LENGTH OF THE CROSSING GROUP; 70 % ON TOP AT AN EDGE COLUMN. CORE WALLS (THREE OR MORE AROUND AN OPENING) CARRY THE WALL U-BARS INSTEAD. NOTHING IS DRAWN OUTSIDE THE SLAB OUTLINE. PERIMETER BARS T${DEFAULT_U.dia}@${DEFAULT_U.spacing} BETWEEN THE COLUMN TOP BARS: A ${DEFAULT_U.total} mm U WITH EQUAL LEGS AT A FREE EDGE, AN L (${DEFAULT_U.beamLeg} mm INTO THE BEAM + ${DEFAULT_U.beamTop} mm ON TOP) AT AN EDGE BEAM. OPENINGS ENCLOSED BY WALLS OR BEAMS GET NO ADDITIONAL TRIMMERS; ELSEWHERE THREE GROUPS: G1 / G2 PARALLEL TO THE SIDES, G3 DIAGONALS AT 45°.`,
 ];
 
 function framingSheet(model, level, meta, adds) {
@@ -1227,11 +1284,25 @@ export function composeDesignPackage(model, metaIn = {}) {
   };
   const jobs = [];
   for (const level of model.levels) {
+    const cores = markCoreWalls(level);
+    if (cores.isolated) model.assumptions.push({ level: level.id, text: `${cores.isolated} isolated walls in ${level.name} carry the column top bars (two groups over the wall, the drop panel / 4 m across, at least 1.5 m past the wall face each way); ${cores.core} core walls carry the wall U-bars.` });
     const rule = applyColumnRule(level, model.spec, model.assumptions);
     const adds = designAdditions(level, model.spec);
     for (const it of rule.added) { adds.items.push(it); adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `COLUMN ${it.column} ${it.dir.toUpperCase()}` }); }
     adds.items = clipToSlab(level, adds.items);
-    if (level.existing) { level.existing.lines = clipToSlab(level, level.existing.lines); if (level.existing.items) level.existing.items = clipToSlab(level, level.existing.items); }
+    if (level.existing) {
+      level.existing.lines = clipToSlab(level, level.existing.lines);
+      if (level.existing.items) level.existing.items = clipToSlab(level, level.existing.items);
+      // the designer's / the column rule's distribution DIMENSIONs stop before an opening as well
+      for (const d of level.existing.dims || []) {
+        if (d.x3 == null) continue;
+        const p = { x: d.x3, y: d.y3 }, q = { x: d.x4, y: d.y4 };
+        const os = outsideOpenings(level, p, q, mid(p, q));
+        if (!os) { d.dropped = true; continue; }
+        if (dist(os[0], p) > 1 || dist(os[1], q) > 1) { d.x3 = os[0].x; d.y3 = os[0].y; d.x4 = os[1].x; d.y4 = os[1].y; d.x2 = d.y2 = undefined; d.text = undefined; }
+      }
+      level.existing.dims = level.existing.dims.filter((d) => !d.dropped);
+    }
     level.additions = { items: adds.items.length, weight: { T: adds.bars.T.totals().weight_kg, B: adds.bars.B.totals().weight_kg } };
     const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet };
     for (const def of DESIGN_SHEETS) jobs.push({ level, def, draw: makers[def.key](model, level, meta, adds) });

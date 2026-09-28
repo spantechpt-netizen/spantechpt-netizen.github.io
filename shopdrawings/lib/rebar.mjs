@@ -21,7 +21,7 @@ export const DEFAULT_SPEC = {
   // top bars over columns, both ways. Office rule: an interior column bar covers the drop panel when there is
   // one, otherwise `length` (4 m, set per slab); an edge column bar ends in a U at the edge and runs `edgeFactor`
   // of the interior length on top. rule: 'office' | 'code' (ln/6 each side, SBC 304-18 §8.7.5.5)
-  topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 0, dropMax: 6000 },
+  topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 0, dropMax: 6000, minBeyond: 1500 },
   // perimeter bars between the column top bars (office rule): T12@150, a U of `total` length at a free edge
   // (equal top and bottom legs), an L of the same 4 m total at an edge beam (`beamLeg` down into the beam + `beamTop` on top)
   uEdge: { dia: 12, spacing: 150, total: 4000, beamLeg: 400, beamTop: 3600, leg: 1200 },
@@ -406,7 +406,8 @@ export function topAtColumns(level, spec) {
   const checks = [];
   // walls below carry top bars too: a wall is treated as a long rectangular support (bars across it
   // along its length, bars along it within t + 3h), without joining the grid or the punching sheet
-  const wallSupports = (level.walls || []).filter((w) => w.polygon && w.t).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true }));
+  // (an isolated wall gets the two column groups over it; a core wall - three or more walls around an opening - keeps the wall U-bars)
+  const wallSupports = (level.walls || []).filter((w) => w.polygon && w.t).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true, core: !!w.core }));
   if (!level.maxSpan) {
     let mx = 0;
     for (const c of level.columns) for (const dir of ['x', 'y']) for (const sign of [-1, 1]) { const nb = neighbour(level, c, dir, sign); if (nb && nb.d > mx) mx = nb.d; }
@@ -433,7 +434,7 @@ export function topAtColumns(level, spec) {
         nbs[sign] = nb; toEdges[sign] = toEdge;
         if (nb) spans.push(nb.d); else { const cap = ceilTo(Math.max(level.maxSpan || 0, 6 * 1.5 * h) / 6, 50); spans.push(2 * Math.min(toEdge, cap * 6)); }
       }
-      if ((s.rule || 'office') === 'office' && !col.isWall) {
+      if ((s.rule || 'office') === 'office' && (!col.isWall || !col.core)) {
         // office rule: interior bar covers the drop panel or runs `length` in total; an edge column bar
         // ends in a U at the slab edge and continues `edgeFactor` x the interior length on top
         // a drop panel is a thickened zone of limited size around the column (`dropMax`, 6 m); a long thickened strip is not one
@@ -442,13 +443,16 @@ export function topAtColumns(level, spec) {
         // without one they are `length` (4 m) in total
         let Lint = s.length || 4000;
         if (drop) { const zb = bbox(drop.polygon); Lint = ceilTo((dir === 'x' ? zb.w : zb.h) + 2 * (s.dropMargin ?? 0), 10); }
+        // office rule: the bars project at least `minBeyond` (1.5 m) past the face of the column / wall on each side
+        const beyond = s.minBeyond ?? 1500;
+        Lint = Math.max(Lint, ceilTo(c1 + 2 * beyond, 10));
         const half = (Lint - c1) / 2;
         const edgeSign = [-1, 1].find((sg) => toEdges[sg] - c1 / 2 < half);
         if (edgeSign == null) { ext[-1] = half; ext[1] = half; }
         else {
           const other = -edgeSign;
           ext[edgeSign] = Math.max(toEdges[edgeSign] - c1 / 2, 0); hooks[edgeSign] = true;
-          ext[other] = Math.max(ceilTo((s.edgeFactor ?? 0.7) * Lint, 50) - ext[edgeSign] - c1, 0);
+          ext[other] = Math.max(ceilTo((s.edgeFactor ?? 0.7) * Lint, 50) - ext[edgeSign] - c1, beyond);
           if (toEdges[other] - c1 / 2 < ext[other]) { ext[other] = Math.max(toEdges[other] - c1 / 2, 0); hooks[other] = true; } // corner column: U both ends
         }
       } else {
@@ -492,7 +496,7 @@ export function topAtColumns(level, spec) {
       const asReq = 0.00075 * h * l2;
       const nReq = col.isWall ? 0 : Math.ceil(asReq / BAR_AREA(s.dia)); // §8.6.2.3 is a column rule; over a wall the spacing governs
       if (nReq > n) n = nReq;
-      const straight = ext[-1] + c1 + ext[1];
+      const straight = Math.round((ext[-1] + c1 + ext[1]) / 10) * 10; // (column sizes read from a drawing carry float noise)
       // a top bar ending at the slab edge ends in a U (500 bottom leg), or in an L where the edge carries a beam
       const ends = {};
       for (const sign of [-1, 1]) {
