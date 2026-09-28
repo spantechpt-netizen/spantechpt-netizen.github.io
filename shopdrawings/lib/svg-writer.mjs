@@ -114,6 +114,11 @@ export function toSvg(root, opts = {}) {
           });
           break;
         }
+        case 'dimension': {
+          const blk = root.blocks.get(e.block);
+          if (blk) render(blk, t);
+          break;
+        }
         case 'insert': {
           const blk = root.blocks.get(e.name);
           if (!blk) break;

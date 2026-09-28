@@ -164,7 +164,7 @@ export function drawBase(sheet, pl, level, o = {}) {
  * true length; `pieces` are cutting lengths; hooks at `hooks.start` /
  * `hooks.end`. The lap of every following piece is drawn offset.
  */
-function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, label, layer = 'REBAR', offsetSide = 1, textSide = 1 }) {
+function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, hookLabel, label, layer = 'REBAR', offsetSide = 1, textSide = 1 }) {
   const L = dist(a, b) || 1;
   const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
   const nx = -uy, ny = ux;
@@ -187,8 +187,8 @@ function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, label, lay
     const mid = (axisStart + s1) / 2;
     pl.text(at(mid, tn * 0.55 * S), label(i, pieces[i], straights[i]), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: CALL_H, rot, align: 'C', valign: 'B' });
     pl.text(at(mid, -tn * (LEN_H + 0.5) * S), String(Math.round(straights[i])), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: LEN_H, rot, align: 'C', valign: 'B' });
-    if (i === 0 && hooks.start) pl.text(at(-0.4 * S, tn * 0.55 * S), String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'R', valign: 'B' });
-    if (i === last && hooks.end) pl.text(at(s1 + 0.4 * S, tn * 0.55 * S), String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'L', valign: 'B' });
+    if (i === 0 && hooks.start) pl.text(at(-0.4 * S, tn * 0.55 * S), hookLabel || String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'R', valign: 'B' });
+    if (i === last && hooks.end) pl.text(at(s1 + 0.4 * S, tn * 0.55 * S), hookLabel || String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'L', valign: 'B' });
     pos = s1;
   }
   pl.barEnds(at(0), at(pos), { layer, size: 0.6 });
@@ -218,14 +218,15 @@ function drawRamBands(pl, S, level, spec, face, plans) {
     if (!pen || !b.bars.length) continue;
     const rep = b.bars[Math.floor(b.bars.length / 2)];
     const hooks = { start: nearEdge(rep.a) || b.ends[0] !== 1, end: nearEdge(rep.b) || b.ends[1] !== 1 };
-    const hk = R.hookLeg(b.dia);
+    const uEnd = face === 'T' ? R.topEdgeEnd(level, spec) : null; // top bars end in a U (500 bottom leg) at the edge
+    const hk = uEnd ? uEnd.leg : R.hookLeg(b.dia);
     const straight = dist(rep.a, rep.b);
     const cut = Math.ceil((straight + (hooks.start ? hk : 0) + (hooks.end ? hk : 0)) / 10) * 10;
     const lap = R.lapLength(spec, b.dia, { top: face === 'T' });
     const pieces = cut > spec.stock ? R.splitRun(cut, { stock: spec.stock, lap }) : [cut];
-    const marks = pieces.map((len) => lists[code].add({ dia: b.dia, shape: pieces.length > 1 ? 'STR' : hooks.start && hooks.end ? 'C' : hooks.start || hooks.end ? 'L' : 'STR', length: len, qty: b.count, spacing: b.spacing, zone: b.id, note: hooks.start || hooks.end ? `hook ${hk}` : '' }));
+    const marks = pieces.map((len) => lists[code].add({ dia: b.dia, shape: pieces.length > 1 ? 'STR' : hooks.start && hooks.end ? (uEnd ? 'UU' : 'C') : hooks.start || hooks.end ? (uEnd ? 'U' : 'L') : 'STR', length: len, qty: b.count, spacing: b.spacing, zone: b.id, note: hooks.start || hooks.end ? (uEnd ? uEnd.note : `hook ${hk}`) : '' }));
     const side = k++ % 2 ? -1 : 1;
-    drawRun(pen, S, { a: rep.a, b: rep.b, pieces, lap, hooks: pieces.length > 1 ? {} : hooks, hookLeg: hk, layer: `REBAR-${face}${code}`, textSide: side, offsetSide: side, label: (i, c) => callout(b.count, b.dia, b.spacing, marks[i].mark, c) });
+    drawRun(pen, S, { a: rep.a, b: rep.b, pieces, lap, hooks: pieces.length > 1 ? {} : hooks, hookLeg: hk, hookLabel: uEnd ? uEnd.label : undefined, layer: `REBAR-${face}${code}`, textSide: side, offsetSide: side, label: (i, c) => callout(b.count, b.dia, b.spacing, marks[i].mark, c) });
     // band width as a light range line at the first and last bar
     const first = b.bars[0], last = b.bars[b.bars.length - 1];
     if (b.bars.length > 1) { pen.line(first.a, first.b, { layer: 'REBAR-EXTENT', ltype: 'DASHED' }); pen.line(last.a, last.b, { layer: 'REBAR-EXTENT', ltype: 'DASHED' }); }
@@ -407,6 +408,11 @@ function bottomSheet(model, level, meta) {
         }
       }
     }
+    // office rule: the bottom mesh is written at every change of slab thickness
+    const tm = model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh;
+    for (const z of [...(level.thickZones || []).map((z) => z.polygon), ...(level.sunken || []).map((o) => R.polygonOf(o))]) {
+      const b = bbox(z); plY.text({ x: b.minX + 500, y: b.maxY - 700 }, `BOTTOM MESH T${tm.dia}@${tm.spacing}`, { layer: 'REBAR-MESH', h: 2.2 });
+    }
     const rows = R.mergeRows(res.lists.Y, res.lists.X);
     const tot = R.mergeTotals(res.lists.Y, res.lists.X);
     const d0 = sheet.detailBox(0, 'SECTION - BOTTOM MESH AND LAP', '1:20');
@@ -422,6 +428,7 @@ function bottomSheet(model, level, meta) {
         ...commonNotes(model, level),
         `BOTTOM MESH Ø${res.dia}@${res.spacing} BOTH WAYS IN THE PT ZONE(S) AS BONDED REINFORCEMENT: B1 PARALLEL TO THE NUMBERED GRIDS (PLAN 1), B2 PARALLEL TO THE LETTERED GRIDS (PLAN 2). BARS RUN CONTINUOUSLY THROUGH COLUMNS AND STOP AT OPENINGS (DETAIL 2).`,
         'BAR LENGTHS ARE CUT FROM THE ZONE BOUNDARY LESS COVER; RUNS LONGER THAN ONE STOCK LENGTH ARE SPLIT INTO PIECES WITH CLASS B LAPS, EACH PIECE CALLED OUT SEPARATELY. GROUPS OF FEWER THAN THREE BARS (ROWS INTERRUPTED BY OPENINGS) ARE NOT DRAWN BUT ARE SCHEDULED UNDER THEIR ZONE.',
+        `THE BOTTOM MESH (T${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).dia}@${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).spacing}, PER THE DESIGN) IS WRITTEN AT EVERY CHANGE OF SLAB THICKNESS (THICKENED / STEPPED ZONES).`,
         ...lengthNote(model, [res.dia]),
       ],
       assumptions: [...levelAssumptions(model, level), ...res.assumptions],
@@ -488,7 +495,7 @@ function topSheet(model, level, meta) {
         const t = dir === 'x' ? col.cy : col.cx;
         const a = dir === 'x' ? { x: a0, y: t } : { x: t, y: a0 };
         const b = dir === 'x' ? { x: b0, y: t } : { x: t, y: b0 };
-        drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, layer: `REBAR-${p.code}`, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
+        drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, hookLabel: p.hookLabel, layer: `REBAR-${p.code}`, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
         const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
         pl.bubble({ x: col.cx + size.x / 2, y: col.cy + size.y / 2 }, type.id, { dx: 6, dy: 6, layer: 'CALLOUT', r: 3, h: 1.6 });
         seen.add(type.id);
@@ -497,7 +504,7 @@ function topSheet(model, level, meta) {
     const t0 = res.types[0];
     const d0 = sheet.detailBox(0, 'SECTION AT COLUMN - TOP BARS', '1:25');
     const c0 = res.columns[0]?.col;
-    const det0 = D.sectionColumn({ h: level.thickness, c1: c0 ? (c0.shape === 'circle' ? c0.d : c0.w) : 600, ext: t0 ? Math.max(t0.x.ext[-1], t0.x.ext[1]) : 1200, dia: s.dia, spacing: s.spacing, cover: model.spec.cover, hookLeg: R.hookLeg(s.dia), shape: t0 ? t0.x.shape : 'STR' });
+    const det0 = D.sectionColumn({ h: level.thickness, c1: c0 ? (c0.shape === 'circle' ? c0.d : c0.w) : 600, ext: t0 ? Math.max(t0.x.ext[-1], t0.x.ext[1]) : 1200, dia: s.dia, spacing: s.spacing, cover: model.spec.cover, hookLeg: res.uEnd.leg, shape: t0 ? (res.rule === 'office' && t0.x.shape === 'STR' && res.types.some((t) => /U/.test(t.x.shape) || /U/.test(t.y.shape)) ? 'U' : t0.x.shape) : 'U', uReturn: R.U_BOTTOM_LEG });
     det0.draw(sheet.detailPen(d0, 25, det0.bbox));
     const d1 = sheet.detailBox(1, 'TOP BAR TYPES OVER COLUMNS', '');
     const typeCols = [{ key: 'id', title: 'TYPE', w: 14 }, { key: 'x', title: 'T2 (PLAN 2) BARS', w: 50, align: 'L' }, { key: 'y', title: 'T1 (PLAN 1) BARS', w: 50, align: 'L' }, { key: 'as', title: 'As req/prov', w: 30 }, { key: 'cols', title: 'COLUMNS', w: (d1.w - 6) - 144, align: 'L', max: 30 }];
@@ -510,7 +517,10 @@ function topSheet(model, level, meta) {
       planTitles: ['ADDITIONAL TOP REINFORCEMENT (T1)', 'ADDITIONAL TOP REINFORCEMENT (T2)'],
       general: [
         ...commonNotes(model, level),
-        `ADDITIONAL TOP BARS T${s.dia}@${s.spacing} OVER EVERY COLUMN: T1 PARALLEL TO THE NUMBERED GRIDS (PLAN 1), T2 PARALLEL TO THE LETTERED GRIDS (PLAN 2), PLACED WITHIN c2 + 1.5h EACH SIDE OF THE COLUMN (SBC 304-18 §8.7.5.5.1) AND EXTENDING NOT LESS THAN ln/6 BEYOND THE FACE OF SUPPORT (§8.7.5.5.2).`,
+        res.rule === 'office'
+          ? `ADDITIONAL TOP BARS T${s.dia}@${s.spacing} OVER EVERY COLUMN: T1 PARALLEL TO THE NUMBERED GRIDS (PLAN 1), T2 PARALLEL TO THE LETTERED GRIDS (PLAN 2), PLACED WITHIN c2 + 1.5h EACH SIDE OF THE COLUMN. OFFICE RULE: AN INTERIOR COLUMN BAR COVERS THE DROP PANEL WHERE THERE IS ONE, OTHERWISE ${res.length} mm IN TOTAL; AN EDGE COLUMN BAR ENDS IN A U AT THE SLAB EDGE (DOWN THE SLAB, ${R.U_BOTTOM_LEG} mm BACK AT THE BOTTOM) AND RUNS ${Math.round(res.edgeFactor * 100)} % OF THE INTERIOR LENGTH (${Math.round(res.edgeFactor * res.length)} mm) ON TOP FROM THE EDGE.`
+          : `ADDITIONAL TOP BARS T${s.dia}@${s.spacing} OVER EVERY COLUMN: T1 PARALLEL TO THE NUMBERED GRIDS (PLAN 1), T2 PARALLEL TO THE LETTERED GRIDS (PLAN 2), PLACED WITHIN c2 + 1.5h EACH SIDE OF THE COLUMN (SBC 304-18 §8.7.5.5.1) AND EXTENDING NOT LESS THAN ln/6 BEYOND THE FACE OF SUPPORT (§8.7.5.5.2).`,
+        `EVERY TOP BAR THAT ENDS AT THE OUTER SLAB EDGE OR AT AN OPENING ENDS IN A U: VERTICAL LEG THROUGH THE SLAB DEPTH AND A ${R.U_BOTTOM_LEG} mm BOTTOM LEG ("${res.uEnd.label}" AT THE BAR END; SHAPE U / UU IN THE SCHEDULE, THE CUTTING LENGTH INCLUDES BOTH LEGS).`,
         'MINIMUM BONDED REINFORCEMENT OVER COLUMNS As = 0.00075·Acf (§8.6.2.3) IS CHECKED PER COLUMN; WHERE IT GOVERNS THE BAR COUNT IS INCREASED (TYPE TABLE, DETAIL 2). TOP BARS SIT BELOW THE TOP COVER, ABOVE THE TENDONS, ON CHAIRS.',
         ...lengthNote(model, [s.dia]),
       ],
@@ -536,10 +546,14 @@ function ubarSheet(model, level, meta) {
       const b = { x: e.b.x + nx * (cover + 60) - ux * cover, y: e.b.y + ny * (cover + 60) - uy * cover };
       drawRun(pl, S, { a, b, pieces: e.pieces, lap: R.lapLength(model.spec, se.dia), label: (i, cut) => `${2 * se.count}T${se.dia}-T&B-${e.marks[Math.min(i, e.marks.length - 1)].mark}-(L=${cut})`, offsetSide: 1, textSide: 1 });
       const step = su.spacing * 4;
-      for (let d = cover + su.spacing / 2; d < e.length - cover; d += step) hairpin(pl, { x: e.a.x + ux * d + nx * cover, y: e.a.y + uy * d + ny * cover }, { x: nx, y: ny }, su.leg, 120);
+      for (const [p, q] of e.runs) for (let d = p + su.spacing / 2; d < q; d += step) {
+        const at = { x: e.a.x + ux * d + nx * cover, y: e.a.y + uy * d + ny * cover };
+        if (e.beam) { pl.line(at, { x: at.x + nx * e.leg, y: at.y + ny * e.leg }, { layer: 'REBAR-U' }); pl.line(at, { x: at.x - nx * 200, y: at.y - ny * 200 }, { layer: 'REBAR-U' }); }
+        else hairpin(pl, at, { x: nx, y: ny }, e.leg, 120);
+      }
       const mid = { x: (e.a.x + e.b.x) / 2 + nx * (su.leg + 500), y: (e.a.y + e.b.y) / 2 + ny * (su.leg + 500) };
       let rot = (Math.atan2(uy, ux) * 180) / Math.PI; if (rot > 90 || rot <= -90) rot += 180;
-      pl.text(mid, `${e.n}T${su.dia}@${su.spacing}-${e.uMark.mark}-(L=${e.uMark.length}) U-BARS LEGS ${su.leg}`, { layer: 'REBAR-TEXT', h: CALL_H, rot, align: 'C' });
+      pl.text(mid, e.beam ? `${e.n}T${su.dia}@${su.spacing}-${e.uMark.mark}-(L=${e.uMark.length}) L-BARS ${su.beamLeg} IN BEAM + ${su.beamTop} TOP` : `${e.n}T${su.dia}@${su.spacing}-${e.uMark.mark}-(L=${e.uMark.length}) U-BARS LEGS ${e.leg} T&B`, { layer: 'REBAR-TEXT', h: CALL_H, rot, align: 'C' });
       pl.bubble({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }, e.id, { dx: -nx * 6, dy: -ny * 6, layer: 'CALLOUT', r: 3, h: 1.6 });
     }
     for (const c of res.circleItems) {
@@ -551,7 +565,7 @@ function ubarSheet(model, level, meta) {
       pl.text({ x: c.cx, y: c.cy - c.r - cover - sc.leg - 500 }, `${c.n}T${sc.dia}@${sc.spacing}-${c.uMark.mark}-(L=${c.uMark.length}) RADIAL U-BARS + ${2 * sr.count}T${sr.dia}-RING-${c.ringMarks.map((m) => m.mark).join('/')}`, { layer: 'REBAR-TEXT', h: CALL_H, align: 'C' });
     }
     const d0 = sheet.detailBox(0, 'U-BAR AT SLAB EDGE - SECTION', '1:10');
-    const det0 = D.sectionUEdge({ h: level.thickness, cover, leg: su.leg, dia: su.dia, edgeDia: se.dia, spacing: su.spacing });
+    const det0 = D.sectionUEdge({ h: level.thickness, cover, leg: res.uLegTop, dia: su.dia, edgeDia: se.dia, spacing: su.spacing });
     det0.draw(sheet.detailPen(d0, 10, det0.bbox));
     const d1 = sheet.detailBox(1, 'U-BARS AROUND CIRCULAR REGION - PLAN', '1:25');
     const c0 = res.circleItems[0] || { r: 1000, ringR: 1000 + cover + sc.dia + sr.dia / 2 };
@@ -563,13 +577,13 @@ function ubarSheet(model, level, meta) {
       rows, totals: totalsLine(tot), weight: tot.weight_kg,
       general: [
         ...commonNotes(model, level),
-        `U-BARS T${su.dia}@${su.spacing} WITH ${su.leg} mm LEGS TOP AND BOTTOM ALONG ALL PT ANCHORAGE EDGES (BURSTING / SPALLING STEEL), WITH ${se.count}T${se.dia} LONGITUDINAL BARS TOP AND BOTTOM INSIDE THE U-BARS (DRAWN AS ONE REPRESENTATIVE BAR PER EDGE). U-BAR DEPTH = SLAB THICKNESS - 2 x COVER = ${res.web} mm.`,
+        `OFFICE PERIMETER RULE: T${su.dia}@${su.spacing} ALONG THE WHOLE SLAB PERIMETER BETWEEN THE COLUMN TOP BARS. AT A FREE EDGE A U-BAR ${su.total} mm LONG WITH EQUAL TOP AND BOTTOM LEGS (${res.uLegTop} mm, DEPTH ${res.web} mm); AT AN EDGE BEAM AN L-BAR ${res.lLen} mm LONG: ${su.beamLeg} mm LEG DOWN INTO THE BEAM AND ${su.beamTop} mm ON TOP IN THE SLAB. WITH ${se.count}T${se.dia} LONGITUDINAL BARS TOP AND BOTTOM INSIDE THEM (ONE REPRESENTATIVE BAR PER EDGE).`,
         `AROUND CIRCULAR REGIONS: RADIAL U-BARS T${sc.dia}@${sc.spacing} (LEGS ${sc.leg}) PLUS ${sr.count}T${sr.dia} RING BARS TOP AND BOTTOM, RINGS LAPPED CLASS B.`,
         'U-BARS ARE PLACED BEFORE THE ANCHORAGES ARE FIXED; DO NOT CUT U-BARS TO SUIT ANCHORAGE POCKETS - RELOCATE WITHIN THE SPACING.',
         ...lengthNote(model, [...new Set([su.dia, se.dia, sc.dia])]),
       ],
       assumptions: [...levelAssumptions(model, level), ...res.assumptions],
-      legend: [['REBAR-U', 'U-BAR (HAIRPIN SYMBOL)', 'thick'], ['REBAR', 'EDGE / RING BAR', 'thick'], ['CALLOUT', 'EDGE / REGION ID', 'line']],
+      legend: [['REBAR-U', 'U-BAR (HAIRPIN) / L-BAR AT EDGE BEAM (LEG SYMBOL)', 'thick'], ['REBAR', 'EDGE / RING BAR', 'thick'], ['CALLOUT', 'EDGE / REGION ID', 'line']],
       detailsUsed: 2,
     };
   };
@@ -646,10 +660,20 @@ function openingsSheet(model, level, meta) {
     drawBase(sheet, pl, level, { gridTag: meta.gridTag, ubarRegions: false, pt: false });
     drawTrimmers(pl, sheet.S, res.regions.map((r) => ({ ...r, diagL: res.diagL, kind: 'OPENING' })), model.spec.openings, 'OPENING');
     const so = model.spec.openings;
+    for (const o of res.lined || []) { const b = regionBox(o); pl.text({ x: b.cx, y: b.cy }, `${o.id}: ENCLOSED BY WALLS / BEAMS - NO TRIMMERS`, { layer: 'REBAR-TEXT', h: 1.5, align: 'C', valign: 'M' }); }
+    // the three bar groups around every opening: parallel to the two sides and the 45° diagonals crossing them
+    const groupRows = res.regions.flatMap((r) => {
+      const trX = r.trimmers.filter((t) => Math.abs(t.uy) < 0.5), trY = r.trimmers.filter((t) => Math.abs(t.uy) >= 0.5);
+      const g = (id, dirLabel, list) => ({ id: r.region.id, g: id, dir: dirLabel, bars: list.length ? `${list.length} SIDES x ${so.count} T${so.dia} T&B = ${list.length * 2 * so.count}` : '-', marks: [...new Set(list.flatMap((t) => t.marks))].join(', ') });
+      return [g('G1', 'PARALLEL TO THE LETTERED GRIDS (X)', trX), g('G2', 'PARALLEL TO THE NUMBERED GRIDS (Y)', trY), { id: r.region.id, g: 'G3', dir: 'DIAGONAL 45° ACROSS G1 AND G2', bars: r.corners.length ? `${r.corners.length} CORNERS x ${so.diagCount} T${so.diagDia} T&B = ${r.corners.length * 2 * so.diagCount}` : '-', marks: r.diagMark ? r.diagMark.mark : '' }];
+    });
     const d0 = sheet.detailBox(0, 'TRIMMERS AND DIAGONALS AT OPENING - PLAN', '1:25');
     const det0 = D.planTrimmers({ w: 1500, h: 1000, ld: res.ld, count: so.count, dia: so.dia, diag: true, diagDia: so.diagDia, diagL: res.diagL, uSpacing: so.uSpacing, uDia: so.uDia, label: 'OPENING' });
     det0.draw(sheet.detailPen(d0, 25, det0.bbox));
     const d1 = sheet.detailBox(1, 'SECTION AT OPENING EDGE', '1:10');
+    const d2 = sheet.detailBox(2, 'BAR GROUPS AROUND EACH OPENING (G1 / G2 PARALLEL, G3 DIAGONAL)', '');
+    const gcols = [{ key: 'id', title: 'OPEN.', w: 16 }, { key: 'g', title: 'GRP', w: 12 }, { key: 'dir', title: 'DIRECTION', w: 78, align: 'L', max: 40 }, { key: 'bars', title: 'BARS (No.)', w: 62, align: 'L', max: 32 }, { key: 'marks', title: 'MARKS', w: d2.w - 6 - 168, align: 'L', max: 24 }];
+    sheet.table(d2.x + 3, d2.y + d2.h - 10, gcols, groupRows, { headH: 5, rowH: 3.6, h: 1.4, maxRows: Math.floor((d2.h - 18) / 3.6) });
     const det1 = D.sectionTrimmer({ h: level.thickness, cover: model.spec.cover, count: so.count, dia: so.dia, uLeg: so.uLeg, uDia: so.uDia, withU: true });
     det1.draw(sheet.detailPen(d1, 10, det1.bbox));
     const rows = res.bars.rows();
@@ -884,7 +908,16 @@ export function packSheets(all, meta, opts = {}) {
   all.forEach((s, i) => {
     for (const [name, def] of s.root.layers) if (!pkg.layers.has(name)) pkg.layers.set(name, def);
     for (const [name, def] of s.root.textStyles || []) if (!pkg.textStyles.has(name)) pkg.textStyles.set(name, def);
+    for (const [name, def] of s.root.dimStyles || []) if (!pkg.dimStyles.has(name)) pkg.dimStyles.set(name, def);
     pkg.blocks.set(s.blockName, s.root.blocks.get(s.blockName));
+    // dimension picture blocks (*D1, *D2 ...) are numbered per sheet: renumber them package-wide (in the sheet root too, so both stay consistent)
+    for (const [bn, bd] of [...s.root.blocks.entries()]) {
+      if (!bn.startsWith('*D')) continue;
+      const nn = `*D${++pkg.dimCount}`;
+      s.root.blocks.delete(bn); s.root.blocks.set(nn, bd); pkg.blocks.set(nn, bd);
+      const rename = (cv) => { for (const e of cv.entities) if (e.t === 'dimension' && e.block === bn) e.block = nn; };
+      rename(s.root); for (const b2 of s.root.blocks.values()) rename(b2);
+    }
     const x = (i % perRow) * gapX, y = -Math.floor(i / perRow) * gapY;
     pkg.insert(s.blockName, x, y);
     pkg.text(x, y + 594 * s.scale + 1500, `${s.drawingNo}  ${s.title}${s.level !== 'ALL' ? `  (${s.level})` : ''}`, { layer: 'XREF', h: 1200 });

@@ -98,12 +98,20 @@ for PT / flat slabs. Everything the designer drew is kept exactly as drawn (bars
 dimensions, dots, mesh labels, camber notes, level tags), and the reinforcement the General Details ask for is added
 on the plan at the places each detail refers to, in the **same bar convention**: one line on `REO-TOP` / `REO-BOT`,
 the call-out `T10-200 (T)` over `L=2400` in text style `BW` (isocp.shx) h = 150 parallel to the bar, the
-distribution width as a red dimension with arch ticks and a green number, and a yellow dot where the bar meets it.
-Every added bar carries a circled `D#` (layer `DETAIL-REF`, freeze it to hide) naming the General Detail it comes from.
+distribution width as a **real DIMENSION entity in the office style `DIM100`** (text 250, oblique ticks 150, green
+number, text above the line, and no extension lines at all — `DIMSE1/DIMSE2` on, `DIMEXE` 0), and a yellow dot where
+the bar meets it. The designer's own DIMENSIONs are re-emitted the same way. Every added bar carries a circled `D#`
+(layer `DETAIL-REF`, freeze it to hide) naming the General Detail it comes from.
 
 ```bash
 node shopdrawings/cli.mjs --input RFT_Drawings.dxf --out ./design --mode design --level "TYPICAL FLOOR" --config project.json
+node shopdrawings/cli.mjs --input SLAB.cpt --out ./design --mode design --level "1ST FLOOR"     # straight from the RAM Concept model
 ```
+
+From a RAM Concept `.cpt` the bands designed in RAM become the designer's reinforcement, drawn in the same convention
+(`T16-150 (T)` over `L=5000`, distribution DIMENSION across the band width, dot, `U500` ends at the edge), walls (line
+supports) get a body (`spec.wallThickness`, 250 default), the slab and every thickened zone are tagged with their
+thickness, and the rules below are added on top exactly as for an RFT plan.
 
 Each slab outline of the plan becomes a PART (the office splits its plans the same way) with four sheets:
 01 framing (outline, columns, walls, openings, thickness zones, edge beams, levels, camber), 02 bottom and 03 top
@@ -112,12 +120,14 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 
 | Detail | Rule applied | Where |
 |---|---|---|
-| D1 slab edge with edge beam | T10-200 L-bar (T) 1200 into the slab (+ T10-250 distribution when there is no top mesh) | every slab edge that carries a beam line pair |
+| Perimeter (office rule) | continuous T12@150 between the column top bars: D6 **U-bar** 4 m (equal top / bottom legs) at a free edge, D1 **L-bar** 400 into the beam + 2000 on top at an edge beam; curved edges are one run with the length along the edge | every slab edge |
+| U ends (office rule) | every top bar ending at the outer slab edge or at an opening ends in a U with a 500 mm bottom leg (`U500`) | designer's bars and additions |
 | D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it) + 10T12 (T&B) parallel | every wall face that looks onto the slab |
 | D3 varying thickness | lap 500 at the step (note) | thickness zones |
 | D4 column drop / thickened zone | T12@250 (B) extra reinforcement both ways, 50 Ø beyond the zone | nested outline with a thickness written inside (e.g. `280`) |
 | D5 corners | 3T16-200 diagonals 2 m T&B at wall corners, 3T12 at re-entrant slab corners | walls and outline |
-| D7 MEP voids | longitudinal T&B each side, transverse U-bars, diagonals per the void size table | openings not lined by walls and not already trimmed by the designer (T&B bars next to them) |
+| D7 MEP voids | three groups: G1 / G2 longitudinal T&B parallel to the sides, G3 diagonals at 45° crossing both, per the void size table, with the count of crossing bars | openings **not** enclosed by concrete walls / beams and not already trimmed by the designer (T&B bars next to them) |
+| Bottom mesh indication | `BOTTOM MESH T10@200` (optional, `thicknessMesh`) | at every change of slab thickness (thickened zones, RC tags) |
 | D12 punching | PS1 10R-4-T12 (interior) / PS2 12R-4-T12 (edge), s = 100, with the schedule | every column, to be confirmed by the punching design |
 
 Anchorage-dependent details (slab edge at live anchors, bursting spirals, pan-box trimmers) need the tendon layout and
@@ -203,9 +213,26 @@ the drawing names another reference.
   alternate bars start with a half stock length.
 - Hooks: 90° standard hook `12·db` where a bar ends at a free edge; `ldh`
   per §25.4.3.1.
-- Top bars over columns (PT two-way slab §8.7.5.5): within `c2 + 1.5h` each
-  side, extend ≥ `ln/6` from the face of support, ≥ 4 bars, and not less than
-  `As = 0.00075·Acf` (§8.6.2.3). Bar count is raised when the minimum governs.
+- Top bars over columns, office rule (`topColumns.rule: "office"`, the
+  default): an interior column bar covers the drop panel / thickened zone
+  when there is one (+ 200 mm each side), otherwise it is 4 m long
+  (`topColumns.length`, optional per slab); an edge column applies the U rule
+  at the edge and the top extends 70 % of the interior length
+  (`edgeFactor`, 2.80 m for 4 m). `rule: "code"` keeps the SBC option:
+  within `c2 + 1.5h` each side, extend ≥ `ln/6` from the face of support,
+  ≥ 4 bars, and not less than `As = 0.00075·Acf` (§8.6.2.3).
+- Every top bar that ends at the outer slab edge or at an opening ends in a
+  **U** with a 500 mm bottom leg (`U500` on the plan; the cutting length adds
+  `h − 2·cover + 500`).
+- Perimeter (office rule): between the column top bars, along every slab
+  edge, continuous `T12@150` — a symmetric **U-bar** of 4 m total at a free
+  edge, an **L-bar** where the edge carries a beam (400 mm leg into the beam
+  + 2 m on top in the slab; `uEdge.total / beamLeg / beamTop`).
+- Openings enclosed by concrete walls or beams get **no** additional trimmer
+  bars. Others get three groups: G1 parallel to the X sides, G2 parallel to
+  the Y sides, G3 at 45° crossing both, with the crossing bars listed.
+- The bottom-mesh indication (`BOTTOM MESH T10@200`, `thicknessMesh`,
+  optional) is written at every change of slab thickness.
 - Bottom mesh: continuous through columns, stopped at the opening face less
   cover.
 - Openings: `2T16` T&B each side anchored `ld` beyond the corners, `2T12`

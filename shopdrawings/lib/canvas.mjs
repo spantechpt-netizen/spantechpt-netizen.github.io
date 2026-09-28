@@ -64,6 +64,9 @@ export const STANDARD_LAYERS = {
   XREF: { color: 7, ltype: 'CONTINUOUS' },
 };
 
+/** DIMSTYLE defaults in model units (a 1:100 architectural style: 250 text, 150 oblique ticks). */
+export const DEFAULT_DIMSTYLE = { txt: 250, asz: 150, tsz: 150, exo: 50, exe: 100, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'STANDARD', scale: 1 };
+
 export const LINETYPES = {
   CONTINUOUS: { desc: 'Solid line', pattern: [] },
   DASHED: { desc: 'Dashed __ __ __', pattern: [12.7, -6.35] },
@@ -83,8 +86,13 @@ export class Canvas {
       this.layers = new Map(Object.entries(STANDARD_LAYERS).map(([k, v]) => [k, { ...v }]));
       this.textStyle = { name: 'STANDARD', font: 'arial.ttf' };
       this.textStyles = new Map([['STANDARD', { font: 'arial.ttf' }]]);
+      this.dimStyles = new Map();
+      this.dimCount = 0;
     }
   }
+
+  /** Register a dimension style (DXF DIMSTYLE record) usable as `style` on dimension entities. */
+  dimStyleDef(name, def) { this.root.dimStyles.set(name, { ...DEFAULT_DIMSTYLE, ...def }); return name; }
 
   /** Register a text style (DXF STYLE table entry) usable as `style` on text entities. */
   textStyleDef(name, def) { this.root.textStyles.set(name, def); return name; }
@@ -143,6 +151,50 @@ export class Canvas {
   hatch(polys, o = {}) { return this.add({ t: 'hatch', polys: polys.map((p) => p.map((q) => ({ x: q.x, y: q.y }))), pattern: o.pattern || 'ANSI31', scale: o.scale || 1, angle: o.angle || 0, ...o }); }
   solid(pts, o = {}) { return this.add({ t: 'solid', pts: pts.map((p) => ({ x: p.x, y: p.y })), ...o }); }
   insert(name, x, y, o = {}) { return this.add({ t: 'insert', name, x, y, sx: o.sx || 1, sy: o.sy || o.sx || 1, rot: o.rot || 0, ...o }); }
+
+  /**
+   * A real DIMENSION entity (rotated dimension) measuring p1 -> p2 with the
+   * dimension line through `dl`, drawn with the named DIMSTYLE. AutoCAD needs
+   * the dimension picture as an anonymous block (*D1, *D2 ...), so the
+   * geometry is generated here from the style (extension lines, dimension
+   * line, oblique ticks, text) and stored in that block; other CAD readers
+   * and the SVG preview render the same block.
+   *   o.style     DIMSTYLE name (registered with dimStyleDef; DEFAULT_DIMSTYLE otherwise)
+   *   o.angle     dimension line angle in degrees (default: the direction p1 -> p2)
+   *   o.textMid   text middle point (default: on the dimension line, offset by gap + txt/2)
+   *   o.text      text override ("<>" = measured value)
+   * Style fields se1 / se2 suppress the extension lines (DIMSE1 / DIMSE2).
+   */
+  dimension(p1, p2, dl, o = {}) {
+    const root = this.root;
+    if (o.styleDef && o.style && !root.dimStyles.has(o.style)) root.dimStyleDef(o.style, o.styleDef);
+    const st = root.dimStyles.get(o.style) || DEFAULT_DIMSTYLE;
+    const layer = o.layer || 'DIM';
+    const angle = o.angle ?? (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
+    const r = (angle * Math.PI) / 180;
+    const u = { x: Math.cos(r), y: Math.sin(r) }, n = { x: -u.y, y: u.x };
+    const along = (p) => (p.x - dl.x) * u.x + (p.y - dl.y) * u.y;
+    const a = { x: dl.x + u.x * along(p1), y: dl.y + u.y * along(p1) };
+    const b = { x: dl.x + u.x * along(p2), y: dl.y + u.y * along(p2) };
+    const measure = Math.abs(along(p2) - along(p1));
+    const text = o.text && o.text !== '<>' ? o.text.replace('<>', String(Math.round(measure))) : String(Math.round(measure));
+    let rot = angle % 360; if (rot > 90 && rot <= 270) rot -= 180; if (rot < -90) rot += 180;
+    const tm = o.textMid || { x: (a.x + b.x) / 2 + n.x * (st.gap + st.txt / 2), y: (a.y + b.y) / 2 + n.y * (st.gap + st.txt / 2) };
+    // the dimension picture
+    const name = `*D${++root.dimCount}`;
+    const blk = root.block(name);
+    blk.anonymous = true;
+    const lineO = { layer, color: st.clrd === 256 ? undefined : st.clrd };
+    for (const [src, end, sup] of [[p1, a, st.se1], [p2, b, st.se2]]) {
+      if (sup) continue; // extension line suppressed by the style (dimse1 / dimse2)
+      const off = (end.x - src.x) * n.x + (end.y - src.y) * n.y;
+      if (Math.abs(off) > st.exo + 1) { const sg = Math.sign(off); blk.line(src.x + n.x * sg * st.exo, src.y + n.y * sg * st.exo, end.x + n.x * sg * st.exe, end.y + n.y * sg * st.exe, lineO); }
+    }
+    blk.line(a.x, a.y, b.x, b.y, lineO);
+    for (const c of [a, b]) blk.line(c.x - (u.x + n.x) * st.tsz * 0.5, c.y - (u.y + n.y) * st.tsz * 0.5, c.x + (u.x + n.x) * st.tsz * 0.5, c.y + (u.y + n.y) * st.tsz * 0.5, lineO);
+    blk.text(tm.x, tm.y, text, { layer, color: st.clrt === 256 ? undefined : st.clrt, h: st.txt, rot, align: 'C', valign: 'M', style: st.txsty, widthFactor: root.textStyles.get(st.txsty)?.widthFactor });
+    return this.add({ t: 'dimension', p1: { x: p1.x, y: p1.y }, p2: { x: p2.x, y: p2.y }, dl: { x: dl.x, y: dl.y }, angle, textMid: tm, text: o.text && o.text !== '<>' ? o.text : '<>', measure, style: o.style || 'STANDARD', block: name, layer, ...(o.color != null ? { color: o.color } : {}) });
+  }
 
   /** Arrow head as a filled triangle pointing from (fx,fy) towards (tx,ty). */
   arrow(fx, fy, tx, ty, size, o = {}) {
@@ -203,6 +255,7 @@ export class Canvas {
         case 'circle': case 'arc': push(e.cx - e.r, e.cy - e.r); push(e.cx + e.r, e.cy + e.r); break;
         case 'text': push(e.x, e.y); push(e.x + e.h * 0.8 * e.str.length, e.y + e.h); break;
         case 'mtext': push(e.x, e.y); break;
+        case 'dimension': push(e.p1.x, e.p1.y); push(e.p2.x, e.p2.y); push(e.dl.x, e.dl.y); break;
         case 'insert': {
           const blk = this.root.blocks.get(e.name);
           const bb = blk && blk.bbox();

@@ -50,6 +50,31 @@ test('runs longer than a stock bar are split with laps, staggered on alternate b
   assert.equal(b.reduce((s, v) => s + v, 0) - 550 * (b.length - 1), 30000);
 });
 
+test('office rule: interior column bars run 4 m (or cover the drop), edge column bars end in a U and run 70 % on top', () => {
+  const model = extractModel(parseDxf(toDxf(buildSampleInput())));
+  const level = model.levels[1];
+  const res = topAtColumns(level, model.spec); // rule: office (default)
+  const interior = res.columns.find((c) => c.col.id === 'C/2');
+  assert.equal(interior.per.x.length, 4000);
+  assert.equal(interior.per.x.shape, 'STR');
+  const edge = res.columns.find((c) => c.per.x.hooks[-1] || c.per.x.hooks[1] || c.per.y.hooks[-1] || c.per.y.hooks[1]);
+  assert.ok(edge, 'an edge column exists');
+  const dir = edge.per.x.hooks[-1] || edge.per.x.hooks[1] ? 'x' : 'y';
+  const p = edge.per[dir];
+  assert.ok(/U/.test(p.shape), 'U end at the slab edge');
+  assert.equal(p.hookLabel, 'U500');
+  const uLeg = level.thickness - 2 * model.spec.cover + 500;
+  assert.equal(p.hookLeg, uLeg);
+  // top straight length from the edge = 70 % of 4 m
+  const straight = p.ext[-1] + p.c1 + p.ext[1];
+  assert.equal(straight, 2800);
+  assert.equal(p.length, Math.ceil((2800 + uLeg) / 10) * 10);
+  // a drop panel at the column stretches the interior bar over it
+  level.thickZones = [{ id: 'D1', polygon: [{ x: interior.col.cx - 2500, y: interior.col.cy - 2000 }, { x: interior.col.cx + 2500, y: interior.col.cy - 2000 }, { x: interior.col.cx + 2500, y: interior.col.cy + 2000 }, { x: interior.col.cx - 2500, y: interior.col.cy + 2000 }], thickness: 300 }];
+  const res2 = topAtColumns(level, model.spec);
+  assert.equal(res2.columns.find((c) => c.col.id === 'C/2').per.x.length, 5400, '5000 drop + 2 x 200 margin');
+});
+
 test('the bar list merges identical bars into marks and weighs them', () => {
   const bars = new BarList('T2');
   bars.add({ dia: 12, shape: 'STR', length: 12000, qty: 10, zone: 'A', spacing: 200 });
@@ -93,7 +118,7 @@ test('design data written in the notes overrides the assumptions', () => {
   assert.equal(spec.fc, 40);
   assert.equal(spec.cover, 30);
   assert.deepEqual(spec.bottom, { dia: 10, spacing: 150 });
-  assert.deepEqual(spec.topColumns, { dia: 20, spacing: 100 });
+  assert.equal(spec.topColumns.dia, 20); assert.equal(spec.topColumns.spacing, 100);
   assert.ok(!assumptions.some((a) => /Bottom mesh not specified/.test(a.text)));
   // and with nothing stated, everything is an explicit assumption
   const bare = [];
@@ -122,12 +147,13 @@ test('the sample structural drawing comes back as two levels with their elements
   assert.equal(l1.pt.zones.length, 1);
   assert.equal(model.code_reference, 'SBC 304-18');
   assert.equal(model.spec.fc, 35);
-  assert.deepEqual(model.spec.topColumns, { dia: 16, spacing: 150 });
+  assert.equal(model.spec.topColumns.dia, 16); assert.equal(model.spec.topColumns.spacing, 150);
 });
 
 test('top bars over an interior column extend ln/6 each side and satisfy As,min', () => {
   const model = extractModel(parseDxf(toDxf(buildSampleInput())));
   const level = model.levels[1]; // roof: full rectangle, 20 columns
+  model.spec.topColumns.rule = 'code';
   const res = topAtColumns(level, model.spec);
   const interior = res.columns.find((c) => c.col.id === 'C/2');
   // clear span 7500 − 600 = 6900 → /6 = 1150; length = 1150 + 600 + 1150 = 2900
@@ -137,7 +163,8 @@ test('top bars over an interior column extend ln/6 each side and satisfy As,min'
   assert.equal(interior.per.y.length, 3100);
   assert.ok(interior.per.x.asProv >= interior.per.x.asReq);
   const edge = res.columns.find((c) => c.col.id === 'A/2');
-  assert.equal(edge.per.x.shape, 'L', 'edge column bar hooks at the slab edge');
+  assert.equal(edge.per.x.shape, 'U', 'edge column bar ends in the U with the 500 bottom leg at the slab edge');
+  assert.equal(edge.per.x.uEnd?.leg ?? res.uEnd.leg, res.uEnd.leg);
   assert.ok(res.checks.every((c) => c.asProv >= c.asReq));
 });
 
@@ -439,7 +466,7 @@ function buildOfficePlan() {
   const ren = c.block('TOP REN');
   ren.line(6800, 2000, 9200, 2000, { layer: 'REO-TOP' });
   ren.text(7500, 2054, 'T10-300 (T)', { layer: 'REO-TXT', h: 150, style: 'BW' }); ren.text(7700, 1817, 'L=2400', { layer: 'REO-TXT', h: 150, style: 'BW' });
-  ren.line(8000, 800, 8000, 3200, { layer: 'REO-TOP' });
+  ren.line(8000, 100, 8000, 3200, { layer: 'REO-TOP' }); // reaches the slab edge → gets the U500 end
   ren.text(7950, 1200, 'T10-150 (T)', { layer: 'REO-TXT', h: 150, rot: 90, style: 'BW' }); ren.text(8150, 1200, 'L=2400', { layer: 'REO-TXT', h: 150, rot: 90, style: 'BW' });
   const dot = c.block('DOT'); dot.circle(0, 0, 33, { layer: 'S-CABLE-SYMBOL' });
   ren.insert('DOT', 8000, 3000);
@@ -497,7 +524,8 @@ test('the General Details add bars in the office convention at the places they r
   const by = (d) => adds.items.filter((it) => it.detail === d);
   assert.ok(by('D1').length >= 1, 'L-bars along the edge beam, one per run between supports');
   assert.equal(Math.round(dist2(by('D1')[0].dist.p.x - by('D1')[0].dist.q.x ? { x: by('D1')[0].dist.p.x, y: 0 } : { x: 0, y: 0 }, { x: by('D1')[0].dist.q.x, y: 0 })), 16000, 'the distribution runs along the whole free edge');
-  assert.ok(by('D1').every((it) => it.face === 'T' && it.l1 === 'T10-200 LBAR (T)' && Math.round(dist2(it.a, it.b)) === 1200));
+  assert.ok(by('D1').every((it) => it.face === 'T' && it.l1 === 'T12-150 LBAR (T)' && it.l2 === 'L=2400' && Math.round(dist2(it.a, it.b)) === 2000), 'L-bar: 400 into the beam + 2000 on top');
+  assert.ok(by('D6').length >= 1 && by('D6').every((it) => it.l1 === 'T12-150 U-BAR' && it.l2 === 'L=4000'), 'U-bars of 4 m at the free edges');
   assert.ok(by('D2').some((it) => it.l1 === 'T12-200 U-BAR'), 'U-bars at the core wall faces');
   assert.ok(by('D2').some((it) => it.l1 === '10T12 (T&B)'), 'parallel bars along the wall');
   assert.equal(by('D4').length, 2, 'extra bottom bars both ways in the 280 zone');
@@ -515,6 +543,30 @@ test('the General Details add bars in the office convention at the places they r
   function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 });
 
+test('a RAM Concept model goes straight to the design package: its bands in the office convention, the rules on top', async () => {
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const { prepareRamDesign } = await import('../shopdrawings/lib/design.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ramd-'));
+  const ram = readRamConcept(await buildSyntheticCpt(dir));
+  const model = prepareRamDesign(ramToModel(ram, { levelName: 'FIRST FLOOR', spec: {} }), { levelName: 'FIRST FLOOR', spec: {} });
+  const L = model.levels[0];
+  assert.equal(L.existing.items.length, 2, 'the two RAM bands become designer items');
+  const top = L.existing.items.find((i) => i.face === 'T');
+  assert.equal(top.l1, 'T16-150 (T)'); assert.equal(top.l2, 'L=5000');
+  assert.ok(top.dist && Math.round(dist2(top.dist.p, top.dist.q)) === 1500, 'distribution dimension across the band width');
+  assert.ok(L.walls.every((w) => w.polygon && w.id), 'walls get a body and an id');
+  assert.equal(model.spec.uEdge.spacing, 150, 'office perimeter rule, not the G.A. assumption');
+  assert.ok(L.rcTags.length >= 2, 'slab thickness and the thickened zone are tagged');
+  const pack = composeDesignPackage(model, { project: 'RAM', prefix: 'ST-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
+  assert.equal(pack.sheets.length, 5);
+  const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);
+  assert.ok(dxfTop.includes('\n1\nT16-150 (T)\n') && dxfTop.includes('\n1\nT12-150 U-BAR\n'), 'RAM band call-out and the perimeter U-bars on the top sheet');
+  assert.ok(/\n0\nDIMENSION\n[\s\S]*?\n3\nDIM100\n/.test(dxfTop), 'distribution DIMENSIONs in DIM100');
+  const dxfBot = toDxf(pack.sheets.find((s) => s.key === 'dbottom').root);
+  assert.ok(dxfBot.includes('\n1\nT12-200 (B)\n') && dxfBot.includes('BOTTOM MESH T10@200'), 'RAM bottom band and the mesh indication at the thickness change');
+  function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+});
+
 test('the design package is written in the office layers and text style, on the shop-drawing frame', () => {
   const dxf = parseDxf(toDxf(buildOfficePlan()));
   const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });
@@ -526,8 +578,14 @@ test('the design package is written in the office layers and text style, on the 
   for (const layer of ['REO-TOP', 'REO-TXT', 'diamension', 'DOTS', 'DETAIL-REF']) assert.ok(dxfOut.includes(`\n8\n${layer}\n`), `${layer} used`);
   assert.ok(/\n2\nBW\n[\s\S]*?\n3\nisocp\.shx\n/.test(dxfOut), 'BW text style with isocp.shx');
   assert.ok(dxfOut.includes('\n1\nT10-300 (T)\n'), "the designer's call-out is kept verbatim");
-  assert.ok(dxfOut.includes('\n1\nT10-200 LBAR (T)\n'), 'detail 1 call-out in the office form');
-  assert.ok(dxfOut.includes('\n1\nD1\n'), 'detail reference');
+  assert.ok(dxfOut.includes('\n1\nT12-150 LBAR (T)\n'), 'edge beam L-bar call-out in the office form');
+  assert.ok(dxfOut.includes('\n1\nT12-150 U-BAR\n'), 'free edge U-bar call-out');
+  assert.ok(dxfOut.includes('\n1\nD1\n') && dxfOut.includes('\n1\nD6\n'), 'detail references');
+  assert.ok(dxfOut.includes('\n1\nU500\n'), "the designer's top bar ending at the slab edge gets the U500 end");
+  // the distribution indicator is a real DIMENSION in style DIM100 with its picture block
+  assert.ok(/\n0\nDIMENSION\n[\s\S]*?\n3\nDIM100\n/.test(dxfOut), 'DIMENSION entities in style DIM100');
+  assert.ok(/\n0\nDIMSTYLE\n[\s\S]*?\n2\nDIM100\n[\s\S]*?\n44\n0\n[\s\S]*?\n140\n250\n[\s\S]*?\n142\n150\n[\s\S]*?\n75\n1\n76\n1\n[\s\S]*?\n178\n3\n/.test(dxfOut), 'DIM100 record: text 250, oblique tick 150, green text, no extension lines');
+  assert.ok(/\n0\nBLOCK\n[\s\S]*?\n2\n\*D\d+\n70\n1\n/.test(dxfOut), 'anonymous picture blocks *Dn (numbered package-wide)');
   assert.ok(/\n0\nLAYER\n[\s\S]*?\n2\nREO-TOP\n[\s\S]*?\n6\nHIDDEN\n/.test(dxfOut), 'REO-TOP is a hidden-line layer');
   assert.ok(dxfOut.includes('\n8\nST-GRID\n'), 'sheet furniture on the ST standard');
   const bottom = pack.sheets.find((s) => s.key === 'dbottom');

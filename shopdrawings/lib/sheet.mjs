@@ -128,6 +128,8 @@ export class Sheet {
       arrow: (a, b, o = {}) => { const A = P(a), B = P(b); return blk.arrow(A.x, A.y, B.x, B.y, (o.size || 1.5) * S, o); },
       leader: (pts, o = {}) => blk.leader(pts.map(P), { ...o, arrowSize: (o.arrowSize || 1.5) * S }),
       dim: (a, b, off, o = {}) => blk.dim(P(a), P(b), off * S, { ...o, h: (o.h || 1.8) * S, ext: (o.ext || 1.5) * S, tick: (o.tick || 1) * S, text: o.text ?? String(Math.round(Math.hypot(b.x - a.x, b.y - a.y))) }),
+      /** A real DIMENSION entity (see Canvas.dimension); sizes come from the DIMSTYLE in model units. */
+      dimension: (p1, p2, dl, o = {}) => blk.dimension(P(p1), P(p2), P(dl), { ...o, textMid: o.textMid ? P(o.textMid) : undefined }),
       /** Circle with a label, at a plan point, offset in paper mm. */
       bubble: (p, label, o = {}) => {
         const r = (o.r || 3.5) * S;

@@ -12,7 +12,7 @@
  *   --config file.json      project meta and spec overrides ({ meta: {...}, spec: {...}, layers: "path" })
  *   --layers file.json      layer standard (default: shopdrawings/layers.spantech.json)
  *   --level "1ST FLOOR"     level name (default: from the file name)
- *   --mode design           design drawings from the office's own RFT plan + the General Details rules (default: shop)
+ *   --mode design           design drawings from the office's own RFT plan, or from a RAM Concept .cpt, + the General Details rules (default: shop)
  *   --no-svg                skip the SVG previews
  *
  * Output
@@ -32,7 +32,7 @@ import { execFileSync } from 'node:child_process';
 import { basename, extname } from 'node:path';
 import { extractModel } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
-import { extractDesign, composeDesignPackage } from './lib/design.mjs';
+import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
 import * as R from './lib/rebar.mjs';
@@ -83,7 +83,14 @@ export function loadLayerStandard(path = DEFAULT_LAYER_STANDARD) {
 export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg = true, levelNames, layerStandard, mode = 'shop' }) {
   meta = { layerStandard: layerStandard || loadLayerStandard(), ...meta, mode };
   let model;
-  if (mode === 'design') {
+  if (mode === 'design' && inputDxf && /\.cpt$/i.test(inputDxf)) {
+    // design drawings straight from the RAM Concept model: its designed bands + the General Details rules
+    const ram = readRamConcept(inputDxf);
+    const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
+    model = prepareRamDesign(ramToModel(ram, { levelName, spec }), { levelName, spec, wallThickness: spec.wallThickness });
+    const h = ram.project;
+    meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
+  } else if (mode === 'design') {
     // design drawings: the office's own design plan + the General Details rules
     const dxf = loadDrawing(inputDxf, inputText);
     model = extractDesign(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });

@@ -138,8 +138,10 @@ export function toDxf(root, opts = {}) {
 
   const styles = root.textStyles && root.textStyles.size ? [...root.textStyles.entries()] : [['STANDARD', { font: root.textStyle?.font || 'arial.ttf' }]];
   if (!styles.some(([n]) => n === 'STANDARD')) styles.unshift(['STANDARD', { font: 'arial.ttf' }]);
+  const styleHandles = new Map();
   table('STYLE', styles.map(([name, def]) => (owner) => {
-    tag(0, 'STYLE'); tag(5, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbTextStyleTableRecord');
+    const hs = H.next(); styleHandles.set(name, hs);
+    tag(0, 'STYLE'); tag(5, hs); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbTextStyleTableRecord');
     tag(2, name); tag(70, 0); tag(40, 0); tag(41, def.widthFactor || 1); tag(50, 0); tag(71, 0); tag(42, 2.5); tag(3, def.font || 'arial.ttf'); tag(4, '');
   }));
 
@@ -148,10 +150,22 @@ export function toDxf(root, opts = {}) {
   table('APPID', [(owner) => {
     tag(0, 'APPID'); tag(5, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbRegAppTableRecord'); tag(2, 'ACAD'); tag(70, 0);
   }]);
+  const dimStyles = [...(root.dimStyles || new Map()).entries()].filter(([n]) => n !== 'STANDARD');
   table('DIMSTYLE', [(owner) => {
     tag(0, 'DIMSTYLE'); tag(105, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbDimStyleTableRecord');
     tag(2, 'STANDARD'); tag(70, 0); tag(40, 1); tag(41, 2.5); tag(42, 0.625); tag(43, 3.75); tag(44, 1.25); tag(140, 2.5); tag(141, 2.5); tag(147, 0.625);
-  }], () => tag(100, 'AcDbDimStyleTable'));
+  }, ...dimStyles.map(([name, d]) => (owner) => {
+    // a DIMSTYLE in model units: oblique ticks (dimtsz) instead of arrow blocks, text above the line
+    tag(0, 'DIMSTYLE'); tag(105, H.next()); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbDimStyleTableRecord');
+    tag(2, name); tag(70, 0); tag(3, ''); tag(4, '');
+    tag(40, num(d.scale ?? 1)); tag(41, num(d.asz)); tag(42, num(d.exo)); tag(43, num(3.75)); tag(44, num(d.exe)); tag(45, 0); tag(46, 0); tag(47, 0); tag(48, 0);
+    tag(140, num(d.txt)); tag(141, 2.5); tag(142, num(d.tsz)); tag(143, 25.4); tag(144, 1); tag(145, 0); tag(146, 1); tag(147, num(d.gap)); tag(148, 0);
+    tag(71, 0); tag(72, 0); tag(73, 0); tag(74, 0); tag(75, d.se1 ? 1 : 0); tag(76, d.se2 ? 1 : 0); tag(77, d.tad ?? 1); tag(78, 8); tag(79, 3);
+    tag(170, 0); tag(171, 3); tag(172, 1); tag(173, 0); tag(174, 0); tag(175, 0); tag(176, d.clrd ?? 256); tag(177, d.clre ?? 256); tag(178, d.clrt ?? 256); tag(179, 2);
+    tag(271, d.dec ?? 0); tag(272, 2); tag(273, 2); tag(274, 3); tag(275, 0); tag(276, 0); tag(277, 2); tag(278, 44); tag(279, 0);
+    tag(280, 0); tag(281, 0); tag(282, 0); tag(283, 0); tag(284, 8); tag(285, 0); tag(286, 0); tag(288, 0); tag(289, 3);
+    tag(340, styleHandles.get(d.txsty) || styleHandles.get('STANDARD')); tag(371, -2); tag(372, -2);
+  })], () => tag(100, 'AcDbDimStyleTable'));
 
   const blockRecord = (h, name, layout) => (owner) => {
     tag(0, 'BLOCK_RECORD'); tag(5, h); tag(330, owner); tag(100, 'AcDbSymbolTableRecord'); tag(100, 'AcDbBlockTableRecord');
@@ -259,6 +273,20 @@ export function toDxf(root, opts = {}) {
         tag(98, 0);
         break;
       }
+      case 'dimension': {
+        // rotated dimension with its picture block; AutoCAD regenerates the picture from the style when edited
+        entityHeader('DIMENSION', e, owner); tag(100, 'AcDbDimension');
+        tag(2, e.block); tag(3, e.style || 'STANDARD');
+        tag(10, num(e.dl.x)); tag(20, num(e.dl.y)); tag(30, 0);
+        tag(11, num(e.textMid.x)); tag(21, num(e.textMid.y)); tag(31, 0);
+        tag(70, 32); tag(71, 5); tag(42, num(e.measure)); tag(1, e.text || '<>');
+        tag(100, 'AcDbAlignedDimension');
+        tag(13, num(e.p1.x)); tag(23, num(e.p1.y)); tag(33, 0);
+        tag(14, num(e.p2.x)); tag(24, num(e.p2.y)); tag(34, 0);
+        tag(50, num(e.angle || 0));
+        tag(100, 'AcDbRotatedDimension');
+        break;
+      }
       case 'insert':
         entityHeader('INSERT', e, owner); tag(100, 'AcDbBlockReference');
         tag(2, e.name); tag(10, num(e.x)); tag(20, num(e.y)); tag(30, 0);
@@ -271,9 +299,9 @@ export function toDxf(root, opts = {}) {
 
   // ------------------------------------------------------------ BLOCKS
   tag(0, 'SECTION'); tag(2, 'BLOCKS');
-  const blockBegin = (h, rec, name, paper) => {
+  const blockBegin = (h, rec, name, paper, anonymous = false) => {
     tag(0, 'BLOCK'); tag(5, h); tag(330, rec); tag(100, 'AcDbEntity'); if (paper) tag(67, 1); tag(8, '0'); tag(100, 'AcDbBlockBegin');
-    tag(2, name); tag(70, 0); tag(10, 0); tag(20, 0); tag(30, 0); tag(3, name); tag(1, '');
+    tag(2, name); tag(70, anonymous ? 1 : 0); tag(10, 0); tag(20, 0); tag(30, 0); tag(3, name); tag(1, '');
   };
   const blockEnd = (h, rec, paper) => {
     tag(0, 'ENDBLK'); tag(5, h); tag(330, rec); tag(100, 'AcDbEntity'); if (paper) tag(67, 1); tag(8, '0'); tag(100, 'AcDbBlockEnd');
@@ -282,7 +310,7 @@ export function toDxf(root, opts = {}) {
   blockBegin(hPsBlock, hPsRec, '*Paper_Space', true); blockEnd(hPsEnd, hPsRec, true);
   for (const [name, blk] of root.blocks) {
     const rec = blockRec.get(name);
-    blockBegin(H.next(), rec, name, false);
+    blockBegin(H.next(), rec, name, false, !!blk.anonymous);
     for (const e of blk.entities) writeEntity(e, rec);
     blockEnd(H.next(), rec, false);
   }

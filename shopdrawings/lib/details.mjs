@@ -29,7 +29,7 @@ export function sectionMesh({ h, cover, dia, lap, spacing }) {
   };
 }
 
-export function sectionColumn({ h, c1, ext, dia, spacing, cover, hookLeg, shape }) {
+export function sectionColumn({ h, c1, ext, dia, spacing, cover, hookLeg, shape, uReturn = 0 }) {
   const half = c1 / 2 + ext + 350;
   return {
     bbox: { minX: -half - 200, maxX: half + 200, minY: -1000, maxY: h + 520, cx: 0, cy: (h - 500) / 2 },
@@ -41,10 +41,15 @@ export function sectionColumn({ h, c1, ext, dia, spacing, cover, hookLeg, shape 
       const yt = h - cover - dia / 2;
       const xa = -c1 / 2 - ext, xb = c1 / 2 + ext;
       const pts = [];
-      if (shape !== 'STR') pts.push({ x: xa, y: yt - hookLeg });
+      const yb = cover + dia / 2 + 40; // bottom leg of a U end, just above the bottom mesh
+      const uEnd = uReturn > 0 && /U/.test(shape);
+      if (uEnd) pts.push({ x: xa + uReturn, y: yb }, { x: xa, y: yb });
+      else if (shape !== 'STR') pts.push({ x: xa, y: yt - hookLeg });
       pts.push({ x: xa, y: yt }, { x: xb, y: yt });
-      if (shape === 'C') pts.push({ x: xb, y: yt - hookLeg });
+      if (shape === 'UU' && uEnd) pts.push({ x: xb, y: yb }, { x: xb - uReturn, y: yb });
+      else if (shape === 'C') pts.push({ x: xb, y: yt - hookLeg });
       pen.pline(pts, { layer: 'REBAR-TOP', lw: 70 });
+      if (uEnd) pen.dim({ x: xa, y: yb - 60 }, { x: xa + uReturn, y: yb - 60 }, -5, { text: `${uReturn}` });
       pen.barEnds({ x: xa, y: yt }, { x: xb, y: yt }, { layer: 'REBAR-TOP' });
       // bottom mesh
       pen.line({ x: -half + 60, y: cover + 6 }, { x: half - 60, y: cover + 6 }, { layer: 'REBAR-BOT', lw: 35 });
@@ -54,8 +59,8 @@ export function sectionColumn({ h, c1, ext, dia, spacing, cover, hookLeg, shape 
       pen.dim({ x: c1 / 2, y: h }, { x: xb, y: h }, 7, { text: `${Math.round(ext)} (≥ ln/6)` });
       pen.dim({ x: -c1 / 2, y: h }, { x: c1 / 2, y: h }, 7, { text: `${c1}` });
       pen.dim({ x: half, y: 0 }, { x: half, y: h }, -6, { text: `${h}` });
-      pen.text({ x: 0, y: h + 320 }, `T${dia}@${spacing} TOP E.W. WITHIN c + 3h - EXTEND ≥ ln/6 FROM FACE OF SUPPORT`, { layer: 'REBAR-TEXT', h: 1.9, align: 'C' });
-      pen.text({ x: 0, y: -980 }, `COLUMN  ·  90° HOOK ${hookLeg} (12Ø) WHERE BAR ENDS AT SLAB EDGE`, { layer: 'NOTES', h: 1.6, align: 'C' });
+      pen.text({ x: 0, y: h + 320 }, uReturn > 0 ? `T${dia}@${spacing} TOP E.W. OVER THE COLUMN - LENGTH PER THE OFFICE RULE (SEE NOTES)` : `T${dia}@${spacing} TOP E.W. WITHIN c + 3h - EXTEND ≥ ln/6 FROM FACE OF SUPPORT`, { layer: 'REBAR-TEXT', h: 1.9, align: 'C' });
+      pen.text({ x: 0, y: -980 }, uReturn > 0 ? `COLUMN  ·  BAR ENDING AT THE SLAB EDGE / AN OPENING ENDS IN A U: DOWN THE SLAB, ${uReturn} BACK AT THE BOTTOM` : `COLUMN  ·  90° HOOK ${hookLeg} (12Ø) WHERE BAR ENDS AT SLAB EDGE`, { layer: 'NOTES', h: 1.6, align: 'C' });
     },
   };
 }

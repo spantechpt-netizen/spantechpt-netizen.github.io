@@ -31,6 +31,8 @@ import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisR
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets } from './sheets.mjs';
+/** The office's DIM100: 250 text, 150 oblique ticks, green number, text above the line, and no extension lines at all (dimse1/dimse2 on, dimexe 0). */
+export const DIM100 = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'BW', se1: true, se2: true };
 
 // ------------------------------------------------------------------ office convention
 export const OFFICE_LAYERS = {
@@ -55,6 +57,7 @@ export const DETAILS = {
   D3: 'TYPICAL DETAIL AT VARYING SLAB THICKNESS',
   D4: 'TYPICAL COLUMN DROP DETAIL',
   D5: 'TYPICAL SLAB DETAIL AT CORE WALL AND SLAB CORNERS',
+  D6: 'TYPICAL SLAB EDGE REINFORCEMENT DETAIL (U.N.O.) - FREE EDGE U-BARS',
   D7: 'TYPICAL MEP VOID DETAIL',
   D12: 'TYPICAL PUNCHING DETAIL',
 };
@@ -93,6 +96,7 @@ function distToSeg(p, a, b) {
  */
 export function extractDesign(dxf, options = {}) {
   const model = extractModel(dxf, options);
+  const spec0 = model.spec;
   const k = { mm: 1, m: 1000, cm: 10 }[model.source.units] || 1;
   const raw = flatten(dxf).map((e) => (k === 1 ? e : scaleEnt(e, k)));
   const texts = raw.filter((e) => (e.type === 'TEXT' || e.type === 'MTEXT') && textOf(e));
@@ -192,25 +196,9 @@ export function extractDesign(dxf, options = {}) {
     level.meshSpec = meshSpec ? meshSpec.match(/T(\d+)@(\d+)/i).slice(1, 3).map(Number) : null;
     level.topMesh = !!(meshSpec && /TOP/i.test(meshSpec));
 
-    // edge beams: a parallel line pair on a beam layer within 400 mm of a slab edge
-    const beamLines = raw.filter((e) => e.type === 'LINE' && /BEAM/i.test(e.layer)).map((e) => ({ a: { x: e.x, y: e.y }, b: { x: e.x2, y: e.y2 } }));
-    level.edges = [];
-    for (let i = 0; i < outline.length; i++) {
-      const a = outline[i], b = outline[(i + 1) % outline.length];
-      const L = dist(a, b);
-      if (L < 300) continue;
-      const u = unit(a, b);
-      const withBeam = beamLines.some((bl) => {
-        const ub = unit(bl.a, bl.b);
-        if (Math.abs(ub.x * u.x + ub.y * u.y) < 0.98) return false;
-        const d1 = distToSeg(bl.a, a, b), d2 = distToSeg(bl.b, a, b);
-        if (Math.min(d1, d2) > 400) return false;
-        const t1 = ((bl.a.x - a.x) * u.x + (bl.a.y - a.y) * u.y), t2 = ((bl.b.x - a.x) * u.x + (bl.b.y - a.y) * u.y);
-        const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L, Math.max(t1, t2));
-        return hi - lo > 0.5 * L || hi - lo > 2000;
-      });
-      level.edges.push({ a, b, beam: withBeam });
-    }
+    // edge beams: a line on a beam layer running along the slab edge
+    level.beams = raw.filter((e) => e.type === 'LINE' && /BEAM/i.test(e.layer) && (inPart({ x: e.x, y: e.y }) || inPart({ x: e.x2, y: e.y2 }))).map((e) => ({ a: { x: e.x, y: e.y }, b: { x: e.x2, y: e.y2 } }));
+    level.edges = slabEdges(level);
 
     // the designer's own reinforcement, kept verbatim
     const inWin = (p) => inPart(p);
@@ -235,6 +223,9 @@ export function extractDesign(dxf, options = {}) {
       const host = callouts.filter((c) => c.face && (distToSeg(c, l.a, l.b) < 500 || near(c, m, 900))).sort((p, q) => distToSeg(p, l.a, l.b) - distToSeg(q, l.a, l.b))[0];
       l.face = host ? host.face : /BOT/i.test(l.layer) ? 'B' : 'T';
     }
+    // office rule: a top bar ending at the outer slab edge or at an opening ends in a U (500 bottom leg)
+    const atBoundary = (p) => distToPolygon(p, outline) < spec0.cover + 300 || (level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300);
+    for (const l of lines) if (l.face !== 'B') l.uEnd = { start: atBoundary(l.a), end: atBoundary(l.b) };
     const dims = raw.filter((e) => e.type === 'DIMENSION' && inWin(e)).map((e) => ({ ...e }));
     const dots = raw.filter((e) => e.type === 'INSERT' && /^DOT/i.test(e.name || '') && inWin(e)).map((e) => ({ x: e.x, y: e.y }));
     const faceNearLine = (p, r) => { const l = lines.filter((s) => distToSeg(p, s.a, s.b) < r).sort((s1, s2) => distToSeg(p, s1.a, s1.b) - distToSeg(p, s2.a, s2.b))[0]; return l ? l.face : 'T'; };
@@ -252,6 +243,129 @@ export function extractDesign(dxf, options = {}) {
   model.assumptions = model.assumptions.filter((a) => !notForDesign.test(a.text) && !(a.text.startsWith('Slab thickness not stated') && model.levels.some((l) => l.id === a.level && l.thicknessSource)));
   model.design = { units: model.source.units };
   return model;
+}
+
+/**
+ * A RAM Concept model (from ramToModel) prepared for the design package: the bands designed in
+ * RAM become the designer's reinforcement, drawn in the office convention (bar line, call-out
+ * "T16-150 (T)" + "L=...", distribution DIMENSION, dot); walls become polygons; slab thicknesses
+ * are tagged on the plan; then the General Details rules are added on top exactly as for an RFT plan.
+ */
+export function prepareRamDesign(model, options = {}) {
+  const wallT = options.wallThickness || 250;
+  const spec = model.spec;
+  // the office rules need their full parameter sets (perimeter U / L bars, column bars, mesh at thickness changes)
+  // (the office rules, not the RAM file's G.A. assumptions; the user's config overrides them)
+  for (const key of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching']) spec[key] = { ...R.DEFAULT_SPEC[key], ...(options.spec?.[key] || {}) };
+  const A = (level, text) => model.assumptions.push({ level: level.id, text });
+  model.assumptions = model.assumptions.filter((a) => !/office standard reinforcement .* ADDITIONAL reinforcement/i.test(a.text));
+  const baseName = options.levelName || (model.levels[0]?.name || 'SLAB').replace(/\s*-\s*PART.*$/i, '');
+  model.levels.forEach((level, li) => {
+    const outline = level.outline;
+    level.partIndex = li;
+    if (model.levels.length > 1) level.name = `${baseName} - PART ${String(li + 1).padStart(2, '0')}`;
+    level.thicknessSource = 'RAM model';
+    // walls: RAM line supports are axes; give them a body so the wall details (D2 / D5) and the lined-opening rule can see them
+    level.walls = mergeWallSegments((level.walls || []).filter((w) => !w.polygon)).concat((level.walls || []).filter((w) => w.polygon)).map((w) => {
+      if (w.polygon) return w;
+      const u = unit(w.a, w.b), n = perp(u), t = w.t || wallT;
+      return { ...w, t, length: dist(w.a, w.b), polygon: [add(w.a, n, t / 2), add(w.b, n, t / 2), add(w.b, n, -t / 2), add(w.a, n, -t / 2)] };
+    });
+    level.walls.forEach((w, i) => { if (!w.id) w.id = `W${i + 1}`; });
+    level.beams = level.beams || [];
+    level.edges = slabEdges(level);
+    // thickness tags: the slab thickness once, each thickened zone inside it
+    const c0 = centroid(outline);
+    const inside = pointInPolygon(c0, outline) ? c0 : (() => { const b = bbox(outline); return { x: b.minX + 1500, y: b.maxY - 1500 }; })();
+    level.rcTags = [{ x: inside.x, y: inside.y, thickness: level.thickness }, ...(level.thickZones || []).map((z) => { const c = centroid(z.polygon); return { x: c.x, y: c.y, thickness: z.thickness }; })];
+    level.levelTags = level.tos != null ? [{ x: inside.x, y: inside.y - 400, label: 'T.O.C', value: String(level.tos) }] : [];
+    level.camber = level.camber || [];
+    level.wallBarLengths = [];
+    // mesh: RAM designs the bands, not the mesh; the mesh of the specification is written in the office box
+    const mesh = spec.bottom || R.DEFAULT_SPEC.bottom;
+    level.meshSpec = [mesh.dia, mesh.spacing];
+    level.topMesh = false;
+    const b0 = bbox(outline);
+    level.meshLabels = [{ x: b0.minX + 600, y: b0.maxY - 700, lines: [`MESH T${mesh.dia}@${mesh.spacing}`, 'BOTTOM TWO WAY'] }];
+    // designed bands → office items
+    const atBoundary = (p) => distToPolygon(p, outline) < (spec.cover || 25) + 300 || (level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300);
+    const items = [];
+    for (const band of level.ram?.bands || []) {
+      const n = band.count || band.bars.length || 1;
+      const centre = band.bars.length ? band.bars[Math.floor(band.bars.length / 2)] : { a: band.p0, b: band.p1 };
+      const a = centre.a, b = centre.b;
+      if (dist(a, b) < 200) continue;
+      const u = unit(a, b), nn = perp(u);
+      const spacing = band.spacing > 0 ? band.spacing : n > 1 ? Math.round(band.width / (n - 1)) : 0;
+      const L = Math.round(dist(a, b) / 10) * 10;
+      const st = add(a, u, dist(a, b) * 0.35);
+      const half = Math.max(band.width, 0) / 2;
+      const it = { detail: null, ram: band.id, face: band.face, a, b, l1: n > 1 && spacing ? `T${band.dia}-${spacing} (${band.face})` : `${n}T${band.dia} (${band.face})`, l2: `L=${L}`, side: 1, noTag: true };
+      if (half > 50) it.dist = { p: add(st, nn, -half), q: add(st, nn, half) };
+      if (band.face === 'T') it.uEnd = { start: atBoundary(a), end: atBoundary(b) };
+      items.push(it);
+    }
+    level.existing = { lines: [], callouts: [], dims: [], dots: [], items };
+    model.findings.push(`${level.id} ${level.name}: ${level.walls.length} walls, ${(level.thickZones || []).length} thickness zones, ${level.edges.filter((e) => e.beam).length} of ${level.edges.length} slab edges with an edge beam, RAM designed reinforcement: ${items.length} bands (${items.filter((i) => i.face === 'T').length} top, ${items.filter((i) => i.face === 'B').length} bottom).`);
+    A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands, drawn as designed); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the specification'}.`);
+    if (!level.walls.length) A(level, `No walls in the RAM model of ${level.name}: details 2 and 5 (core walls) not applied.`);
+    else A(level, `Walls are line supports in RAM: a ${wallT} mm wall thickness is assumed for the plan (set spec.wallThickness).`);
+  });
+  model.design = { units: 'mm', source: 'RAM Concept' };
+  return model;
+}
+
+/**
+ * The slab edges for the perimeter rule: consecutive short facets of a curved edge (turning less
+ * than `tol` degrees) are merged into one run so a curve gets one call-out, not one per facet.
+ */
+export function slabEdges(level, tol = 20) {
+  const outline = level.outline;
+  const segs = [];
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i], b = outline[(i + 1) % outline.length];
+    if (dist(a, b) < 300) continue;
+    segs.push({ a, b, pts: [a, b] });
+  }
+  if (!segs.length) return [];
+  const turn = (s1, s2) => { const u = unit(s1.a, s1.b), v = unit(s2.a, s2.b); return (Math.acos(Math.max(-1, Math.min(1, u.x * v.x + u.y * v.y))) * 180) / Math.PI; };
+  const merged = [];
+  for (const sg of segs) {
+    const last = merged[merged.length - 1];
+    if (last && dist(last.b, sg.a) < 1 && turn({ a: last.pts[last.pts.length - 2], b: last.b }, sg) < tol && (dist(sg.a, sg.b) < 2500 || dist(last.pts[last.pts.length - 2], last.b) < 2500)) { last.b = sg.b; last.pts.push(sg.b); continue; }
+    merged.push({ a: sg.a, b: sg.b, pts: [...sg.pts] });
+  }
+  // the last run may continue into the first one
+  if (merged.length > 1) {
+    const f = merged[0], l = merged[merged.length - 1];
+    if (dist(l.b, f.a) < 1 && turn({ a: l.pts[l.pts.length - 2], b: l.b }, f) < tol && (dist(f.a, f.b) < 2500 || dist(l.pts[l.pts.length - 2], l.b) < 2500)) { l.b = f.b; l.pts.push(...f.pts.slice(1)); merged.shift(); }
+  }
+  return merged.map((e) => ({ a: e.a, b: e.b, pts: e.pts, curved: e.pts.length > 2, beam: R.edgeHasBeam(level, e.a, e.b) }));
+}
+
+/** Chained wall segments (RAM line supports drawn as short pieces) joined into straight walls. */
+function mergeWallSegments(walls, tol = 5) {
+  const out = [];
+  const rest = walls.map((w) => ({ ...w }));
+  while (rest.length) {
+    const w = rest.shift();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let i = 0; i < rest.length; i++) {
+        const o = rest[i];
+        const u = unit(w.a, w.b), v = unit(o.a, o.b);
+        const ang = (Math.acos(Math.max(-1, Math.min(1, Math.abs(u.x * v.x + u.y * v.y)))) * 180) / Math.PI;
+        if (ang > tol) continue;
+        const ends = [[w.b, o.a, () => { w.b = o.b; }], [w.b, o.b, () => { w.b = o.a; }], [w.a, o.a, () => { w.a = o.b; }], [w.a, o.b, () => { w.a = o.a; }]];
+        const hit = ends.find(([p, q]) => dist(p, q) < 50);
+        if (!hit) continue;
+        hit[2](); rest.splice(i, 1); grew = true; break;
+      }
+    }
+    out.push(w);
+  }
+  return out;
 }
 
 function nextLabel(label, used) {
@@ -300,20 +414,44 @@ export function designAdditions(level, spec, opts = {}) {
     return { runs: subtract([[0, L]], cuts), u, L };
   };
 
-  // ---- D1 slab edge with edge beam: T10-200 L-bars (T) 1200 into the slab
+  // ---- perimeter rule (office): T12@150 between the column top bars along every edge; a symmetric U of 4 m at
+  // a free edge, an L (400 down into the beam + 2000 on top) where the edge carries a beam (detail 1 / detail 6)
+  const su = spec.uEdge;
+  const web = h - 2 * cover;
+  const uLegTop = ceilTo((su.total - web) / 2, 10);
   for (const e of level.edges || []) {
-    if (!e.beam) continue;
-    const { runs, u } = blockedAlong(e.a, e.b);
-    const nIn = inward(e.a, e.b, outline);
+    // the edge as a path (one facet for a straight edge, several for a curved one), runs in arc length
+    const pts = e.pts || [e.a, e.b];
+    const facets = [];
+    let s0 = 0;
+    for (let i = 0; i + 1 < pts.length; i++) { const L = dist(pts[i], pts[i + 1]); facets.push({ a: pts[i], b: pts[i + 1], s0, L }); s0 += L; }
+    const at = (sv) => { const f = facets.find((x) => sv <= x.s0 + x.L) || facets[facets.length - 1]; const u = unit(f.a, f.b); return { p: add(f.a, u, sv - f.s0), u, f }; };
+    const runs = [];
+    for (const f of facets) for (const [t1, t2] of R.edgeRunsBetweenColumns(level, f.a, f.b, h)) {
+      const last = runs[runs.length - 1];
+      if (last && Math.abs(last[1] - (f.s0 + t1)) < 1) last[1] = f.s0 + t2; else runs.push([f.s0 + t1, f.s0 + t2]);
+    }
     for (const [t1, t2] of runs) {
       const len = t2 - t1;
-      if (len < 1200) continue;
-      const p1 = add(e.a, u, t1), p2 = add(e.a, u, t2);
-      const m = add(e.a, u, (t1 + t2) / 2);
-      const count = Math.floor(len / 200) + 1;
-      items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nIn, 1200), l1: 'T10-200 LBAR (T)', l2: 'L=1600', dist: { p: add(p1, nIn, 700), q: add(p2, nIn, 700) }, side: 1, zone: gridRef(level, bbox([p1, p2])) });
-      addBar('T', { dia: 10, shape: 'L 1200+400', length: 1600, qty: count, spacing: 200, zone: 'D1 EDGE BEAM' });
-      if (!level.topMesh) { items.push({ detail: 'D1', face: 'T', a: add(p1, nIn, 600), b: add(p2, nIn, 600), l1: 'T10-250 DIST. (T)', l2: `L=${Math.round(len)}`, side: -1, noTag: true }); addBar('T', { dia: 10, shape: 'STR', length: Math.round(len), qty: Math.floor(1200 / 250) + 1, spacing: 250, zone: 'D1 EDGE BEAM' }); }
+      if (len < 2 * su.spacing) continue;
+      const p1 = at(t1).p, p2 = at(t2).p;
+      const mm = at((t1 + t2) / 2);
+      const m = mm.p;
+      const nIn = inward(mm.f.a, mm.f.b, outline);
+      const count = Math.floor(len / su.spacing) + 1;
+      const zone = gridRef(level, bbox([p1, p2]));
+      // distribution: the run itself on a straight edge; on a curved run a short dimension at the middle carrying the length along the edge
+      const curved = at(t1).f !== at(t2 - 1).f;
+      const distAt = (off) => curved
+        ? { p: add(add(m, mm.u, -Math.min(len / 2, 1500)), nIn, off), q: add(add(m, mm.u, Math.min(len / 2, 1500)), nIn, off), text: `${Math.round(len)} ALONG EDGE` }
+        : { p: add(p1, nIn, off), q: add(p2, nIn, off) };
+      if (e.beam) {
+        items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: distAt(su.beamTop * 0.45), side: 1, zone, legEnd: 'start' });
+        addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: count, spacing: su.spacing, zone: `D1 EDGE BEAM ${zone}` });
+      } else {
+        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: distAt(uLegTop * 0.45), side: 1, zone, legEnd: 'start' });
+        addBar('T', { dia: su.dia, shape: `U ${uLegTop}/${web}/${uLegTop}`, length: su.total, qty: count, spacing: su.spacing, zone: `D6 FREE EDGE ${zone}` });
+      }
     }
   }
 
@@ -396,7 +534,7 @@ export function designAdditions(level, spec, opts = {}) {
   for (const o of level.openings || []) {
     const poly = R.regionPolygon(o);
     const b = bbox(poly);
-    if ((level.walls || []).some((w) => w.polygon.some((p) => distToPolygon(p, poly) < 300))) continue;
+    if (R.openingLined(level, o)) { assumptions.push(`D7 NOT ADDED AT ${o.id} (${gridRef(level, b)}): OPENING ENCLOSED BY CONCRETE WALLS / BEAMS - NO ADDITIONAL TRIMMERS (OFFICE RULE).`); continue; }
     // the designer already trimmed this opening (T&B call-outs next to it): keep the design, do not add detail 7
     if ((level.existing?.callouts || []).some((c) => c.face === 'TB' && distToPolygon(c, poly) < 800)) { assumptions.push(`D7 NOT ADDED AT ${o.id} (${gridRef(level, b)}): THE DESIGN PLAN ALREADY TRIMS THIS OPENING (T&B BARS).`); continue; }
     const size = Math.max(b.w, b.h) / 1000;
@@ -411,12 +549,14 @@ export function designAdditions(level, spec, opts = {}) {
       { a: { x: rect.x - 150, y: rect.y }, b: { x: rect.x - 150, y: rect.y + rect.h }, n: { x: -1, y: 0 } },
     ];
     const lb = row.u.dia >= 16 ? 800 : 600;
+    // three groups: G1 parallel to the lettered grids (the sides along X), G2 parallel to the numbered grids, G3 the 45° diagonals crossing both
     sides.forEach((s, i) => {
       const L = Math.max(1500, Math.round(dist(s.a, s.b) + 1200));
       const u = unit(s.a, s.b);
+      const grp = Math.abs(u.y) < 0.5 ? 'G1 (X)' : 'G2 (Y)';
       items.push({ detail: 'D7', face: 'TB', a: add(s.a, u, -600), b: add(s.b, u, 600), l1: `${row.long.n}T${row.long.dia}-${row.long.s} (T&B)`, l2: `L=${L}`, side: 1, zone, noTag: i > 0 });
-      addBar('T', { dia: row.long.dia, shape: 'STR', length: L, qty: row.long.n, spacing: row.long.s, zone });
-      addBar('B', { dia: row.long.dia, shape: 'STR', length: L, qty: row.long.n, spacing: row.long.s, zone });
+      addBar('T', { dia: row.long.dia, shape: 'STR', length: L, qty: row.long.n, spacing: row.long.s, zone: `${zone} ${grp}` });
+      addBar('B', { dia: row.long.dia, shape: 'STR', length: L, qty: row.long.n, spacing: row.long.s, zone: `${zone} ${grp}` });
       const m = mid(s.a, s.b);
       const count = Math.floor(dist(s.a, s.b) / row.u.s) + 1;
       if (i < 2) items.push({ detail: 'D7', face: 'TB', a: add(m, s.n, -150), b: add(m, s.n, lb), l1: `T${row.u.dia}-${row.u.s} U-BAR`, l2: `LB=${lb}`, side: -1, noTag: true });
@@ -426,10 +566,10 @@ export function designAdditions(level, spec, opts = {}) {
     for (const [cx, cy, sx, sy] of [[b.minX, b.minY, -1, -1], [b.maxX, b.minY, 1, -1], [b.maxX, b.maxY, 1, 1], [b.minX, b.maxY, -1, 1]]) {
       const ctr = { x: cx + sx * 250, y: cy + sy * 250 };
       const dir = { x: sx, y: -sy };
-      items.push({ detail: 'D7', face: 'TB', a: { x: ctr.x - dir.x * d, y: ctr.y - dir.y * d }, b: { x: ctr.x + dir.x * d, y: ctr.y + dir.y * d }, l1: `T${row.diag} (T&B)`, l2: 'L=2000', side: 1, noTag: true });
+      items.push({ detail: 'D7', face: 'TB', a: { x: ctr.x - dir.x * d, y: ctr.y - dir.y * d }, b: { x: ctr.x + dir.x * d, y: ctr.y + dir.y * d }, l1: `T${row.diag} 45° (T&B)`, l2: 'L=2000', side: 1, noTag: true });
     }
-    addBar('T', { dia: row.diag, shape: 'STR', length: 2000, qty: 4, zone });
-    addBar('B', { dia: row.diag, shape: 'STR', length: 2000, qty: 4, zone });
+    addBar('T', { dia: row.diag, shape: 'DIAG 45', length: 2000, qty: 4, zone: `${zone} G3 (45°)` });
+    addBar('B', { dia: row.diag, shape: 'DIAG 45', length: 2000, qty: 4, zone: `${zone} G3 (45°)` });
   }
 
   // ---- D12 punching tags (preliminary: PS1 everywhere until the punching design is available)
@@ -473,22 +613,10 @@ function inward(a, b, outline) {
 // ------------------------------------------------------------------ office-convention drafting
 const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r > 90 || r <= -90) { r += 180; flip = -1; } return { rot: r, flip }; };
 
-/** The distribution indicator: a red dimension with arch ticks and a green number (DIM100 look). */
+/** The distribution indicator: a real DIMENSION in style DIM100 (red lines, oblique ticks, green number). */
 function officeDim(pl, S, p, q, opts = {}) {
-  const L = dist(p, q);
-  if (L < 1) return;
-  const u = unit(p, q), n = perp(u);
-  const off = opts.offset || 0; // dimension line offset from p-q along n
-  const a = add(p, n, off), b = add(q, n, off);
-  const lay = { layer: 'diamension' };
-  pl.line(a, b, lay);
-  for (const c of [a, b]) {
-    pl.line(add(add(c, u, -DIM_TICK * 0.5), n, -DIM_TICK * 0.5), add(add(c, u, DIM_TICK * 0.5), n, DIM_TICK * 0.5), lay);
-  }
-  if (off) { pl.line(add(p, n, Math.sign(off) * DIM_EXO), add(a, n, Math.sign(off) * DIM_EXE), lay); pl.line(add(q, n, Math.sign(off) * DIM_EXO), add(b, n, Math.sign(off) * DIM_EXE), lay); }
-  const { rot } = readableRot(u);
-  const tm = opts.textAt || add(mid(a, b), n, DIM_H * 0.5);
-  pl.text(tm, opts.text ?? String(Math.round(L)), { layer: 'diamension', color: 3, h: DIM_H / S, rot, align: 'C', valign: 'B', style: 'BW', widthFactor: 0.8 });
+  if (dist(p, q) < 1) return;
+  pl.dimension(p, q, opts.dl || p, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', textMid: opts.textAt, text: opts.text });
 }
 
 function officeDot(pl, S, p) {
@@ -503,6 +631,8 @@ export function officeBar(pl, S, it) {
   const { rot, flip } = readableRot(u);
   const side = (it.side || 1) * flip;
   pl.line(it.a, it.b, { layer });
+  if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; pl.line(e, add(e, n, -(it.side || 1) * 250), { layer }); } // leg of an L / U at the edge
+  if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
   if (it.triple) { pl.line(add(it.a, n, 200), add(it.b, n, 200), { layer }); pl.line(add(it.a, n, -200), add(it.b, n, -200), { layer }); }
   const m = mid(it.a, it.b);
   const t1 = add(m, n, side * 60), t2 = add(m, n, -side * 60);
@@ -510,7 +640,7 @@ export function officeBar(pl, S, it) {
   pl.text(side > 0 ? t1 : t2, it.l1, { ...to, h: CALL_H / S, valign: side > 0 ? 'B' : 'T' });
   pl.text(side > 0 ? t2 : t1, it.l2, { ...to, h: LEN_H / S, valign: side > 0 ? 'T' : 'B' });
   if (it.dist) {
-    officeDim(pl, S, it.dist.p, it.dist.q);
+    officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text });
     // the dot where the bar axis crosses the distribution line
     const du = unit(it.dist.p, it.dist.q);
     const t = (m.x - it.dist.p.x) * du.x + (m.y - it.dist.p.y) * du.y;
@@ -523,37 +653,39 @@ export function officeBar(pl, S, it) {
   }
 }
 
-/** The designer's own reinforcement, re-emitted verbatim in the same convention. */
+/** The U end (500 bottom leg) of a top bar at the outer slab edge / an opening: a short leg on the plan and the "U500" tag. */
+function drawUEnds(pl, S, a, b, uEnd, layer) {
+  const u = unit(a, b), n = perp(u);
+  const { rot } = readableRot(u);
+  for (const [on, p] of [[uEnd.start, a], [uEnd.end, b]]) {
+    if (!on) continue;
+    pl.line(p, add(p, n, 250), { layer });
+    pl.text(add(p, n, 300), `U${R.U_BOTTOM_LEG}`, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' });
+  }
+}
+
+/** The designer's own reinforcement, re-emitted verbatim in the same convention (top bars get the U end at the edge / openings). */
 export function drawExisting(pl, S, ex, faces) {
   const keep = (f) => faces.includes(f);
-  for (const l of ex.lines.filter((x) => keep(x.face))) pl.line(l.a, l.b, { layer: /BOT/i.test(l.layer) || l.face === 'B' ? 'REO-BOT' : 'REO-TOP' });
+  for (const l of ex.lines.filter((x) => keep(x.face))) {
+    const layer = /BOT/i.test(l.layer) || l.face === 'B' ? 'REO-BOT' : 'REO-TOP';
+    pl.line(l.a, l.b, { layer });
+    if (l.uEnd && faces.includes('T')) drawUEnds(pl, S, l.a, l.b, l.uEnd, layer);
+  }
+  for (const it of (ex.items || []).filter((x) => keep(x.face))) officeBar(pl, S, it);
   for (const c of ex.callouts.filter((x) => keep(x.face))) pl.text({ x: c.x, y: c.y }, c.text, { layer: 'REO-TXT', style: 'BW', widthFactor: c.widthFactor || 0.8, h: (c.h || CALL_H) / S, rot: c.rot, align: ['L', 'C', 'R'][c.halign] || 'L', valign: 'B' });
   for (const d of ex.dims.filter((x) => keep(x.face))) drawDimension(pl, S, d);
   for (const d of ex.dots.filter((x) => keep(x.face))) officeDot(pl, S, d);
 }
 
-/** A DIMENSION entity (rotated or aligned) drawn as the DIM100 geometry: red lines, arch ticks, green number. */
+/** A DIMENSION entity read from the design plan, re-emitted as a real DIMENSION in style DIM100. */
 export function drawDimension(pl, S, e) {
   if (e.x3 == null || e.x4 == null) return;
   const p3 = { x: e.x3, y: e.y3 }, p4 = { x: e.x4, y: e.y4 }, dp = { x: e.x, y: e.y };
-  let u;
-  if (e.dimType === 1) u = unit(p3, p4);
-  else { const r = ((e.rotation || 0) * Math.PI) / 180; u = { x: Math.cos(r), y: Math.sin(r) }; }
-  if (!Number.isFinite(u.x) || (Math.abs(u.x) < 1e-9 && Math.abs(u.y) < 1e-9)) return;
-  const n = perp(u);
-  const along = (p) => (p.x - dp.x) * u.x + (p.y - dp.y) * u.y;
-  const a = add(dp, u, along(p3)), b = add(dp, u, along(p4));
-  const lay = { layer: 'diamension' };
-  pl.line(a, b, lay);
-  for (const [c, src] of [[a, p3], [b, p4]]) {
-    pl.line(add(add(c, u, -DIM_TICK * 0.5), n, -DIM_TICK * 0.5), add(add(c, u, DIM_TICK * 0.5), n, DIM_TICK * 0.5), lay);
-    const off = (c.x - src.x) * n.x + (c.y - src.y) * n.y;
-    if (Math.abs(off) > DIM_EXO + 1) pl.line(add(src, n, Math.sign(off) * DIM_EXO), add(c, n, Math.sign(off) * DIM_EXE), lay);
-  }
-  const { rot } = readableRot(u);
-  const tm = e.x2 != null && (e.x2 || e.y2) ? { x: e.x2, y: e.y2 } : add(mid(a, b), n, DIM_H * 0.5);
-  const text = e.text && e.text !== '<>' && !/^\s*$/.test(e.text) ? e.text.replace('<>', String(Math.round(e.measure || dist(a, b)))) : String(Math.round(e.measure || dist(a, b)));
-  pl.text(tm, text, { layer: 'diamension', color: 3, h: DIM_H / S, rot, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+  const angle = e.dimType === 1 ? (Math.atan2(p4.y - p3.y, p4.x - p3.x) * 180) / Math.PI : (e.rotation || 0);
+  const textMid = e.x2 != null && (e.x2 || e.y2) ? { x: e.x2, y: e.y2 } : undefined;
+  const text = e.text && e.text !== '<>' && !/^\s*$/.test(e.text) ? e.text : undefined;
+  pl.dimension(p3, p4, dp, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', angle, textMid, text });
 }
 
 /** Mesh label in the designer's style: two lines of cyan text in a box. */
@@ -575,6 +707,7 @@ function drawDesignerNotes(pl, S, level, o = {}) {
   }
 }
 
+const DEFAULT_U = R.DEFAULT_SPEC.uEdge;
 const detailsKeyRows = (keys) => keys.map((k) => ({ d: k, title: DETAILS[k] }));
 const DETAIL_KEY_COLS = [{ key: 'd', title: 'REF', w: 16 }, { key: 'title', title: 'GENERAL DETAIL (SEE THE GENERAL DETAILS SHEET)', w: 160, align: 'L', max: 62 }];
 
@@ -591,6 +724,7 @@ const designNotes = (model, level) => [
   `SLAB THICKNESS ${level.thickness} mm${level.tos ? `, ${level.levelTags[0].label} ${level.tos}` : ''}${level.thickZones?.length ? `; THICKENED ZONES ${[...new Set(level.thickZones.map((z) => z.thickness))].join(' / ')} mm HATCHED` : ''}. CONCRETE f'c = ${model.spec.fc} MPa, REINFORCEMENT fy = ${model.spec.fy} MPa, COVER ${model.spec.cover} mm (${model.spec.sources.cover}).`,
   'BAR CALL-OUT (OFFICE CONVENTION): "T10-200 (T)" = BAR SIZE - SPACING (LAYER), "L=2400" = BAR LENGTH; THE RED DIMENSION ACROSS THE BARS IS THE WIDTH OVER WHICH THEY ARE DISTRIBUTED; (T) TOP, (B) BOTTOM, T&B BOTH.',
   'THE REINFORCEMENT DESIGNED BY THE OFFICE IS SHOWN AS DRAWN ON THE DESIGN PLAN. BARS MARKED WITH A CIRCLED "D#" ARE ADDED FROM THE GENERAL DETAILS SHEET (DETAIL NUMBER IN THE CIRCLE) AT THE LOCATIONS THE DETAIL REFERS TO; THE DETAIL GOVERNS FOR SHAPE AND ANCHORAGE.',
+  `EVERY TOP BAR THAT ENDS AT THE OUTER SLAB EDGE OR AT AN OPENING ENDS IN A U: DOWN THE SLAB DEPTH AND ${R.U_BOTTOM_LEG} mm BACK AT THE BOTTOM ("U${R.U_BOTTOM_LEG}" AT THE BAR END; ADD THE LEGS TO THE CUTTING LENGTH). PERIMETER BARS T${DEFAULT_U.dia}@${DEFAULT_U.spacing} BETWEEN THE COLUMN TOP BARS: A ${DEFAULT_U.total} mm U WITH EQUAL LEGS AT A FREE EDGE, AN L (${DEFAULT_U.beamLeg} mm INTO THE BEAM + ${DEFAULT_U.beamTop} mm ON TOP) AT AN EDGE BEAM. OPENINGS ENCLOSED BY WALLS OR BEAMS GET NO ADDITIONAL TRIMMERS; ELSEWHERE THREE GROUPS: G1 / G2 PARALLEL TO THE SIDES, G3 DIAGONALS AT 45°.`,
 ];
 
 function framingSheet(model, level, meta, adds) {
@@ -632,6 +766,13 @@ function rebarSheet(model, level, meta, adds, face) {
     const faces = face === 'B' ? ['B', 'TB'] : ['T', 'TB'];
     drawExisting(pl, S, level.existing, faces);
     if (face === 'B' || level.topMesh) drawMeshLabels(pl, S, level);
+    if (face === 'B') {
+      // office rule: the bottom mesh is written at every change of slab thickness (thickened zones, local RC thicknesses)
+      const tm = model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh;
+      const label = `BOTTOM MESH T${tm.dia}@${tm.spacing}`;
+      for (const z of level.thickZones || []) { const b = bbox(z.polygon); pl.text({ x: b.minX + 500, y: b.maxY - 800 }, label, { layer: '9_TEXT', h: 200 / S, style: 'BW', widthFactor: 0.8 }); }
+      for (const t of level.rcTags || []) pl.text({ x: t.x, y: t.y - 350 }, label, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+    }
     const mine = adds.items.filter((it) => faces.includes(it.face));
     for (const it of mine) officeBar(pl, S, it);
     if (face === 'T') for (const n of adds.notes) pl.text({ x: n.x, y: n.y }, n.text, { layer: 'DETAIL-REF', h: 150 / S, align: 'C', style: 'BW', widthFactor: 0.8 });
@@ -655,7 +796,7 @@ function rebarSheet(model, level, meta, adds, face) {
       scheduleTitle: `BAR SCHEDULE - GENERAL DETAILS ADDITIONS (${face === 'B' ? 'BOTTOM' : 'TOP'})`,
       planTitles: [face === 'B' ? 'BOTTOM REINFORCEMENT PLAN' : 'TOP REINFORCEMENT PLAN'],
       general: [...designNotes(model, level), meshLine,
-        face === 'B' ? 'BOTTOM SHEET: DETAIL 4 EXTRA BOTTOM BARS INSIDE THICKENED ZONES (50 dia BEYOND THE ZONE), DETAIL 7 VOID TRIMMERS (T&B), DETAIL 2 PARALLEL BARS AND DETAIL 5 DIAGONALS (T&B).'
+        face === 'B' ? `BOTTOM SHEET: DETAIL 4 EXTRA BOTTOM BARS INSIDE THICKENED ZONES (50 dia BEYOND THE ZONE), DETAIL 7 VOID TRIMMERS (T&B), DETAIL 2 PARALLEL BARS AND DETAIL 5 DIAGONALS (T&B). THE BOTTOM MESH T${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).dia}@${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).spacing} IS WRITTEN AT EVERY CHANGE OF SLAB THICKNESS (OFFICE RULE, SPACING PER THE DESIGN).`
           : 'TOP SHEET: DETAIL 1 L-BARS ALONG EDGE BEAMS, DETAIL 2 U-BARS AND PARALLEL BARS AT CORE WALLS, DETAIL 5 CORNER DIAGONALS, DETAIL 7 VOID TRIMMERS (T&B); LAP 500 AT THICKNESS STEPS (DETAIL 3).'],
       assumptions: [...adds.assumptions, ...levelAssumptions(model, level), 'ANCHORAGE-DEPENDENT DETAILS (SLAB EDGE AT LIVE ANCHORS, BURSTING SPIRALS, PAN-BOX TRIMMERS) ARE NOT SHOWN: TO BE ADDED WITH THE TENDON LAYOUT.'],
       legend: [[face === 'B' ? 'REO-BOT' : 'REO-TOP', face === 'B' ? 'BOTTOM BAR (B)' : 'TOP BAR (T)', 'thick'], ['diamension', 'DISTRIBUTION WIDTH', 'line'], ['DOTS', 'BAR / DISTRIBUTION DOT', 'line'], ['DETAIL-REF', 'D# = GENERAL DETAIL REFERENCE', 'line'], ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL-HATCH', 'WALL', 'hatch']],
@@ -742,6 +883,7 @@ export function composeDesignPackage(model, metaIn = {}) {
   for (const s of all) {
     for (const [n, d] of Object.entries(OFFICE_LAYERS)) s.root.layer(n, d);
     s.root.textStyleDef(OFFICE_TEXT_STYLE.name, { font: OFFICE_TEXT_STYLE.font, widthFactor: OFFICE_TEXT_STYLE.widthFactor });
+    s.root.dimStyleDef('DIM100', DIM100);
   }
   return packSheets(all, meta, { textStyles: { [OFFICE_TEXT_STYLE.name]: { font: OFFICE_TEXT_STYLE.font, widthFactor: OFFICE_TEXT_STYLE.widthFactor } } });
 }

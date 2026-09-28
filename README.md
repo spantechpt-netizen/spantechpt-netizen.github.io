@@ -59,6 +59,7 @@ drawing is silent, and every assumption is printed on the sheet.
 node shopdrawings/cli.mjs --input STRUCTURAL.dxf --out ./package --project "…"
 node shopdrawings/cli.mjs --input SLAB.cpt --out ./package --level "1ST FLOOR"   # from RAM Concept
 node shopdrawings/cli.mjs --input RFT.dxf --out ./design --mode design            # design drawings from the office's own RFT plan + General Details
+node shopdrawings/cli.mjs --input SLAB.cpt --out ./design --mode design           # design drawings straight from the RAM Concept model
 npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/output
 ```
 
