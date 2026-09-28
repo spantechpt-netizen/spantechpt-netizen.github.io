@@ -21,6 +21,8 @@
  *   POST   /api/drawings/projects/:id/files?category=&name=&level_id=   a project document (raw body)
  *   GET    /api/drawings/files/:id  PATCH  DELETE
  *   GET/POST/DELETE /api/drawings/frame           the office's own sheet frame (DXF)
+ *   POST   /api/drawings/runs/:id/beam-strips     rewrites the run's model with one design strip per beam span (+ splitters) for RAM
+ *   GET    /api/drawings/runs/:id/beam-strips     downloads that model (.cpt) to calculate in RAM and upload as the next run
  *   GET    /api/drawings/runs/:id/quantities      the take-off of one run (steel, concrete, cables)
  *   GET    /api/drawings/projects/:id/quantities  the take-off of the project: the current run of every level
  *   GET    /api/drawings/projects/:id/cost        the cost study: the take-off priced with the office rates
@@ -82,7 +84,9 @@ function publicRun(row, { withReport = false } = {}) {
   };
   out.edits = parseJson(row.edits_json, []);
   out.quantities = parseJson(row.quantities_json, null);
-  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json;
+  out.beams = parseJson(row.beams_json, []);
+  out.beam_strips = parseJson(row.beam_strips_json, null);
+  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json; delete out.beams_json; delete out.beam_strips_json;
   if (!withReport) delete out.report_md;
   return out;
 }
@@ -424,6 +428,7 @@ export function register(router) {
         report_md: report,
         duration_ms: result.duration_ms,
         quantities_json: result.quantities ? JSON.stringify(result.quantities) : null,
+        beams_json: result.beams && result.beams.length ? JSON.stringify(result.beams) : null,
       });
       audit(user.id, 'drawing_run', runId, 'generate', { serial, mode, revision, sheets: result.sheets.length, edits: edits.length });
       return publicRun(loadRun(runId));
@@ -624,6 +629,44 @@ export function register(router) {
     requirePermission(user, 'drawings.view');
     const run = loadRun(params.id);
     return { run: publicRun(run, { withReport: true }), project: publicProject(loadProject(run.project_id)) };
+  });
+
+  // ------------------------------------------------------------ beam design through RAM
+  /**
+   * The beam design, the office way: the run's model is copied with every design strip replaced by one strip on the
+   * centre line of every beam span and a splitter on each edge of the beam, designed as a beam. The engineer opens
+   * the copy in RAM Concept, runs Calc All, saves, and uploads it as the next run: the beams then come back typed,
+   * marked and scheduled on sheet 07 / 09.
+   */
+  router.post('/api/drawings/runs/:id/beam-strips', async ({ params, user }) => {
+    requirePermission(user, 'drawings.create');
+    const run = loadRun(params.id);
+    if (!run.source_file || !/\.cpt$/i.test(run.source_file)) throw badRequest('This run was not made from a RAM Concept model', 'الإصدار ده مش من موديل رام');
+    const src = runFile(run.project_id, run.id, run.source_file);
+    const out = runFile(run.project_id, run.id, 'beam-strips.cpt');
+    const { readRamConcept } = await import('../../shopdrawings/lib/ram-concept.mjs');
+    const { writeBeamStrips } = await import('../../shopdrawings/lib/beam-strips.mjs');
+    let summary;
+    try {
+      const ram = readRamConcept(src);
+      if (!ram.beams.length) throw badRequest('The model has no beams', 'الموديل مفيهوش كمرات');
+      summary = writeBeamStrips(src, out, ram);
+    } catch (error) {
+      if (error?.status) throw error;
+      throw badRequest(`The beam strips could not be written: ${String(error?.message || error).slice(0, 200)}`, `الشرائح ما اتكتبتش: ${String(error?.message || error).slice(0, 200)}`);
+    }
+    const info = { ...summary, file: 'beam-strips.cpt', name: `${run.prefix}-${run.level_code}_REV${run.revision}_BEAM-STRIPS.cpt`, created_at: new Date().toISOString(), by: user.name };
+    update('drawing_runs', run.id, { beam_strips_json: JSON.stringify(info) });
+    audit(user.id, 'drawing_run', run.id, 'beam_strips', { beams: summary.beams, spans: summary.spans });
+    return { beam_strips: info };
+  });
+
+  router.get('/api/drawings/runs/:id/beam-strips', async ({ params, user, res }) => {
+    requirePermission(user, 'drawings.view');
+    const run = loadRun(params.id);
+    const info = parseJson(run.beam_strips_json, null);
+    if (!info) throw notFound('No beam strips model on this run', 'الإصدار ده ملوش موديل شرائح كمرات');
+    await sendFile(res, runFile(run.project_id, run.id, 'beam-strips.cpt'), 'application/octet-stream', info.name);
   });
 
   // ------------------------------------------------------------ quantities and cost

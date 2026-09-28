@@ -409,6 +409,27 @@ test('a reference plan (the architect\'s DXF) on the level: uploaded, aligned on
   assert.equal(after2.body.levels.find((l) => l.id === level.id).reference, null);
 }, { timeout: 180000 });
 
+test('beam design through RAM: the run\'s model comes back with one strip per beam span and splitters, and a calculated model gives the beam types', async () => {
+  const cptBeam = readFileSync(await buildSyntheticCpt(workDir, { beam: true }));
+  const result = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-beams.cpt&mode=design`, cptBeam);
+  assert.equal(result.status, 201, JSON.stringify(result.body));
+  const run = result.body.run;
+  assert.ok(run.beams.length === 1 && run.beams[0].types.length === 1 && run.beams[0].types[0].mark === 'B1', JSON.stringify(run.beams));
+  assert.ok(run.sheets.some((s) => s.no.endsWith('-07') && /BEAM/.test(s.title)), 'the beam sheet in the package');
+  const prep = await api('POST', `/api/drawings/runs/${run.id}/beam-strips`, {});
+  assert.equal(prep.status, 201, JSON.stringify(prep.body));
+  assert.deepEqual([prep.body.beam_strips.beams, prep.body.beam_strips.spans, prep.body.beam_strips.splitters], [2, 2, 4]);
+  assert.ok(prep.body.beam_strips.name.endsWith('_BEAM-STRIPS.cpt'));
+  const file = await download(`/api/drawings/runs/${run.id}/beam-strips`);
+  assert.equal(file.status, 200);
+  assert.ok(file.headers.get('content-disposition').includes('BEAM-STRIPS.cpt'));
+  assert.equal(file.bytes.subarray(0, 15).toString('utf8'), 'SQLite format 3', 'a RAM Concept (SQLite) file');
+  const detail = await api('GET', `/api/drawings/runs/${run.id}`);
+  assert.equal(detail.body.run.beam_strips.spans, 2, 'kept on the run');
+  const noBeams = await api('POST', `/api/drawings/runs/${firstRun.id}/beam-strips`, {});
+  assert.equal(noBeams.status, 400, 'a model without beams is refused');
+}, { timeout: 180000 });
+
 test('a bad file is refused and the run is recorded as failed', async () => {
   const wrong = await upload(`/api/drawings/levels/${level.id}/runs?name=plan.pdf`, Buffer.from('%PDF-1.4'));
   assert.equal(wrong.status, 400);
@@ -416,7 +437,7 @@ test('a bad file is refused and the run is recorded as failed', async () => {
   assert.equal(broken.status, 400, JSON.stringify(broken.body));
   const detail = await api('GET', `/api/drawings/projects/${project.id}`);
   assert.ok(detail.body.runs.some((r) => r.status === 'failed'));
-  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 6, 'three uploads, one regeneration, one framed run, one on the reference plan');
+  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 7, 'three uploads, one regeneration, one framed run, one on the reference plan, one with beams');
 });
 
 test('deleting the project removes its levels, runs and files', async () => {

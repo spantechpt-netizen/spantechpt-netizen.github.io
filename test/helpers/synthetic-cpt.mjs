@@ -41,6 +41,24 @@ export async function buildSyntheticCpt(dir, { beam = false, step = false } = {}
       { UID: 45, Point0: P(9000, 0), Point1: P(9000, 8000), LeftPt0: P(8850, 0), RightPt0: P(9150, 0), Width: 3000, SlabThickness: 6000, TOC: 0, Priority: 10, BeamBehavior: 'no-torsion two-way slab', BeamIsMeshedAsSlab: 1 },
       { UID: 46, Point0: P(0, 150), Point1: P(12000, 150), LeftPt0: P(0, 0), RightPt0: P(0, 300), Width: 3000, SlabThickness: 6000, TOC: 0, Priority: 10, BeamBehavior: 'no-torsion two-way slab', BeamIsMeshedAsSlab: 1 },
     ]);
+    // the design strip tables RAM keeps (two old slab strips to be replaced by the beam strips) and their categories
+    const sib = ['UID', 'ParentUID', 'PreviousSibUID', 'NextSibUID', 'ChildIndex', 'Name', 'Number', 'RssUid'];
+    for (const t of ['SpanSegmentCategory', 'SpanSegmentStripCategory', 'StripBoundaryCategory', 'SpanBoundaryCategory']) { create(t, [...sib, 'SpanSet']); insert(t, [{ UID: t.length, ParentUID: 526, PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 0, Name: '', Number: 0, RssUid: 0, SpanSet: 'latitude' }, { UID: t.length + 100, ParentUID: 526, PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 1, Name: '', Number: 1, RssUid: 0, SpanSet: 'longitude' }]); }
+    const segCols = [...sib, 'DeflectionCheckList', 'Point0', 'Point1', 'SkewAngle', 'SpanSet', 'FrameNumber', 'SpanNumber', 'SegmentNumber', 'AtSupport0', 'AtSupport1', 'SupportWidth0', 'SupportWidth1', 'SupportTransverseWidth0', 'SupportTransverseWidth1', 'AutoSupportDetect', 'MinInternalDivisions', 'MaxDivisionSpacing', 'SpanWidthCalc', 'ColumnStripWidthCalc', 'LockStripGeneration', 'ColumnStripDesignSystem', 'MiddleStripDesignSystem', 'ColumnStripTopBar', 'ColumnStripStirrupLegs', 'MiddleStripStirrupLegs', 'MiddleStripUsesColumnStripProps'];
+    db.exec(`create table "SpanSegment" (${segCols.map((c) => `"${c}" ${['UID', 'ParentUID', 'PreviousSibUID', 'NextSibUID', 'ChildIndex', 'Number'].includes(c) ? 'INTEGER NOT NULL' : ''}`).join(',')})`);
+    db.exec(`create table "DefaultSpanSegment" (${segCols.map((c) => `"${c}"`).join(',')})`);
+    insert('DefaultSpanSegment', [{ UID: 17, ParentUID: 433, PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 0, Name: '', Number: 0, RssUid: 0, DeflectionCheckList: '', Point0: '[0][0]', Point1: '[0][0]', SkewAngle: 0, SpanSet: 'latitude', FrameNumber: -1, SpanNumber: -1, SegmentNumber: -1, AtSupport0: 1, AtSupport1: 1, SupportWidth0: 0, SupportWidth1: 0, SupportTransverseWidth0: 0, SupportTransverseWidth1: 0, AutoSupportDetect: 1, MinInternalDivisions: 4, MaxDivisionSpacing: 7500, SpanWidthCalc: 'auto', ColumnStripWidthCalc: 'full', LockStripGeneration: 0, ColumnStripDesignSystem: 'two-way slab', MiddleStripDesignSystem: 'two-way slab', ColumnStripTopBar: 16, ColumnStripStirrupLegs: 2, MiddleStripStirrupLegs: 2, MiddleStripUsesColumnStripProps: 1 }]);
+    insert('SpanSegment', [
+      { UID: 901, ParentUID: 'SpanSegmentCategory'.length, PreviousSibUID: 0, NextSibUID: 902, ChildIndex: 0, Name: '1-1', Number: 0, RssUid: 0, DeflectionCheckList: '', Point0: P(0, 4000), Point1: P(6000, 4000), SkewAngle: 0, SpanSet: 'latitude', FrameNumber: 0, SpanNumber: 0, SegmentNumber: 0, AtSupport0: 1, AtSupport1: 1, SupportWidth0: 4000, SupportWidth1: 6000, SupportTransverseWidth0: 8000, SupportTransverseWidth1: 6000, AutoSupportDetect: 1, MinInternalDivisions: 4, MaxDivisionSpacing: 7500, SpanWidthCalc: 'auto', ColumnStripWidthCalc: 'full', LockStripGeneration: 0, ColumnStripDesignSystem: 'two-way slab', MiddleStripDesignSystem: 'two-way slab', ColumnStripTopBar: 16, ColumnStripStirrupLegs: 2, MiddleStripStirrupLegs: 2, MiddleStripUsesColumnStripProps: 1 },
+      { UID: 902, ParentUID: 'SpanSegmentCategory'.length, PreviousSibUID: 901, NextSibUID: 0, ChildIndex: 1, Name: '1-2', Number: 1, RssUid: 0, DeflectionCheckList: '', Point0: P(6000, 4000), Point1: P(12000, 4000), SkewAngle: 0, SpanSet: 'latitude', FrameNumber: 0, SpanNumber: 1, SegmentNumber: 0, AtSupport0: 1, AtSupport1: 1, SupportWidth0: 6000, SupportWidth1: 4000, SupportTransverseWidth0: 6000, SupportTransverseWidth1: 8000, AutoSupportDetect: 1, MinInternalDivisions: 4, MaxDivisionSpacing: 7500, SpanWidthCalc: 'auto', ColumnStripWidthCalc: 'full', LockStripGeneration: 0, ColumnStripDesignSystem: 'two-way slab', MiddleStripDesignSystem: 'two-way slab', ColumnStripTopBar: 16, ColumnStripStirrupLegs: 2, MiddleStripStirrupLegs: 2, MiddleStripUsesColumnStripProps: 1 },
+    ]);
+    create('SpanSegmentStrip', [...sib, 'Point0', 'Point1', 'ResistanceLeftBoundary', 'ResistanceRightBoundary', 'DemandLeftBoundary', 'DemandRightBoundary', 'SpanSegment', 'StripType', 'AutoTribArea', 'AutoInfluenceArea']);
+    insert('SpanSegmentStrip', [{ UID: 911, ParentUID: 'SpanSegmentStripCategory'.length, PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 0, Name: '1C-1', Number: 0, RssUid: 0, Point0: P(0, 4000), Point1: P(6000, 4000), ResistanceLeftBoundary: '', ResistanceRightBoundary: '', DemandLeftBoundary: '', DemandRightBoundary: '', SpanSegment: 901, StripType: 'center', AutoTribArea: 0, AutoInfluenceArea: 0 }]);
+    create('StripBoundary', [...sib, 'Boundary', 'SpanSet']);
+    create('SpanBoundary', [...sib, 'Boundary', 'SpanSet']);
+    insert('SpanBoundary', [{ UID: 921, ParentUID: 'SpanBoundaryCategory'.length, PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 0, Name: '', Number: 0, RssUid: 0, Boundary: `[${P(6000, 3000)}][${P(6000, 5000)}]`, SpanSet: 'latitude' }]);
+    create('SpanDesign', [...sib, 'MultiPoint', 'FrameNumber', 'SpanNumber', 'SegmentNumber', 'StripType', 'SpanSet']);
+    insert('SpanDesign', [{ UID: 931, ParentUID: 901, PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 0, Name: '', Number: 0, RssUid: 0, MultiPoint: '', FrameNumber: 0, SpanNumber: 0, SegmentNumber: 0, StripType: 'center', SpanSet: 'latitude' }]);
   }
   create('LineSupport', ['UID', 'Point0', 'Point1']); insert('LineSupport', [{ UID: 41, Point0: P(-3000, 2000), Point1: P(5000, 2000) }]);
   create('TendonLayer', ['UID', 'SpanSet']); insert('TendonLayer', [{ UID: 51, SpanSet: 'latitude' }, { UID: 52, SpanSet: 'longitude' }]);
@@ -62,16 +80,21 @@ export async function buildSyntheticCpt(dir, { beam = false, step = false } = {}
   ]);
   create('Jack', ['UID', 'TendonNode0', 'JackStress', 'Elongation']); insert('Jack', [{ UID: 91, TendonNode0: P(0, 2000), JackStress: 14.88, Elongation: 850 }]);
   create('StrandMaterial', ['UID', 'Aps', 'Fpu']); insert('StrandMaterial', [{ UID: 1, Aps: 9870, Fpu: 18.6 }]);
-  create('ConcentratedRebar', ['UID', 'ParentUID', 'BarFace', 'SpanDirection', 'BarType', 'BarCount', 'BarSpacing', 'Point0', 'Point1', 'LeftPoint', 'RightPoint', 'BarEnd0', 'BarEnd1', 'AbsoluteElevation']);
+  create('ConcentratedRebar', ['UID', 'ParentUID', 'BarFace', 'SpanDirection', 'BarType', 'BarCount', 'BarSpacing', 'Point0', 'Point1', 'LeftPoint', 'RightPoint', 'BarEnd0', 'BarEnd1', 'AbsoluteElevation', 'DesignedBy']);
   insert('ConcentratedRebar', [
     { UID: 301, ParentUID: 1, BarFace: 2, SpanDirection: 1, BarType: 11, BarCount: 5, BarSpacing: 2000, Point0: P(0, 4000), Point1: P(12000, 4000), LeftPoint: P(6000, 3600), RightPoint: P(6000, 4400), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -2000 },
     { UID: 302, ParentUID: 1, BarFace: 1, SpanDirection: 2, BarType: 16, BarCount: 6, BarSpacing: 1500, Point0: P(6000, 1500), Point1: P(6000, 6500), LeftPoint: P(5250, 4000), RightPoint: P(6750, 4000), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -400 },
+    ...(beam ? [
+      { UID: 303, ParentUID: 1, BarFace: 1, SpanDirection: 2, BarType: 16, BarCount: 4, BarSpacing: 600, Point0: P(9000, 0), Point1: P(9000, 2000), LeftPoint: P(8910, 1000), RightPoint: P(9090, 1000), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -400, DesignedBy: 2 },
+      { UID: 304, ParentUID: 1, BarFace: 1, SpanDirection: 2, BarType: 16, BarCount: 4, BarSpacing: 600, Point0: P(9000, 6000), Point1: P(9000, 8000), LeftPoint: P(8910, 7000), RightPoint: P(9090, 7000), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -400, DesignedBy: 2 },
+      { UID: 305, ParentUID: 1, BarFace: 2, SpanDirection: 2, BarType: 16, BarCount: 3, BarSpacing: 900, Point0: P(9000, 1000), Point1: P(9000, 7000), LeftPoint: P(8910, 4000), RightPoint: P(9090, 4000), BarEnd0: 0, BarEnd1: 0, AbsoluteElevation: -5600, DesignedBy: 2 },
+    ] : []),
   ]);
   create('IndividualBars', ['UID', 'BarFace', 'SpanDirection', 'Point0', 'Point1', 'AbsoluteElevation']);
   const ys5 = [3600, 3800, 4000, 4200, 4400];
   insert('IndividualBars', [{ UID: 401, BarFace: 2, SpanDirection: 1, Point0: ys5.map((y) => P(0, y)).join(''), Point1: ys5.map((y) => P(12000, y)).join(''), AbsoluteElevation: -2000 }]);
   create('TransverseRebarRegion', ['UID', 'Point0', 'Point1', 'BarType', 'StirrupLegs', 'StirrupSpacing']);
-  insert('TransverseRebarRegion', [{ UID: 501, Point0: P(4000, 4000), Point1: P(8000, 4000), BarType: 11, StirrupLegs: 2, StirrupSpacing: 1500 }]);
+  insert('TransverseRebarRegion', [{ UID: 501, Point0: P(4000, 4000), Point1: P(8000, 4000), BarType: 11, StirrupLegs: 2, StirrupSpacing: 1500 }, ...(beam ? [{ UID: 502, Point0: P(9000, 200), Point1: P(9000, 2000), BarType: 11, StirrupLegs: 2, StirrupSpacing: 1250 }, { UID: 503, Point0: P(9000, 2000), Point1: P(9000, 6000), BarType: 11, StirrupLegs: 2, StirrupSpacing: 2000 }] : [])]);
   // stud rails designed by RAM at the middle column: 4 rails of 10 studs @100 leaving every face
   create('SsrSystem', ['UID', 'Name', 'StudArea']); insert('SsrSystem', [{ UID: 14, Name: '10mm SSR', StudArea: 7850 }]);
   create('SsrSet', ['UID', 'Point0', 'Point1', 'DesignedBy', 'SsrSystem', 'StudSpacingFirst', 'StudSpacingTypical', 'StudCount', 'LocationPoint']);

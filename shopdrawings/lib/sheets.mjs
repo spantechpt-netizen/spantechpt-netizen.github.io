@@ -39,6 +39,8 @@ export const SHEET_DEFS = [
   { key: 'cables_lon', base: 'CABLES_LONGITUDE_SHOP', title: 'PT CABLES - LONGITUDE (DIRECTION 2) - LAYOUT, CHAIRS AND SCHEDULE', no: '07B', ramOnly: true, set: 'longitude' },
   { key: 'cables_cross', base: 'CABLES_CROSSINGS_SHOP', title: 'PT CABLES - TENDON CROSSINGS - WHICH TENDON PASSES OVER', no: '07C', ramOnly: true },
   { key: 'punching', base: 'FRAMING_REBAR_PUNCHING_LINKS', title: 'PUNCHING SHEAR REINFORCEMENT PLAN (PRELIMINARY)', no: '08' },
+  // from a RAM model calculated with one design strip per beam: the beams typed, marked and scheduled
+  { key: 'beams', base: 'BEAM_MARKS_SECTIONS_SCHEDULE', title: 'BEAM MARKS, SECTIONS AND REINFORCEMENT SCHEDULE - RAM DESIGN', no: '09', ramOnly: true, needsBeams: true },
 ];
 
 export const SCHEDULE_COLS = [
@@ -1319,6 +1321,77 @@ export function ramCrossingsSheet(model, level, meta) {
   };
 }
 
+// ------------------------------------------------------------------ beams (RAM design read back)
+/**
+ * The beams of the level as RAM designed them (one design strip per beam span, see lib/beam-strips.mjs): every beam
+ * labelled with its type and section on the plan, the types scheduled (section, top bars over the supports, bottom
+ * bars in the span, stirrups, the beams of the type) and drawn in section.
+ */
+export function beamsSheet(model, level, meta) {
+  return (sheet, [pl]) => {
+    const S = sheet.S;
+    const sch = level.beamSchedule || { beams: [], types: [], undesigned: [] };
+    drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false, regionLabels: false, ubarRegions: false });
+    for (const bm of sch.beams) {
+      const L = dist(bm.a, bm.b) || 1, u = { x: (bm.b.x - bm.a.x) / L, y: (bm.b.y - bm.a.y) / L }, n = { x: -u.y, y: u.x };
+      const poly = [{ x: bm.a.x + n.x * bm.width / 2, y: bm.a.y + n.y * bm.width / 2 }, { x: bm.b.x + n.x * bm.width / 2, y: bm.b.y + n.y * bm.width / 2 }, { x: bm.b.x - n.x * bm.width / 2, y: bm.b.y - n.y * bm.width / 2 }, { x: bm.a.x - n.x * bm.width / 2, y: bm.a.y - n.y * bm.width / 2 }];
+      pl.hatch([poly], { layer: bm.mark ? 'BEAM' : 'CALLOUT', pattern: 'ANSI31', spacing: 1.2 });
+      const m = { x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 };
+      let rot = (Math.atan2(u.y, u.x) * 180) / Math.PI;
+      const off = bm.width / 2 + 0.6 * S;
+      pl.text({ x: m.x + n.x * off, y: m.y + n.y * off }, `${bm.mark || '??'} ${bm.width}x${bm.depth}`, { layer: 'CALLOUT', h: 2.2, rot, align: 'C', valign: 'B', bold: true });
+      const bars = bm.mark ? `${bm.top?.text || '-'} / ${bm.bottom?.text || '-'} / ${bm.stirrups?.text || '-'}` : 'NOT DESIGNED IN RAM';
+      pl.text({ x: m.x - n.x * off, y: m.y - n.y * off }, bars, { layer: 'TEXT', h: 1.6, rot, align: 'C', valign: 'T' });
+      pl.text({ x: bm.a.x + u.x * 400 + n.x * off, y: bm.a.y + u.y * 400 + n.y * off }, bm.id, { layer: 'TEXT', h: 1.3, rot, align: 'L', valign: 'B' });
+    }
+    const rows = sch.types.map((t) => ({ mark: t.mark, section: `${t.width} x ${t.depth}`, top: t.top?.text || '-', bottom: t.bottom?.text || '-', stirrups: t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs} LEGS @ ${t.stirrups.spacing}` : '-', count: t.count, beams: t.beams.join(', ') }));
+    const cols = [
+      { key: 'mark', title: 'TYPE', w: 14 }, { key: 'section', title: 'SECTION\nb x h (mm)', w: 24 }, { key: 'top', title: 'TOP BARS\n(SUPPORTS)', w: 24 }, { key: 'bottom', title: 'BOTTOM BARS\n(SPAN)', w: 24 },
+      { key: 'stirrups', title: 'STIRRUPS', w: 34 }, { key: 'count', title: 'No.', w: 10 }, { key: 'beams', title: 'BEAMS', w: 55, align: 'L', max: 34 },
+    ];
+    // the sections of the types, four to a box, at 1:25
+    let detailsUsed = 0;
+    const perBox = 4;
+    for (let bi = 0; bi < 3 && bi * perBox < sch.types.length; bi++) {
+      const group = sch.types.slice(bi * perBox, (bi + 1) * perBox);
+      const d = sheet.detailBox(bi, `BEAM SECTIONS ${group[0].mark}${group.length > 1 ? ` - ${group[group.length - 1].mark}` : ''}`, '1:25');
+      detailsUsed = bi + 1;
+      const gap = 600;
+      let x = 0;
+      const maxH = Math.max(...group.map((t) => t.depth));
+      const items = group.map((t) => { const it = { t, x }; x += t.width + gap; return it; });
+      const gb = { minX: -200, maxX: x - gap + 200, minY: -1400, maxY: maxH + 300, cx: (x - gap) / 2, cy: (maxH - 1100) / 2 };
+      const pen = sheet.detailPen(d, 25, gb);
+      for (const { t, x: x0 } of items) {
+        const cov = 40, b = t.width, h = t.depth;
+        pen.pline([{ x: x0, y: 0 }, { x: x0 + b, y: 0 }, { x: x0 + b, y: h }, { x: x0, y: h }], { layer: 'OUTLINE', closed: true, lw: 35 });
+        pen.pline([{ x: x0 + cov, y: cov }, { x: x0 + b - cov, y: cov }, { x: x0 + b - cov, y: h - cov }, { x: x0 + cov, y: h - cov }], { layer: 'REBAR', closed: true });
+        const rowOf = (set, y) => { if (!set) return; const nb = set.n, r = set.dia / 2; const x1 = x0 + cov + 12, x2 = x0 + b - cov - 12; for (let i = 0; i < nb; i++) { const xx = nb > 1 ? x1 + ((x2 - x1) * i) / (nb - 1) : (x1 + x2) / 2; pen.circle({ x: xx, y }, r, { layer: 'REBAR' }); pen.hatch([[{ x: xx - r, y: y - r }, { x: xx + r, y: y - r }, { x: xx + r, y: y + r }, { x: xx - r, y: y + r }]], { layer: 'REBAR', pattern: 'SOLID' }); } };
+        rowOf(t.top, h - cov - 20); rowOf(t.bottom, cov + 20);
+        pen.text({ x: x0 + b / 2, y: -250 }, `${t.mark}  ${b}x${h}`, { layer: 'TEXT', h: 2.2, align: 'C', valign: 'T', bold: true });
+        pen.text({ x: x0 + b / 2, y: -620 }, `TOP ${t.top?.text || '-'}  BOT ${t.bottom?.text || '-'}`, { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
+        pen.text({ x: x0 + b / 2, y: -950 }, t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs}L @ ${t.stirrups.spacing}` : '-', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
+        pen.text({ x: x0 + b / 2, y: -1250 }, `${t.count} BEAM${t.count > 1 ? 'S' : ''}`, { layer: 'NOTES', h: 1.4, align: 'C', valign: 'T' });
+      }
+    }
+    const kg = sch.types.reduce((s, t) => s + t.beams.reduce((ss, id) => { const bm = sch.beams.find((b) => b.id === id); return ss + ((t.top?.area || 0) + (t.bottom?.area || 0)) * (bm ? bm.length : 0) * 7850 / 1e9; }, 0), 0);
+    return {
+      rows, cols, scheduleTitle: 'BEAM SCHEDULE (RAM DESIGN)', detailsUsed, totals: `${sch.beams.length} BEAMS IN ${sch.types.length} TYPES${sch.undesigned.length ? ` · ${sch.undesigned.length} NOT DESIGNED` : ''} · MAIN BARS ≈ ${Math.round(kg)} kg`,
+      weight: Math.round(kg),
+      planTitles: ['BEAM MARKS AND SECTIONS - RAM DESIGN'],
+      general: [
+        commonNotes(model, level)[0],
+        'EVERY BEAM CARRIES ITS TYPE AND SECTION (b x h) ON THE PLAN; THE BARS OF THE TYPE ARE IN THE SCHEDULE AND THE SECTIONS. TOP BARS ARE THE HEAVIEST RAM DESIGNED OVER THE SUPPORTS OF THE BEAM, BOTTOM BARS THE HEAVIEST IN ITS SPANS, STIRRUPS THE CLOSEST SPACING RAM DESIGNED IN IT.',
+        'THE DESIGN COMES FROM ONE RAM CONCEPT DESIGN STRIP ON THE CENTRE LINE OF EVERY BEAM SPAN, BOUNDED BY A SPLITTER ON EACH EDGE OF THE BEAM, DESIGNED AS A BEAM. BEAMS OF ONE SECTION WHOSE BARS ARE ALIKE (WITHIN 15 %) SHARE A TYPE AND TAKE THE HEAVIER BARS.',
+        `${sch.undesigned.length ? `${sch.undesigned.length} BEAM(S) CARRY NO RAM DESIGN (${sch.undesigned.slice(0, 10).join(', ')}): RUN CALC ALL ON THE MODEL WITH THE BEAM STRIPS AND RE-ISSUE. ` : ''}CONTINUING TOP BARS, LAPS AND ANCHORAGES PER THE OFFICE BEAM DETAILS; STIRRUP SPACING TO BE HALVED OVER 2h FROM EVERY SUPPORT FACE.`,
+      ],
+      assumptions: levelAssumptions(model, level).slice(0, 3),
+      legend: [['BEAM', 'BEAM (HATCHED) - TYPE AND SECTION BESIDE IT', 'hatch'], ['CALLOUT', 'BEAM NOT DESIGNED IN RAM', 'hatch'], ['COLUMN-HATCH', 'COLUMN', 'solid']],
+      checks: [`${sch.beams.length} beams, ${sch.types.length} types, ${sch.undesigned.length} without a RAM design.`],
+    };
+  };
+}
+
 function cablesSheet(model, level, meta) {
   return (sheet, [pl]) => {
     drawBase(sheet, pl, level, { gridTag: meta.gridTag, columnIds: true, regionLabels: true, ubarRegions: false });
@@ -1395,12 +1468,13 @@ export function composePackage(model, metaIn = {}) {
     date: new Date().toISOString().slice(0, 10), prepared: '', checked: '', approved: '', status: 'SHOP DRAWING - FOR CONSULTANT APPROVAL',
     ...metaIn,
   };
-  const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, addbottom: (m, l, mt) => ramBarsSheet(m, l, mt, 'B'), addtop: (m, l, mt) => ramBarsSheet(m, l, mt, 'T'), ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, cables_lat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'shop' }), cables_lon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'shop' }), cables_cross: ramCrossingsSheet, punching: punchingSheet };
+  const makers = { framing: framingSheet, bottom: bottomSheet, top: topSheet, addbottom: (m, l, mt) => ramBarsSheet(m, l, mt, 'B'), addtop: (m, l, mt) => ramBarsSheet(m, l, mt, 'T'), ubars: ubarSheet, voids: voidsSheet, openings: openingsSheet, cables: cablesSheet, cables_lat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'shop' }), cables_lon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'shop' }), cables_cross: ramCrossingsSheet, punching: punchingSheet, beams: beamsSheet };
   const jobs = [];
   for (const level of model.levels) for (const def of SHEET_DEFS) {
     if (def.ramOnly && !level.ram) continue;
     if (def.drawingOnly && level.ram) continue; // the empty cable template gives way to the RAM cable sheets
     if (def.set && !(level.ram.tendons || []).some((t) => t.spanSet === def.set)) continue; // no tendons in this direction
+    if (def.needsBeams && !(level.beamSchedule?.types || []).length) continue; // no beam designed in RAM
     jobs.push({ level, def, draw: makers[def.key](model, level, meta) });
   }
   const total = jobs.length + 1;

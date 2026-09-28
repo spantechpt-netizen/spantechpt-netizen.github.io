@@ -30,7 +30,7 @@ import { extractModel, flatten, closedPolys } from './extract.mjs';
 import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisRect, cleanPolygon, ceilTo, distToPolygon, clipSegmentToPolygon } from './geometry.mjs';
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
-import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet } from './sheets.mjs';
+import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet, beamsSheet } from './sheets.mjs';
 /** The office's DIM100: 250 text, 150 oblique ticks, green number, text above the line, and no extension lines at all (dimse1/dimse2 on, dimexe 0). */
 export const DIM100 = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'BW', se1: true, se2: true };
 
@@ -1652,6 +1652,7 @@ export const DESIGN_SHEETS = [
   // from a RAM model: the tendons, one direction per sheet, with the high / low points of the profile only
   { key: 'dcablat', base: 'DESIGN_PT_CABLES_LATITUDE', title: 'PT CABLES - LATITUDE (DIRECTION 1) - DESIGN LAYOUT AND PROFILE POINTS', no: '05', ramOnly: true, set: 'latitude' },
   { key: 'dcablon', base: 'DESIGN_PT_CABLES_LONGITUDE', title: 'PT CABLES - LONGITUDE (DIRECTION 2) - DESIGN LAYOUT AND PROFILE POINTS', no: '06', ramOnly: true, set: 'longitude' },
+  { key: 'dbeams', base: 'DESIGN_BEAM_MARKS_SECTIONS_SCHEDULE', title: 'BEAM MARKS, SECTIONS AND REINFORCEMENT SCHEDULE - RAM DESIGN', no: '07', ramOnly: true, needsBeams: true },
 ];
 
 const designNotes = (model, level) => [
@@ -1947,10 +1948,11 @@ export function composeDesignPackage(model, metaIn = {}) {
     applyEdits(level, adds, model.spec.edits, model.assumptions);
     level.planData = planData(level, adds);
     level.additions = { items: adds.items.length, weight: { T: adds.bars.T.totals().weight_kg, B: adds.bars.B.totals().weight_kg } };
-    const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet, dcablat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'design' }), dcablon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'design' }) };
+    const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet, dcablat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'design' }), dcablon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'design' }), dbeams: (m, l, mt) => beamsSheet(m, l, mt) };
     for (const def of DESIGN_SHEETS) {
       if (def.ramOnly && !level.ram) continue;
       if (def.set && !(level.ram?.tendons || []).some((t) => t.spanSet === def.set)) continue;
+      if (def.needsBeams && !(level.beamSchedule?.types || []).length) continue;
       jobs.push({ level, def, draw: makers[def.key](model, level, meta, adds) });
     }
   }

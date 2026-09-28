@@ -26,6 +26,7 @@ try {
     assumptions: model.assumptions.map((a) => (a.level ? `[${a.level}] ` : '') + a.text),
     findings: model.findings,
     quantities,
+    beams: model.levels.map((l) => (l.beamSchedule ? { level: l.id, name: l.name, ...l.beamSchedule } : null)).filter(Boolean),
     levels: model.levels.map((l) => ({ id: l.id, name: l.name, thickness: l.thickness, columns: (l.columns || []).length })),
   });
 } catch (error) {

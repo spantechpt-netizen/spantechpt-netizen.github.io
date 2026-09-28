@@ -999,6 +999,39 @@ async function runPage(projectId, runId, navigate) {
     ]),
   ]));
 
+  // beam design through RAM: prepare the strips model, and the types read back on a calculated run
+  if (produced && /\.cpt$/i.test(run.source_file || '')) {
+    const bsHost = el('div');
+    const drawStrips = (info) => {
+      clear(bsHost);
+      if (info) bsHost.append(el('div.row.wrap', { style: { gap: '.5rem', alignItems: 'center' } }, [
+        el('span.badge.green', { text: fill('dw_beams_prepared', { beams: info.beams, spans: info.spans, splitters: info.splitters, removed: Object.values(info.removed || {}).reduce((a, b) => a + b, 0) }) }),
+        el('a.btn.btn-sm', { href: api.beamStripsUrl(run.id) }, [icon('download', 14), t('dw_beams_download')]),
+      ]));
+    };
+    drawStrips(run.beam_strips);
+    const types = (run.beams || []).flatMap((lv) => (lv.types || []).map((tp) => ({ ...tp, level: lv.level })));
+    const undesigned = (run.beams || []).flatMap((lv) => lv.undesigned || []);
+    page.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: t('dw_beams') }), el('div.spacer'), can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', onclick: async (e) => { e.currentTarget.disabled = true; try { const { beam_strips } = await api.prepareBeamStrips(run.id); drawStrips(beam_strips); toast(t('saved'), 'success'); } catch (error) { toastError(error); } e.currentTarget.disabled = false; } }, [icon('play', 14), t('dw_beams_prepare')]) : null]),
+      el('div.card-body', {}, [el('div.small.muted', { text: t('dw_beams_hint') }), bsHost]),
+      types.length ? el('div.card-body.flush', {}, [dataTable({
+        rows: types,
+        columns: [
+          { label: t('dw_beam_type'), render: (r) => el('span.bold', { text: `${r.mark}`, dir: 'ltr' }) },
+          { label: t('dw_level'), render: (r) => r.level },
+          { label: t('dw_beam_section'), render: (r) => el('span', { text: `${r.width} x ${r.depth}`, dir: 'ltr' }) },
+          { label: t('dw_beam_top'), render: (r) => r.top?.text || '—' },
+          { label: t('dw_beam_bottom'), render: (r) => r.bottom?.text || '—' },
+          { label: t('dw_beam_stirrups'), render: (r) => (r.stirrups ? `T${r.stirrups.dia}-${r.stirrups.legs}L @ ${r.stirrups.spacing}` : '—') },
+          { label: t('dw_beam_count'), className: 'num', render: (r) => r.count },
+          { label: t('dw_beam_list'), render: (r) => el('span.small', { text: r.beams.join(', '), dir: 'ltr' }) },
+        ],
+      })]) : el('div.card-body', {}, [el('div.small.muted', { text: t('dw_beams_none') })]),
+      undesigned.length ? el('div.card-body', {}, [el('div.small', { text: `${t('dw_beams_undesigned')}: ${undesigned.join(', ')}`, dir: 'ltr' })]) : null,
+    ]));
+  }
+
   const previewHost = el('div');
   const showPreview = (sheet) => {
     clear(previewHost).append(el('div.card', {}, [

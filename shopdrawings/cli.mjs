@@ -34,6 +34,7 @@ import { extractModel, flatten } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
 import { quantities } from './lib/quantities.mjs';
 import { readReferencePlan, applyReference } from './lib/reference.mjs';
+import { beamSchedule } from './lib/beam-strips.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
@@ -93,6 +94,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
     const raw = ramToModel(ram, { levelName, levelId: meta.levelId, spec });
     useReferencePlan(raw, ram, spec);
+    for (const l of raw.levels) l.beamSchedule = beamSchedule(ram, l);
     model = prepareRamDesign(raw, { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
@@ -104,6 +106,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
     useReferencePlan(model, ram, spec);
+    for (const l of model.levels) l.beamSchedule = beamSchedule(ram, l);
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {

@@ -55,6 +55,8 @@ addColumn('drawing_runs', 'quantities_json', 'TEXT');
 addColumn('drawing_levels', 'ref_file', 'TEXT');
 addColumn('drawing_levels', 'ref_name', 'TEXT');
 addColumn('drawing_levels', 'ref_json', 'TEXT');
+addColumn('drawing_runs', 'beams_json', 'TEXT');
+addColumn('drawing_runs', 'beam_strips_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

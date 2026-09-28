@@ -400,6 +400,62 @@ test('a reference plan (the architect\'s grid, columns and slab edge) is fitted 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('beam design through RAM: one strip per beam span with a splitter on each edge written into the .cpt, and the designed beams read back into types and a schedule sheet', async () => {
+  const { writeBeamStrips, beamSchedule, beamSpans } = await import('../shopdrawings/lib/beam-strips.mjs');
+  const { readRamConcept } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'spantech-beams-'));
+  const src = await buildSyntheticCpt(dir, { beam: true });
+  const ram = readRamConcept(src);
+  assert.equal(ram.beams.length, 2);
+  // the edge beam along y = 150 runs from the column at (0, 0) to the one at (12000, 0): one span, both ends supported
+  const edge = beamSpans(ram.beams.find((b) => b.id === 'BM2'), ram.columns, ram.walls);
+  assert.equal(edge.spanSet, 'latitude');
+  assert.equal(edge.spans.length, 1);
+  assert.ok(edge.spans[0].support0?.kind === 'column' && edge.spans[0].support1?.kind === 'column');
+  const out = join(dir, 'beam-strips.cpt');
+  const sum = writeBeamStrips(src, out, ram);
+  assert.deepEqual([sum.beams, sum.spans, sum.splitters], [2, 2, 4]);
+  assert.equal(sum.removed.SpanSegment, 2, 'the old slab strips are gone');
+  assert.equal(sum.removed.SpanDesign, 1, 'stale strip results are gone');
+  const db = new DatabaseSync(out, { readOnly: true });
+  const segs = db.prepare('select * from SpanSegment order by SpanSet, ChildIndex').all();
+  assert.equal(segs.length, 2);
+  assert.ok(segs.every((r) => r.ColumnStripDesignSystem === 'beam' && r.MiddleStripDesignSystem === 'beam' && r.ColumnStripWidthCalc === 'full'), 'designed as beams');
+  const lat = segs.find((r) => r.SpanSet === 'latitude');
+  assert.deepEqual([lat.Point0, lat.Point1, lat.Name, lat.FrameNumber, lat.SpanNumber, lat.AtSupport0, lat.AtSupport1, lat.SupportWidth0, lat.SupportWidth1], ['[0][1500]', '[120000][1500]', '1-1', 0, 0, 1, 1, 4000, 8000], 'the strip on the beam centre line, in 0.1 mm, with the column sizes at its ends');
+  assert.equal(lat.ParentUID, db.prepare("select UID from SpanSegmentCategory where SpanSet = 'latitude'").get().UID, 'in the latitude category');
+  assert.ok(lat.UID > 931 && segs.every((r) => r.PreviousSibUID === 0 && r.NextSibUID === 0 && r.ChildIndex === 0), 'fresh UIDs, one child per category chained');
+  const bounds = db.prepare("select Boundary, SpanSet from StripBoundary where SpanSet = 'longitude' order by ChildIndex").all();
+  assert.deepEqual(bounds.map((b) => b.Boundary), ['[[88500][0]][[88500][80000]]', '[[91500][0]][[91500][80000]]'], 'a splitter on each edge of the 300 wide beam at x = 9 m');
+  const chain = db.prepare("select UID, PreviousSibUID, NextSibUID, ChildIndex, Number from StripBoundary where SpanSet = 'longitude' order by ChildIndex").all();
+  assert.ok(chain[0].PreviousSibUID === 0 && chain[0].NextSibUID === chain[1].UID && chain[1].PreviousSibUID === chain[0].UID && chain[1].NextSibUID === 0 && chain[1].Number === 1, 'sibling chain');
+  const strips = db.prepare('select Name, StripType, SpanSegment from SpanSegmentStrip').all();
+  assert.equal(strips.length, 2);
+  assert.ok(strips.some((r) => r.Name === '1C-1' && r.SpanSegment === lat.UID));
+  db.close();
+  // the schedule off the (already calculated) synthetic model: the interior beam carries RAM's 4T16 top / 3T16 bottom / T12 @ 125 links
+  const sch = beamSchedule(ram);
+  assert.equal(sch.types.length, 1);
+  const t = sch.types[0];
+  assert.deepEqual([t.mark, t.section, t.top.text, t.bottom.text, t.stirrups.text, t.count, t.beams], ['B1', '300x600', '4T16', '3T16', 'T12-2L@125', 1, ['BM1']]);
+  assert.deepEqual(sch.undesigned, ['BM2'], 'the edge beam has no RAM bars in it');
+  // through both packages: the beams sheet appears with the schedule, the plan labelled
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const { pack } = generate({ inputDxf: src, out: join(dir, 'design'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
+  const sheet = pack.sheets.find((s) => s.key === 'dbeams');
+  assert.ok(sheet && sheet.drawingNo.endsWith('-07'), 'beam sheet 07 in the design package');
+  assert.deepEqual(sheet.rows.map((r) => [r.mark, r.section, r.top, r.bottom, r.count]), [['B1', '300 x 600', '4T16', '3T16', 1]]);
+  const dxf = toDxf(sheet.root);
+  assert.ok(dxf.includes('\n1\nB1 300x600\n') && dxf.includes('\n1\n?? 300x600\n'), 'every beam labelled with its type and section on the plan');
+  const { pack: shop } = generate({ inputDxf: src, out: join(dir, 'shop'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'shop' });
+  assert.ok(shop.sheets.some((s) => s.key === 'beams' && s.drawingNo.endsWith('-09')), 'beam sheet 09 in the shop package');
+  const plain = await buildSyntheticCpt(dir);
+  const { pack: noBeams } = generate({ inputDxf: plain, out: join(dir, 'plain'), meta: { project: 'X', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
+  assert.ok(!noBeams.sheets.some((s) => s.key === 'dbeams'), 'no beam sheet without beams');
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('walls, drop panels, pour strips and stepped zones are read from their layers', () => {
   // a 30 x 20 m slab: perimeter wall along the top edge, four columns with drop panels, a pour strip,
   // a nested slab zone drawn on the slab layer with its own level tag

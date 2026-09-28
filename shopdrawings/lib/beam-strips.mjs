@@ -1,0 +1,221 @@
+/**
+ * Beam design through RAM Concept, the office way:
+ *   1. `writeBeamStrips` rewrites the model's design strips: every span segment, strip boundary, span boundary and
+ *      design section is dropped, and every beam gets one design strip on its centre line per span between its
+ *      supports, with a splitter (strip boundary) on each of its edges, designed as a beam. RAM then analyses and
+ *      designs the beams on Calc All.
+ *   2. `beamSchedule` reads RAM's designed bars and stirrups back off the calculated model, beam by beam, groups
+ *      the beams whose section and reinforcement are alike into types (B1, B2 …), and gives every beam its type,
+ *      section and bars for the plan and the schedule.
+ * The .cpt is an SQLite file: lengths are stored in 0.1 mm, points as `[x][y]`, and every object row sits in a
+ * category with a sibling chain (PreviousSibUID / NextSibUID / ChildIndex).
+ */
+import { DatabaseSync } from 'node:sqlite';
+import { copyFileSync } from 'node:fs';
+import { dist, pointInPolygon, bbox } from './geometry.mjs';
+
+const U = 10; // mm → 0.1 mm
+const pt = (p) => `[${Math.round(p.x * U)}][${Math.round(p.y * U)}]`;
+const poly = (pts) => pts.map((p) => `[${pt(p)}]`).join('');
+const nums = (s) => (String(s || '').match(/-?\d+(\.\d+)?/g) || []).map(Number);
+const point = (s) => { const v = nums(s); return { x: v[0] / U, y: v[1] / U }; };
+
+const STRIP_TABLES = ['SpanSegment', 'SpanSegmentStrip', 'SpanBoundary', 'StripBoundary', 'DesignSection', 'SpanSegmentDeflectionCheckDesign', 'SpanDesign', 'DSDesign'];
+
+function tableExists(db, t) { return !!db.prepare("select name from sqlite_master where type = 'table' and name = ?").get(t); }
+function columnsOf(db, t) { return db.prepare(`pragma table_info("${t}")`).all().map((c) => c.name); }
+function maxUid(db) {
+  let m = 0;
+  for (const { name } of db.prepare("select name from sqlite_master where type = 'table'").all()) {
+    if (!columnsOf(db, name).includes('UID')) continue;
+    const r = db.prepare(`select max(UID) as m from "${name}"`).get();
+    if (r && r.m > m) m = r.m;
+  }
+  return m;
+}
+
+/** The spans of a beam: its axis cut at the supports (columns and walls) it crosses; each span with the support size at its ends. */
+export function beamSpans(beam, columns, walls) {
+  const L = dist(beam.a, beam.b);
+  const u = { x: (beam.b.x - beam.a.x) / L, y: (beam.b.y - beam.a.y) / L }, n = { x: -u.y, y: u.x };
+  const alongX = Math.abs(u.x) >= Math.abs(u.y);
+  const supports = [];
+  for (const c of columns) {
+    const d = { x: c.cx - beam.a.x, y: c.cy - beam.a.y };
+    const t = d.x * u.x + d.y * u.y, off = Math.abs(d.x * n.x + d.y * n.y);
+    const along = alongX ? (c.w || c.d || 300) : (c.h || c.d || 300), across = alongX ? (c.h || c.d || 300) : (c.w || c.d || 300);
+    if (off <= beam.t / 2 + across / 2 && t >= -along / 2 && t <= L + along / 2) supports.push({ t: Math.max(0, Math.min(L, t)), along, across, kind: 'column' });
+  }
+  for (const w of walls || []) {
+    // a wall crossing the axis is a support; a wall along the beam is not a span break
+    const dx = w.b.x - w.a.x, dy = w.b.y - w.a.y;
+    const den = u.x * dy - u.y * dx;
+    if (Math.abs(den) < 1e-9) continue;
+    const ex = w.a.x - beam.a.x, ey = w.a.y - beam.a.y;
+    const t = (ex * dy - ey * dx) / den, s = (ex * u.y - ey * u.x) / den;
+    if (s >= -1e-6 && s <= 1 + 1e-6 && t >= -100 && t <= L + 100) supports.push({ t: Math.max(0, Math.min(L, t)), along: w.t || 250, across: Math.hypot(dx, dy), kind: 'wall' });
+  }
+  supports.sort((p, q) => p.t - q.t);
+  // merge supports closer than half a metre (a wall meeting a column)
+  const merged = [];
+  for (const s of supports) { const last = merged[merged.length - 1]; if (last && s.t - last.t < 500) { last.along = Math.max(last.along, s.along); last.across = Math.max(last.across, s.across); } else merged.push({ ...s }); }
+  const cuts = [0, ...merged.map((s) => s.t).filter((t) => t > 800 && t < L - 800), L];
+  const spans = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const t0 = cuts[i], t1 = cuts[i + 1];
+    if (t1 - t0 < 500) continue;
+    const s0 = merged.find((s) => Math.abs(s.t - t0) <= 1000), s1 = merged.find((s) => Math.abs(s.t - t1) <= 1000);
+    spans.push({
+      t0, t1, length: t1 - t0,
+      a: { x: beam.a.x + u.x * t0, y: beam.a.y + u.y * t0 }, b: { x: beam.a.x + u.x * t1, y: beam.a.y + u.y * t1 },
+      support0: s0 || null, support1: s1 || null,
+    });
+  }
+  return { spans, u, n, alongX, spanSet: alongX ? 'latitude' : 'longitude', supports: merged };
+}
+
+/**
+ * Rewrites the design strips of a RAM Concept model for beam design. `ram` is the model read with readRamConcept
+ * (columns, walls and beams in mm); `src` is copied to `out` and the copy is edited. Returns what was written.
+ */
+export function writeBeamStrips(src, out, ram, { designSystem = 'beam', splitters = true } = {}) {
+  copyFileSync(src, out);
+  const db = new DatabaseSync(out);
+  const summary = { beams: 0, spans: 0, splitters: 0, removed: {}, frames: [], missing: [] };
+  try {
+    db.exec('BEGIN');
+    let uid = maxUid(db); // before anything is dropped: a UID is never reused
+    for (const t of STRIP_TABLES) {
+      if (!tableExists(db, t)) continue;
+      summary.removed[t] = db.prepare(`select count(*) as n from "${t}"`).get().n;
+      db.exec(`delete from "${t}"`);
+    }
+    const catOf = (table, spanSet) => (tableExists(db, table) ? db.prepare(`select UID from "${table}" where SpanSet = ?`).get(spanSet) : null);
+    const segCols = tableExists(db, 'SpanSegment') ? columnsOf(db, 'SpanSegment') : null;
+    if (!segCols) throw new Error('This model has no design strip tables (SpanSegment); is it a RAM Concept file?');
+    const defaults = tableExists(db, 'DefaultSpanSegment') ? db.prepare('select * from DefaultSpanSegment limit 1').get() : null;
+    const nextUid = () => ++uid;
+    const chains = new Map(); // category uid -> [uids]
+    const insertRow = (table, row) => {
+      const info = db.prepare(`pragma table_info("${table}")`).all();
+      const full = { PreviousSibUID: 0, NextSibUID: 0, ChildIndex: 0, Number: 0, ...row };
+      // every NOT NULL column the row does not carry takes an empty value of its type
+      for (const c of info) if (c.notnull && !(c.name in full)) full[c.name] = /INT|REAL|NUM|DOUB|FLOA/i.test(c.type || '') ? 0 : '';
+      const keys = Object.keys(full).filter((k) => info.some((c) => c.name === k));
+      db.prepare(`insert into "${table}" (${keys.map((k) => `"${k}"`).join(',')}) values (${keys.map(() => '?').join(',')})`).run(...keys.map((k) => full[k]));
+      if (!chains.has(row.ParentUID)) chains.set(row.ParentUID, { table, uids: [] });
+      chains.get(row.ParentUID).uids.push(row.UID);
+    };
+    const frameNo = { latitude: 0, longitude: 0 };
+    for (const beam of ram.beams || []) {
+      const { spans, n, spanSet } = beamSpans(beam, ram.columns || [], ram.walls || []);
+      if (!spans.length) continue;
+      const segCat = catOf('SpanSegmentCategory', spanSet), stripCat = catOf('SpanSegmentStripCategory', spanSet), boundCat = catOf('StripBoundaryCategory', spanSet);
+      if (!segCat) { summary.missing.push(`${beam.id}: no ${spanSet} span segment category`); continue; }
+      const frame = frameNo[spanSet]++;
+      const frameLabel = frame + 1;
+      summary.beams++;
+      const spanUids = [];
+      spans.forEach((sp, k) => {
+        const segUid = nextUid();
+        spanUids.push(segUid);
+        const row = {
+          ...(defaults || {}),
+          UID: segUid, ParentUID: segCat.UID, RssUid: 0, Name: `${frameLabel}-${k + 1}`, DeflectionCheckList: '',
+          Point0: pt(sp.a), Point1: pt(sp.b), SkewAngle: 0, SpanSet: spanSet, FrameNumber: frame, SpanNumber: k, SegmentNumber: 0,
+          AtSupport0: sp.support0 ? 1 : 0, AtSupport1: sp.support1 ? 1 : 0,
+          SupportWidth0: Math.round((sp.support0?.along || 0) * U), SupportWidth1: Math.round((sp.support1?.along || 0) * U),
+          SupportTransverseWidth0: Math.round((sp.support0?.across || beam.t) * U), SupportTransverseWidth1: Math.round((sp.support1?.across || beam.t) * U),
+          AutoSupportDetect: 1, LockStripGeneration: 0,
+          SpanWidthCalc: 'auto', ColumnStripWidthCalc: 'full', MiddleStripUsesColumnStripProps: 1,
+          ColumnStripDesignSystem: designSystem, MiddleStripDesignSystem: designSystem,
+          ColumnStripStirrupLegs: defaults?.ColumnStripStirrupLegs || 2, MiddleStripStirrupLegs: defaults?.MiddleStripStirrupLegs || 2,
+        };
+        insertRow('SpanSegment', row);
+        // the strip of the span: the beam's own width (RAM regenerates it on Calc All; written so the model opens with it)
+        if (stripCat && tableExists(db, 'SpanSegmentStrip')) {
+          const left = [{ x: sp.a.x + n.x * beam.t / 2, y: sp.a.y + n.y * beam.t / 2 }, { x: sp.b.x + n.x * beam.t / 2, y: sp.b.y + n.y * beam.t / 2 }];
+          const right = [{ x: sp.a.x - n.x * beam.t / 2, y: sp.a.y - n.y * beam.t / 2 }, { x: sp.b.x - n.x * beam.t / 2, y: sp.b.y - n.y * beam.t / 2 }];
+          insertRow('SpanSegmentStrip', { UID: nextUid(), ParentUID: stripCat.UID, RssUid: 0, Name: `${frameLabel}C-${k + 1}`, Point0: pt(sp.a), Point1: pt(sp.b), ResistanceLeftBoundary: poly(left), ResistanceRightBoundary: poly(right), DemandLeftBoundary: poly(left), DemandRightBoundary: poly(right), SpanSegment: segUid, StripType: 'center', AutoTribArea: 0, AutoInfluenceArea: 0 });
+        }
+        summary.spans++;
+      });
+      // the splitters: a strip boundary on each edge of the beam, the whole beam long
+      if (splitters && boundCat && tableExists(db, 'StripBoundary')) {
+        for (const sign of [1, -1]) {
+          const edge = [{ x: beam.a.x + n.x * sign * beam.t / 2, y: beam.a.y + n.y * sign * beam.t / 2 }, { x: beam.b.x + n.x * sign * beam.t / 2, y: beam.b.y + n.y * sign * beam.t / 2 }];
+          insertRow('StripBoundary', { UID: nextUid(), ParentUID: boundCat.UID, RssUid: 0, Name: '', Boundary: poly(edge), SpanSet: spanSet });
+          summary.splitters++;
+        }
+      }
+      summary.frames.push({ beam: beam.id, frame: frameLabel, spanSet, width: beam.t, depth: beam.depth, spans: spans.map((sp) => ({ length: Math.round(sp.length), support0: sp.support0?.kind || null, support1: sp.support1?.kind || null })), segments: spanUids });
+    }
+    // the sibling chains of every category written to
+    for (const [parent, { table, uids }] of chains) {
+      uids.forEach((id, i) => db.prepare(`update "${table}" set PreviousSibUID = ?, NextSibUID = ?, ChildIndex = ?, Number = ? where UID = ?`).run(i ? uids[i - 1] : 0, i + 1 < uids.length ? uids[i + 1] : 0, i, i, id));
+    }
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* not open */ }
+    db.close();
+    throw error;
+  }
+  db.close();
+  return summary;
+}
+
+// ------------------------------------------------------------------ the schedule off the calculated model
+const BAR_AREA = (d) => (Math.PI * d * d) / 4;
+const barsText = (n, dia) => (n && dia ? `${n}T${dia}` : '-');
+
+/**
+ * RAM's beam design read back: for every beam the designed bands lying in it (top bars over the supports, bottom
+ * bars in the span, the heaviest of each) and the stirrup regions in it (the closest spacing). Beams of one
+ * section whose bars are alike share a type.
+ */
+export function beamSchedule(ram, level = null) {
+  const beams = (level?.beams || ram.beams || []).map((b) => ({ ...b }));
+  if (!beams.length) return null;
+  const bands = (level?.ram?.bands || ram.bands || []).filter((b) => b.designedBy === 'program' || b.designedBy == null);
+  const shear = level?.ram?.shear || ram.shear || [];
+  const expand = (bm, m) => { const u = { x: (bm.b.x - bm.a.x) / dist(bm.a, bm.b), y: (bm.b.y - bm.a.y) / dist(bm.a, bm.b) }, n = { x: -u.y, y: u.x }; const w = bm.t / 2 + m; return [{ x: bm.a.x + n.x * w - u.x * m, y: bm.a.y + n.y * w - u.y * m }, { x: bm.b.x + n.x * w + u.x * m, y: bm.b.y + n.y * w + u.y * m }, { x: bm.b.x - n.x * w + u.x * m, y: bm.b.y - n.y * w + u.y * m }, { x: bm.a.x - n.x * w - u.x * m, y: bm.a.y - n.y * w - u.y * m }]; };
+  const rows = beams.map((bm) => {
+    const zone = expand(bm, 150);
+    const u = { x: (bm.b.x - bm.a.x) / dist(bm.a, bm.b), y: (bm.b.y - bm.a.y) / dist(bm.a, bm.b) };
+    const mine = bands.filter((b) => {
+      const m = { x: (b.p0.x + b.p1.x) / 2, y: (b.p0.y + b.p1.y) / 2 };
+      const L = dist(b.p0, b.p1) || 1, v = { x: (b.p1.x - b.p0.x) / L, y: (b.p1.y - b.p0.y) / L };
+      return pointInPolygon(m, zone) && Math.abs(u.x * v.x + u.y * v.y) > 0.9;
+    });
+    const heaviest = (face) => mine.filter((b) => b.face === face).map((b) => ({ n: b.count, dia: b.dia, area: b.count * BAR_AREA(b.dia), band: b })).sort((p, q) => q.area - p.area)[0] || null;
+    const top = heaviest('T'), bottom = heaviest('B');
+    const links = shear.filter((s) => pointInPolygon({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, zone)).sort((p, q) => p.spacing - q.spacing);
+    const st = links[0] || null;
+    return {
+      id: bm.id, a: bm.a, b: bm.b, width: bm.t, depth: bm.depth, length: Math.round(dist(bm.a, bm.b)),
+      top: top ? { n: top.n, dia: top.dia, area: Math.round(top.area), text: barsText(top.n, top.dia) } : null,
+      bottom: bottom ? { n: bottom.n, dia: bottom.dia, area: Math.round(bottom.area), text: barsText(bottom.n, bottom.dia) } : null,
+      stirrups: st ? { dia: st.dia, legs: st.legs, spacing: st.spacing, text: `T${st.dia}-${st.legs}L@${st.spacing}` } : null,
+      bands: mine.length, designed: !!(top || bottom),
+    };
+  });
+  // types: one section, bars alike (within 15 % of the heaviest member's area, stirrups within 25 mm)
+  const sorted = rows.filter((r) => r.designed).sort((p, q) => (q.width * q.depth - p.width * p.depth) || ((q.top?.area || 0) + (q.bottom?.area || 0)) - ((p.top?.area || 0) + (p.bottom?.area || 0)));
+  const types = [];
+  for (const r of sorted) {
+    const fits = types.find((t) => t.width === r.width && t.depth === r.depth
+      && (!t.top || !r.top ? !t.top === !r.top : r.top.area >= 0.85 * t.top.area && r.top.area <= t.top.area)
+      && (!t.bottom || !r.bottom ? !t.bottom === !r.bottom : r.bottom.area >= 0.85 * t.bottom.area && r.bottom.area <= t.bottom.area)
+      && (!t.stirrups || !r.stirrups ? true : Math.abs(t.stirrups.spacing - r.stirrups.spacing) <= 25 && t.stirrups.dia === r.stirrups.dia));
+    if (fits) { fits.beams.push(r.id); r.mark = fits.mark; continue; }
+    const t = { mark: `B${types.length + 1}`, width: r.width, depth: r.depth, section: `${r.width}x${r.depth}`, top: r.top, bottom: r.bottom, stirrups: r.stirrups, beams: [r.id] };
+    types.push(t);
+    r.mark = t.mark;
+  }
+  for (const r of rows) if (!r.designed) r.mark = null;
+  return { beams: rows, types: types.map((t) => ({ ...t, count: t.beams.length })), undesigned: rows.filter((r) => !r.designed).map((r) => r.id) };
+}
+
+/** The bar area of `nTdia` text, for the schedule totals. */
+export const barSetArea = (n, dia) => Math.round(n * BAR_AREA(dia));
+export { pt as cptPoint, point as cptPointOf, bbox as _bbox };
