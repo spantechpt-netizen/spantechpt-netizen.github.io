@@ -692,6 +692,57 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   function dist2(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 });
 
+test('slab mesh option, punching check and the engineer\'s bypass: the top mesh written when both faces are chosen, a column beyond the stirrup limit blocks, the bypass draws PS at it in the engineer\'s name', async () => {
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const { punchingCheck, blockingAfter, overrideColumns } = await import('../shopdrawings/lib/punching.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'punch-'));
+  // modest loads: every column passes, the mesh option shows on the top sheet and in the take-off
+  const light = await buildSyntheticCpt(dir, { loads: { dead: 2, live: 3 } });
+  const r0 = generate({ inputDxf: light, out: join(dir, 'light'), meta: { designer: 'Eng. Sara Test' }, spec: { mesh: 'both' }, svg: false, levelNames: ['FIRST'], mode: 'design' });
+  const L0 = r0.model.levels[0];
+  assert.equal(L0.topMesh, true); assert.equal(L0.meshFaces, 'both');
+  assert.deepEqual(L0.meshLabels[0].lines, ['MESH T12@200', 'TOP & BOTTOM TWO WAY']);
+  assert.equal(r0.quantities.levels[0].mesh.faces, 2, 'the mesh joins the take-off with both faces');
+  assert.ok(r0.quantities.levels[0].steel.mesh_kg > 1000 && r0.quantities.levels[0].steel.kg >= r0.quantities.levels[0].steel.mesh_kg);
+  const top0 = readFileSync(r0.files.find((f) => /TOP_REINFORCEMENT.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(top0.includes('\n1\nTOP MESH T12@200\n') && top0.includes('TOP & BOTTOM (BOTH FACES)'), 'top mesh written on the top sheet');
+  assert.ok(top0.includes('\n1\nPREPARED / DESIGNED BY\n') && top0.includes('\n1\nENG. SARA TEST\n'), 'the engineer who ran the program signs the title block');
+  const pc0 = r0.punching[0];
+  assert.ok(pc0.columns.length === 5 && pc0.columns.every((c) => c.status === 'ok'), JSON.stringify(pc0.columns.map((c) => [c.id, c.ratio])));
+  assert.equal(pc0.columns.find((c) => c.loc === 'interior').trib_source, 'RAM', 'RAM\'s own tributary area where the punching check carries it');
+  assert.deepEqual(pc0.blocking, []);
+  // the same slab under a heavy live load: the interior column with stud rails passes RAM, the corner ones fail even with stirrups
+  const heavy = await buildSyntheticCpt(dir, { loads: { dead: 4, live: 40 } });
+  const r1 = generate({ inputDxf: heavy, out: join(dir, 'heavy'), meta: {}, spec: { mesh: 'bottom' }, svg: false, levelNames: ['FIRST'], mode: 'design' });
+  const L1 = r1.model.levels[0];
+  assert.equal(L1.topMesh, false);
+  const pc1 = r1.punching[0];
+  assert.ok(pc1.blocking.length >= 4 && pc1.columns.filter((c) => c.status === 'fail').length >= 4, JSON.stringify(pc1.columns.map((c) => [c.id, c.status, c.ratio])));
+  const corner = pc1.columns.find((c) => c.loc === 'corner');
+  assert.ok(corner.detail && corner.detail.rows >= 12 && corner.detail.legs >= 4, 'what the office detail would need is estimated for every flagged column');
+  assert.ok(!r1.files.some((f) => /PUNCH/.test(f) && readFileSync(f, 'utf8').includes('RESPONSIBILITY')), 'no bypass yet: nothing drawn at the failing columns');
+  // the engineer's list of columns failing in RAM is flagged whatever the estimate says
+  const ramFailed = punchingCheck(r0.model.levels[0], { ...r0.model.spec, punching: { ramFailed: [pc0.columns[0].id.toLowerCase()] } });
+  assert.deepEqual(ramFailed.blocking, [pc0.columns[0].id]);
+  // decisions: thicken keeps the block, ram_ok / bypass on the named columns clear it
+  assert.deepEqual(blockingAfter(pc1, { mode: 'thicken' }), pc1.blocking);
+  assert.deepEqual(blockingAfter(pc1, { mode: 'bypass', columns: 'all' }), []);
+  assert.deepEqual(blockingAfter(pc1, { mode: 'ram_ok', columns: [pc1.blocking[0]] }), pc1.blocking.slice(1));
+  assert.deepEqual([...overrideColumns(pc1, { columns: 'all' })], pc1.flagged);
+  // the bypass: PS strips at the named columns, sized from the estimate, the sheets naming the engineer and the date
+  const target = pc1.blocking[0];
+  const r2 = generate({ inputDxf: heavy, out: join(dir, 'bypass'), meta: { designer: 'Eng. Sara Test' }, spec: { punching: { override: { columns: [target], by: 'Eng. Sara Test', date: '2026-09-28', note: 'client refused a drop' } } }, svg: false, levelNames: ['FIRST'], mode: 'design' });
+  assert.deepEqual(r2.punching[0].overridden, [target]);
+  const ps = readFileSync(r2.files.find((f) => /PUNCHING.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(ps.includes('\n1\nPS2\n') || ps.includes('\n1\nPS1\n'), 'a PS type at the bypassed column');
+  assert.ok(ps.includes("PS AT THE DESIGN ENGINEER'S RESPONSIBILITY") && ps.includes('ENG. SARA TEST') && ps.includes('2026-09-28'), 'the bypass is written on the punching sheet with the engineer\'s name and the date');
+  assert.ok(ps.includes('CLIENT REFUSED A DROP'), 'the engineer\'s reason is printed in the assumptions');
+  const top2 = readFileSync(r2.files.find((f) => /TOP_REINFORCEMENT.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(top2.includes(`${target}: PUNCHING NOT PASSING`), 'the top sheet carries the boxed note at the column');
+  assert.ok(existsSync(join(dir, 'bypass', 'punching.json')) && readFileSync(join(dir, 'bypass', 'REPORT.md'), 'utf8').includes('Indicative punching check'));
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('the design package is written in the office layers and text style, on the shop-drawing frame', () => {
   const dxf = parseDxf(toDxf(buildOfficePlan()));
   const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });

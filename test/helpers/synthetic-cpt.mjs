@@ -4,9 +4,9 @@
 import { join } from 'node:path';
 
 /** A tiny RAM Concept model written with node:sqlite: 12 x 8 m slab meshed 3 x 2, five columns, one wall crossing the edge, two tendons, two bands. */
-export async function buildSyntheticCpt(dir, { beam = false, step = false } = {}) {
+export async function buildSyntheticCpt(dir, { beam = false, step = false, loads = null } = {}) {
   const { DatabaseSync } = await import('node:sqlite');
-  const path = join(dir, `synthetic${beam ? '-beam' : ''}${step ? '-step' : ''}.cpt`);
+  const path = join(dir, `synthetic${beam ? '-beam' : ''}${step ? '-step' : ''}${loads ? `-loads${loads.dead || 0}-${loads.live || 0}` : ''}.cpt`);
   const db = new DatabaseSync(path);
   const P = (x, y) => `[${x * 10}][${y * 10}]`; // mm → 0.1 mm
   const create = (t, cols) => db.exec(`create table "${t}" (${cols.map((c) => `"${c}"`).join(',')})`);
@@ -101,8 +101,24 @@ export async function buildSyntheticCpt(dir, { beam = false, step = false } = {}
   const rails0 = [], rails1 = [];
   for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (let k = 0; k < 4; k++) { const t = -150 + k * 100; const a = { x: 6000 + dx * 300 + (dx ? 0 : t), y: 4000 + dy * 300 + (dy ? 0 : t) }; rails0.push(P(a.x, a.y)); rails1.push(P(a.x + dx * 1000, a.y + dy * 1000)); }
   insert('SsrSet', [{ UID: 701, Point0: rails0.join(''), Point1: rails1.join(''), DesignedBy: 2, SsrSystem: 14, StudSpacingFirst: 1000, StudSpacingTypical: 1000, StudCount: rails0.map(() => '[10]').join(''), LocationPoint: P(6000, 4000) }]);
-  create('PunchCheck', ['UID', 'Name', 'Point0', 'SsrSystem', 'CoverToCGS', 'TopCover', 'BottomCover']);
-  insert('PunchCheck', [{ UID: 601, Name: 'PC1', Point0: P(6000, 4000), SsrSystem: 'SSR', CoverToCGS: 350, TopCover: 350, BottomCover: 250 }]);
+  create('PunchCheck', ['UID', 'Name', 'Point0', 'SsrSystem', 'CoverToCGS', 'TopCover', 'BottomCover', 'AutoTribArea', 'SsrDesignDesired']);
+  insert('PunchCheck', [{ UID: 601, Name: 'PC1', Point0: P(6000, 4000), SsrSystem: 'SSR', CoverToCGS: 350, TopCover: 350, BottomCover: 250, AutoTribArea: 24e8, SsrDesignDesired: 1 }]);
+  if (loads) {
+    // area loads the way RAM keeps them: loading layers by type, a loading level under each, a category under that,
+    // the loads under the category; values in N per 0.01 mm² (kN/m² x 1e-5), downwards negative
+    create('LoadingLayer', ['UID', 'ParentUID', 'Name', 'LoadingType']);
+    insert('LoadingLayer', [{ UID: 79, ParentUID: 30, Name: 'Self-Dead Loading', LoadingType: 'self_dead' }, { UID: 154, ParentUID: 30, Name: 'Other Dead Loading', LoadingType: 'other_dead' }, { UID: 156, ParentUID: 30, Name: 'Live Loading', LoadingType: 'live_unreducible' }]);
+    create('LoadingLevel', ['UID', 'ParentUID', 'Name']);
+    insert('LoadingLevel', [{ UID: 569, ParentUID: 154, Name: 'Level 1' }, { UID: 576, ParentUID: 156, Name: 'Level 1' }]);
+    create('AreaLoadCategory', ['UID', 'ParentUID', 'Name']);
+    insert('AreaLoadCategory', [{ UID: 575, ParentUID: 569, Name: '' }, { UID: 582, ParentUID: 576, Name: '' }]);
+    create('AreaLoad', ['UID', 'ParentUID', 'Name', 'ALFz0', 'ALFz1', 'ALFz2', 'MultiPoint']);
+    const whole = `${P(0, 0)}${P(12000, 0)}${P(12000, 8000)}${P(0, 8000)}`;
+    insert('AreaLoad', [
+      { UID: 801, ParentUID: 575, Name: '', ALFz0: -(loads.dead || 0) * 1e-5, ALFz1: -(loads.dead || 0) * 1e-5, ALFz2: -(loads.dead || 0) * 1e-5, MultiPoint: whole },
+      { UID: 802, ParentUID: 582, Name: '', ALFz0: -(loads.live || 0) * 1e-5, ALFz1: -(loads.live || 0) * 1e-5, ALFz2: -(loads.live || 0) * 1e-5, MultiPoint: whole },
+    ]);
+  }
   db.close();
   return path;
 }

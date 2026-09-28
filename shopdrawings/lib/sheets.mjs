@@ -331,7 +331,7 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
     sheet.customFrame(meta.frameEntities, {
       PROJECT: (meta.project || '').toUpperCase(), PROJECT_CODE: meta.projectCode || '', CLIENT: meta.client || '', CONSULTANT: meta.engineer || '', ENGINEER: meta.engineer || '', CONTRACTOR: meta.contractor || '',
       LOCATION: meta.location || '', COMPANY: meta.company || '', COMPANY_LINE: meta.company_line || '', TITLE: def.title, LEVEL: titleData.level, LEVEL_NAME: level ? level.name : '', DRAWING_NO: drawingNo, REV: meta.revision || '00',
-      DATE: meta.date || '', SCALE: titleData.scale, SHEET: titleData.sheet, PREPARED: meta.prepared || '', CHECKED: meta.checked || '', APPROVED: meta.approved || '', STATUS: meta.status || '', GRID_REF: titleData.gridRef, INDEX: titleData.index, CODE_REF: titleData.codeRef,
+      DATE: meta.date || '', SCALE: titleData.scale, SHEET: titleData.sheet, PREPARED: meta.prepared || '', DESIGNER: meta.designer || meta.prepared || '', CHECKED: meta.checked || '', APPROVED: meta.approved || '', STATUS: meta.status || '', GRID_REF: titleData.gridRef, INDEX: titleData.index, CODE_REF: titleData.codeRef,
     });
   } else {
     if (sheet.L.refs.h > 0) sheet.refsBlock(meta);

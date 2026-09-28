@@ -968,6 +968,10 @@ function drawingsPanel(settings) {
         name: 'ram_bands', label: t('dw_ram_bands'), type: 'select', value: current.ram_bands || 'all', disabled: readOnly(),
         options: ['all', 'user', 'none'].map((b) => ({ value: b, label: t(`dw_bands_${b}`) })),
       }),
+      field({
+        name: 'mesh', label: t('dw_mesh'), type: 'select', value: current.mesh || 'bottom', disabled: readOnly(), hint: t('dw_mesh_hint'),
+        options: ['bottom', 'both'].map((m) => ({ value: m, label: t(`dw_mesh_${m}`) })),
+      }),
       field({ name: 'company', label: t('dw_company'), value: current.company || '', dir: 'ltr', disabled: readOnly() }),
       field({ name: 'company_line', label: t('dw_company_line'), value: current.company_line || '', dir: 'ltr', disabled: readOnly() }),
       field({ name: 'prepared', label: t('dw_prepared'), value: current.prepared || '', dir: 'ltr', disabled: readOnly() }),

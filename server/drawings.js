@@ -24,6 +24,10 @@ export const SOURCE_EXTENSIONS = ['.cpt', '.dxf'];
 export const MODES = ['design', 'shop'];
 export const RAM_BANDS = ['all', 'user', 'none'];
 export const RUN_STATUS = ['draft', 'issued', 'superseded'];
+/** The slab mesh option: a bottom mesh only, or a mesh on both faces. */
+export const MESH_FACES = ['bottom', 'both'];
+/** The engineer's decision on a run blocked by the punching check. */
+export const PUNCHING_DECISIONS = ['thicken', 'bypass', 'ram_ok', 'clear'];
 /** Project document sections: the original design files, the RAM models, the PT design drawings, the PT shop drawings. */
 export const FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
 /** Sheet frame defaults (paper mm); see shopdrawings/lib/sheet.mjs DEFAULT_FRAME. */
@@ -60,6 +64,7 @@ export const DRAWING_DEFAULTS = {
   status_shop: 'SHOP DRAWING - FOR CONSULTANT APPROVAL',
   default_mode: 'design',
   ram_bands: 'all',
+  mesh: 'bottom',
   spec: {},
   frame: FRAME_DEFAULTS,
   frame_dxf: null,
@@ -177,9 +182,13 @@ export async function saveUpload(req, dir, fileName, ext) {
 }
 
 /** The title-block data of one run, assembled from the settings, the project and the level. */
-export function runMeta({ settings, project, level, mode, revision, date }) {
+export function runMeta({ settings, project, level, mode, revision, date, user }) {
   const prefixBase = mode === 'shop' ? settings.shop_prefix : settings.design_prefix;
+  // the engineer running the program signs the drawings: PREPARED / DESIGNED BY carries the logged-in user's name
+  const designer = user && user.name ? String(user.name) : '';
   return {
+    designer,
+    preparedInitials: designer ? designer.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().slice(0, 4) : '',
     prefix: `${prefixBase}-${project.code}`,
     project: project.name,
     projectCode: project.code,
@@ -189,7 +198,7 @@ export function runMeta({ settings, project, level, mode, revision, date }) {
     location: project.location || '',
     company: settings.company,
     company_line: settings.company_line,
-    prepared: project.prepared || settings.prepared || '',
+    prepared: designer || project.prepared || settings.prepared || '',
     checked: project.checked || settings.checked || '',
     approved: project.approved || settings.approved || '',
     status: mode === 'shop' ? settings.status_shop : settings.status_design,

@@ -53,8 +53,10 @@ function guessLevel(fileName, levels) {
 // ------------------------------------------------------------------ helpers
 const modeLabel = (mode) => t(mode === 'shop' ? 'dw_mode_shop' : 'dw_mode_design');
 const bandsLabel = (bands) => t(`dw_bands_${bands || 'all'}`);
+const MESHES = ['bottom', 'both'];
+const meshLabel = (mesh) => t(`dw_mesh_${mesh || 'bottom'}`);
 const statusBadge = (status) => el('span', {
-  class: `badge ${status === 'issued' ? 'green' : status === 'failed' ? 'red' : status === 'superseded' ? 'grey' : status === 'running' ? 'amber' : 'blue'}`,
+  class: `badge ${status === 'issued' ? 'green' : status === 'failed' || status === 'blocked' ? 'red' : status === 'superseded' ? 'grey' : status === 'running' ? 'amber' : 'blue'}`,
   text: t(`dw_status_${status || 'running'}`),
 });
 const levelLabel = (level) => [level.code, [level.name, level.zone].filter(Boolean).join(' - ')].filter(Boolean).join(' · ');
@@ -159,6 +161,10 @@ function openProjectForm(project, after) {
         name: 'ram_bands', label: t('dw_ram_bands'), type: 'select', value: project?.ram_bands || 'all',
         options: BANDS.map((b) => ({ value: b, label: bandsLabel(b) })),
       }),
+      field({
+        name: 'mesh', label: t('dw_mesh'), type: 'select', value: project?.mesh || 'bottom', hint: t('dw_mesh_hint'),
+        options: MESHES.map((m) => ({ value: m, label: meshLabel(m) })),
+      }),
     ]),
     field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: project?.notes || '', rows: 2 }),
     field({ name: 'spec', label: t('dw_spec'), type: 'textarea', value: project?.spec && Object.keys(project.spec).length ? JSON.stringify(project.spec, null, 2) : '', rows: 3, dir: 'ltr' }),
@@ -202,6 +208,7 @@ function openLevelForm(projectId, level, after) {
       field({ name: 'wall_thickness', label: t('dw_wall_thickness'), type: 'number', value: level?.wall_thickness ?? '', min: 100, max: 2000, step: 10, hint: t('dw_wall_thickness_hint') }),
       field({ name: 'sort_order', label: t('dw_sort_order'), type: 'number', value: level?.sort_order ?? '', min: 0, max: 999 }),
     ]),
+    field({ name: 'ram_failed_columns', label: t('dw_ram_failed'), value: (level?.punching?.ram_failed || []).join(', '), dir: 'ltr', hint: t('dw_ram_failed_hint') }),
     field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: level?.notes || '', rows: 2 }),
   ]);
   const { close } = openModal({
@@ -328,6 +335,10 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
         name: 'ram_bands', label: t('dw_ram_bands'), type: 'select', value: project.ram_bands || settings.ram_bands || 'all',
         options: BANDS.map((b) => ({ value: b, label: bandsLabel(b) })),
       }),
+      field({
+        name: 'mesh', label: t('dw_mesh'), type: 'select', value: project.mesh || settings.mesh || 'bottom',
+        options: MESHES.map((m) => ({ value: m, label: meshLabel(m) })),
+      }),
     ]),
     field({ name: 'revision', label: t('dw_revision'), value: '', dir: 'ltr', hint: t('dw_revision_hint') }),
     field({ name: 'notes', label: t('dw_run_notes'), type: 'textarea', value: '', rows: 2, hint: t('dw_run_notes_hint') }),
@@ -355,7 +366,7 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
             const { file, levelId } = picked[i];
             status.textContent = fill('dw_batch_progress', { n: i + 1, total: picked.length }) + ` ${file.name}`;
             try {
-              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, revision: data.revision || undefined, notes: data.notes || undefined });
+              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, mesh: data.mesh, revision: data.revision || undefined, notes: data.notes || undefined });
               results.push({ ok: true, run, file });
             } catch (error) {
               results.push({ ok: false, error, file });
@@ -415,6 +426,7 @@ async function projectPage(projectId, navigate) {
           item(t('dw_approved'), project.approved || settings.approved, 'ltr'),
           item(t('dw_default_mode'), modeLabel(project.default_mode)),
           item(t('dw_ram_bands'), bandsLabel(project.ram_bands)),
+          item(t('dw_mesh'), meshLabel(project.mesh)),
           item(t('dw_numbering'), exampleNo(settings, project, levels[0]), 'ltr'),
         ]),
         project.notes ? el('div.small.muted.mt-1', { text: project.notes }) : null,
@@ -459,6 +471,7 @@ async function projectPage(projectId, navigate) {
               { label: t('dw_last_rev'), render: (row) => (row.last_revision != null ? `REV ${row.last_revision}` : '—') },
               { label: t('dw_last_run'), render: (row) => (row.last_run_at ? formatDate(row.last_run_at) : '—') },
               { label: t('dw_edits_list'), className: 'num', render: (row) => (row.edits?.length ? el('span.badge.amber', { text: String(row.edits.length) }) : '—') },
+              { label: t('dw_ram_failed'), render: (row) => (row.punching?.ram_failed?.length ? el('span.badge.red', { text: row.punching.ram_failed.join(', '), dir: 'ltr' }) : '—') },
               { label: t('dw_reference_short'), render: (row) => (row.reference ? el('span.badge.green', { text: `${row.reference.summary?.columns ?? '?'} ${t('dw_reference_columns')} · ${(row.reference.summary?.grid_x || []).join('')}/${(row.reference.summary?.grid_y || []).join('')}`, dir: 'ltr' }) : '—') },
               {
                 label: t('actions'),
@@ -809,7 +822,7 @@ function quantitiesPanel(project, settings) {
     // steel
     const dias = T.steel.byDia.map((d) => d.dia);
     body.append(el('div.card', {}, [
-      el('div.card-header', {}, [el('h3', { text: t('dw_qty_steel') }), el('div.spacer'), el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => downloadText(`${project.code}_steel.csv`, csvOf([['LEVEL', 'TOP kg', 'BOTTOM kg', 'OTHER kg', 'TOTAL kg', 'kg/m2', ...dias.map((d) => `T${d} kg`)], ...rowsAll.map((r) => [r.totals ? 'TOTAL' : `${r.level_code} ${r.name}`, r.steel.top_kg, r.steel.bottom_kg, r.steel.other_kg, r.steel.kg, r.steel.kg_per_m2 ?? '', ...dias.map((d) => r.steel.byDia.find((x) => x.dia === d)?.kg ?? 0)])])) }, [icon('download', 14), t('dw_export_csv')])]),
+      el('div.card-header', {}, [el('h3', { text: t('dw_qty_steel') }), el('div.spacer'), el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => downloadText(`${project.code}_steel.csv`, csvOf([['LEVEL', 'TOP kg', 'BOTTOM kg', 'OTHER kg', 'MESH kg', 'TOTAL kg', 'kg/m2', ...dias.map((d) => `T${d} kg`)], ...rowsAll.map((r) => [r.totals ? 'TOTAL' : `${r.level_code} ${r.name}`, r.steel.top_kg, r.steel.bottom_kg, r.steel.other_kg, r.steel.mesh_kg ?? 0, r.steel.kg, r.steel.kg_per_m2 ?? '', ...dias.map((d) => r.steel.byDia.find((x) => x.dia === d)?.kg ?? 0)])])) }, [icon('download', 14), t('dw_export_csv')])]),
       el('div.card-body.flush', {}, [dataTable({
         rows: rowsAll,
         columns: [
@@ -817,6 +830,7 @@ function quantitiesPanel(project, settings) {
           { label: t('dw_qty_top'), className: 'num', render: (r) => cell(r.steel.top_kg, 0) },
           { label: t('dw_qty_bottom'), className: 'num', render: (r) => cell(r.steel.bottom_kg, 0) },
           { label: t('dw_qty_other'), className: 'num', render: (r) => cell(r.steel.other_kg, 0) },
+          { label: t('dw_mesh_kg'), className: 'num', render: (r) => cell(r.steel.mesh_kg ?? 0, 0) },
           { label: t('dw_qty_kg'), className: 'num', render: (r) => el('span.bold', { text: num(r.steel.kg, 0), dir: 'ltr' }) },
           { label: t('dw_qty_kg_m2'), className: 'num', render: (r) => cell(r.steel.kg_per_m2, 2) },
           ...dias.map((d) => ({ label: `T${d}`, className: 'num', render: (r) => cell(r.steel.byDia.find((x) => x.dia === d)?.kg ?? 0, 0) })),
@@ -940,6 +954,91 @@ function runsTable(runs, project, navigate, reload) {
   });
 }
 
+// ----------------------------------------------------------- punching alert
+/**
+ * The punching check of a run: a strict red alert while columns block the run, the per-column estimate, and the
+ * engineer's decision (thicken / passing in RAM / bypass at own responsibility, with an acknowledgement).
+ */
+function punchingCard(run, project, navigate) {
+  const P = run.punching;
+  const blocking = P.blocking || [];
+  const warnings = (P.warnings || []).filter((id) => !blocking.includes(id));
+  const columns = (P.levels || []).flatMap((lv) => (lv.columns || []).map((c) => ({ ...c, level: lv.level, overridden: (lv.overridden || []).includes(c.id) })));
+  const shown = columns.filter((c) => c.status !== 'ok' || c.ram_failed || c.overridden || blocking.includes(c.id));
+  const statusOf = (c) => {
+    const parts = [];
+    if (c.ram_failed) parts.push(t('dw_punch_in_ram'));
+    parts.push(t(`dw_punch_${c.status}`));
+    if (c.ssr) parts.push(t('dw_punch_ssr'));
+    if (c.overridden) parts.push(t('dw_punch_mode_bypass'));
+    return parts.join(' · ');
+  };
+  const decision = P.decision;
+  const body = el('div.card-body', {}, [
+    blocking.length ? el('div.alert.danger', {}, [el('strong', { text: fill('dw_punch_blocked', { n: blocking.length, cols: blocking.join(', ') }) })]) : null,
+    warnings.length ? el('div.alert.warn', { text: fill('dw_punch_warn', { cols: warnings.join(', ') }) }) : null,
+    decision ? el('div.small.mt-1', {}, [el('span.badge.blue', { text: fill('dw_punch_decided', { mode: t(`dw_punch_mode_${decision.mode}`), by: decision.by, date: decision.date }) }), decision.note ? el('span.muted', { text: ` ${decision.note}` }) : null]) : null,
+    el('div.tiny.muted.mt-1', { text: t('dw_punch_hint') }),
+    shown.length ? dataTable({
+      rows: shown,
+      columns: [
+        { label: t('dw_punch_col'), render: (c) => el('span.bold', { text: `${c.id}`, dir: 'ltr' }) },
+        { label: t('dw_level'), render: (c) => c.level },
+        { label: t('dw_punch_loc'), render: (c) => t(`dw_punch_loc_${c.loc}`) },
+        { label: t('dw_punch_trib'), className: 'num', render: (c) => `${c.trib_m2}` },
+        { label: t('dw_punch_vu'), className: 'num', render: (c) => `${c.Vu_kn}` },
+        { label: t('dw_punch_ratio'), className: 'num', render: (c) => el('span', { class: c.ratio > 1 ? 'text-danger bold' : '', text: `${c.ratio}` }) },
+        { label: t('dw_punch_status'), render: (c) => el('span', { class: `badge ${blocking.includes(c.id) ? 'red' : c.status === 'ok' && !c.ram_failed ? 'green' : 'amber'}`, text: statusOf(c) }) },
+      ],
+    }) : null,
+  ]);
+  const act = async (mode, extra = {}) => {
+    try {
+      const res = await api.punchingDecision(run.id, { mode, ...extra });
+      toast(mode === 'thicken' ? t('saved') : t('dw_punch_regenerated'), 'success');
+      navigate(`drawings/${project.id}/run/${res.run.id}`);
+    } catch (error) { toastError(error); }
+  };
+  const flagged = [...new Set([...blocking, ...warnings])];
+  const decide = (mode) => {
+    const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+      el('div.alert.warn', { text: t(mode === 'bypass' ? 'dw_punch_bypass_hint' : 'dw_punch_ram_ok_hint') }),
+      field({ name: 'columns', label: t('dw_punch_columns'), value: flagged.join(', '), dir: 'ltr', hint: t('dw_punch_all_flagged') }),
+      field({ name: 'note', label: t('dw_punch_note'), type: 'textarea', value: '', rows: 2 }),
+      el('label.row', { style: { gap: '.5rem', alignItems: 'flex-start' } }, [el('input', { type: 'checkbox', name: 'acknowledge' }), el('span', { text: t('dw_punch_ack') })]),
+    ]);
+    const { close } = openModal({
+      title: t(mode === 'bypass' ? 'dw_punch_bypass' : 'dw_punch_ram_ok'),
+      body: form,
+      footer: el('div.row', {}, [
+        el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+        el('button.btn-danger.btn', {
+          type: 'button', text: t(mode === 'bypass' ? 'dw_punch_bypass' : 'dw_punch_ram_ok'),
+          onclick: async (e) => {
+            const ack = form.querySelector('input[name=acknowledge]').checked;
+            if (!ack) { toast(t('dw_punch_ack'), 'error'); return; }
+            const data = readForm(form);
+            e.currentTarget.disabled = true;
+            close();
+            await act(mode, { columns: data.columns && data.columns.trim() ? data.columns : 'all', note: data.note || undefined, acknowledge: true });
+          },
+        }),
+      ]),
+    });
+  };
+  const actions = can('drawings.create') && (blocking.length || warnings.length) && run.status !== 'superseded' ? el('div.row.wrap.mt-1', { style: { gap: '.5rem' } }, [
+    el('button.btn-secondary.btn', { type: 'button', title: t('dw_punch_thicken_hint'), onclick: () => act('thicken') }, [icon('edit', 14), t('dw_punch_thicken')]),
+    el('button.btn.btn-success', { type: 'button', title: t('dw_punch_ram_ok_hint'), onclick: () => decide('ram_ok') }, [icon('check', 14), t('dw_punch_ram_ok')]),
+    el('button.btn-danger.btn', { type: 'button', title: t('dw_punch_bypass_hint'), onclick: () => decide('bypass') }, [icon('bell', 14), t('dw_punch_bypass')]),
+    decision ? el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => act('clear') }, [t('dw_punch_clear')]) : null,
+  ]) : null;
+  if (actions) body.append(actions);
+  return el('div.card', {}, [
+    el('div.card-header', {}, [el('h3', { text: blocking.length ? t('dw_punch_title') : t('dw_punch_status') }), el('div.spacer'), statusBadge(run.status)]),
+    body,
+  ]);
+}
+
 // ---------------------------------------------------------------------- run
 async function runPage(projectId, runId, navigate) {
   const page = el('div');
@@ -955,7 +1054,7 @@ async function runPage(projectId, runId, navigate) {
   page.append(pageHeader(`${project.code} · ${levelLabel(level)} · REV ${run.revision}`, [
     el('button.btn-secondary.btn', { type: 'button', onclick: () => navigate(`drawings/${project.id}`) }, [icon('back', 16), t('back')]),
     produced && can('drawings.create') && run.mode === 'design' ? el('button.btn-secondary.btn', { type: 'button', onclick: () => navigate(`drawings/${project.id}/run/${run.id}/edit`) }, [icon('edit', 16), t('dw_edit_rebar')]) : null,
-    produced && can('drawings.create') && run.status !== 'issued' ? el('button.btn-success.btn', {
+    produced && can('drawings.create') && run.status !== 'issued' && run.status !== 'blocked' ? el('button.btn-success.btn', {
       type: 'button',
       onclick: async () => {
         if (!(await confirmDialog(t('dw_issue_confirm'), { danger: false }))) return;
@@ -978,6 +1077,8 @@ async function runPage(projectId, runId, navigate) {
     kpi(t('dw_sheets'), String(run.sheet_count)),
     kpi(t('dw_mode'), modeLabel(run.mode)),
     kpi(t('dw_ram_bands'), bandsLabel(run.ram_bands)),
+    kpi(t('dw_mesh'), meshLabel(run.mesh)),
+    kpi(t('dw_designer'), run.created_by_name || '—'),
     kpi(t('dw_duration'), run.duration_ms ? `${(run.duration_ms / 1000).toFixed(1)} s` : '—'),
     kpi(t('dw_source'), run.source_name || run.source_file || '—'),
   ]));
@@ -985,6 +1086,7 @@ async function runPage(projectId, runId, navigate) {
   if (run.status === 'failed') {
     page.append(el('div.alert.danger', { text: run.error || t('error') }));
   }
+  if (run.punching) page.append(punchingCard(run, project, navigate));
   // revision notes and status
   const notesBox = el('textarea', { rows: 2, placeholder: t('dw_run_notes_hint') });
   notesBox.value = run.notes || '';

@@ -229,7 +229,19 @@ export function readRamConcept(path) {
     const type = rebarTypes.get(r.BarType) || { dia: 10 };
     return { id: `SR${i + 1}`, a: point(r.Point0), b: point(r.Point1), dia: type.dia, legs: r.StirrupLegs, spacing: Math.round(L(r.StirrupSpacing)), length: Math.round(dist(point(r.Point0), point(r.Point1))) };
   });
-  const punching = punchChecks.map((r) => ({ name: r.Name, p: point(r.Point0), ssr: r.SsrSystem, coverToCgs: L(r.CoverToCGS) }));
+  // the punching checks carry their settings only (RAM keeps no pass / fail result in the file): the tributary area RAM
+  // computed (0.01 mm² → m²) and the cover to the bar centroid feed the office's indicative check (lib/punching.mjs)
+  const punching = punchChecks.map((r) => ({ name: r.Name, p: point(r.Point0), ssr: r.SsrSystem, coverToCgs: L(r.CoverToCGS), tribArea: r.AutoTribArea > 0 ? r.AutoTribArea / 1e8 : null, ssrDesired: !!r.SsrDesignDesired }));
+  // area loads by loading type (RAM units: N per 0.01 mm² → kN/m² is x 1e5; negative = downwards). The loading layer
+  // (self_dead / other_dead / live_*) is reached through the category → loading level → loading layer chain.
+  const loadingTypes = new Map(rows('LoadingLayer').map((r) => [r.UID, r.LoadingType || String(r.Name || '').toLowerCase()]));
+  const loadingLevels = new Map(rows('LoadingLevel').map((r) => [r.UID, r.ParentUID]));
+  const loadCats = new Map(rows('AreaLoadCategory').map((r) => [r.UID, loadingTypes.get(loadingLevels.get(r.ParentUID)) || loadingTypes.get(r.ParentUID) || 'unknown']));
+  const areaLoads = rows('AreaLoad').filter((r) => r.MultiPoint).map((r) => {
+    const type = loadCats.get(r.ParentUID) || 'unknown';
+    const q = -Math.min(r.ALFz0 ?? 0, r.ALFz1 ?? 0, r.ALFz2 ?? 0) * 1e5; // kN/m², downwards positive
+    return { type: /live/.test(type) ? 'live' : /other_dead|dead/.test(type) && !/self/.test(type) ? 'dead' : type, q: Math.round(q * 100) / 100, polygon: cleanPolygon(points(r.MultiPoint)) };
+  }).filter((l) => l.polygon.length >= 3);
   // stud rail sets (SSR) designed by RAM (or drawn by the user) at the columns that need punching reinforcement:
   // the rails (start / end per rail), the studs per rail and the stud spacing; the office draws its stirrup detail instead
   const ssrSystems = byUid(rows('SsrSystem'));
@@ -255,7 +267,7 @@ export function readRamConcept(path) {
     materials: { fc, fcu: concrete.FcuFinal ? Math.round(MPa(concrete.FcuFinal)) : null, fy, coverTop, coverBot, concreteName: concrete.Name, rebarTypes: [...rebarTypes.values()].map((t) => ({ name: t.Name, dia: t.dia, area: t.area })) },
     pt: { system: ptSystem.Name, strandArea, fpu: strand.Fpu ? MPa(strand.Fpu) : null, jackStress: anchor.JackStress ? MPa(anchor.JackStress) : null, strandsPerDuct: duct.StrandsPerDuct, ductType: duct.PTSystemType, ductWidth: duct.DuctWidth ? L(duct.DuctWidth) : null, ductHeight: duct.DuctHeight ? L(duct.DuctHeight) : null, fse: ptSystem.Fse ? MPa(ptSystem.Fse) : null },
     slab: { outline, holes, allLoops, bodies, tocs, baseThickness, thicknesses: thicknesses.map(([thk, n]) => ({ thickness: thk, elements: n })), thickZones, areas: slabAreas, elements },
-    columns, walls, beams, tendons, bands, shear, punching, ssr, background,
+    columns, walls, beams, tendons, bands, shear, punching, ssr, areaLoads, background,
   };
 }
 
@@ -372,6 +384,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
         shear: ram.shear.filter((s) => inside({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, body)).map((s) => ({ ...s, a: R(s.a), b: R(s.b) })),
         punching: ram.punching.filter((p) => near(p.p, body, 500)).map((p) => ({ ...p, p: R(p.p) })),
         ssr: (ram.ssr || []).filter((st) => near(st.loc, body, 500)).map((st) => ({ ...st, loc: R(st.loc), rails: st.rails.map((r) => ({ ...r, a: R(r.a), b: R(r.b) })) })),
+        areaLoads: (ram.areaLoads || []).filter((l) => l.polygon.some((p) => inside(p, body)) || inside(centroid(l.polygon), body)).map((l) => ({ ...l, polygon: l.polygon.map(R) })),
         pt: ram.pt,
       },
     };

@@ -251,6 +251,7 @@ export const api = {
   updateDrawingReference: (levelId, data) => request('PATCH', `/api/drawings/levels/${levelId}/reference`, data),
   deleteDrawingReference: (levelId) => request('DELETE', `/api/drawings/levels/${levelId}/reference`),
   prepareBeamStrips: (runId) => request('POST', `/api/drawings/runs/${runId}/beam-strips`, {}),
+  punchingDecision: (runId, data) => request('POST', `/api/drawings/runs/${runId}/punching-decision`, data),
   beamStripsUrl: (runId) => `/api/drawings/runs/${runId}/beam-strips`,
   drawingRunQuantities: (id) => request('GET', `/api/drawings/runs/${id}/quantities`),
   drawingProjectQuantities: (projectId) => request('GET', `/api/drawings/projects/${projectId}/quantities`),

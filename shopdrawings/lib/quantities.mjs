@@ -41,6 +41,23 @@ export function steelOf(level, sheets) {
   };
 }
 
+/**
+ * The slab mesh of a design level made from a RAM model (the office mesh written in the notes, not scheduled on the
+ * sheets): both directions on each face, laps and stock allowance included, from the net slab area.
+ */
+export function meshOf(level) {
+  if (!level.ram || !level.meshSpec) return null;
+  const [dia, spacing] = level.meshSpec;
+  if (!dia || !spacing) return null;
+  const faces = level.topMesh ? 2 : 1;
+  const gross = area(level.outline) / 1e6;
+  const openings = (level.openings || []).map((o) => R.regionPolygon(o)).reduce((s, p) => s + area(p) / 1e6, 0);
+  const net = Math.max(0, gross - openings);
+  const kgPerM = R.barWeightPerM(dia);
+  const m = net * (1000 / spacing) * 2 * faces * 1.12; // both directions, 12 % laps and waste
+  return { dia, spacing, faces, faces_label: faces === 2 ? 'TOP & BOTTOM' : 'BOTTOM', net_area_m2: r1(net), total_m: r1(m), kg: r1(m * kgPerM) };
+}
+
 /** The concrete of one level: slab net of openings, the extra of drops / thickened zones, the extra of beams below the slab, formwork. */
 export function concreteOf(level) {
   const gross = area(level.outline) / 1e6;
@@ -117,10 +134,20 @@ export function quantities(model, pack) {
     const concrete = concreteOf(level);
     const steel = steelOf(level, sheets);
     const cables = cablesOf(level);
+    const mesh = meshOf(level);
+    if (mesh) {
+      // the mesh joins the take-off with the scheduled bars (its own line, and in the diameter totals)
+      steel.mesh_kg = mesh.kg;
+      steel.kg = r1(steel.kg + mesh.kg);
+      if (mesh.faces === 2) steel.top_kg = r1(steel.top_kg + mesh.kg / 2);
+      steel.bottom_kg = r1(steel.bottom_kg + (mesh.faces === 2 ? mesh.kg / 2 : mesh.kg));
+      const d = steel.byDia.find((x) => x.dia === mesh.dia);
+      if (d) { d.kg = r1(d.kg + mesh.kg); d.total_m = r1(d.total_m + mesh.total_m); } else { steel.byDia.push({ dia: mesh.dia, total_m: mesh.total_m, kg: mesh.kg, count: 0 }); steel.byDia.sort((a, b) => a.dia - b.dia); }
+    }
     return {
       id: level.id, name: level.name, thickness: level.thickness,
       steel: { ...steel, kg_per_m2: concrete.net_area_m2 ? r2(steel.kg / concrete.net_area_m2) : null, kg_per_m3: concrete.total_m3 ? r1(steel.kg / concrete.total_m3) : null },
-      concrete, cables,
+      mesh, concrete, cables,
     };
   });
   const sumBy = (get) => r1(levels.reduce((s, l) => s + (get(l) || 0), 0));
@@ -128,7 +155,7 @@ export function quantities(model, pack) {
   for (const l of levels) for (const d of l.steel.byDia) { byDia[d.dia] = byDia[d.dia] || { dia: d.dia, total_m: 0, kg: 0, count: 0 }; byDia[d.dia].total_m += d.total_m; byDia[d.dia].kg += d.kg; byDia[d.dia].count += d.count; }
   const ptLevels = levels.filter((l) => l.cables);
   const totals = {
-    steel: { kg: sumBy((l) => l.steel.kg), top_kg: sumBy((l) => l.steel.top_kg), bottom_kg: sumBy((l) => l.steel.bottom_kg), other_kg: sumBy((l) => l.steel.other_kg), byDia: Object.values(byDia).sort((a, b) => a.dia - b.dia).map((d) => ({ ...d, total_m: r1(d.total_m), kg: r1(d.kg) })) },
+    steel: { kg: sumBy((l) => l.steel.kg), top_kg: sumBy((l) => l.steel.top_kg), bottom_kg: sumBy((l) => l.steel.bottom_kg), other_kg: sumBy((l) => l.steel.other_kg), mesh_kg: sumBy((l) => l.steel.mesh_kg), byDia: Object.values(byDia).sort((a, b) => a.dia - b.dia).map((d) => ({ ...d, total_m: r1(d.total_m), kg: r1(d.kg) })) },
     concrete: { gross_area_m2: sumBy((l) => l.concrete.gross_area_m2), openings_m2: sumBy((l) => l.concrete.openings_m2), net_area_m2: sumBy((l) => l.concrete.net_area_m2), slab_m3: sumBy((l) => l.concrete.slab_m3), drops_m3: sumBy((l) => l.concrete.drops_m3), beams_m3: sumBy((l) => l.concrete.beams_m3), total_m3: sumBy((l) => l.concrete.total_m3), formwork_m2: sumBy((l) => l.concrete.formwork_m2), edge_formwork_m2: sumBy((l) => l.concrete.edge_formwork_m2) },
     cables: ptLevels.length ? {
       tendons: ptLevels.reduce((s, l) => s + l.cables.tendons, 0), strands: ptLevels.reduce((s, l) => s + l.cables.strands, 0),

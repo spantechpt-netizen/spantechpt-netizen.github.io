@@ -201,7 +201,8 @@ export class Sheet {
    * The office's own frame: the entities of a DXF drawn in paper mm (A1 origin at the bottom-left corner), placed on
    * the sheet in place of the built-in frame, references block and title block. `<TOKENS>` in its texts are replaced
    * with the sheet's data (PROJECT, PROJECT_CODE, CLIENT, CONSULTANT, CONTRACTOR, LOCATION, COMPANY, COMPANY_LINE,
-   * TITLE, LEVEL, DRAWING_NO, REV, DATE, SCALE, SHEET, PREPARED, CHECKED, APPROVED, STATUS, GRID_REF, INDEX).
+   * TITLE, LEVEL, DRAWING_NO, REV, DATE, SCALE, SHEET, PREPARED, DESIGNER (the engineer who ran the program), CHECKED,
+   * APPROVED, STATUS, GRID_REF, INDEX).
    */
   customFrame(entities, fields = {}) {
     const pp = this.pp;
@@ -360,9 +361,10 @@ export class Sheet {
     top = y; y = row(15);
     const c3c = [x0, x0 + w / 3, x0 + (2 * w) / 3];
     vline(c3c[1], y, top); vline(c3c[2], y, top);
-    [['PREPARED', meta.prepared], ['CHECKED', meta.checked], ['APPROVED', meta.approved]].forEach(([k, v], i) => {
+    // PREPARED carries the engineer who ran the program (meta.designer) - the office name only when no one is logged in
+    [['PREPARED / DESIGNED BY', meta.designer || meta.prepared], ['CHECKED', meta.checked], ['APPROVED', meta.approved]].forEach(([k, v], i) => {
       label(c3c[i], top, k);
-      pp.text(c3c[i] + 1.5, top - 7.5, v || '', { layer: 'TEXT-TITLE', h: 2 });
+      pp.text(c3c[i] + 1.5, top - 7.5, (v || '').toUpperCase(), { layer: 'TEXT-TITLE', h: v && v.length > 22 ? 1.6 : 2 });
       pp.text(c3c[i] + 1.5, y + 1.3, 'SIGN / DATE: ..........', { layer: 'TITLE', h: 1.4 });
     });
     // index / code / block

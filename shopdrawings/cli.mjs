@@ -35,6 +35,7 @@ import { composePackage } from './lib/sheets.mjs';
 import { quantities } from './lib/quantities.mjs';
 import { readReferencePlan, applyReference } from './lib/reference.mjs';
 import { beamSchedule } from './lib/beam-strips.mjs';
+import { punchingCheck } from './lib/punching.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
@@ -94,7 +95,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
     const raw = ramToModel(ram, { levelName, levelId: meta.levelId, spec });
     useReferencePlan(raw, ram, spec);
-    for (const l of raw.levels) l.beamSchedule = beamSchedule(ram, l);
+    for (const l of raw.levels) { l.beamSchedule = beamSchedule(ram, l); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
     model = prepareRamDesign(raw, { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
@@ -106,7 +107,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
     useReferencePlan(model, ram, spec);
-    for (const l of model.levels) l.beamSchedule = beamSchedule(ram, l);
+    for (const l of model.levels) { l.beamSchedule = beamSchedule(ram, l); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {
@@ -136,8 +137,10 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
   if (pack.plan) writeFileSync(join(out, 'plan.json'), JSON.stringify(pack.plan));
   const qty = quantities(model, pack);
   writeFileSync(join(out, 'quantities.json'), JSON.stringify(qty, null, 2));
+  const punching = model.levels.map((l) => (l.punchingCheck ? { level: l.id, name: l.name, ...l.punchingCheck, overridden: l.punchingOverridden || [] } : null)).filter(Boolean);
+  if (punching.length) writeFileSync(join(out, 'punching.json'), JSON.stringify(punching, null, 2));
   writeFileSync(join(out, 'REPORT.md'), report(model, pack));
-  return { model, pack, files, quantities: qty };
+  return { model, pack, files, quantities: qty, punching };
 }
 
 /**
@@ -199,6 +202,16 @@ function report(model, pack) {
   L.push(design
     ? `Reinforcement added from the General Details: **${Math.round(total).toLocaleString('en-US')} kg** (the designer's own bars are kept as drawn and not scheduled here).`
     : `Total scheduled reinforcement: **${Math.round(total).toLocaleString('en-US')} kg** (cables excluded - template only).`);
+  const checked = model.levels.filter((l) => l.punchingCheck && l.punchingCheck.columns.length);
+  if (checked.length) {
+    L.push('');
+    L.push('## Indicative punching check (RAM keeps no punching result in the file - the RAM punching report governs)');
+    L.push('');
+    L.push('| Level | Column | Location | h | Trib. m² | wu kN/m² | Vu kN | vu MPa | phi.vc MPa | Ratio | Status |');
+    L.push('|---|---|---|---|---|---|---|---|---|---|---|');
+    for (const l of checked) for (const c of l.punchingCheck.columns) L.push(`| ${l.id} | ${c.id} | ${c.loc} | ${c.h} | ${c.trib_m2} | ${c.wu_kn_m2} | ${c.Vu_kn} | ${c.vu_mpa} | ${c.phi_vc_mpa} | ${c.ratio} | ${c.status}${c.ssr ? ' (SSR in RAM)' : ''}${c.ram_failed ? ' (FAILS IN RAM)' : ''}${(l.punchingOverridden || []).includes(c.id) ? ' (PS AT THE ENGINEER\'S RESPONSIBILITY)' : ''} |`);
+    for (const l of checked) if (l.punchingCheck.flagged.length) L.push(`\n**${l.id}: columns to look at in the RAM punching report: ${l.punchingCheck.flagged.join(', ')}** (blocking: ${l.punchingCheck.blocking.join(', ') || 'none'}).`);
+  }
   if (!design) {
     const checks = pack.sheets.flatMap((s) => s.checks.map((c) => ({ ...c, level: s.level })));
     const governed = checks.filter((c) => c.asProv < c.asReq);

@@ -57,6 +57,10 @@ addColumn('drawing_levels', 'ref_name', 'TEXT');
 addColumn('drawing_levels', 'ref_json', 'TEXT');
 addColumn('drawing_runs', 'beams_json', 'TEXT');
 addColumn('drawing_runs', 'beam_strips_json', 'TEXT');
+addColumn('drawing_projects', 'mesh', 'TEXT');
+addColumn('drawing_runs', 'mesh', 'TEXT');
+addColumn('drawing_runs', 'punching_json', 'TEXT');
+addColumn('drawing_levels', 'punching_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

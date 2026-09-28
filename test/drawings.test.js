@@ -430,6 +430,53 @@ test('beam design through RAM: the run\'s model comes back with one strip per be
   assert.equal(noBeams.status, 400, 'a model without beams is refused');
 }, { timeout: 180000 });
 
+test('the punching alert: a column failing punching blocks the run, the engineer\'s bypass regenerates it with PS in their name, the mesh option and the designer are kept on the run', async () => {
+  // the engineer reports a column failing in RAM on the level
+  const lv = await api('PATCH', `/api/drawings/levels/${level.id}`, { ram_failed_columns: 'a/1' });
+  assert.equal(lv.status, 200, JSON.stringify(lv.body));
+  assert.deepEqual(lv.body.level.punching.ram_failed, ['A/1']);
+  const cpt = readFileSync(await buildSyntheticCpt(workDir, { loads: { dead: 2, live: 3 } }));
+  const blocked = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-punch.cpt&mode=design&mesh=both`, cpt);
+  assert.equal(blocked.status, 201, JSON.stringify(blocked.body));
+  const run = blocked.body.run;
+  assert.equal(run.status, 'blocked', 'a column failing in RAM blocks the run');
+  assert.equal(run.mesh, 'both');
+  assert.deepEqual(run.punching.blocking, ['A/1']);
+  assert.ok(run.punching.levels[0].columns.length === 5 && run.punching.levels[0].columns.find((c) => c.id === 'A/1').ram_failed);
+  assert.ok(run.quantities.levels[0].mesh.faces === 2 && run.quantities.levels[0].steel.mesh_kg > 0, 'the mesh option reaches the take-off');
+  const issue = await api('PATCH', `/api/drawings/runs/${run.id}`, { status: 'issued' });
+  assert.equal(issue.status, 400, 'a blocked run cannot be issued');
+  const sub = await api('POST', `/api/drawings/projects/${project.id}/submittals`, { run_ids: [run.id] });
+  assert.equal(sub.status, 400, 'nor submitted');
+  const noAck = await api('POST', `/api/drawings/runs/${run.id}/punching-decision`, { mode: 'bypass' });
+  assert.equal(noAck.status, 400, 'the bypass needs the acknowledgement');
+  const thick = await api('POST', `/api/drawings/runs/${run.id}/punching-decision`, { mode: 'thicken' });
+  assert.equal(thick.status, 201, JSON.stringify(thick.body));
+  assert.equal(thick.body.run.status, 'blocked', 'thickening keeps the run blocked until a new model comes');
+  const bypass = await api('POST', `/api/drawings/runs/${run.id}/punching-decision`, { mode: 'bypass', columns: 'all', note: 'client refused a drop', acknowledge: true });
+  assert.equal(bypass.status, 201, JSON.stringify(bypass.body));
+  const next = bypass.body.run;
+  assert.equal(next.status, 'draft', 'regenerated under the bypass');
+  assert.equal(next.revision, run.revision, 'at the same revision');
+  assert.deepEqual(next.punching.levels[0].overridden, ['A/1']);
+  assert.equal(next.punching.decision.mode, 'bypass'); assert.equal(next.punching.decision.by, 'Test Admin');
+  const old = await api('GET', `/api/drawings/runs/${run.id}`);
+  assert.equal(old.body.run.status, 'superseded');
+  const ps = next.sheets.find((s) => /PUNCHING/.test(s.title));
+  const dxf = await download(`/api/drawings/runs/${next.id}/files/dxf/${ps.file}.dxf`);
+  assert.equal(dxf.status, 200);
+  const text = dxf.bytes.toString('latin1');
+  assert.ok(text.includes("PS AT THE DESIGN ENGINEER'S RESPONSIBILITY") && text.includes('TEST ADMIN'), 'the sheet names the engineer who bypassed');
+  assert.ok(text.includes('\n1\nPREPARED / DESIGNED BY\n'), 'the logged-in engineer signs the title block');
+  // the decision is kept on the level and cleared on request
+  const detail = await api('GET', `/api/drawings/projects/${project.id}`);
+  assert.equal(detail.body.levels.find((l) => l.id === level.id).punching.decision.mode, 'bypass');
+  const cleared = await api('POST', `/api/drawings/runs/${next.id}/punching-decision`, { mode: 'clear' });
+  assert.equal(cleared.status, 201);
+  assert.equal((await api('GET', `/api/drawings/projects/${project.id}`)).body.levels.find((l) => l.id === level.id).punching.decision, undefined);
+  await api('PATCH', `/api/drawings/levels/${level.id}`, { ram_failed_columns: '' });
+}, { timeout: 180000 });
+
 test('a bad file is refused and the run is recorded as failed', async () => {
   const wrong = await upload(`/api/drawings/levels/${level.id}/runs?name=plan.pdf`, Buffer.from('%PDF-1.4'));
   assert.equal(wrong.status, 400);
@@ -437,7 +484,7 @@ test('a bad file is refused and the run is recorded as failed', async () => {
   assert.equal(broken.status, 400, JSON.stringify(broken.body));
   const detail = await api('GET', `/api/drawings/projects/${project.id}`);
   assert.ok(detail.body.runs.some((r) => r.status === 'failed'));
-  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 7, 'three uploads, one regeneration, one framed run, one on the reference plan, one with beams');
+  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 9, 'three uploads, one regeneration, one framed run, one on the reference plan, one with beams, one blocked and its bypass');
 });
 
 test('deleting the project removes its levels, runs and files', async () => {

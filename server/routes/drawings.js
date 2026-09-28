@@ -41,11 +41,12 @@ import { badRequest, notFound, conflict } from '../http.js';
 import { str, int, oneOf, jsonField, COUNTRIES } from '../validate.js';
 import {
   drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, saveUpload, runMeta, levelTitle,
-  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, FILE_CATEGORIES,
+  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, MESH_FACES, PUNCHING_DECISIONS, FILE_CATEGORIES,
   framePath, projectFile, projectDir, referencePath, SUBMITTAL_STATUS, SUBMITTAL_PURPOSES,
 } from '../drawings.js';
 import { submittalCode, submittalItems, submittalHtml } from '../submittals.js';
 import { costStudy } from '../../shopdrawings/lib/quantities.mjs';
+import { blockingAfter } from '../../shopdrawings/lib/punching.mjs';
 
 const PROJECT_COLUMNS = `p.*, u.name AS owner_name, u.name_ar AS owner_name_ar,
   (SELECT COUNT(*) FROM drawing_levels l WHERE l.project_id = p.id) AS level_count,
@@ -86,7 +87,8 @@ function publicRun(row, { withReport = false } = {}) {
   out.quantities = parseJson(row.quantities_json, null);
   out.beams = parseJson(row.beams_json, []);
   out.beam_strips = parseJson(row.beam_strips_json, null);
-  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json; delete out.beams_json; delete out.beam_strips_json;
+  out.punching = parseJson(row.punching_json, null);
+  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json; delete out.beams_json; delete out.beam_strips_json; delete out.punching_json;
   if (!withReport) delete out.report_md;
   return out;
 }
@@ -143,6 +145,7 @@ function projectFields(body, { partial = false } = {}) {
     approved: str(body.approved, 'approved', { max: 120, fallback: undefined }),
     default_mode: oneOf(body.default_mode, 'default_mode', MODES, { fallback: partial ? undefined : 'design' }),
     ram_bands: oneOf(body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: partial ? undefined : 'all' }),
+    mesh: oneOf(body.mesh, 'mesh', MESH_FACES, { fallback: partial ? undefined : 'bottom' }),
     spec_json: body.spec === undefined ? undefined : JSON.stringify(jsonField(body.spec, 'spec', {}) || {}),
     notes: str(body.notes, 'notes', { max: 4000, fallback: undefined }),
   };
@@ -158,6 +161,12 @@ function levelFields(body, { partial = false } = {}) {
     notes: str(body.notes, 'notes', { max: 2000, fallback: undefined }),
   };
 }
+
+/** "A/1, B/3 C4" → ['A/1', 'B/3', 'C4'] (the column ids as printed on the framing sheet). */
+const columnList = (v) => (Array.isArray(v) ? v : String(v || '').split(/[,;\s]+/)).map((x) => String(x).trim().toUpperCase()).filter(Boolean).slice(0, 500);
+
+/** The level's punching record: the columns the engineer reports failing in RAM, and the decision taken on the last blocked run. */
+function levelPunching(level) { return parseJson(level.punching_json, {}) || {}; }
 
 const CONTENT_TYPES = { dxf: 'application/dxf', preview: 'image/svg+xml', schedules: 'text/csv; charset=utf-8', root: 'application/octet-stream' };
 
@@ -220,7 +229,7 @@ function projectQuantities(project) {
   for (const l of levels) for (const d of l.steel.byDia || []) { byDia[d.dia] = byDia[d.dia] || { dia: d.dia, total_m: 0, kg: 0, count: 0 }; byDia[d.dia].total_m += d.total_m; byDia[d.dia].kg += d.kg; byDia[d.dia].count += d.count; }
   const pt = levels.filter((l) => l.cables);
   const totals = {
-    steel: { kg: sum((l) => l.steel.kg), top_kg: sum((l) => l.steel.top_kg), bottom_kg: sum((l) => l.steel.bottom_kg), other_kg: sum((l) => l.steel.other_kg), byDia: Object.values(byDia).sort((a, b) => a.dia - b.dia).map((d) => ({ ...d, total_m: r1(d.total_m), kg: r1(d.kg) })) },
+    steel: { kg: sum((l) => l.steel.kg), top_kg: sum((l) => l.steel.top_kg), bottom_kg: sum((l) => l.steel.bottom_kg), other_kg: sum((l) => l.steel.other_kg), mesh_kg: sum((l) => l.steel.mesh_kg), byDia: Object.values(byDia).sort((a, b) => a.dia - b.dia).map((d) => ({ ...d, total_m: r1(d.total_m), kg: r1(d.kg) })) },
     concrete: { gross_area_m2: sum((l) => l.concrete.gross_area_m2), openings_m2: sum((l) => l.concrete.openings_m2), net_area_m2: sum((l) => l.concrete.net_area_m2), slab_m3: sum((l) => l.concrete.slab_m3), drops_m3: sum((l) => l.concrete.drops_m3), beams_m3: sum((l) => l.concrete.beams_m3), total_m3: sum((l) => l.concrete.total_m3), formwork_m2: sum((l) => l.concrete.formwork_m2), edge_formwork_m2: sum((l) => l.concrete.edge_formwork_m2) },
     cables: pt.length ? { tendons: pt.reduce((s, l) => s + l.cables.tendons, 0), strands: pt.reduce((s, l) => s + l.cables.strands, 0), tendon_m: sum((l) => l.cables?.tendon_m), strand_m: sum((l) => l.cables?.strand_m), cutting_m: sum((l) => l.cables?.cutting_m), kg: sum((l) => l.cables?.kg), live_ends: pt.reduce((s, l) => s + l.cables.live_ends, 0), dead_ends: pt.reduce((s, l) => s + l.cables.dead_ends, 0), duct_small_m: sum((l) => l.cables?.duct_small_m), duct_large_m: sum((l) => l.cables?.duct_large_m) } : null,
   };
@@ -292,7 +301,7 @@ export function register(router) {
        WHERE f.project_id = ? ORDER BY f.category, f.created_at DESC`,
       project.id,
     );
-    for (const l of levels) { l.edits = parseJson(l.edits_json, []); l.reference = l.ref_file ? { name: l.ref_name, ...parseJson(l.ref_json, {}) } : null; delete l.ref_json; }
+    for (const l of levels) { l.edits = parseJson(l.edits_json, []); l.reference = l.ref_file ? { name: l.ref_name, ...parseJson(l.ref_json, {}) } : null; l.punching = levelPunching(l); delete l.ref_json; delete l.punching_json; }
     const submittals = all(`SELECT ${SUBMITTAL_COLUMNS} FROM drawing_submittals s LEFT JOIN users u ON u.id = s.created_by WHERE s.project_id = ? ORDER BY s.serial DESC`, project.id).map(publicSubmittal);
     return { project: publicProject(project), levels, runs, files, submittals, settings: drawingSettings() };
   });
@@ -345,8 +354,16 @@ export function register(router) {
     if (fields.code && get('SELECT id FROM drawing_levels WHERE project_id = ? AND code = ? AND id <> ?', level.project_id, fields.code, level.id)) {
       throw conflict(`Level ${fields.code} is already registered`, `الدور ${fields.code} متسجل قبل كده`);
     }
+    if (body.ram_failed_columns !== undefined) {
+      // the columns RAM reports as failing punching (the program cannot read RAM's verdict from the file)
+      const rec = levelPunching(level);
+      rec.ram_failed = columnList(body.ram_failed_columns);
+      fields.punching_json = JSON.stringify(rec);
+    }
     update('drawing_levels', level.id, fields);
-    return { level: loadLevel(level.id) };
+    const out = loadLevel(level.id);
+    out.punching = levelPunching(out); delete out.punching_json;
+    return { level: out };
   });
 
   router.delete('/api/drawings/levels/:id', async ({ params, user }) => {
@@ -368,6 +385,7 @@ export function register(router) {
     const settings = drawingSettings();
     const mode = oneOf(query.mode ?? body.mode, 'mode', MODES, { fallback: sourceRun?.mode || project.default_mode || settings.default_mode || 'design' });
     const ramBands = oneOf(query.ram_bands ?? body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: sourceRun?.ram_bands || project.ram_bands || settings.ram_bands || 'all' });
+    const mesh = oneOf(query.mesh ?? body.mesh, 'mesh', MESH_FACES, { fallback: sourceRun?.mesh || project.mesh || settings.mesh || 'bottom' });
     let revision = str(query.revision ?? body.revision, 'revision', { max: 6, fallback: null });
     if (revision === null) {
       const previous = get("SELECT COUNT(*) AS n FROM drawing_runs WHERE level_id = ? AND mode = ? AND status <> 'failed' AND status <> 'running'", level.id, mode).n;
@@ -378,10 +396,10 @@ export function register(router) {
     const notes = str(query.notes ?? body.notes, 'notes', { max: 2000, fallback: null });
     const edits = parseJson(level.edits_json, []);
 
-    const meta = runMeta({ settings, project, level, mode, revision });
+    const meta = runMeta({ settings, project, level, mode, revision, user });
     const serial = nextCounter(`drawing_runs:${project.id}`);
     const runId = insert('drawing_runs', {
-      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, notes,
+      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, mesh, notes,
       prefix: meta.prefix, source_name: str(query.name ?? body.name, 'name', { max: 200, fallback: sourceRun?.source_name || null }), status: 'running', created_by: user.id,
       edits_json: edits.length ? JSON.stringify(edits) : null,
     });
@@ -400,10 +418,22 @@ export function register(router) {
       update('drawing_runs', runId, { source_file: source.file, source_bytes: source.bytes });
 
       const reference = level.ref_file ? { file: referencePath(project.id, level.id), ...parseJson(level.ref_json, {}) } : null;
+      // the punching record of the level: the columns failing in RAM, and the engineer's decision on the earlier blocked run
+      const punchRec = levelPunching(level);
+      const decision = punchRec.decision && punchRec.decision.mode !== 'clear' ? punchRec.decision : null;
+      const projectSpec = parseJson(project.spec_json, {});
+      const punchingSpec = {
+        ...((settings.spec || {}).punching || {}), ...(projectSpec.punching || {}),
+        ramFailed: punchRec.ram_failed || [],
+        ...(decision?.mode === 'ram_ok' ? { ramOk: decision.columns === 'all' ? (decision.flagged || []) : decision.columns } : {}),
+        ...(decision?.mode === 'bypass' ? { override: { columns: decision.columns, by: decision.by, date: decision.date, note: decision.note } } : {}),
+      };
       const spec = {
         ...(settings.spec || {}),
-        ...parseJson(project.spec_json, {}),
+        ...projectSpec,
         ramBands,
+        mesh,
+        punching: punchingSpec,
         ...(level.wall_thickness ? { wallThickness: level.wall_thickness } : {}),
         ...(edits.length ? { edits } : {}),
         ...(reference ? { reference } : {}),
@@ -419,8 +449,14 @@ export function register(router) {
       await writeRunZip(out, join(dir, 'package.zip'), folder);
       let report = null;
       try { report = await readFile(join(out, 'REPORT.md'), 'utf8'); } catch { /* optional */ }
+      // the punching check: a column failing in RAM (as reported) or beyond what stirrups can carry (as estimated) blocks the
+      // run until the engineer decides (thicken / bypass at own responsibility / passing in RAM)
+      const punching = (result.punching || []).map((pc) => ({ ...pc, blocking_after: blockingAfter(pc, decision) }));
+      const blocking = punching.flatMap((pc) => pc.blocking_after);
+      const punchingRec = punching.length ? { levels: punching, blocking, warnings: punching.flatMap((pc) => pc.warnings || []), decision, ram_failed: punchRec.ram_failed || [] } : null;
       update('drawing_runs', runId, {
-        status: 'draft',
+        status: blocking.length ? 'blocked' : 'draft',
+        punching_json: punchingRec ? JSON.stringify(punchingRec) : null,
         sheet_count: result.sheets.length,
         sheets_json: JSON.stringify(result.sheets),
         assumptions_json: JSON.stringify(result.assumptions),
@@ -455,6 +491,46 @@ export function register(router) {
     return { run: await startRun({ sourceRun, level, project, user, body }) };
   });
 
+  /**
+   * The engineer's decision on a run blocked by the punching check. `thicken` keeps the run blocked (a thickened model
+   * is uploaded as a new run); `ram_ok` declares the columns passing in RAM (the estimate was conservative) and
+   * regenerates without punching reinforcement at them; `bypass` records the acknowledgement (name, date, note) and
+   * regenerates with the office punching detail at those columns, printed as the design engineer's responsibility;
+   * `clear` forgets the decision. The decision is kept on the level so the next runs of the level carry it.
+   */
+  router.post('/api/drawings/runs/:id/punching-decision', async ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const run = loadRun(params.id);
+    const level = loadLevel(run.level_id);
+    const project = loadProject(level.project_id);
+    const mode = oneOf(body.mode, 'mode', PUNCHING_DECISIONS);
+    const rec = levelPunching(level);
+    const current = publicRun(run).punching;
+    if (mode === 'clear') {
+      delete rec.decision;
+      update('drawing_levels', level.id, { punching_json: JSON.stringify(rec) });
+      audit(user.id, 'drawing_level', level.id, 'punching_decision', { mode });
+      return { run: publicRun(run), decision: null };
+    }
+    if (!current || !(current.blocking || []).length && !(current.warnings || []).length && mode !== 'thicken') throw badRequest('This run is not blocked by the punching check', 'الإصدار ده مش متوقف بسبب البانشنج');
+    if ((mode === 'bypass' || mode === 'ram_ok') && body.acknowledge !== true) throw badRequest('The decision needs the engineer\'s acknowledgement', 'القرار محتاج إقرار المهندس');
+    const flagged = [...new Set((current?.levels || []).flatMap((pc) => pc.flagged || []))];
+    const columns = body.columns === 'all' || body.columns === undefined ? 'all' : columnList(body.columns);
+    if (columns !== 'all' && !columns.length) throw badRequest('Pick the columns the decision covers', 'اختار الأعمدة اللي القرار بيغطيها');
+    const decision = {
+      mode, columns, flagged, by: user.name, by_id: user.id, date: new Date().toISOString().slice(0, 10), run_id: run.id, revision: run.revision,
+      note: str(body.note, 'note', { max: 1000, fallback: null }),
+    };
+    rec.decision = decision;
+    update('drawing_levels', level.id, { punching_json: JSON.stringify(rec) });
+    audit(user.id, 'drawing_run', run.id, 'punching_decision', { mode, columns, note: decision.note });
+    if (mode === 'thicken') return { run: publicRun(loadRun(run.id)), decision };
+    // regenerate from the same model under the decision (the level reloaded so the run reads it): the new run replaces the blocked one at its revision
+    const next = await startRun({ sourceRun: run, level: loadLevel(level.id), project, user, body: { revision: run.revision, notes: run.notes } });
+    if (next.status !== 'blocked') update('drawing_runs', run.id, { status: 'superseded' });
+    return { run: next, decision, previous: run.id };
+  });
+
   router.patch('/api/drawings/runs/:id', ({ params, body, user }) => {
     requirePermission(user, 'drawings.create');
     const run = loadRun(params.id);
@@ -462,6 +538,7 @@ export function register(router) {
     if (body.status !== undefined) {
       const status = oneOf(body.status, 'status', RUN_STATUS);
       if (run.status === 'failed' || run.status === 'running') throw badRequest('This run produced no drawings', 'الإصدار ده مطلعش لوحات');
+      if (run.status === 'blocked' && status === 'issued') throw badRequest('This run is blocked by the punching check: take a decision on it first', 'الإصدار ده متوقف بسبب البانشنج: لازم قرار المهندس الأول');
       fields.status = status;
       // one issued revision per level and type: issuing this one supersedes the earlier issued ones
       if (status === 'issued') runSql("UPDATE drawing_runs SET status = 'superseded', updated_at = datetime('now') WHERE level_id = ? AND mode = ? AND status = 'issued' AND id <> ?", run.level_id, run.mode, run.id);
@@ -711,6 +788,7 @@ export function register(router) {
     const runs = runIds.map((id) => publicRun(loadRun(id)));
     if (runs.some((r) => r.project_id !== project.id)) throw badRequest('A run of another project was picked', 'فيه إصدار من مشروع تاني');
     if (runs.some((r) => r.status === 'failed' || r.status === 'running')) throw badRequest('A run without drawings was picked', 'فيه إصدار مطلعش لوحات');
+    if (runs.some((r) => r.status === 'blocked')) throw badRequest('A run blocked by the punching check cannot be submitted', 'فيه إصدار متوقف بسبب البانشنج: مينفعش يتقدم قبل قرار المهندس');
     const only = Array.isArray(body.sheets) && body.sheets.length ? body.sheets.map((v) => String(v)) : null;
     const previous = all('SELECT * FROM drawing_submittals WHERE project_id = ? AND status <> ? ORDER BY serial', project.id, 'withdrawn').map(publicSubmittal);
     const items = submittalItems(runs, { only, previous });
