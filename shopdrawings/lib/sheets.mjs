@@ -96,7 +96,8 @@ export function drawBase(sheet, pl, level, o = {}) {
   // slab outline, beams, walls, thickened zones, stairs
   // walls below first so a wall on the slab edge does not hide the green edge line
   for (const w of level.walls || []) {
-    if (w.polygon) { pl.pline(w.polygon, { layer: 'WALL', closed: true }); pl.hatch([w.polygon], { layer: 'WALL-HATCH', pattern: 'ANSI31', spacing: 0.5 }); // dense enough to read as a wall at 1:150 }
+    // (hatch dense enough to read as a wall at 1:150)
+    if (w.polygon) { pl.pline(w.polygon, { layer: 'WALL', closed: true }); pl.hatch([w.polygon], { layer: 'WALL-HATCH', pattern: 'ANSI31', spacing: 0.5 }); }
     else pl.line(w.a, w.b, { layer: 'WALL' });
   }
   pl.pline(level.outline, { layer: 'OUTLINE', closed: true, color: 3 });
