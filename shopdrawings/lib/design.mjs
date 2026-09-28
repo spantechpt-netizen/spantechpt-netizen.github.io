@@ -27,7 +27,7 @@
  *   tendon layout and are left out on purpose; site-specific details (D8-D11) apply only where drawn.
  */
 import { extractModel, flatten, closedPolys } from './extract.mjs';
-import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisRect, cleanPolygon, ceilTo, distToPolygon } from './geometry.mjs';
+import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisRect, cleanPolygon, ceilTo, distToPolygon, clipSegmentToPolygon } from './geometry.mjs';
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets } from './sheets.mjs';
@@ -49,7 +49,7 @@ export const OFFICE_LAYERS = {
   'PS-TAG': { color: 1, ltype: 'CONTINUOUS' },
 };
 export const OFFICE_TEXT_STYLE = { name: 'BW', font: 'isocp.shx', widthFactor: 0.8 };
-const PERIM_DIM_OUT = 450; // the perimeter distribution dimension sits this far outside the slab edge
+const PERIM_DIM_IN = 350; // the perimeter distribution dimension sits this far inside the slab edge (nothing is drawn outside the slab)
 const CALL_H = 150, LEN_H = 150, DIM_H = 250, DIM_TICK = 150, DIM_EXO = 50, DIM_EXE = 100, DOT_R = 33;
 
 export const DETAILS = {
@@ -225,7 +225,8 @@ export function extractDesign(dxf, options = {}) {
       l.face = host ? host.face : /BOT/i.test(l.layer) ? 'B' : 'T';
     }
     // office rule: a top bar ending at the outer slab edge or at an opening ends in a U (500 bottom leg)
-    const atBoundary = (p) => distToPolygon(p, outline) < spec0.cover + 300 || (level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300);
+    // office rule: a top bar ending at the outer slab edge ends in a U (500 bottom leg), or in an L where the edge carries a beam; at an opening always a U
+    const atBoundary = (p) => ((level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300) ? 'U' : distToPolygon(p, outline) < spec0.cover + 300 ? R.edgeEndAt(level, spec0, p).type : false);
     for (const l of lines) if (l.face !== 'B') l.uEnd = { start: atBoundary(l.a), end: atBoundary(l.b) };
     const dims = raw.filter((e) => e.type === 'DIMENSION' && inWin(e)).map((e) => ({ ...e }));
     const dots = raw.filter((e) => e.type === 'INSERT' && /^DOT/i.test(e.name || '') && inWin(e)).map((e) => ({ x: e.x, y: e.y }));
@@ -278,7 +279,9 @@ export function prepareRamDesign(model, options = {}) {
     // thickness tags: the slab thickness once, each thickened zone inside it
     const c0 = centroid(outline);
     const inside = pointInPolygon(c0, outline) ? c0 : (() => { const b = bbox(outline); return { x: b.minX + 1500, y: b.maxY - 1500 }; })();
-    level.rcTags = [{ x: inside.x, y: inside.y, thickness: level.thickness }, ...(level.thickZones || []).map((z) => { const c = centroid(z.polygon); return { x: c.x, y: c.y, thickness: z.thickness }; })];
+    // the slab thickness once, away from any column; the thickened zones carry their own THK labels
+    const tagAt = (() => { const cols = level.columns || []; for (const cand of [inside, { x: inside.x + 1500, y: inside.y + 1500 }, { x: inside.x - 1500, y: inside.y - 1500 }, { x: inside.x + 1500, y: inside.y - 1500 }]) if (!cols.some((c) => Math.abs(c.cx - cand.x) < 900 && Math.abs(c.cy - cand.y) < 900) && !(level.thickZones || []).some((z) => pointInPolygon(cand, z.polygon))) return cand; return inside; })();
+    level.rcTags = [{ x: tagAt.x, y: tagAt.y, thickness: level.thickness }];
     level.levelTags = level.tos != null ? [{ x: inside.x, y: inside.y - 400, label: 'T.O.C', value: String(level.tos) }] : [];
     level.camber = level.camber || [];
     level.wallBarLengths = [];
@@ -289,13 +292,14 @@ export function prepareRamDesign(model, options = {}) {
     const b0 = bbox(outline);
     level.meshLabels = [{ x: b0.minX + 600, y: b0.maxY - 700, lines: [`MESH T${mesh.dia}@${mesh.spacing}`, 'BOTTOM TWO WAY'] }];
     // designed bands → office items
-    const atBoundary = (p) => distToPolygon(p, outline) < (spec.cover || 25) + 300 || (level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300);
+    const atBoundary = (p) => ((level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300) ? 'U' : distToPolygon(p, outline) < (spec.cover || 25) + 300 ? R.edgeEndAt(level, spec, p).type : false);
     const items = [];
+    let tiny = 0;
     for (const band of level.ram?.bands || []) {
       const n = band.count || band.bars.length || 1;
       const centre = band.bars.length ? band.bars[Math.floor(band.bars.length / 2)] : { a: band.p0, b: band.p1 };
       const a = centre.a, b = centre.b;
-      if (dist(a, b) < 200) continue;
+      if (dist(a, b) < 1200) { tiny++; continue; } // a "band" shorter than 1.2 m is an artefact of the individual-bar export, not a design
       const u = unit(a, b), nn = perp(u);
       const spacing = band.spacing > 0 ? band.spacing : n > 1 ? Math.round(band.width / (n - 1)) : 0;
       const L = Math.round(dist(a, b) / 10) * 10;
@@ -306,21 +310,24 @@ export function prepareRamDesign(model, options = {}) {
       if (band.face === 'T') it.uEnd = { start: atBoundary(a), end: atBoundary(b) };
       items.push(it);
     }
-    // office rule: over a column the top bars of one direction are distributed over the length of the crossing bars
-    const tops = items.filter((i) => i.face === 'T');
-    for (const c of level.columns || []) {
-      const cc = { x: c.cx, y: c.cy }, reach = Math.max(c.shape === 'circle' ? c.d : Math.max(c.w, c.h), 600) + 1000;
-      const here = tops.filter((i) => distToSeg(cc, i.a, i.b) < reach);
-      for (const it of here) {
-        const u = unit(it.a, it.b);
-        const cross = here.filter((o) => o !== it && Math.abs(u.x * unit(o.a, o.b).x + u.y * unit(o.a, o.b).y) < 0.3).sort((p, q) => dist(p.a, p.b) - dist(q.a, q.b)).pop();
-        if (!cross) continue;
-        const nn = perp(u), half = dist(cross.a, cross.b) / 2;
-        const st = add(it.a, u, Math.max(200, Math.min(dist(it.a, it.b) - 200, ((cc.x - it.a.x) * u.x + (cc.y - it.a.y) * u.y) - Math.min(half, 1200))));
-        it.dist = { p: add(st, nn, -half), q: add(st, nn, half) };
-        it.distFrom = cross.ram;
-      }
-    }
+    // office rule at the columns: one group each way, as long as the drop panel (or 4 m) and distributed over the
+    // crossing group, is added by applyColumnRule; the RAM top bands over the columns are replaced by it
+    const inColumnZone = (it) => (level.columns || []).some((c) => {
+      const cc = { x: c.cx, y: c.cy };
+      const drop = (level.thickZones || []).find((z) => pointInPolygon(cc, z.polygon));
+      const m = mid(it.a, it.b);
+      if (drop && (pointInPolygon(m, drop.polygon) || distToPolygon(m, drop.polygon) < 300)) return true;
+      const reach = Math.max(c.shape === 'circle' ? c.d : Math.max(c.w, c.h), 600) / 2 + 1200;
+      return distToSeg(cc, it.a, it.b) < reach && dist(m, cc) < 2500;
+    });
+    const inDrop = (it) => (level.thickZones || []).some((z) => { const b = bbox(z.polygon); return Math.max(b.w, b.h) <= (spec.topColumns?.dropMax || 6000) && pointInPolygon(mid(it.a, it.b), z.polygon) && dist(it.a, it.b) <= 1.2 * Math.max(b.w, b.h); });
+    const replacedB = items.filter((it) => it.face === 'B' && inDrop(it));
+    for (const it of replacedB) items.splice(items.indexOf(it), 1);
+    if (replacedB.length) A(level, `${replacedB.length} RAM bottom bands local to the drop panels of ${level.name} replaced by the detail 4 extra bottom bars.`);
+    const replaced = items.filter((it) => it.face === 'T' && inColumnZone(it));
+    for (const it of replaced) items.splice(items.indexOf(it), 1);
+    if (tiny) A(level, `${tiny} RAM bands shorter than 1.2 m in ${level.name} ignored as export artefacts.`);
+    if (replaced.length) A(level, `${replaced.length} RAM top bands over the columns of ${level.name} replaced by the office column bars (one group each way, the drop panel length / 4 m, distributed over the crossing group).`);
     level.existing = { lines: [], callouts: [], dims: [], dots: [], items };
     model.findings.push(`${level.id} ${level.name}: ${level.walls.length} walls, ${(level.thickZones || []).length} thickness zones, ${level.edges.filter((e) => e.beam).length} of ${level.edges.length} slab edges with an edge beam, RAM designed reinforcement: ${items.length} bands (${items.filter((i) => i.face === 'T').length} top, ${items.filter((i) => i.face === 'B').length} bottom).`);
     A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands, drawn as designed); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the specification'}.`);
@@ -357,6 +364,134 @@ export function slabEdges(level, tol = 20) {
     if (dist(l.b, f.a) < 1 && turn({ a: l.pts[l.pts.length - 2], b: l.b }, f) < tol && (dist(f.a, f.b) < 2500 || dist(l.pts[l.pts.length - 2], l.b) < 2500)) { l.b = f.b; l.pts.push(...f.pts.slice(1)); merged.shift(); }
   }
   return merged.map((e) => ({ a: e.a, b: e.b, pts: e.pts, curved: e.pts.length > 2, beam: R.edgeHasBeam(level, e.a, e.b) }));
+}
+
+/**
+ * Office rule for the top bars over columns, applied to the design plan itself: at every column the
+ * designer's top bars crossing it take the office length (4 m both ways, or the drop panel + margins;
+ * at an edge column the U at the edge and 70 % on top), their "L=" call-outs are rewritten, and the
+ * bars of each direction are distributed over the length of the crossing bars: the designer's
+ * dimension across them is set to that length, or one is added where none was drawn. A column with
+ * no designer's bar in a direction gets the office bar added (`topColumns.addMissing: false` to skip).
+ */
+export function applyColumnRule(level, spec, assumptions = []) {
+  const ex = level.existing;
+  if (!ex || !level.columns?.length) return { changed: 0, added: [] };
+  const s = spec.topColumns;
+  if ((s.rule || 'office') !== 'office') return { changed: 0, added: [] };
+  const res = R.topAtColumns(level, spec);
+  const isTop = (f) => f === 'T' || f === 'TB';
+  const dimDir = (d) => { const ang = d.dimType === 1 ? Math.atan2(d.y4 - d.y3, d.x4 - d.x3) : ((d.rotation || 0) * Math.PI) / 180; return { x: Math.cos(ang), y: Math.sin(ang) }; };
+  const dot = (u, v) => u.x * v.x + u.y * v.y;
+  const added = [];
+  let changed = 0, addedDims = 0, missing = 0, rotated = 0;
+  for (const { col, per } of res.columns) {
+    if (col.isWall) continue;
+    const cc = { x: col.cx, y: col.cy };
+    // the two groups are perpendicular, along the column's own axes (a rotated column) or the tendon direction
+    const theta = columnAxis(level, col);
+    if (theta) rotated++;
+    const U = { x: { x: Math.cos(theta), y: Math.sin(theta) } };
+    U.y = perp(U.x);
+    const loc = (p) => ({ x: dot({ x: p.x - cc.x, y: p.y - cc.y }, U.x), y: dot({ x: p.x - cc.x, y: p.y - cc.y }, U.y) });
+    const glob = (lx, ly) => ({ x: cc.x + U.x.x * lx + U.y.x * ly, y: cc.y + U.x.y * lx + U.y.y * ly });
+    const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
+    const span = (dir) => ({ lo: -size[dir] / 2 - per[dir].ext[-1], hi: size[dir] / 2 + per[dir].ext[1] });
+    const groups = {};
+    for (const dir of ['x', 'y']) {
+      const across = dir === 'x' ? 'y' : 'x';
+      groups[dir] = ex.lines.filter((l) => {
+        if (!isTop(l.face) || Math.abs(dot(unit(l.a, l.b), U[dir])) < 0.98) return false;
+        const A = loc(l.a), B = loc(l.b);
+        return Math.abs(A[across]) <= Math.max(size[across] / 2 + 400, 800) && Math.min(A[dir], B[dir]) < size[dir] / 2 + 100 && Math.max(A[dir], B[dir]) > -size[dir] / 2 - 100; // the designer draws the bar beside a thin column
+      });
+    }
+    for (const dir of ['x', 'y']) {
+      const across = dir === 'x' ? 'y' : 'x';
+      const p = per[dir], { lo, hi } = span(dir);
+      const pt = (along, t) => (dir === 'x' ? glob(along, t) : glob(t, along));
+      if (groups[dir].length) {
+        for (const l of groups[dir]) {
+          const old = { a: { ...l.a }, b: { ...l.b } };
+          const t = loc(l.a)[across];
+          const fwd = dot(unit(old.a, old.b), U[dir]) > 0; // keep the bar's own direction so its call-out stays on the same side
+          l.a = pt(fwd ? lo : hi, t); l.b = pt(fwd ? hi : lo, t);
+          l.uEnd = fwd ? { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false } : { start: p.hookTypes[1] || false, end: p.hookTypes[-1] || false };
+          l.office = true;
+          const m = mid(old.a, old.b);
+          const co = ex.callouts.filter((c) => /^L\s*=\s*\d+/i.test(c.text) && distToSeg(c, old.a, old.b) < 600).sort((c1, c2) => dist(c1, m) - dist(c2, m))[0];
+          if (co && !co.office) { co.text = `L=${p.straight}`; co.office = true; }
+          changed++;
+        }
+      } else if (s.addMissing !== false) {
+        added.push({ detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape });
+        groups[dir] = [{ a: pt(lo, 0), b: pt(hi, 0), added: true }];
+        missing++;
+      }
+    }
+    // the distribution of each direction = the crossing bars' extent
+    for (const dir of ['x', 'y']) {
+      if (!groups[dir].length) continue;
+      const across = dir === 'x' ? 'y' : 'x';
+      const c = span(across); // extent of the crossing bars, along `across`
+      const { lo, hi } = span(dir);
+      const dims = ex.dims.filter((d) => {
+        if (d.x3 == null || Math.abs(dot(dimDir(d), U[across])) < 0.9) return false;
+        const A = loc({ x: d.x3, y: d.y3 }), B = loc({ x: d.x4, y: d.y4 });
+        return near({ x: (d.x3 + d.x4) / 2, y: (d.y3 + d.y4) / 2 }, cc, 3000) && Math.min(A[across], B[across]) < 300 && Math.max(A[across], B[across]) > -300;
+      });
+      if (dims.length) {
+        for (const d of dims) {
+          const A = loc({ x: d.x3, y: d.y3 }), B = loc({ x: d.x4, y: d.y4 });
+          const swap = A[across] > B[across];
+          const P3 = dir === 'x' ? glob(A.x, swap ? c.hi : c.lo) : glob(swap ? c.hi : c.lo, A.y);
+          const P4 = dir === 'x' ? glob(B.x, swap ? c.lo : c.hi) : glob(swap ? c.lo : c.hi, B.y);
+          d.x3 = P3.x; d.y3 = P3.y; d.x4 = P4.x; d.y4 = P4.y;
+          if (theta) { d.dimType = 1; d.x = P3.x; d.y = P3.y; }
+          d.x2 = d.y2 = undefined; d.text = undefined; d.office = true;
+        }
+      } else {
+        const st = lo + (hi - lo) * 0.35;
+        const pA = dir === 'x' ? glob(st, c.lo) : glob(c.lo, st), pB = dir === 'x' ? glob(st, c.hi) : glob(c.hi, st);
+        ex.dims.push({ x3: pA.x, y3: pA.y, x4: pB.x, y4: pB.y, x: pA.x, y: pA.y, dimType: theta ? 1 : 0, rotation: across === 'x' ? 0 : 90, face: 'T', office: true });
+        for (const l of groups[dir]) { const t = loc(l.a)[across]; ex.dots.push({ ...(dir === 'x' ? glob(st, t) : glob(t, st)), face: 'T' }); }
+        addedDims++;
+      }
+    }
+  }
+  if (changed || added.length) assumptions.push({ level: level.id, text: `Top bars over columns set to the office rule in ${level.name}: ${s.length || 4000} mm both ways (exactly the drop panel${s.dropMargin ? ` + ${s.dropMargin} mm` : ''} where there is one), ${Math.round((s.edgeFactor ?? 0.7) * 100)} % on top with the U at an edge, the two groups perpendicular along the column axis / tendon direction (${rotated} rotated columns); ${changed} designer's bars re-lengthed, ${missing} bars added where none was drawn, each direction distributed over the crossing bars' length (${addedDims} dimensions added).` });
+  return { changed, added, addedDims, missing };
+}
+
+/** The axis (radians, 0 for an orthogonal column) the column's top bars follow: the column's own angle, else the nearest tendon within 2.5 m. */
+function columnAxis(level, col) {
+  const norm = (deg) => { let d = ((deg % 90) + 90) % 90; if (d > 45) d -= 90; return Math.abs(d) < 2 ? 0 : (d * Math.PI) / 180; };
+  if (col.angle != null && norm(col.angle)) return norm(col.angle);
+  const tendons = [...(level.pt?.tendons || []), ...(level.ram?.tendons || [])];
+  let best = null;
+  for (const t of tendons) {
+    const pts = t.pts || t.points || [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const d = distToSeg({ x: col.cx, y: col.cy }, pts[i], pts[i + 1]);
+      if (d < 2500 && (!best || d < best.d)) best = { d, ang: (Math.atan2(pts[i + 1].y - pts[i].y, pts[i + 1].x - pts[i].x) * 180) / Math.PI };
+    }
+  }
+  return best ? norm(best.ang) : 0;
+}
+
+/** Nothing is drawn outside the slab: bars and distribution lines are clipped to the outline (an item fully outside is dropped). */
+function clipToSlab(level, items) {
+  const outline = level.outline;
+  const longest = (a, b) => { const parts = clipSegmentToPolygon(a, b, outline).filter(([p, q]) => dist(p, q) > 50); return parts.sort((p, q) => dist(q[0], q[1]) - dist(p[0], p[1]))[0] || null; };
+  const out = [];
+  for (const it of items) {
+    const seg = longest(it.a, it.b);
+    if (!seg) continue;
+    if (dist(seg[0], it.a) > 1 || dist(seg[1], it.b) > 1) { it.a = seg[0]; it.b = seg[1]; it.clipped = true; }
+    if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
+    out.push(it);
+  }
+  return out;
 }
 
 /** Chained wall segments (RAM line supports drawn as short pieces) joined into straight walls. */
@@ -456,21 +591,21 @@ export function designAdditions(level, spec, opts = {}) {
       const nIn = inward(mm.f.a, mm.f.b, outline);
       const count = Math.floor(len / su.spacing) + 1;
       const zone = gridRef(level, bbox([p1, p2]));
-      // distribution: the run itself on a straight edge, drawn just OUTSIDE the slab edge where nothing else is written;
+      // distribution: the run itself on a straight edge, drawn just inside the slab edge (never outside the slab);
       // on a curved run a short dimension at the middle carrying the length along the edge
       const curved = at(t1).f !== at(t2 - 1).f;
       const distAt = (off) => {
         const d = curved
           ? { p: add(add(m, mm.u, -Math.min(len / 2, 1500)), nIn, off), q: add(add(m, mm.u, Math.min(len / 2, 1500)), nIn, off), text: `${Math.round(len)} ALONG EDGE` }
           : { p: add(p1, nIn, off), q: add(p2, nIn, off) };
-        if (off < 0) d.textAt = add(mid(d.p, d.q), nIn, off - (DIM100.gap + DIM100.txt / 2)); // number on the outer side, away from the slab
+        d.textAt = add(mid(d.p, d.q), nIn, off + DIM100.gap + DIM100.txt / 2); // number on the inner side (never outside the slab)
         return d;
       };
       if (e.beam) {
-        items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: distAt(-PERIM_DIM_OUT), side: 1, zone, legEnd: 'start' });
+        items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: distAt(PERIM_DIM_IN), side: 1, zone, legEnd: 'start' });
         addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: count, spacing: su.spacing, zone: `D1 EDGE BEAM ${zone}` });
       } else {
-        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: distAt(-PERIM_DIM_OUT), side: 1, zone, legEnd: 'start' });
+        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: distAt(PERIM_DIM_IN), side: 1, zone, legEnd: 'start' });
         addBar('T', { dia: su.dia, shape: `U ${uLegTop}/${web}/${uLegTop}`, length: su.total, qty: count, spacing: su.spacing, zone: `D6 FREE EDGE ${zone}` });
       }
     }
@@ -524,7 +659,8 @@ export function designAdditions(level, spec, opts = {}) {
   const corner = (c, bis, dia, zone) => {
     const dir = perp(bis);
     const ctr = add(c, bis, 350);
-    items.push({ detail: 'D5', face: 'TB', a: add(ctr, dir, -1000), b: add(ctr, dir, 1000), l1: `3T${dia}-200 (T&B)`, l2: 'L=2000', side: 1, zone, triple: true });
+    const dn = perp(dir), st = add(ctr, dir, -450);
+    items.push({ detail: 'D5', face: 'TB', a: add(ctr, dir, -1000), b: add(ctr, dir, 1000), l1: `3T${dia}-200 (T&B)`, l2: 'L=2000', dist: { p: add(st, dn, -200), q: add(st, dn, 200) }, side: 1, zone, triple: true });
     addBar('T', { dia, shape: 'STR', length: 2000, qty: 3, spacing: 200, zone });
     addBar('B', { dia, shape: 'STR', length: 2000, qty: 3, spacing: 200, zone });
   };
@@ -576,12 +712,13 @@ export function designAdditions(level, spec, opts = {}) {
       const L = Math.max(1500, Math.round(dist(s.a, s.b) + 1200));
       const u = unit(s.a, s.b);
       const grp = Math.abs(u.y) < 0.5 ? 'G1 (X)' : 'G2 (Y)';
-      items.push({ detail: 'D7', face: 'TB', a: add(s.a, u, -600), b: add(s.b, u, 600), l1: `${row.long.n}T${row.long.dia}-${row.long.s} (T&B)`, l2: `L=${L}`, side: 1, zone, noTag: i > 0 });
+      const st = add(s.a, u, dist(s.a, s.b) * 0.35);
+      items.push({ detail: 'D7', face: 'TB', a: add(s.a, u, -600), b: add(s.b, u, 600), l1: `${row.long.n}T${row.long.dia}-${row.long.s} (T&B)`, l2: `L=${L}`, dist: { p: st, q: add(st, s.n, (row.long.n - 1) * row.long.s) }, side: 1, zone, noTag: i > 0 });
       addBar('T', { dia: row.long.dia, shape: 'STR', length: L, qty: row.long.n, spacing: row.long.s, zone: `${zone} ${grp}` });
       addBar('B', { dia: row.long.dia, shape: 'STR', length: L, qty: row.long.n, spacing: row.long.s, zone: `${zone} ${grp}` });
       const m = mid(s.a, s.b);
       const count = Math.floor(dist(s.a, s.b) / row.u.s) + 1;
-      if (i < 2) items.push({ detail: 'D7', face: 'TB', a: add(m, s.n, -150), b: add(m, s.n, lb), l1: `T${row.u.dia}-${row.u.s} U-BAR`, l2: `LB=${lb}`, side: -1, noTag: true });
+      if (i < 2) items.push({ detail: 'D7', face: 'TB', a: add(m, s.n, -150), b: add(m, s.n, lb), l1: `T${row.u.dia}-${row.u.s} U-BAR`, l2: `LB=${lb}`, dist: { p: add(s.a, s.n, lb * 0.75), q: add(s.b, s.n, lb * 0.75) }, side: -1, noTag: true });
       addBar('T', { dia: row.u.dia, shape: `U ${lb}/${lc}/${lb}`, length: 2 * lb + lc, qty: count, spacing: row.u.s, zone });
     });
     const d = 1000 / Math.SQRT2;
@@ -744,7 +881,7 @@ export function officeBar(pl, S, it, phase) {
   }
 }
 
-/** The U end (500 bottom leg) of a top bar at the outer slab edge / an opening: a short leg on the plan and the "U500" tag. */
+/** The end of a top bar at the slab boundary: a U (500 bottom leg, "U500") at a free edge or an opening, an L ("L400", the leg down into the beam) at an edge beam: a short leg on the plan and the tag. */
 function drawUEnds(pl, S, a, b, uEnd, layer) {
   const u = unit(a, b), n = perp(u);
   const { rot } = readableRot(u);
@@ -753,7 +890,8 @@ function drawUEnds(pl, S, a, b, uEnd, layer) {
     pl.line(p, add(p, n, 250), { layer });
     if (placer) { if (placer.uTags.some((q) => dist(q, p) < 400)) continue; placer.uTags.push(p); } // one tag where two bars end together
     const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), n, 300), add(add({ x: 0, y: 0 }, u, k), n, -300 - 110)]);
-    placeText(pl, add(p, n, 0), `U${R.U_BOTTOM_LEG}`, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' }, offs, S);
+    const tag = on === 'L' ? `L${DEFAULT_U.beamLeg}` : `U${R.U_BOTTOM_LEG}`;
+    placeText(pl, add(p, n, 0), tag, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' }, offs, S);
   }
 }
 
@@ -818,7 +956,7 @@ const designNotes = (model, level) => [
   `SLAB THICKNESS ${level.thickness} mm${level.tos ? `, ${level.levelTags[0].label} ${level.tos}` : ''}${level.thickZones?.length ? `; THICKENED ZONES ${[...new Set(level.thickZones.map((z) => z.thickness))].join(' / ')} mm HATCHED` : ''}. CONCRETE f'c = ${model.spec.fc} MPa, REINFORCEMENT fy = ${model.spec.fy} MPa, COVER ${model.spec.cover} mm (${model.spec.sources.cover}).`,
   'BAR CALL-OUT (OFFICE CONVENTION): "T10-200 (T)" = BAR SIZE - SPACING (LAYER), "L=2400" = BAR LENGTH; THE RED DIMENSION ACROSS THE BARS IS THE WIDTH OVER WHICH THEY ARE DISTRIBUTED; (T) TOP, (B) BOTTOM, T&B BOTH.',
   'THE REINFORCEMENT DESIGNED BY THE OFFICE IS SHOWN AS DRAWN ON THE DESIGN PLAN. BARS MARKED WITH A CIRCLED "D#" ARE ADDED FROM THE GENERAL DETAILS SHEET (DETAIL NUMBER IN THE CIRCLE) AT THE LOCATIONS THE DETAIL REFERS TO; THE DETAIL GOVERNS FOR SHAPE AND ANCHORAGE.',
-  `EVERY TOP BAR THAT ENDS AT THE OUTER SLAB EDGE OR AT AN OPENING ENDS IN A U: DOWN THE SLAB DEPTH AND ${R.U_BOTTOM_LEG} mm BACK AT THE BOTTOM ("U${R.U_BOTTOM_LEG}" AT THE BAR END; ADD THE LEGS TO THE CUTTING LENGTH). PERIMETER BARS T${DEFAULT_U.dia}@${DEFAULT_U.spacing} BETWEEN THE COLUMN TOP BARS: A ${DEFAULT_U.total} mm U WITH EQUAL LEGS AT A FREE EDGE, AN L (${DEFAULT_U.beamLeg} mm INTO THE BEAM + ${DEFAULT_U.beamTop} mm ON TOP) AT AN EDGE BEAM. OPENINGS ENCLOSED BY WALLS OR BEAMS GET NO ADDITIONAL TRIMMERS; ELSEWHERE THREE GROUPS: G1 / G2 PARALLEL TO THE SIDES, G3 DIAGONALS AT 45°.`,
+  `EVERY TOP BAR THAT ENDS AT THE OUTER SLAB EDGE OR AT AN OPENING ENDS IN A U WHERE THE EDGE IS FREE: DOWN THE SLAB DEPTH AND ${R.U_BOTTOM_LEG} mm BACK AT THE BOTTOM ("U${R.U_BOTTOM_LEG}" AT THE BAR END), OR IN AN L ${DEFAULT_U.beamLeg} mm DOWN INTO THE BEAM WHERE THE OUTER EDGE CARRIES A BEAM PARALLEL TO IT ("L${DEFAULT_U.beamLeg}"); ADD THE LEGS TO THE CUTTING LENGTH. TOP BARS OVER COLUMNS: TWO PERPENDICULAR GROUPS (ALONG THE COLUMN AXIS / TENDON DIRECTION), EACH AS LONG AS THE DROP PANEL OR 4 m, DISTRIBUTED OVER THE LENGTH OF THE CROSSING GROUP; 70 % ON TOP AT AN EDGE COLUMN. NOTHING IS DRAWN OUTSIDE THE SLAB OUTLINE. PERIMETER BARS T${DEFAULT_U.dia}@${DEFAULT_U.spacing} BETWEEN THE COLUMN TOP BARS: A ${DEFAULT_U.total} mm U WITH EQUAL LEGS AT A FREE EDGE, AN L (${DEFAULT_U.beamLeg} mm INTO THE BEAM + ${DEFAULT_U.beamTop} mm ON TOP) AT AN EDGE BEAM. OPENINGS ENCLOSED BY WALLS OR BEAMS GET NO ADDITIONAL TRIMMERS; ELSEWHERE THREE GROUPS: G1 / G2 PARALLEL TO THE SIDES, G3 DIAGONALS AT 45°.`,
 ];
 
 function framingSheet(model, level, meta, adds) {
@@ -866,7 +1004,7 @@ function rebarSheet(model, level, meta, adds, face) {
       const tm = model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh;
       const label = `BOTTOM MESH T${tm.dia}@${tm.spacing}`;
       for (const z of level.thickZones || []) { const b = bbox(z.polygon); pl.text({ x: b.minX + 500, y: b.maxY - 800 }, label, { layer: '9_TEXT', h: 200 / S, style: 'BW', widthFactor: 0.8 }); }
-      for (const t of level.rcTags || []) pl.text({ x: t.x, y: t.y - 350 }, label, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.y - 350 }, label, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
     }
     const mine = adds.items.filter((it) => faces.includes(it.face));
     for (const it of mine) officeBar(pl, S, it, 'bars');   // bars and dimensions first ...
@@ -968,7 +1106,11 @@ export function composeDesignPackage(model, metaIn = {}) {
   };
   const jobs = [];
   for (const level of model.levels) {
+    const rule = applyColumnRule(level, model.spec, model.assumptions);
     const adds = designAdditions(level, model.spec);
+    for (const it of rule.added) { adds.items.push(it); adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `COLUMN ${it.column} ${it.dir.toUpperCase()}` }); }
+    adds.items = clipToSlab(level, adds.items);
+    if (level.existing) level.existing.lines = clipToSlab(level, level.existing.lines);
     level.additions = { items: adds.items.length, weight: { T: adds.bars.T.totals().weight_kg, B: adds.bars.B.totals().weight_kg } };
     const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet };
     for (const def of DESIGN_SHEETS) jobs.push({ level, def, draw: makers[def.key](model, level, meta, adds) });

@@ -72,7 +72,7 @@ test('office rule: interior column bars run 4 m (or cover the drop), edge column
   // a drop panel at the column stretches the interior bar over it
   level.thickZones = [{ id: 'D1', polygon: [{ x: interior.col.cx - 2500, y: interior.col.cy - 2000 }, { x: interior.col.cx + 2500, y: interior.col.cy - 2000 }, { x: interior.col.cx + 2500, y: interior.col.cy + 2000 }, { x: interior.col.cx - 2500, y: interior.col.cy + 2000 }], thickness: 300 }];
   const res2 = topAtColumns(level, model.spec);
-  assert.equal(res2.columns.find((c) => c.col.id === 'C/2').per.x.length, 5400, '5000 drop + 2 x 200 margin');
+  assert.equal(res2.columns.find((c) => c.col.id === 'C/2').per.x.length, 5000, 'exactly the 5000 drop panel');
 });
 
 test('the bar list merges identical bars into marks and weighs them', () => {
@@ -550,13 +550,13 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   const ram = readRamConcept(await buildSyntheticCpt(dir));
   const model = prepareRamDesign(ramToModel(ram, { levelName: 'FIRST FLOOR', spec: {} }), { levelName: 'FIRST FLOOR', spec: {} });
   const L = model.levels[0];
-  assert.equal(L.existing.items.length, 2, 'the two RAM bands become designer items');
-  const top = L.existing.items.find((i) => i.face === 'T');
-  assert.equal(top.l1, 'T16-150 (T)'); assert.equal(top.l2, 'L=5000');
-  assert.ok(top.dist && Math.round(dist2(top.dist.p, top.dist.q)) === 1500, 'distribution dimension across the band width');
+  assert.equal(L.existing.items.length, 1, 'the RAM bottom band becomes a designer item; the top band over the column is replaced by the office column bars');
+  const bot = L.existing.items[0];
+  assert.equal(bot.face, 'B'); assert.equal(bot.l1, 'T12-200 (B)'); assert.equal(bot.l2, 'L=12000');
+  assert.ok(bot.dist && Math.round(dist2(bot.dist.p, bot.dist.q)) === 800, 'distribution dimension across the band width');
   assert.ok(L.walls.every((w) => w.polygon && w.id), 'walls get a body and an id');
   assert.equal(model.spec.uEdge.spacing, 150, 'office perimeter rule, not the G.A. assumption');
-  assert.ok(L.rcTags.length >= 2, 'slab thickness and the thickened zone are tagged');
+  assert.equal(L.rcTags.length, 1, 'the slab thickness is tagged once; the thickened zone carries its own THK label');
   const pack = composeDesignPackage(model, { project: 'RAM', prefix: 'ST-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
   assert.equal(pack.sheets.length, 5);
   const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);

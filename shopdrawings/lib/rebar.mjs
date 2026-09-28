@@ -21,7 +21,7 @@ export const DEFAULT_SPEC = {
   // top bars over columns, both ways. Office rule: an interior column bar covers the drop panel when there is
   // one, otherwise `length` (4 m, set per slab); an edge column bar ends in a U at the edge and runs `edgeFactor`
   // of the interior length on top. rule: 'office' | 'code' (ln/6 each side, SBC 304-18 §8.7.5.5)
-  topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 200 },
+  topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 0, dropMax: 6000 },
   // perimeter bars between the column top bars (office rule): T12@150, a U of `total` length at a free edge
   // (equal top and bottom legs), an L of the same 4 m total at an edge beam (`beamLeg` down into the beam + `beamTop` on top)
   uEdge: { dia: 12, spacing: 150, total: 4000, beamLeg: 400, beamTop: 3600, leg: 1200 },
@@ -295,6 +295,29 @@ export function topEdgeEnd(level, spec) {
 export const U_BOTTOM_LEG = 500;
 
 /**
+ * Office rule for a top bar ending at the slab boundary: a U (500 bottom leg) at a free edge, an L
+ * (`uEdge.beamLeg` down into the beam) where the outer edge carries a beam parallel to it. The
+ * nearest outline segment to the bar end decides; an opening edge is always a U.
+ */
+export function edgeEndAt(level, spec, p) {
+  const u = topEdgeEnd(level, spec);
+  const outline = level.outline || [];
+  let best = null;
+  for (let i = 0; i < outline.length; i++) {
+    const a = outline[i], b = outline[(i + 1) % outline.length];
+    const L = dist(a, b) || 1;
+    const t = Math.max(0, Math.min(L, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / L));
+    const d = Math.hypot(p.x - (a.x + ((b.x - a.x) / L) * t), p.y - (a.y + ((b.y - a.y) / L) * t));
+    if (!best || d < best.d) best = { d, a, b };
+  }
+  if (best && best.d < 600 && edgeHasBeam(level, best.a, best.b)) {
+    const leg = spec.uEdge?.beamLeg || 400;
+    return { type: 'L', leg, label: `L${leg}`, note: `L end: ${leg} down into the edge beam` };
+  }
+  return { type: 'U', ...u };
+}
+
+/**
  * Office rule: an opening enclosed by concrete walls or beams needs no
  * additional trimmer bars. True when every side of the opening runs along
  * a wall polygon edge or a beam line (within 400 mm, over half the side).
@@ -391,9 +414,12 @@ export function topAtColumns(level, spec) {
       if ((s.rule || 'office') === 'office' && !col.isWall) {
         // office rule: interior bar covers the drop panel or runs `length` in total; an edge column bar
         // ends in a U at the slab edge and continues `edgeFactor` x the interior length on top
-        const drop = (level.thickZones || []).find((z) => pointInPolygon({ x: col.cx, y: col.cy }, z.polygon));
+        // a drop panel is a thickened zone of limited size around the column (`dropMax`, 6 m); a long thickened strip is not one
+        const drop = (level.thickZones || []).find((z) => pointInPolygon({ x: col.cx, y: col.cy }, z.polygon) && Math.max(bbox(z.polygon).w, bbox(z.polygon).h) <= (s.dropMax || 6000));
+        // with a drop panel the bars are exactly as long as the drop (+ `dropMargin` each side, 0 by default);
+        // without one they are `length` (4 m) in total
         let Lint = s.length || 4000;
-        if (drop) { const zb = bbox(drop.polygon); Lint = Math.max(Lint, ceilTo((dir === 'x' ? zb.w : zb.h) + 2 * (s.dropMargin ?? 200), 50)); }
+        if (drop) { const zb = bbox(drop.polygon); Lint = ceilTo((dir === 'x' ? zb.w : zb.h) + 2 * (s.dropMargin ?? 0), 10); }
         const half = (Lint - c1) / 2;
         const edgeSign = [-1, 1].find((sg) => toEdges[sg] - c1 / 2 < half);
         if (edgeSign == null) { ext[-1] = half; ext[1] = half; }
@@ -444,12 +470,19 @@ export function topAtColumns(level, spec) {
       const asReq = 0.00075 * h * l2;
       const nReq = col.isWall ? 0 : Math.ceil(asReq / BAR_AREA(s.dia)); // §8.6.2.3 is a column rule; over a wall the spacing governs
       if (nReq > n) n = nReq;
-      const hookN = (hooks[-1] ? 1 : 0) + (hooks[1] ? 1 : 0);
       const straight = ext[-1] + c1 + ext[1];
-      const uEnd = topEdgeEnd(level, spec); // a top bar ending at the slab edge ends in a U (500 bottom leg)
-      const length = ceilTo(straight + hookN * uEnd.leg, 10);
-      const shape = hookN === 0 ? 'STR' : hookN === 1 ? 'U' : 'UU';
-      per[dir] = { ext, hooks, n, length, shape, band, asReq: Math.round(asReq), asProv: Math.round(n * BAR_AREA(s.dia)), straight, hookLeg: uEnd.leg, hookLabel: uEnd.label, c1, code: dir === 'x' ? 'T2' : 'T1' };
+      // a top bar ending at the slab edge ends in a U (500 bottom leg), or in an L where the edge carries a beam
+      const ends = {};
+      for (const sign of [-1, 1]) {
+        if (!hooks[sign]) continue;
+        const endPt = dir === 'x' ? { x: col.cx + sign * (c1 / 2 + ext[sign]), y: col.cy } : { x: col.cx, y: col.cy + sign * (c1 / 2 + ext[sign]) };
+        ends[sign] = edgeEndAt(level, spec, endPt);
+      }
+      const legs = (ends[-1]?.leg || 0) + (ends[1]?.leg || 0);
+      const length = ceilTo(straight + legs, 10);
+      const shape = [-1, 1].map((sg) => ends[sg]?.type || '').join('') || 'STR';
+      const first = ends[-1] || ends[1] || topEdgeEnd(level, spec);
+      per[dir] = { ext, hooks, hookTypes: { [-1]: ends[-1]?.type || null, [1]: ends[1]?.type || null }, hookLabels: { start: ends[-1]?.label, end: ends[1]?.label }, n, length, shape, band, asReq: Math.round(asReq), asProv: Math.round(n * BAR_AREA(s.dia)), straight, hookLeg: first.leg, hookLabel: first.label, c1, code: dir === 'x' ? 'T2' : 'T1' };
       checks.push({ column: col.id, dir: dir.toUpperCase(), asReq: Math.round(asReq), asProv: Math.round(n * BAR_AREA(s.dia)), n });
     }
     const key = `${per.x.length}|${per.x.n}|${per.x.shape}|${per.y.length}|${per.y.n}|${per.y.shape}`;
@@ -464,7 +497,7 @@ export function topAtColumns(level, spec) {
   for (const t of types) {
     for (const dir of ['x', 'y']) {
       const p = t[dir];
-      p.mark = lists[dir].add({ dia: s.dia, shape: p.shape, length: p.length, qty: p.n * t.columns.length, spacing: s.spacing, zone: t.id, note: p.shape === 'STR' ? '' : topEdgeEnd(level, spec).note });
+      p.mark = lists[dir].add({ dia: s.dia, shape: p.shape, length: p.length, qty: p.n * t.columns.length, spacing: s.spacing, zone: t.id, note: p.shape === 'STR' ? '' : /L/.test(p.shape) && !/U/.test(p.shape) ? `L end: ${spec.uEdge?.beamLeg || 400} down into the edge beam` : topEdgeEnd(level, spec).note });
     }
   }
   return { types, columns, lists, checks, dia: s.dia, spacing: s.spacing, rule: s.rule || 'office', length: s.length || 4000, edgeFactor: s.edgeFactor ?? 0.7, uEnd: topEdgeEnd(level, spec) };

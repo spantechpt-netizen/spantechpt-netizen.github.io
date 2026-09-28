@@ -164,7 +164,7 @@ export function drawBase(sheet, pl, level, o = {}) {
  * true length; `pieces` are cutting lengths; hooks at `hooks.start` /
  * `hooks.end`. The lap of every following piece is drawn offset.
  */
-function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, hookLabel, label, layer = 'REBAR', offsetSide = 1, textSide = 1 }) {
+function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, hookLabel, hookLabels = {}, label, layer = 'REBAR', offsetSide = 1, textSide = 1 }) {
   const L = dist(a, b) || 1;
   const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
   const nx = -uy, ny = ux;
@@ -187,8 +187,8 @@ function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, hookLabel,
     const mid = (axisStart + s1) / 2;
     pl.text(at(mid, tn * 0.55 * S), label(i, pieces[i], straights[i]), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: CALL_H, rot, align: 'C', valign: 'B' });
     pl.text(at(mid, -tn * (LEN_H + 0.5) * S), String(Math.round(straights[i])), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: LEN_H, rot, align: 'C', valign: 'B' });
-    if (i === 0 && hooks.start) pl.text(at(-0.4 * S, tn * 0.55 * S), hookLabel || String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'R', valign: 'B' });
-    if (i === last && hooks.end) pl.text(at(s1 + 0.4 * S, tn * 0.55 * S), hookLabel || String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'L', valign: 'B' });
+    if (i === 0 && hooks.start) pl.text(at(-0.4 * S, tn * 0.55 * S), hookLabels.start || hookLabel || String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'R', valign: 'B' });
+    if (i === last && hooks.end) pl.text(at(s1 + 0.4 * S, tn * 0.55 * S), hookLabels.end || hookLabel || String(hookLeg), { layer: 'REBAR-TEXT', style: REBAR_STYLE, h: HOOK_H, rot, align: 'L', valign: 'B' });
     pos = s1;
   }
   pl.barEnds(at(0), at(pos), { layer, size: 0.6 });
@@ -495,7 +495,7 @@ function topSheet(model, level, meta) {
         const t = dir === 'x' ? col.cy : col.cx;
         const a = dir === 'x' ? { x: a0, y: t } : { x: t, y: a0 };
         const b = dir === 'x' ? { x: b0, y: t } : { x: t, y: b0 };
-        drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, hookLabel: p.hookLabel, layer: `REBAR-${p.code}`, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
+        drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, hookLabel: p.hookLabel, hookLabels: p.hookLabels, layer: `REBAR-${p.code}`, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
         // the width the bars are distributed over (office rule: the length of the crossing bars at this column)
         if (p.band) {
           const st = a0 + (b0 - a0) * 0.3;
