@@ -32,6 +32,7 @@ import { execFileSync } from 'node:child_process';
 import { basename, extname } from 'node:path';
 import { extractModel, flatten } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
+import { quantities } from './lib/quantities.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
@@ -126,8 +127,10 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
   writeFileSync(join(out, mode === 'design' ? 'DESIGN_DRAWINGS_PACKAGE.dxf' : 'SHOP_DRAWINGS_PACKAGE.dxf'), toDxf(pack.pkg, { ltscale: maxScale / 4 }));
   writeFileSync(join(out, 'model.json'), JSON.stringify(serializable(model), null, 2));
   if (pack.plan) writeFileSync(join(out, 'plan.json'), JSON.stringify(pack.plan));
+  const qty = quantities(model, pack);
+  writeFileSync(join(out, 'quantities.json'), JSON.stringify(qty, null, 2));
   writeFileSync(join(out, 'REPORT.md'), report(model, pack));
-  return { model, pack, files };
+  return { model, pack, files, quantities: qty };
 }
 
 /** The entities of a frame DXF (paper mm, bottom-left origin), blocks exploded, ready for Sheet.customFrame. */

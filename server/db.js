@@ -51,6 +51,7 @@ addColumn('drawing_runs', 'notes', 'TEXT');
 addColumn('drawing_runs', 'status', "TEXT NOT NULL DEFAULT 'draft'");
 addColumn('drawing_runs', 'edits_json', 'TEXT');
 addColumn('drawing_levels', 'edits_json', 'TEXT');
+addColumn('drawing_runs', 'quantities_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

@@ -156,6 +156,7 @@ test('uploading a RAM model generates the numbered package for the level', async
   assert.equal(plan.level, 'B1');
   assert.equal(plan.level_name, 'BASEMENT CEILING');
   assert.ok(Array.isArray(firstRun.assumptions) && firstRun.assumptions.length > 0);
+  assert.ok(firstRun.quantities && firstRun.quantities.levels.length === 1 && firstRun.quantities.totals.concrete.total_m3 > 0, 'the take-off comes back with the run');
 }, { timeout: 120000 });
 
 test('the run exposes its sheets, previews, DXFs and one zip of the package', async () => {
@@ -294,6 +295,80 @@ test('the office frame DXF is uploaded once and used on every sheet', async () =
   assert.equal(removed.status, 200);
   assert.equal((await download('/api/drawings/frame')).status, 404);
 }, { timeout: 120000 });
+
+test('the take-off: steel, concrete and cables of a run, summed over the current runs of the project, and the cost study', async () => {
+  const q = await api('GET', `/api/drawings/runs/${firstRun.id}/quantities`);
+  assert.equal(q.status, 200, JSON.stringify(q.body));
+  const lv = q.body.quantities.levels[0];
+  assert.ok(lv.steel.kg > 0 && lv.steel.byDia.length >= 1, `steel ${JSON.stringify(lv.steel)}`);
+  assert.ok(lv.concrete.net_area_m2 > 0 && lv.concrete.total_m3 > 0 && lv.concrete.formwork_m2 > 0, `concrete ${JSON.stringify(lv.concrete)}`);
+  assert.equal(lv.concrete.thickness, 250);
+  assert.ok(lv.cables && lv.cables.tendons === 2 && lv.cables.strands === 7 && lv.cables.kg > 0 && lv.cables.live_ends === 1 && lv.cables.dead_ends === 3, `cables ${JSON.stringify(lv.cables)}`);
+  assert.ok(q.body.quantities.totals.steel.kg === lv.steel.kg, 'one level: totals equal the level');
+
+  const pq = await api('GET', `/api/drawings/projects/${project.id}/quantities`);
+  assert.equal(pq.status, 200);
+  assert.equal(pq.body.runs.length, 1, 'one current run per level with drawings');
+  assert.equal(pq.body.runs[0].status, 'issued', 'the issued run of the level is the current one');
+  assert.ok(pq.body.totals.concrete.total_m3 > 0 && pq.body.totals.steel.kg > 0);
+
+  const cost = await api('GET', `/api/drawings/projects/${project.id}/cost?steel_per_ton=4000`);
+  assert.equal(cost.status, 200, JSON.stringify(cost.body));
+  assert.equal(cost.body.cost.currency, 'SAR');
+  assert.equal(cost.body.cost.rates.steel_per_ton, 4000, 'a rate overridden for the what-if');
+  const steel = cost.body.cost.totals.lines.find((l) => l.key === 'steel');
+  assert.equal(steel.amount, Math.round(steel.qty * 4000));
+  assert.ok(cost.body.cost.totals.lines.some((l) => l.key === 'strand') && cost.body.cost.totals.total > cost.body.cost.totals.direct, 'PT lines priced, markup and VAT on top');
+});
+
+let submittal;
+test('submittal request forms: the drawings of the runs picked, numbered per project, the form filled from the title blocks', async () => {
+  const detail = await api('GET', `/api/drawings/projects/${project.id}`);
+  const issued = detail.body.runs.find((r) => r.status === 'issued');
+  const created = await api('POST', `/api/drawings/projects/${project.id}/submittals`, { run_ids: [issued.id], attention: 'ENG. AHMED', notes: 'first submission' });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  submittal = created.body.submittal;
+  assert.equal(submittal.code, `SPAN-SUB-${project.code}-001`);
+  assert.equal(submittal.status, 'draft');
+  assert.equal(submittal.to_name, 'ABC CONSULTANTS', 'addressed to the consultant of the project');
+  assert.equal(submittal.purpose, 'approval');
+  assert.ok(submittal.items.length >= 3 && submittal.items.every((it) => it.no.startsWith(`SPAN-DD-${project.code}-B1-`) && it.rev === issued.revision), JSON.stringify(submittal.items.map((it) => it.no)));
+  assert.ok(!submittal.items.some((it) => /COVER/i.test(it.title)), 'the cover / index sheet is not submitted');
+  assert.ok(submittal.subject.includes('B1'));
+
+  const form = await download(`/api/drawings/submittals/${submittal.id}/form`);
+  assert.equal(form.status, 200);
+  assert.ok(form.headers.get('content-type').startsWith('text/html'));
+  const html = form.bytes.toString('utf8');
+  assert.ok(html.includes(submittal.code) && html.includes('ROAYA SCHOOL 2') && html.includes('ABC CONSULTANTS') && html.includes('ENG. AHMED'), 'project and addressee on the form');
+  assert.ok(submittal.items.every((it) => html.includes(it.no) && html.includes(it.title)), 'every drawing number and title on the form');
+  assert.ok(html.includes('APPROVED AS NOTED') && html.includes('DRAWING SUBMITTAL'), 'the office template');
+
+  const sent = await api('PATCH', `/api/drawings/submittals/${submittal.id}`, { status: 'submitted' });
+  assert.equal(sent.body.submittal.status, 'submitted');
+  const answered = await api('PATCH', `/api/drawings/submittals/${submittal.id}`, { status: 'resubmit', response_date: '2026-10-01', response_notes: 'revise the top bars', response_by: 'ENG. AHMED' });
+  assert.equal(answered.body.submittal.status, 'resubmit');
+
+  // the next run of the level goes out under a new submittal that names the revision it supersedes
+  const other = detail.body.runs.find((r) => r.id !== issued.id && r.status !== 'failed');
+  const again = await api('POST', `/api/drawings/projects/${project.id}/submittals`, { run_ids: [other.id], sheets: [other.sheets[1].no] });
+  assert.equal(again.status, 201, JSON.stringify(again.body));
+  assert.equal(again.body.submittal.code, `SPAN-SUB-${project.code}-002`);
+  assert.equal(again.body.submittal.items.length, 1, 'only the sheet picked');
+  const item = again.body.submittal.items[0];
+  assert.equal(item.no, other.sheets[1].no);
+  assert.equal(item.prev_submittal, submittal.code, 'names the earlier submittal of the same drawing number');
+  assert.equal(item.prev_rev, issued.revision);
+  assert.equal(again.body.submittal.purpose, 'resubmission');
+  assert.ok(again.body.submittal.subject.includes('RE-SUBMISSION'));
+
+  const reissued = await api('PATCH', `/api/drawings/submittals/${again.body.submittal.id}`, { reissue: true });
+  assert.equal(reissued.body.submittal.code, `SPAN-SUB-${project.code}-002-R1`, 'a corrected form keeps its number with its own revision');
+  const listed = await api('GET', `/api/drawings/projects/${project.id}/submittals`);
+  assert.equal(listed.body.submittals.length, 2);
+  const wrong = await api('POST', `/api/drawings/projects/${project.id}/submittals`, { run_ids: [] });
+  assert.equal(wrong.status, 400);
+});
 
 test('a bad file is refused and the run is recorded as failed', async () => {
   const wrong = await upload(`/api/drawings/levels/${level.id}/runs?name=plan.pdf`, Buffer.from('%PDF-1.4'));

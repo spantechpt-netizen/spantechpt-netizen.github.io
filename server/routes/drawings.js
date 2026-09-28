@@ -21,6 +21,11 @@
  *   POST   /api/drawings/projects/:id/files?category=&name=&level_id=   a project document (raw body)
  *   GET    /api/drawings/files/:id  PATCH  DELETE
  *   GET/POST/DELETE /api/drawings/frame           the office's own sheet frame (DXF)
+ *   GET    /api/drawings/runs/:id/quantities      the take-off of one run (steel, concrete, cables)
+ *   GET    /api/drawings/projects/:id/quantities  the take-off of the project: the current run of every level
+ *   GET    /api/drawings/projects/:id/cost        the cost study: the take-off priced with the office rates
+ *   GET/POST /api/drawings/projects/:id/submittals   submittal request forms from the runs picked
+ *   GET/PATCH/DELETE /api/drawings/submittals/:id  ;  GET /api/drawings/submittals/:id/form (printable HTML)
  */
 import { createReadStream } from 'node:fs';
 import { stat, readFile } from 'node:fs/promises';
@@ -34,8 +39,10 @@ import { str, int, oneOf, jsonField, COUNTRIES } from '../validate.js';
 import {
   drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, saveUpload, runMeta, levelTitle,
   runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, FILE_CATEGORIES,
-  framePath, projectFile, projectDir,
+  framePath, projectFile, projectDir, SUBMITTAL_STATUS, SUBMITTAL_PURPOSES,
 } from '../drawings.js';
+import { submittalCode, submittalItems, submittalHtml } from '../submittals.js';
+import { costStudy } from '../../shopdrawings/lib/quantities.mjs';
 
 const PROJECT_COLUMNS = `p.*, u.name AS owner_name, u.name_ar AS owner_name_ar,
   (SELECT COUNT(*) FROM drawing_levels l WHERE l.project_id = p.id) AS level_count,
@@ -73,7 +80,8 @@ function publicRun(row, { withReport = false } = {}) {
     findings: parseJson(row.findings_json, []),
   };
   out.edits = parseJson(row.edits_json, []);
-  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json;
+  out.quantities = parseJson(row.quantities_json, null);
+  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json;
   if (!withReport) delete out.report_md;
   return out;
 }
@@ -167,6 +175,56 @@ async function sendFile(res, path, contentType, downloadName) {
   });
 }
 
+const SUBMITTAL_COLUMNS = 's.*, u.name AS created_by_name, u.name_ar AS created_by_name_ar';
+function loadSubmittal(id) {
+  const row = get(`SELECT ${SUBMITTAL_COLUMNS} FROM drawing_submittals s LEFT JOIN users u ON u.id = s.created_by WHERE s.id = ?`, id);
+  if (!row) throw notFound('Submittal not found', 'طلب الاعتماد مش موجود');
+  return row;
+}
+function publicSubmittal(row) {
+  const out = { ...row, items: parseJson(row.items_json, []) };
+  delete out.items_json;
+  return out;
+}
+
+/**
+ * The current run of every level of a project: the issued run of the level (the project's default drawing type
+ * first), else its latest draft. The take-off of the project is the take-off of those runs.
+ */
+function currentRuns(project) {
+  const runs = all(`SELECT ${RUN_COLUMNS} FROM drawing_runs r JOIN drawing_levels l ON l.id = r.level_id LEFT JOIN users u ON u.id = r.created_by WHERE r.project_id = ? AND r.status NOT IN ('failed', 'running') ORDER BY r.serial DESC`, project.id).map((r) => publicRun(r));
+  const levels = all('SELECT * FROM drawing_levels WHERE project_id = ? ORDER BY sort_order, id', project.id);
+  const picked = [];
+  for (const level of levels) {
+    const mine = runs.filter((r) => r.level_id === level.id && r.quantities);
+    const rank = (r) => (r.status === 'issued' ? 2 : r.status === 'draft' ? 1 : 0) * 10 + (r.mode === project.default_mode ? 1 : 0);
+    const best = mine.sort((a, b) => rank(b) - rank(a) || b.serial - a.serial)[0];
+    if (best) picked.push({ level, run: best });
+  }
+  return picked;
+}
+
+/** The take-off of a project: the levels of its current runs, summed. */
+function projectQuantities(project) {
+  const picked = currentRuns(project);
+  const levels = [];
+  for (const { level, run } of picked) for (const l of run.quantities.levels || []) levels.push({ ...l, level_code: level.code, level_name: level.name, run_id: run.id, run_serial: run.serial, revision: run.revision, mode: run.mode, run_status: run.status });
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const sum = (get) => r1(levels.reduce((s, l) => s + (get(l) || 0), 0));
+  const byDia = {};
+  for (const l of levels) for (const d of l.steel.byDia || []) { byDia[d.dia] = byDia[d.dia] || { dia: d.dia, total_m: 0, kg: 0, count: 0 }; byDia[d.dia].total_m += d.total_m; byDia[d.dia].kg += d.kg; byDia[d.dia].count += d.count; }
+  const pt = levels.filter((l) => l.cables);
+  const totals = {
+    steel: { kg: sum((l) => l.steel.kg), top_kg: sum((l) => l.steel.top_kg), bottom_kg: sum((l) => l.steel.bottom_kg), other_kg: sum((l) => l.steel.other_kg), byDia: Object.values(byDia).sort((a, b) => a.dia - b.dia).map((d) => ({ ...d, total_m: r1(d.total_m), kg: r1(d.kg) })) },
+    concrete: { gross_area_m2: sum((l) => l.concrete.gross_area_m2), openings_m2: sum((l) => l.concrete.openings_m2), net_area_m2: sum((l) => l.concrete.net_area_m2), slab_m3: sum((l) => l.concrete.slab_m3), drops_m3: sum((l) => l.concrete.drops_m3), beams_m3: sum((l) => l.concrete.beams_m3), total_m3: sum((l) => l.concrete.total_m3), formwork_m2: sum((l) => l.concrete.formwork_m2), edge_formwork_m2: sum((l) => l.concrete.edge_formwork_m2) },
+    cables: pt.length ? { tendons: pt.reduce((s, l) => s + l.cables.tendons, 0), strands: pt.reduce((s, l) => s + l.cables.strands, 0), tendon_m: sum((l) => l.cables?.tendon_m), strand_m: sum((l) => l.cables?.strand_m), cutting_m: sum((l) => l.cables?.cutting_m), kg: sum((l) => l.cables?.kg), live_ends: pt.reduce((s, l) => s + l.cables.live_ends, 0), dead_ends: pt.reduce((s, l) => s + l.cables.dead_ends, 0), duct_small_m: sum((l) => l.cables?.duct_small_m), duct_large_m: sum((l) => l.cables?.duct_large_m) } : null,
+  };
+  const net = totals.concrete.net_area_m2;
+  totals.steel.kg_per_m2 = net ? Math.round((totals.steel.kg / net) * 100) / 100 : null;
+  if (totals.cables) { totals.cables.kg_per_m2 = net ? Math.round((totals.cables.kg / net) * 100) / 100 : null; totals.cables.strand_m_per_m2 = net ? Math.round((totals.cables.strand_m / net) * 100) / 100 : null; }
+  return { levels, totals, runs: picked.map(({ level, run }) => ({ level_id: level.id, level_code: level.code, run_id: run.id, serial: run.serial, revision: run.revision, mode: run.mode, status: run.status })) };
+}
+
 export function register(router) {
   // ------------------------------------------------------------- projects
   router.get('/api/drawings/projects', ({ query, user }) => {
@@ -230,7 +288,8 @@ export function register(router) {
       project.id,
     );
     for (const l of levels) l.edits = parseJson(l.edits_json, []);
-    return { project: publicProject(project), levels, runs, files, settings: drawingSettings() };
+    const submittals = all(`SELECT ${SUBMITTAL_COLUMNS} FROM drawing_submittals s LEFT JOIN users u ON u.id = s.created_by WHERE s.project_id = ? ORDER BY s.serial DESC`, project.id).map(publicSubmittal);
+    return { project: publicProject(project), levels, runs, files, submittals, settings: drawingSettings() };
   });
 
   router.patch('/api/drawings/projects/:id', ({ params, body, user }) => {
@@ -361,6 +420,7 @@ export function register(router) {
         findings_json: JSON.stringify(result.findings),
         report_md: report,
         duration_ms: result.duration_ms,
+        quantities_json: result.quantities ? JSON.stringify(result.quantities) : null,
       });
       audit(user.id, 'drawing_run', runId, 'generate', { serial, mode, revision, sheets: result.sheets.length, edits: edits.length });
       return publicRun(loadRun(runId));
@@ -504,6 +564,118 @@ export function register(router) {
     requirePermission(user, 'drawings.view');
     const run = loadRun(params.id);
     return { run: publicRun(run, { withReport: true }), project: publicProject(loadProject(run.project_id)) };
+  });
+
+  // ------------------------------------------------------------ quantities and cost
+  router.get('/api/drawings/runs/:id/quantities', ({ params, user }) => {
+    requirePermission(user, 'drawings.view');
+    const run = publicRun(loadRun(params.id));
+    if (!run.quantities) throw notFound('This run carries no take-off', 'الإصدار ده مفيهوش حصر');
+    return { quantities: run.quantities, run: { id: run.id, serial: run.serial, revision: run.revision, mode: run.mode, status: run.status, level_code: run.level_code } };
+  });
+
+  router.get('/api/drawings/projects/:id/quantities', ({ params, user }) => {
+    requirePermission(user, 'drawings.view');
+    const project = loadProject(params.id);
+    return { project: { id: project.id, code: project.code, name: project.name }, ...projectQuantities(project) };
+  });
+
+  router.get('/api/drawings/projects/:id/cost', ({ params, query, user }) => {
+    requirePermission(user, 'drawings.view');
+    const project = loadProject(params.id);
+    const settings = drawingSettings();
+    // the office rates, overridable per call (a what-if from the screen) with numbers only
+    const rates = { ...settings.rates };
+    for (const [k, v] of Object.entries(query)) if (k in rates && k !== 'currency' && Number.isFinite(Number(v))) rates[k] = Number(v);
+    const q = projectQuantities(project);
+    return { project: { id: project.id, code: project.code, name: project.name }, quantities: q, cost: costStudy(q, rates) };
+  });
+
+  // ------------------------------------------------------------ submittal forms
+  router.get('/api/drawings/projects/:id/submittals', ({ params, user }) => {
+    requirePermission(user, 'drawings.view');
+    const project = loadProject(params.id);
+    const rows = all(`SELECT ${SUBMITTAL_COLUMNS} FROM drawing_submittals s LEFT JOIN users u ON u.id = s.created_by WHERE s.project_id = ? ORDER BY s.serial DESC`, project.id);
+    return { submittals: rows.map(publicSubmittal) };
+  });
+
+  router.post('/api/drawings/projects/:id/submittals', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const project = loadProject(params.id);
+    const settings = drawingSettings();
+    const runIds = (Array.isArray(body.run_ids) ? body.run_ids : []).map((v) => int(v, 'run_ids', { min: 1 })).filter(Boolean);
+    if (!runIds.length) throw badRequest('Pick at least one drawing run', 'اختار إصدار لوحات واحد على الأقل');
+    const runs = runIds.map((id) => publicRun(loadRun(id)));
+    if (runs.some((r) => r.project_id !== project.id)) throw badRequest('A run of another project was picked', 'فيه إصدار من مشروع تاني');
+    if (runs.some((r) => r.status === 'failed' || r.status === 'running')) throw badRequest('A run without drawings was picked', 'فيه إصدار مطلعش لوحات');
+    const only = Array.isArray(body.sheets) && body.sheets.length ? body.sheets.map((v) => String(v)) : null;
+    const previous = all('SELECT * FROM drawing_submittals WHERE project_id = ? AND status <> ? ORDER BY serial', project.id, 'withdrawn').map(publicSubmittal);
+    const items = submittalItems(runs, { only, previous });
+    if (!items.length) throw badRequest('No drawings to submit', 'مفيش لوحات تتقدم');
+    const modes = new Set(runs.map((r) => r.mode));
+    const kind = modes.size > 1 ? 'mixed' : runs[0].mode;
+    const resub = items.some((it) => it.prev_rev != null);
+    const id = transaction(() => {
+      const serial = nextCounter(`drawing_submittals:${project.id}`);
+      return insert('drawing_submittals', {
+        project_id: project.id, serial, code: submittalCode(settings.submittal.prefix || 'SPAN-SUB', project.code, serial), revision: 0, kind,
+        subject: str(body.subject, 'subject', { max: 300, fallback: `${kind === 'design' ? 'DESIGN' : kind === 'shop' ? 'SHOP' : 'DESIGN AND SHOP'} DRAWINGS - ${[...new Set(items.map((it) => it.level))].join(', ')}${resub ? ' (RE-SUBMISSION)' : ''}` }),
+        to_name: str(body.to_name, 'to_name', { max: 200, fallback: project.consultant || null }),
+        attention: str(body.attention, 'attention', { max: 200, fallback: null }),
+        purpose: oneOf(body.purpose, 'purpose', SUBMITTAL_PURPOSES, { fallback: resub ? 'resubmission' : 'approval' }),
+        date: str(body.date, 'date', { max: 10, fallback: new Date().toISOString().slice(0, 10) }),
+        items_json: JSON.stringify(items), notes: str(body.notes, 'notes', { max: 4000, fallback: null }),
+        status: 'draft', created_by: user.id,
+      });
+    });
+    audit(user.id, 'drawing_submittal', id, 'create', { code: loadSubmittal(id).code, items: items.length });
+    return { submittal: publicSubmittal(loadSubmittal(id)) };
+  });
+
+  router.get('/api/drawings/submittals/:id', ({ params, user }) => {
+    requirePermission(user, 'drawings.view');
+    const s = publicSubmittal(loadSubmittal(params.id));
+    return { submittal: s, project: publicProject(loadProject(s.project_id)) };
+  });
+
+  router.get('/api/drawings/submittals/:id/form', ({ params, user, res }) => {
+    requirePermission(user, 'drawings.view');
+    const s = publicSubmittal(loadSubmittal(params.id));
+    const html = submittalHtml({ submittal: s, project: publicProject(loadProject(s.project_id)), settings: drawingSettings(), items: s.items, user });
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'private, max-age=0', 'x-content-type-options': 'nosniff' });
+    res.end(html);
+  });
+
+  router.patch('/api/drawings/submittals/:id', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const s = loadSubmittal(params.id);
+    const settings = drawingSettings();
+    const project = loadProject(s.project_id);
+    const fields = {
+      subject: str(body.subject, 'subject', { max: 300, fallback: undefined }),
+      to_name: str(body.to_name, 'to_name', { max: 200, fallback: undefined }),
+      attention: str(body.attention, 'attention', { max: 200, fallback: undefined }),
+      notes: str(body.notes, 'notes', { max: 4000, fallback: undefined }),
+      date: str(body.date, 'date', { max: 10, fallback: undefined }),
+      response_date: str(body.response_date, 'response_date', { max: 10, fallback: undefined }),
+      response_notes: str(body.response_notes, 'response_notes', { max: 4000, fallback: undefined }),
+      response_by: str(body.response_by, 'response_by', { max: 200, fallback: undefined }),
+      purpose: body.purpose === undefined ? undefined : oneOf(body.purpose, 'purpose', SUBMITTAL_PURPOSES),
+      status: body.status === undefined ? undefined : oneOf(body.status, 'status', SUBMITTAL_STATUS),
+    };
+    // re-issuing the same submittal (a correction before the consultant answers) bumps its own revision: -R1, -R2 ...
+    if (body.reissue) { fields.revision = (s.revision || 0) + 1; fields.code = submittalCode(settings.submittal.prefix || 'SPAN-SUB', project.code, s.serial, fields.revision); fields.status = 'draft'; }
+    update('drawing_submittals', s.id, fields);
+    audit(user.id, 'drawing_submittal', s.id, 'update', fields);
+    return { submittal: publicSubmittal(loadSubmittal(s.id)) };
+  });
+
+  router.delete('/api/drawings/submittals/:id', ({ params, user }) => {
+    requirePermission(user, 'drawings.delete');
+    const s = loadSubmittal(params.id);
+    runSql('DELETE FROM drawing_submittals WHERE id = ?', s.id);
+    audit(user.id, 'drawing_submittal', s.id, 'delete', { code: s.code });
+    return { ok: true };
   });
 
   router.get('/api/drawings/runs/:id/zip', async ({ params, user, res }) => {

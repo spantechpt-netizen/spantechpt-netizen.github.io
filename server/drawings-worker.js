@@ -9,7 +9,7 @@ import { generate } from '../shopdrawings/cli.mjs';
 try {
   const { input, out, meta, spec, levelNames, mode } = workerData;
   const t0 = Date.now();
-  const { model, pack } = generate({ inputDxf: input, out, meta, spec, svg: true, levelNames, mode });
+  const { model, pack, quantities } = generate({ inputDxf: input, out, meta, spec, svg: true, levelNames, mode });
   parentPort.postMessage({
     ok: true,
     duration_ms: Date.now() - t0,
@@ -25,6 +25,7 @@ try {
     })),
     assumptions: model.assumptions.map((a) => (a.level ? `[${a.level}] ` : '') + a.text),
     findings: model.findings,
+    quantities,
     levels: model.levels.map((l) => ({ id: l.id, name: l.name, thickness: l.thickness, columns: (l.columns || []).length })),
   });
 } catch (error) {

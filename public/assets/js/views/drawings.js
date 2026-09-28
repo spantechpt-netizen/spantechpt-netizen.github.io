@@ -361,6 +361,8 @@ async function projectPage(projectId, navigate) {
       { key: 'levels', label: t('dw_tab_levels'), build: () => levelsPanel() },
       { key: 'files', label: t('dw_tab_files'), build: () => filesPanel() },
       { key: 'history', label: t('dw_tab_history'), build: () => historyPanel() },
+      { key: 'submittals', label: t('dw_tab_submittals'), build: () => submittalsPanel(project, levels, runs, data.submittals || [], settings, load) },
+      { key: 'quantities', label: t('dw_tab_quantities'), build: () => quantitiesPanel(project, settings) },
     ];
     const draw = () => {
       clear(tabs);
@@ -542,6 +544,299 @@ async function projectPage(projectId, navigate) {
 
   await load();
   return page;
+}
+
+// ------------------------------------------------------------- submittals
+const SUBMITTAL_STATUS = ['draft', 'submitted', 'approved', 'approved_as_noted', 'resubmit', 'rejected', 'withdrawn'];
+const PURPOSES = ['approval', 'information', 'resubmission', 'as_built'];
+const submittalBadge = (status) => el('span', {
+  class: `badge ${status === 'approved' ? 'green' : status === 'approved_as_noted' || status === 'submitted' ? 'blue' : status === 'resubmit' || status === 'rejected' ? 'red' : status === 'withdrawn' ? 'grey' : 'amber'}`,
+  text: t(`dw_sstatus_${status}`),
+});
+
+function submittalsPanel(project, levels, runs, submittals, settings, reload) {
+  const host = el('div');
+  host.append(el('div.alert.info', { text: t('dw_submittals_hint') }));
+  const usable = runs.filter((r) => r.status !== 'failed' && r.status !== 'running');
+  host.append(el('div.card', {}, [
+    el('div.card-header', {}, [
+      el('h3', { text: t('dw_tab_submittals') }),
+      el('span.badge.grey', { text: String(submittals.length) }),
+      el('div.spacer'),
+      can('drawings.create') && usable.length ? el('button.btn.btn-sm', { type: 'button', onclick: () => openSubmittalForm(project, levels, usable, settings, reload) }, [icon('plus', 14), t('dw_new_submittal')]) : null,
+    ]),
+    el('div.card-body.flush', {}, [submittals.length ? dataTable({
+      rows: submittals,
+      columns: [
+        { label: t('dw_submittal_no'), render: (row) => el('span.bold', { text: row.code, dir: 'ltr' }) },
+        { label: t('dw_submittal_date'), render: (row) => row.date },
+        { label: t('dw_submittal_subject'), render: (row) => el('span', { text: row.subject || '—', dir: 'ltr' }) },
+        { label: t('dw_submittal_to'), render: (row) => el('span', { text: [row.to_name, row.attention].filter(Boolean).join(' · ') || '—', dir: 'ltr' }) },
+        { label: t('dw_submittal_purpose'), render: (row) => t(`dw_purpose_${row.purpose}`) },
+        { label: t('dw_submittal_items'), className: 'num', render: (row) => row.items.length },
+        { label: t('status'), render: (row) => submittalBadge(row.status) },
+        { label: t('dw_submittal_response'), render: (row) => el('span.small', { text: [row.response_date, row.response_notes].filter(Boolean).join(' — ') || '—' }) },
+        { label: t('dw_by'), render: (row) => pick(row, 'created_by_name') || '—' },
+        {
+          label: t('actions'),
+          render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
+            el('a.btn.btn-sm', { href: api.drawingSubmittalFormUrl(row.id), target: '_blank', rel: 'noopener', title: t('dw_submittal_open_form') }, [icon('chevron', 14), t('print')]),
+            can('drawings.create') ? el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => openSubmittalStatus(row, reload) }, [icon('edit', 14), t('dw_submittal_mark')]) : null,
+            can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
+              type: 'button', title: t('delete'),
+              onclick: async () => {
+                if (!(await confirmDialog(t('dw_delete_submittal_confirm')))) return;
+                try { await api.deleteDrawingSubmittal(row.id); toast(t('deleted'), 'success'); reload(); } catch (error) { toastError(error); }
+              },
+            }, [icon('trash', 14)]) : null,
+          ]),
+        },
+      ],
+    }) : el('div.empty', {}, [icon('empty', 32), el('div', { text: t('dw_no_submittals') })])]),
+  ]));
+  // the drawings of each submittal, with what they supersede
+  for (const sub of submittals) {
+    host.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: `${sub.code} · ${sub.subject || ''}`, dir: 'ltr' }), el('div.spacer'), submittalBadge(sub.status)]),
+      el('div.card-body.flush', {}, [dataTable({
+        rows: sub.items,
+        columns: [
+          { label: t('dw_sheet_no'), render: (row) => el('span.bold', { text: row.no, dir: 'ltr' }) },
+          { label: t('dw_sheet_title'), render: (row) => el('span', { text: row.title, dir: 'ltr' }) },
+          { label: t('dw_level'), render: (row) => el('span', { text: row.level === 'ALL' ? 'ALL' : `${row.level} - ${row.level_name || ''}`, dir: 'ltr' }) },
+          { label: t('dw_revision'), render: (row) => `REV ${row.rev}` },
+          { label: t('dw_submittal_supersedes'), render: (row) => (row.prev_rev != null ? el('span', { text: `REV ${row.prev_rev} (${row.prev_submittal})`, dir: 'ltr' }) : '—') },
+        ],
+      })]),
+    ]));
+  }
+  return host;
+}
+
+function openSubmittalForm(project, levels, runs, settings, after) {
+  const levelOf = (r) => levelLabel({ code: r.level_code, name: r.level_name, zone: r.level_zone });
+  const picked = new Map(); // run id -> Set of sheet numbers (null = all)
+  const runsHost = el('div');
+  const sheetsHost = el('div');
+  const drawSheets = () => {
+    clear(sheetsHost);
+    for (const run of runs.filter((r) => picked.has(r.id))) {
+      const chosen = picked.get(run.id);
+      const sheets = run.sheets.filter((sh) => !(sh.level === 'ALL' && /COVER|INDEX/i.test(sh.title)));
+      sheetsHost.append(el('div.card', {}, [
+        el('div.card-header', {}, [el('h3', { text: `#${run.serial} · ${levelOf(run)} · REV ${run.revision}`, dir: 'ltr' }), el('div.spacer'), el('label.small', {}, [el('input', { type: 'checkbox', checked: chosen === null, onchange: (e) => { picked.set(run.id, e.target.checked ? null : new Set(sheets.map((x) => x.no))); drawSheets(); } }), ' ', t('dw_submittal_all_sheets')])]),
+        el('div.card-body', {}, [el('div.grid.grid-2', {}, sheets.map((sh) => el('label.small', {}, [
+          el('input', { type: 'checkbox', checked: chosen === null || chosen.has(sh.no), disabled: chosen === null, onchange: (e) => { if (e.target.checked) chosen.add(sh.no); else chosen.delete(sh.no); } }),
+          ' ', el('span', { text: `${sh.no} — ${sh.title}`, dir: 'ltr' }),
+        ])))]),
+      ]));
+    }
+  };
+  runsHost.append(dataTable({
+    rows: runs,
+    columns: [
+      { label: '', render: (row) => el('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked) picked.set(row.id, null); else picked.delete(row.id); drawSheets(); } }) },
+      { label: t('dw_serial'), className: 'num', render: (row) => `#${row.serial}` },
+      { label: t('dw_level'), render: (row) => el('span', { text: levelOf(row), dir: 'ltr' }) },
+      { label: t('dw_mode'), render: (row) => modeLabel(row.mode) },
+      { label: t('dw_revision'), render: (row) => `REV ${row.revision}` },
+      { label: t('status'), render: (row) => statusBadge(row.status) },
+      { label: t('dw_sheets'), className: 'num', render: (row) => row.sheet_count },
+    ],
+  }));
+  const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'to_name', label: t('dw_submittal_to'), value: project.consultant || '', dir: 'ltr' }),
+      field({ name: 'attention', label: t('dw_submittal_attention'), value: '', dir: 'ltr' }),
+      field({ name: 'purpose', label: t('dw_submittal_purpose'), type: 'select', value: 'approval', options: PURPOSES.map((p) => ({ value: p, label: t(`dw_purpose_${p}`) })) }),
+      field({ name: 'date', label: t('dw_submittal_date'), type: 'date', value: new Date().toISOString().slice(0, 10) }),
+    ]),
+    field({ name: 'subject', label: t('dw_submittal_subject'), value: '', dir: 'ltr', hint: t('optional') }),
+    field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: '', rows: 2 }),
+    el('h4.mt-1', { text: t('dw_submittal_runs') }),
+    runsHost,
+    el('h4.mt-1', { text: t('dw_submittal_sheets') }),
+    sheetsHost,
+    el('div.tiny.muted', { text: `${t('dw_submittal_no')}: ${settings.submittal?.prefix || 'SPAN-SUB'}-${project.code}-001`, dir: 'ltr' }),
+  ]);
+  const { close } = openModal({
+    title: t('dw_new_submittal'),
+    size: 'wide',
+    body: form,
+    footer: el('div.row', {}, [
+      el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+      el('button.btn', {
+        type: 'button', text: t('create'),
+        onclick: async (event) => {
+          if (!picked.size) { toast(t('dw_submittal_runs'), 'error'); return; }
+          const data = readForm(form);
+          const sheets = [...picked.values()].some((v) => v !== null) ? runs.filter((r) => picked.has(r.id)).flatMap((r) => (picked.get(r.id) === null ? r.sheets.map((x) => x.no) : [...picked.get(r.id)])) : undefined;
+          event.currentTarget.disabled = true;
+          try {
+            const { submittal } = await api.createDrawingSubmittal(project.id, { ...data, subject: data.subject || undefined, run_ids: [...picked.keys()], sheets });
+            toast(t('saved'), 'success');
+            close();
+            window.open(api.drawingSubmittalFormUrl(submittal.id), '_blank', 'noopener');
+            after?.();
+          } catch (error) { toastError(error); event.currentTarget.disabled = false; }
+        },
+      }),
+    ]),
+  });
+}
+
+function openSubmittalStatus(sub, after) {
+  const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'status', label: t('status'), type: 'select', value: sub.status, options: SUBMITTAL_STATUS.map((v) => ({ value: v, label: t(`dw_sstatus_${v}`) })) }),
+      field({ name: 'date', label: t('dw_submittal_date'), type: 'date', value: sub.date || '' }),
+      field({ name: 'to_name', label: t('dw_submittal_to'), value: sub.to_name || '', dir: 'ltr' }),
+      field({ name: 'attention', label: t('dw_submittal_attention'), value: sub.attention || '', dir: 'ltr' }),
+      field({ name: 'response_date', label: t('dw_submittal_response_date'), type: 'date', value: sub.response_date || '' }),
+      field({ name: 'response_by', label: t('dw_submittal_response_by'), value: sub.response_by || '', dir: 'ltr' }),
+    ]),
+    field({ name: 'subject', label: t('dw_submittal_subject'), value: sub.subject || '', dir: 'ltr' }),
+    field({ name: 'response_notes', label: t('dw_submittal_response'), type: 'textarea', value: sub.response_notes || '', rows: 2 }),
+    field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: sub.notes || '', rows: 2 }),
+  ]);
+  const { close } = openModal({
+    title: `${sub.code}`,
+    size: 'wide',
+    body: form,
+    footer: el('div.row', {}, [
+      el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+      el('button.btn-secondary.btn', { type: 'button', text: t('dw_submittal_reissue'), onclick: async () => { try { await api.updateDrawingSubmittal(sub.id, { ...readForm(form), reissue: true }); toast(t('saved'), 'success'); close(); after?.(); } catch (error) { toastError(error); } } }),
+      el('button.btn', { type: 'button', text: t('save'), onclick: async () => { try { await api.updateDrawingSubmittal(sub.id, readForm(form)); toast(t('saved'), 'success'); close(); after?.(); } catch (error) { toastError(error); } } }),
+    ]),
+  });
+}
+
+// --------------------------------------------------------- quantities and cost
+const num = (v, d = 1) => (v == null || Number.isNaN(Number(v)) ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: 0 }));
+const csvOf = (rows) => rows.map((r) => r.map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+function downloadText(name, text) {
+  const a = el('a', { href: URL.createObjectURL(new Blob([`﻿${text}`], { type: 'text/csv;charset=utf-8' })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+
+function quantitiesPanel(project, settings) {
+  const host = el('div');
+  host.append(el('div.alert.info', { text: t('dw_quantities_hint') }));
+  const body = el('div.loading-page', { text: t('loading') });
+  host.append(body);
+  (async () => {
+    let q, costData;
+    try {
+      q = await api.drawingProjectQuantities(project.id);
+      costData = await api.drawingProjectCost(project.id);
+    } catch (error) { clear(body).append(el('div.alert.danger', { text: error.localised || error.message })); return; }
+    clear(body);
+    body.classList.remove('loading-page');
+    if (!q.levels.length) { body.append(el('div.empty', {}, [icon('empty', 40), el('div', { text: t('dw_no_quantities') })])); return; }
+    const T = q.totals;
+    const rowsAll = [...q.levels, { id: t('dw_qty_totals'), name: '', level_code: '', totals: true, steel: T.steel, concrete: T.concrete, cables: T.cables }];
+    const cell = (v, d) => el('span', { text: num(v, d), dir: 'ltr' });
+    const levelCell = (row) => el('div', {}, [el('div.bold', { text: row.totals ? row.id : `${row.level_code} · ${row.name}`, dir: 'ltr' }), row.totals ? null : el('div.tiny.muted', { text: `${t('dw_qty_source')}: #${row.run_serial} REV ${row.revision} · ${modeLabel(row.mode)}`, dir: 'ltr' })]);
+    // steel
+    const dias = T.steel.byDia.map((d) => d.dia);
+    body.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: t('dw_qty_steel') }), el('div.spacer'), el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => downloadText(`${project.code}_steel.csv`, csvOf([['LEVEL', 'TOP kg', 'BOTTOM kg', 'OTHER kg', 'TOTAL kg', 'kg/m2', ...dias.map((d) => `T${d} kg`)], ...rowsAll.map((r) => [r.totals ? 'TOTAL' : `${r.level_code} ${r.name}`, r.steel.top_kg, r.steel.bottom_kg, r.steel.other_kg, r.steel.kg, r.steel.kg_per_m2 ?? '', ...dias.map((d) => r.steel.byDia.find((x) => x.dia === d)?.kg ?? 0)])])) }, [icon('download', 14), t('dw_export_csv')])]),
+      el('div.card-body.flush', {}, [dataTable({
+        rows: rowsAll,
+        columns: [
+          { label: t('dw_level'), render: levelCell },
+          { label: t('dw_qty_top'), className: 'num', render: (r) => cell(r.steel.top_kg, 0) },
+          { label: t('dw_qty_bottom'), className: 'num', render: (r) => cell(r.steel.bottom_kg, 0) },
+          { label: t('dw_qty_other'), className: 'num', render: (r) => cell(r.steel.other_kg, 0) },
+          { label: t('dw_qty_kg'), className: 'num', render: (r) => el('span.bold', { text: num(r.steel.kg, 0), dir: 'ltr' }) },
+          { label: t('dw_qty_kg_m2'), className: 'num', render: (r) => cell(r.steel.kg_per_m2, 2) },
+          ...dias.map((d) => ({ label: `T${d}`, className: 'num', render: (r) => cell(r.steel.byDia.find((x) => x.dia === d)?.kg ?? 0, 0) })),
+        ],
+      })]),
+    ]));
+    // concrete
+    body.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: t('dw_qty_concrete') }), el('div.spacer'), el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => downloadText(`${project.code}_concrete.csv`, csvOf([['LEVEL', 'THK mm', 'GROSS m2', 'OPENINGS m2', 'NET m2', 'SLAB m3', 'DROPS m3', 'BEAMS m3', 'TOTAL m3', 'FORMWORK m2'], ...rowsAll.map((r) => [r.totals ? 'TOTAL' : `${r.level_code} ${r.name}`, r.concrete.thickness ?? '', r.concrete.gross_area_m2, r.concrete.openings_m2, r.concrete.net_area_m2, r.concrete.slab_m3, r.concrete.drops_m3, r.concrete.beams_m3, r.concrete.total_m3, r.concrete.formwork_m2])])) }, [icon('download', 14), t('dw_export_csv')])]),
+      el('div.card-body.flush', {}, [dataTable({
+        rows: rowsAll,
+        columns: [
+          { label: t('dw_level'), render: levelCell },
+          { label: t('dw_qty_thk'), className: 'num', render: (r) => (r.concrete.thickness ? cell(r.concrete.thickness, 0) : '—') },
+          { label: t('dw_qty_gross'), className: 'num', render: (r) => cell(r.concrete.gross_area_m2) },
+          { label: t('dw_qty_openings'), className: 'num', render: (r) => cell(r.concrete.openings_m2) },
+          { label: t('dw_qty_net'), className: 'num', render: (r) => cell(r.concrete.net_area_m2) },
+          { label: t('dw_qty_slab'), className: 'num', render: (r) => cell(r.concrete.slab_m3) },
+          { label: t('dw_qty_drops'), className: 'num', render: (r) => cell(r.concrete.drops_m3) },
+          { label: t('dw_qty_beams'), className: 'num', render: (r) => cell(r.concrete.beams_m3) },
+          { label: t('dw_qty_total_m3'), className: 'num', render: (r) => el('span.bold', { text: num(r.concrete.total_m3), dir: 'ltr' }) },
+          { label: t('dw_qty_formwork'), className: 'num', render: (r) => cell(r.concrete.formwork_m2) },
+        ],
+      })]),
+    ]));
+    // cables
+    const pt = rowsAll.filter((r) => r.cables);
+    if (pt.length) body.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: t('dw_qty_cables') }), el('div.spacer'), el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => downloadText(`${project.code}_cables.csv`, csvOf([['LEVEL', 'TENDONS', 'STRANDS', 'TENDON m', 'STRAND m', 'CUTTING m', 'STRAND kg', 'kg/m2', 'LIVE', 'DEAD', 'DUCT 20x50 m', 'DUCT 20x70 m'], ...pt.map((r) => [r.totals ? 'TOTAL' : `${r.level_code} ${r.name}`, r.cables.tendons, r.cables.strands, r.cables.tendon_m, r.cables.strand_m, r.cables.cutting_m, r.cables.kg, r.cables.kg_per_m2 ?? '', r.cables.live_ends, r.cables.dead_ends, r.cables.duct_small_m, r.cables.duct_large_m])])) }, [icon('download', 14), t('dw_export_csv')])]),
+      el('div.card-body.flush', {}, [dataTable({
+        rows: pt,
+        columns: [
+          { label: t('dw_level'), render: levelCell },
+          { label: t('dw_qty_tendons'), className: 'num', render: (r) => cell(r.cables.tendons, 0) },
+          { label: t('dw_qty_strands'), className: 'num', render: (r) => cell(r.cables.strands, 0) },
+          { label: t('dw_qty_tendon_m'), className: 'num', render: (r) => cell(r.cables.tendon_m, 0) },
+          { label: t('dw_qty_strand_m'), className: 'num', render: (r) => cell(r.cables.strand_m, 0) },
+          { label: t('dw_qty_cutting_m'), className: 'num', render: (r) => cell(r.cables.cutting_m, 0) },
+          { label: t('dw_qty_strand_kg'), className: 'num', render: (r) => el('span.bold', { text: num(r.cables.kg, 0), dir: 'ltr' }) },
+          { label: t('dw_qty_kg_m2'), className: 'num', render: (r) => cell(r.cables.kg_per_m2, 2) },
+          { label: t('dw_qty_live'), className: 'num', render: (r) => cell(r.cables.live_ends, 0) },
+          { label: t('dw_qty_dead'), className: 'num', render: (r) => cell(r.cables.dead_ends, 0) },
+          { label: t('dw_qty_duct_small'), className: 'num', render: (r) => cell(r.cables.duct_small_m, 0) },
+          { label: t('dw_qty_duct_large'), className: 'num', render: (r) => cell(r.cables.duct_large_m, 0) },
+        ],
+      })]),
+    ]));
+    // cost study with a what-if on the rates
+    const costHost = el('div');
+    const RATE_KEYS = ['steel_per_ton', 'rebar_labour_per_ton', 'concrete_per_m3', 'formwork_per_m2', 'strand_per_kg', 'anchor_live', 'anchor_dead', 'duct_per_m', 'pt_labour_per_m2', 'markup_pct', 'vat_pct'];
+    const ratesForm = el('form', { onsubmit: (e) => e.preventDefault() }, [el('div.grid.grid-4', {}, RATE_KEYS.map((k) => field({ name: k, label: t(`dw_rate_${k}`), type: 'number', value: costData.cost.rates[k], min: 0, step: 0.01 })))]);
+    const drawCost = (c) => {
+      clear(costHost);
+      const cur = c.currency;
+      const rowsCost = [...c.levels.map((l, i) => ({ ...l, level_code: q.levels[i]?.level_code || l.id })), { id: t('dw_qty_totals'), totals: true, ...c.totals }];
+      const lineKeys = c.totals.lines.map((l) => l.key);
+      costHost.append(dataTable({
+        rows: rowsCost,
+        columns: [
+          { label: t('dw_level'), render: (r) => el('span.bold', { text: r.totals ? r.id : `${r.level_code} · ${r.name}`, dir: 'ltr' }) },
+          ...lineKeys.map((k) => ({ label: t(`dw_cost_${k}`), className: 'num', render: (r) => cell(r.lines.find((l) => l.key === k)?.amount, 0) })),
+          { label: t('dw_cost_direct'), className: 'num', render: (r) => cell(r.direct, 0) },
+          { label: t('dw_cost_markup'), className: 'num', render: (r) => cell(r.markup, 0) },
+          { label: t('dw_cost_vat'), className: 'num', render: (r) => cell(r.vat, 0) },
+          { label: `${t('dw_cost_total')} (${cur})`, className: 'num', render: (r) => el('span.bold', { text: num(r.total, 0), dir: 'ltr' }) },
+          { label: t('dw_cost_per_m2'), className: 'num', render: (r) => cell(r.per_m2, 0) },
+        ],
+      }));
+      costHost.append(el('div.card-body', {}, [dataTable({
+        rows: c.totals.lines,
+        columns: [
+          { label: t('dw_cost_item'), render: (l) => t(`dw_cost_${l.key}`) },
+          { label: t('dw_cost_unit'), render: (l) => l.unit },
+          { label: t('dw_cost_qty'), className: 'num', render: (l) => cell(l.qty, 2) },
+          { label: `${t('dw_cost_rate')} (${cur})`, className: 'num', render: (l) => cell(l.rate, 2) },
+          { label: `${t('dw_cost_amount')} (${cur})`, className: 'num', render: (l) => el('span.bold', { text: num(l.amount, 0), dir: 'ltr' }) },
+        ],
+      })]));
+    };
+    drawCost(costData.cost);
+    body.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: t('dw_cost') }), el('div.spacer'),
+        el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => downloadText(`${project.code}_cost.csv`, csvOf([['ITEM', 'UNIT', 'QTY', 'RATE', 'AMOUNT'], ...costData.cost.totals.lines.map((l) => [l.key, l.unit, l.qty, l.rate, l.amount]), ['DIRECT', '', '', '', costData.cost.totals.direct], ['MARKUP', '', '', '', costData.cost.totals.markup], ['VAT', '', '', '', costData.cost.totals.vat], ['TOTAL', '', '', '', costData.cost.totals.total]])) }, [icon('download', 14), t('dw_export_csv')]),
+        el('button.btn.btn-sm', { type: 'button', onclick: async () => { try { const rates = readForm(ratesForm); costData = await api.drawingProjectCost(project.id, rates); drawCost(costData.cost); } catch (error) { toastError(error); } } }, [icon('play', 14), t('dw_cost_apply')])]),
+      el('div.card-body', {}, [el('div.small.muted', { text: t('dw_cost_hint') }), ratesForm]),
+      el('div.card-body.flush', {}, [costHost]),
+    ]));
+  })();
+  return host;
 }
 
 function runsTable(runs, project, navigate, reload) {

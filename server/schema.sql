@@ -472,3 +472,28 @@ CREATE TABLE IF NOT EXISTS drawing_files (
   updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_drawing_files_project ON drawing_files(project_id, category, created_at);
+
+-- submittal request forms (transmittals) to the consultant: which drawings, at which revision, and the answer
+CREATE TABLE IF NOT EXISTS drawing_submittals (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id     INTEGER NOT NULL REFERENCES drawing_projects(id) ON DELETE CASCADE,
+  serial         INTEGER NOT NULL,
+  code           TEXT NOT NULL,
+  revision       INTEGER NOT NULL DEFAULT 0,
+  kind           TEXT NOT NULL DEFAULT 'shop',
+  subject        TEXT,
+  to_name        TEXT,
+  attention      TEXT,
+  purpose        TEXT NOT NULL DEFAULT 'approval',
+  date           TEXT NOT NULL,
+  items_json     TEXT NOT NULL,
+  notes          TEXT,
+  status         TEXT NOT NULL DEFAULT 'draft',
+  response_date  TEXT,
+  response_notes TEXT,
+  response_by    TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_submittals_project ON drawing_submittals(project_id, serial);

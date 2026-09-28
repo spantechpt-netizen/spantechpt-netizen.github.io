@@ -95,7 +95,7 @@ the next revision with them applied. The step-by-step
 office procedure (preparing the RAM model, registering, generating, reviewing,
 AutoCAD, revision cycle) is in
 [docs/RAM-DRAWINGS-WORKFLOW.md](docs/RAM-DRAWINGS-WORKFLOW.md) and opens from
-the screen itself (`/help/ram-drawings-workflow.html`).
+the screen itself (`/help/ram-drawings-workflow.html`). The same module issues the **submittal request forms** (office-wide template, numbered per project, the drawing numbers / titles / revisions filled in from the title blocks, superseded revisions named on re-submission, status and the consultant's response tracked), the **quantity take-off** (steel, concrete, cables per level from the same model the drawings came from) and the **cost study** (take-off × the office unit rates, with a what-if on the screen).
 
 ---
 

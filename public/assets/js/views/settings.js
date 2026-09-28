@@ -1011,11 +1011,42 @@ function drawingsPanel(settings) {
     } catch (error) { toastError(error); }
   });
 
+  // the submittal form template (one for the office) and the unit rates of the cost study
+  const sub = { prefix: 'SPAN-SUB', title: '', title_ar: '', intro: '', responses: [], signatures: [], footer: '', contact: '', ...(current.submittal || {}) };
+  const subForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-3', {}, [
+      field({ name: 'prefix', label: t('dw_sub_prefix'), value: sub.prefix, dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'title', label: t('dw_sub_title'), value: sub.title, dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'title_ar', label: t('dw_sub_title_ar'), value: sub.title_ar, dir: 'rtl', disabled: readOnly() }),
+    ]),
+    field({ name: 'contact', label: t('dw_sub_contact'), value: sub.contact, dir: 'ltr', disabled: readOnly() }),
+    field({ name: 'intro', label: t('dw_sub_intro'), type: 'textarea', value: sub.intro, rows: 2, dir: 'ltr', disabled: readOnly() }),
+    el('div.grid.grid-2', {}, [
+      field({ name: 'responses', label: t('dw_sub_responses'), type: 'textarea', value: (sub.responses || []).join('\n'), rows: 4, dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'signatures', label: t('dw_sub_signatures'), type: 'textarea', value: (sub.signatures || []).join('\n'), rows: 4, dir: 'ltr', disabled: readOnly() }),
+    ]),
+    field({ name: 'footer', label: t('dw_sub_footer'), type: 'textarea', value: sub.footer, rows: 2, dir: 'ltr', disabled: readOnly() }),
+  ]);
+  const rates = { currency: 'SAR', steel_per_ton: 3200, rebar_labour_per_ton: 350, concrete_per_m3: 280, formwork_per_m2: 45, strand_per_kg: 9.5, anchor_live: 45, anchor_dead: 25, duct_per_m: 6, pt_labour_per_m2: 18, markup_pct: 15, vat_pct: 15, ...(current.rates || {}) };
+  const RATE_KEYS = ['steel_per_ton', 'rebar_labour_per_ton', 'concrete_per_m3', 'formwork_per_m2', 'strand_per_kg', 'anchor_live', 'anchor_dead', 'duct_per_m', 'pt_labour_per_m2', 'markup_pct', 'vat_pct'];
+  const ratesForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-4', {}, [
+      field({ name: 'currency', label: t('dw_rate_currency'), value: rates.currency, dir: 'ltr', disabled: readOnly() }),
+      ...RATE_KEYS.map((k) => field({ name: k, label: t(`dw_rate_${k}`), type: 'number', value: rates[k], min: 0, step: 0.01, disabled: readOnly() })),
+    ]),
+  ]);
+
   return el('div.card', {}, [
     el('div.card-header', {}, [el('h3', { text: t('dw_settings') })]),
     el('div.card-body', {}, [
       el('div.alert.info', { text: t('dw_numbering_hint'), dir: 'ltr' }),
       form,
+      el('h4.mt-2', { text: t('dw_submittal_template') }),
+      el('div.small.muted', { text: t('dw_submittal_template_hint') }),
+      subForm,
+      el('h4.mt-2', { text: t('dw_rates') }),
+      el('div.small.muted', { text: t('dw_rates_hint') }),
+      ratesForm,
       el('h4.mt-2', { text: t('dw_frame') }),
       el('div.small.muted', { text: t('dw_frame_hint') }),
       frameForm,
@@ -1040,7 +1071,12 @@ function drawingsPanel(settings) {
             delete data.spec;
             const frame = readForm(frameForm);
             for (const k of ['rightWidth', 'bottomStrip', 'titleH', 'refsH', 'keyH', 'schedH']) if (frame[k] == null) delete frame[k];
-            save('drawings', { ...current, ...data, spec: parsed, frame: { ...fr, ...frame } });
+            const subData = readForm(subForm);
+            const lines = (v) => String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
+            const submittal = { ...sub, ...subData, responses: lines(subData.responses), signatures: lines(subData.signatures) };
+            const rateData = readForm(ratesForm);
+            for (const k of RATE_KEYS) if (rateData[k] == null) delete rateData[k];
+            save('drawings', { ...current, ...data, spec: parsed, frame: { ...fr, ...frame }, submittal, rates: { ...rates, ...rateData } });
           },
         }),
         el('button.btn-secondary.btn', {

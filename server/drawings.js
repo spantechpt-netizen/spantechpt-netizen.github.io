@@ -29,6 +29,23 @@ export const FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
 /** Sheet frame defaults (paper mm); see shopdrawings/lib/sheet.mjs DEFAULT_FRAME. */
 export const FRAME_DEFAULTS = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: true };
 
+/** The submittal (transmittal) form: one template for the whole office, filled from the project and the runs. */
+export const SUBMITTAL_DEFAULTS = {
+  prefix: 'SPAN-SUB',
+  title: 'DRAWING SUBMITTAL / TRANSMITTAL',
+  title_ar: 'طلب اعتماد مخططات',
+  intro: 'We are pleased to submit the following drawings for your review and approval. Kindly return one signed copy of this form with your comments.',
+  purposes: ['approval', 'information', 'resubmission', 'as_built'],
+  responses: ['APPROVED', 'APPROVED AS NOTED', 'REVISE AND RESUBMIT', 'REJECTED'],
+  signatures: ['PREPARED BY', 'CHECKED BY', 'APPROVED BY'],
+  footer: 'This submittal is issued under the office quality procedure; drawings are identified by their number and revision as printed in the title block. A revised drawing is re-submitted under a new submittal number that names the superseded revision.',
+  contact: '',
+};
+export const SUBMITTAL_STATUS = ['draft', 'submitted', 'approved', 'approved_as_noted', 'resubmit', 'rejected', 'withdrawn'];
+export const SUBMITTAL_PURPOSES = ['approval', 'information', 'resubmission', 'as_built'];
+/** Office unit rates for the cost study (one currency). */
+export const RATE_DEFAULTS = { currency: 'SAR', steel_per_ton: 3200, rebar_labour_per_ton: 350, concrete_per_m3: 280, formwork_per_m2: 45, strand_per_kg: 9.5, anchor_live: 45, anchor_dead: 25, duct_per_m: 6, pt_labour_per_m2: 18, markup_pct: 15, vat_pct: 15 };
+
 /** Office defaults behind the "Drawings" settings tab. */
 export const DRAWING_DEFAULTS = {
   project_prefix: 'P',
@@ -46,11 +63,13 @@ export const DRAWING_DEFAULTS = {
   spec: {},
   frame: FRAME_DEFAULTS,
   frame_dxf: null,
+  submittal: SUBMITTAL_DEFAULTS,
+  rates: RATE_DEFAULTS,
 };
 
 export function drawingSettings() {
   const stored = getSetting('drawings', {}) || {};
-  return { ...DRAWING_DEFAULTS, ...stored, spec: { ...(DRAWING_DEFAULTS.spec || {}), ...(stored.spec || {}) }, frame: { ...FRAME_DEFAULTS, ...(stored.frame || {}) } };
+  return { ...DRAWING_DEFAULTS, ...stored, spec: { ...(DRAWING_DEFAULTS.spec || {}), ...(stored.spec || {}) }, frame: { ...FRAME_DEFAULTS, ...(stored.frame || {}) }, submittal: { ...SUBMITTAL_DEFAULTS, ...(stored.submittal || {}) }, rates: { ...RATE_DEFAULTS, ...(stored.rates || {}) } };
 }
 
 /** Where the office's own frame DXF is kept once uploaded. */
