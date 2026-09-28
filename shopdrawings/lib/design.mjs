@@ -30,7 +30,7 @@ import { extractModel, flatten, closedPolys } from './extract.mjs';
 import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisRect, cleanPolygon, ceilTo, distToPolygon, clipSegmentToPolygon } from './geometry.mjs';
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
-import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets } from './sheets.mjs';
+import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet } from './sheets.mjs';
 /** The office's DIM100: 250 text, 150 oblique ticks, green number, text above the line, and no extension lines at all (dimse1/dimse2 on, dimexe 0). */
 export const DIM100 = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'BW', se1: true, se2: true };
 
@@ -1035,24 +1035,31 @@ export function designAdditions(level, spec, opts = {}) {
         const s0 = Math.max(-L / 2 + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700)); // clear of the crossing bar beside the column
         const dp = dir === 'x' ? { x: cc.x + s0, y: cc.y - W / 2 } : { x: cc.x - W / 2, y: cc.y + s0 };
         const dq = dir === 'x' ? { x: cc.x + s0, y: cc.y + W / 2 } : { x: cc.x + W / 2, y: cc.y + s0 };
-        // the drop bar: a U whose legs continue at an angle out of the drop (the step) and run `leg` (500) beyond it
-        // at the slab bottom to lap with the slab bottom bars; its length counts the two cranks and the two 500s
-        const step = Math.max(50, (z.thickness || h) - h), crankLen = ceilTo(step * Math.SQRT2, 10), extra = 2 * (crankLen + (sd.leg || 500));
-        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L + extra}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc, crank: { diag: 200, beyond: sd.leg || 500 }, extra });
-        addBar('B', { dia: sd.dia, shape: `CRANK ${step}+${sd.leg || 500}`, length: L + extra, qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
+        // the drop bar (office rule): the bottom run stops `bendCover` (50) short of each drop face, rises with a
+        // 90° bend over the step and continues `leg` (500) at the slab bottom to lap with the slab bottom bars (or
+        // further when the office length reaches beyond the drop); its length counts the two rises and continuations
+        const step = Math.max(50, (z.thickness || h) - h), cov = sd.bendCover ?? 50;
+        const zLo = dir === 'x' ? b.minX : b.minY, zHi = dir === 'x' ? b.maxX : b.maxY, c0 = dir === 'x' ? cc.x : cc.y;
+        const runA = Math.min(zLo + cov, c0 - 200), runB = Math.max(zHi - cov, c0 + 200);
+        const contA = Math.max(sd.leg || 500, ceilTo(Math.max(0, zLo - (c0 - L / 2)), 10)), contB = Math.max(sd.leg || 500, ceilTo(Math.max(0, c0 + L / 2 - zHi), 10));
+        const pa = dir === 'x' ? { x: runA, y: cc.y } : { x: cc.x, y: runA }, pb = dir === 'x' ? { x: runB, y: cc.y } : { x: cc.x, y: runB };
+        const run = Math.round(runB - runA), extra = 2 * step + contA + contB, total = run + extra;
+        items.push({ detail: 'D4', face: 'B', a: pa, b: pb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${total}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc, bend: { rise: step, beyondA: contA, beyondB: contB }, extra });
+        addBar('B', { dia: sd.dia, shape: `BEND90 ${step}+${Math.max(contA, contB)}`, length: total, qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
       }
       continue;
     }
     // a thickened zone without a column (a strip, a band): extra bottom bars over the zone, 50 dia beyond it (detail 4)
-    const ext = 50 * sd.dia;
-    const runX = { a: { x: b.minX - ext, y: b.minY + b.h * 0.42 }, b: { x: b.maxX + ext, y: b.minY + b.h * 0.42 } };
-    const runY = { a: { x: b.minX + b.w * 0.62, y: b.minY - ext }, b: { x: b.minX + b.w * 0.62, y: b.maxY + ext } };
+    // (the bottom run stops `bendCover` short of the zone faces, rises with a 90° bend and continues 50 dia at the slab bottom)
+    const ext = 50 * sd.dia, covZ = sd.bendCover ?? 50;
+    const runX = { a: { x: b.minX + covZ, y: b.minY + b.h * 0.42 }, b: { x: b.maxX - covZ, y: b.minY + b.h * 0.42 } };
+    const runY = { a: { x: b.minX + b.w * 0.62, y: b.minY + covZ }, b: { x: b.minX + b.w * 0.62, y: b.maxY - covZ } };
     const Lx = Math.round(runX.b.x - runX.a.x), Ly = Math.round(runY.b.y - runY.a.y);
-    const stepZ = Math.max(50, (z.thickness || h) - h), crankZ = ceilTo(stepZ * Math.SQRT2, 10), extraZ = 2 * (crankZ + (sd.leg || 500));
-    items.push({ detail: 'D4', face: 'B', a: runX.a, b: runX.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Lx + extraZ}`, dist: { p: { x: b.minX + b.w * 0.35, y: b.minY }, q: { x: b.minX + b.w * 0.35, y: b.maxY } }, side: 1, zone: `${z.id} ${gridRef(level, b)}`, crank: { diag: 200, beyond: sd.leg || 500 }, extra: extraZ });
-    items.push({ detail: 'D4', face: 'B', a: runY.a, b: runY.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Ly + extraZ}`, dist: { p: { x: b.minX, y: b.minY + b.h * 0.72 }, q: { x: b.maxX, y: b.minY + b.h * 0.72 } }, side: -1, noTag: true, crank: { diag: 200, beyond: sd.leg || 500 }, extra: extraZ });
-    addBar('B', { dia: sd.dia, shape: `CRANK ${stepZ}+${sd.leg || 500}`, length: Lx + extraZ, qty: Math.floor(b.h / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
-    addBar('B', { dia: sd.dia, shape: `CRANK ${stepZ}+${sd.leg || 500}`, length: Ly + extraZ, qty: Math.floor(b.w / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
+    const stepZ = Math.max(50, (z.thickness || h) - h), extraZ = 2 * (stepZ + ext);
+    items.push({ detail: 'D4', face: 'B', a: runX.a, b: runX.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Lx + extraZ}`, dist: { p: { x: b.minX + b.w * 0.35, y: b.minY }, q: { x: b.minX + b.w * 0.35, y: b.maxY } }, side: 1, zone: `${z.id} ${gridRef(level, b)}`, bend: { rise: stepZ, beyondA: ext, beyondB: ext }, extra: extraZ });
+    items.push({ detail: 'D4', face: 'B', a: runY.a, b: runY.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Ly + extraZ}`, dist: { p: { x: b.minX, y: b.minY + b.h * 0.72 }, q: { x: b.maxX, y: b.minY + b.h * 0.72 } }, side: -1, noTag: true, bend: { rise: stepZ, beyondA: ext, beyondB: ext }, extra: extraZ });
+    addBar('B', { dia: sd.dia, shape: `BEND90 ${stepZ}+${ext}`, length: Lx + extraZ, qty: Math.floor(b.h / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
+    addBar('B', { dia: sd.dia, shape: `BEND90 ${stepZ}+${ext}`, length: Ly + extraZ, qty: Math.floor(b.w / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
   }
 
   // ---- D5 corners: convex wall corners inside the slab (3T16) and re-entrant slab corners (3T12)
@@ -1427,12 +1434,12 @@ export function officeBar(pl, S, it, phase) {
   if (phase !== 'labels') {
     // the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
     const ls = legSide(u, it.face); // the legs of this bar: up / right for a bottom bar, down / left for a top bar
-    if (it.crank) {
-      // the drop bar: a U whose legs continue at an angle out of the drop and lap with the slab bottom bars:
-      // a 45° crank at each end then `beyond` straight, on the leg side
-      const d = it.crank.diag || 200, bey = it.crank.beyond || 500;
-      const qa1 = add(add(it.a, u, -d), ls, d), qa2 = add(qa1, u, -bey);
-      const qb1 = add(add(it.b, u, d), ls, d), qb2 = add(qb1, u, bey);
+    if (it.bend) {
+      // the drop bar: the bottom run, a 90° rise over the step at each end (drawn as a leg across the bar, on the
+      // leg side) and the continuation at the slab bottom lapping with the slab bottom bars
+      const r = Math.max(it.bend.rise || 50, 150);
+      const qa1 = add(it.a, ls, r), qa2 = add(qa1, u, -(it.bend.beyondA ?? it.bend.beyond ?? 500));
+      const qb1 = add(it.b, ls, r), qb2 = add(qb1, u, it.bend.beyondB ?? it.bend.beyond ?? 500);
       barLine(pl, [qa2, qa1, it.a, it.b, qb1, qb2], layer);
     } else barLine(pl, [it.pairOff ? add(it.a, n, it.pairOff) : it.a, it.pairOff ? add(it.b, n, it.pairOff) : it.b], layer);
     if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; barLine(pl, [e, add(e, ls, 250)], layer); } // leg of an L at the edge
@@ -1467,20 +1474,17 @@ export function officeBar(pl, S, it, phase) {
   if (!shifts.length) shifts.push(0);
   // a short bar (a U-bar symbol on an edge or a wall face) can also carry its call-out beside it, along the edge
   const sideways = L < 2500 ? [0, 600, -600, 1200, -1200, 1800, -1800, 2400, -2400] : [0];
-  const cands = []; for (const j of sideways) for (const k of shifts) for (const sd of [side, -side]) cands.push({ k, sd, j });
+  const cands = []; for (const j of sideways) for (const k of shifts) cands.push({ k, sd: flip, j });
   const gap = it.hairpin ? 150 : 60; // a hairpin's second leg sits 150 beside the axis: the call-out on that side clears it
-  // office convention: the two texts sit together on the `sd` side of the bar, the bar call-out ("T12-150 (B)")
-  // above the length ("L=5340") in the reading direction, both starting at the same point (left-aligned).
-  // The text's "up" on the page is +n when the reading direction follows the bar, -n when it is flipped: on the
-  // text-up side the length is nearer the bar and the call-out stacks above it; on the text-down side the call-out
-  // is nearer the bar and the length hangs under it.
+  // office convention: the bar call-out ("T12-150 (B)") above the bar and the length ("L=5340") under it in the
+  // reading direction, the bar between them, both texts starting at the same point (left-aligned). The text's "up"
+  // on the page is +n when the reading direction follows the bar, -n when it is flipped.
   const wMax = Math.max(String(it.l1).length, String(it.l2).length) * CALL_H * TEXT_W * 0.8;
-  const pair = ({ k, sd, j = 0 }) => {
+  const pair = ({ k, j = 0 }) => {
     const mm = add(add(add(m0, u, k), n, j), u, -flip * wMax / 2); // the common start (reading-left) of both lines
-    const base = sd < 0 ? gap + 60 : 60;
-    const up = sd * flip > 0; // this side is the text's "up"
-    const near = add(mm, n, sd * base), far = add(mm, n, sd * (base + CALL_H + 50));
-    return up ? [[far, it.l1, CALL_H, 'B', 'L'], [near, it.l2, LEN_H, 'B', 'L']] : [[near, it.l1, CALL_H, 'T', 'L'], [far, it.l2, LEN_H, 'T', 'L']];
+    const base = (sg) => (sg < 0 ? gap + 60 : 60);
+    const above = add(mm, n, flip * base(flip)), below = add(mm, n, -flip * base(-flip));
+    return [[above, it.l1, CALL_H, 'B', 'L'], [below, it.l2, LEN_H, 'T', 'L']];
   };
   const best = placer ? placer.pick(cands, (c) => pair(c).map(([p, str, h, va, al]) => textBox(p, str, h, rot, al, va, 0.8))) : { k: 0, sd: side, j: 0 };
   for (const [p, str, h, va, al] of pair(best)) pl.text(p, str, { ...to, h: h / S, valign: va, align: al });
@@ -1588,6 +1592,9 @@ export const DESIGN_SHEETS = [
   { key: 'dbottom', base: 'DESIGN_BOTTOM_REINFORCEMENT', title: 'BOTTOM REINFORCEMENT PLAN - DESIGN + GENERAL DETAILS', no: '02' },
   { key: 'dtop', base: 'DESIGN_TOP_REINFORCEMENT', title: 'TOP REINFORCEMENT PLAN - DESIGN + GENERAL DETAILS', no: '03' },
   { key: 'dpunch', base: 'DESIGN_PUNCHING_SHEAR', title: 'PUNCHING SHEAR REINFORCEMENT PLAN', no: '04' },
+  // from a RAM model: the tendons, one direction per sheet, with the high / low points of the profile only
+  { key: 'dcablat', base: 'DESIGN_PT_CABLES_LATITUDE', title: 'PT CABLES - LATITUDE (DIRECTION 1) - DESIGN LAYOUT AND PROFILE POINTS', no: '05', ramOnly: true, set: 'latitude' },
+  { key: 'dcablon', base: 'DESIGN_PT_CABLES_LONGITUDE', title: 'PT CABLES - LONGITUDE (DIRECTION 2) - DESIGN LAYOUT AND PROFILE POINTS', no: '06', ramOnly: true, set: 'longitude' },
 ];
 
 const designNotes = (model, level) => [
@@ -1798,8 +1805,12 @@ export function composeDesignPackage(model, metaIn = {}) {
       level.existing.dims = level.existing.dims.filter((d) => !d.dropped);
     }
     level.additions = { items: adds.items.length, weight: { T: adds.bars.T.totals().weight_kg, B: adds.bars.B.totals().weight_kg } };
-    const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet };
-    for (const def of DESIGN_SHEETS) jobs.push({ level, def, draw: makers[def.key](model, level, meta, adds) });
+    const makers = { dframing: framingSheet, dbottom: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'B'), dtop: (m, l, mt, a) => rebarSheet(m, l, mt, a, 'T'), dpunch: punchingSheet, dcablat: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'latitude', variant: 'design' }), dcablon: (m, l, mt) => ramCablesSheet(m, l, mt, { set: 'longitude', variant: 'design' }) };
+    for (const def of DESIGN_SHEETS) {
+      if (def.ramOnly && !level.ram) continue;
+      if (def.set && !(level.ram?.tendons || []).some((t) => t.spanSet === def.set)) continue;
+      jobs.push({ level, def, draw: makers[def.key](model, level, meta, adds) });
+    }
   }
   const total = jobs.length + 1;
   const sheets = jobs.map((j, i) => buildSheet({ model, level: j.level, def: j.def, meta, index: i + 2, total, draw: j.draw }));

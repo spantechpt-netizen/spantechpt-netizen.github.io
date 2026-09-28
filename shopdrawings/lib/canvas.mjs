@@ -49,6 +49,8 @@ export const STANDARD_LAYERS = {
   'SLAB-THK': { color: 3, ltype: 'DASHED' },
   'SLAB-THK-HATCH': { color: 8, ltype: 'CONTINUOUS' },
   'CABLE-LIVE': { color: 3, ltype: 'CONTINUOUS' },
+  'CABLE-HL': { color: 1, ltype: 'CONTINUOUS' },
+  'CABLE-CHAIR': { color: 6, ltype: 'CONTINUOUS' },
   BEAM: { color: 3, ltype: 'CONTINUOUS', lw: 25 },
   SUNKEN: { color: 4, ltype: 'CONTINUOUS' },
   'SUNKEN-HATCH': { color: 8, ltype: 'CONTINUOUS' },

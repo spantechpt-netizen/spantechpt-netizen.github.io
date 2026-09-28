@@ -311,14 +311,18 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
 
   const { composePackage } = await import('../shopdrawings/lib/sheets.mjs');
   const pkg = composePackage(model, { project: 'SYNTHETIC', prefix: 'T', company: 'SPAN TECH' });
-  assert.equal(pkg.sheets.length, 11, '8 standard sheets + 2 RAM additional sheets + cover');
+  assert.equal(pkg.sheets.length, 12, '7 standard sheets + 2 RAM additional sheets + 2 cable sheets (one per direction) + cover');
   assert.ok(pkg.sheets.find((s) => s.key === 'bottom').rows.some((r) => r.mark.startsWith('B1-') || r.mark.startsWith('B2-')), 'standard bottom mesh drawn on the RAM slab too');
   assert.ok(pkg.sheets.find((s) => s.key === 'top').rows.some((r) => r.mark.startsWith('T1-') || r.mark.startsWith('T2-')), 'standard top bars over columns drawn on the RAM slab too');
   const addb = pkg.sheets.find((s) => s.key === 'addbottom');
   assert.ok(addb.rows.length && addb.rows.every((r) => /^ADD\.B[12]-\d\d$/.test(r.mark)), addb.rows.map((r) => r.mark).join(','));
   assert.ok(pkg.sheets.find((s) => s.key === 'addtop').rows.every((r) => /^ADD\.T[12]-\d\d$/.test(r.mark)));
-  const cables = pkg.sheets.find((s) => s.key === 'cables');
-  assert.ok(cables.rows.length >= 2, 'cables schedule filled from the RAM tendons');
+  const cables = pkg.sheets.filter((s) => s.key === 'cables_lat' || s.key === 'cables_lon');
+  assert.equal(cables.length, 2, 'one cable sheet per tendon direction');
+  assert.ok(cables.every((c) => c.rows.length >= 1), 'cables schedules filled from the RAM tendons');
+  assert.ok(cables[0].csvCols.some((c) => c.key === 'elong') && cables[0].csvCols.some((c) => c.key === 'chairs'), 'the shop cable sheet carries elongations and chairs');
+  assert.ok(cables[0].rows.some((r) => r.chairs > 0), 'chair heights written along the tendons with a profile');
+  assert.ok(!pkg.sheets.some((s) => s.key === 'cables'), 'the empty template gives way to the RAM cable sheets');
 });
 
 test('walls, drop panels, pour strips and stepped zones are read from their layers', () => {
@@ -485,11 +489,14 @@ test('the General Details add bars in the office convention at the places they r
   // the column, each as long as the drop (5000 along X; 3000 along Y is stretched to 1.5 m past the 700 column face)
   assert.equal(by('D4').length, 2, 'drop mesh both ways in the 280 zone');
   assert.ok(by('D4').every((it) => it.face === 'B' && it.l1 === 'T12-150 (B)' && it.posCands && it.dist));
-  // each drop bar is a U with an angled continuation: 45° crank over the 50 step (80) + 500 beyond the drop, both ends
-  const extra = 2 * (80 + 500);
-  assert.deepEqual(by('D4').map((it) => it.l2).sort(), [`L=${3700 + extra}`, `L=${5000 + extra}`]);
-  assert.ok(by('D4').every((it) => it.crank && it.crank.beyond === 500 && it.extra === extra));
-  assert.ok(by('D4').every((it) => Math.abs(it.a.x + it.b.x - 4000) < 1 && Math.abs(it.a.y + it.b.y - 4000) < 1), 'the groups are centred on the column');
+  // each drop bar: the bottom run stops 50 short of the drop faces (1000..6000 x 1000..4000 → 4900 / 2900), rises with a
+  // 90° bend over the 50 step and continues at the slab bottom 500, or further where the office length (5000 / 3700
+  // centred on the column at 2000,2000) reaches beyond the drop: X 1500 + 500, Y 850 + 500
+  assert.deepEqual(by('D4').map((it) => it.l2).sort(), [`L=${2900 + 100 + 850 + 500}`, `L=${4900 + 100 + 1500 + 500}`]);
+  assert.ok(by('D4').every((it) => it.bend && it.bend.rise === 50 && it.bend.beyondB === 500 && it.extra === 2 * 50 + it.bend.beyondA + it.bend.beyondB));
+  const d4x = by('D4').find((it) => Math.abs(it.a.y - it.b.y) < 1), d4y = by('D4').find((it) => Math.abs(it.a.x - it.b.x) < 1);
+  assert.ok(Math.abs(Math.min(d4x.a.x, d4x.b.x) - 1050) < 1 && Math.abs(Math.max(d4x.a.x, d4x.b.x) - 5950) < 1 && d4x.bend.beyondA === 1500, 'X run inside the drop, 1.5 m continuation on the near side');
+  assert.ok(Math.abs(Math.min(d4y.a.y, d4y.b.y) - 1050) < 1 && Math.abs(Math.max(d4y.a.y, d4y.b.y) - 3950) < 1 && d4y.bend.beyondA === 850, 'Y run inside the drop');
   assert.ok(by('D5').some((it) => it.l1 === '3T16-200 (T&B)'), 'diagonals at the core wall corners');
   assert.ok(by('D5').some((it) => it.l1 === '3T12-200 (T&B)'), 'diagonals at the re-entrant slab corner');
   const d7 = by('D7');
@@ -525,7 +532,11 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   assert.equal(model.spec.uEdge.spacing, 150, 'office perimeter rule, not the G.A. assumption');
   assert.equal(L.rcTags.length, 1, 'the slab thickness is tagged once; the thickened zone carries its own THK label');
   const pack = composeDesignPackage(model, { project: 'RAM', prefix: 'SPAN-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
-  assert.equal(pack.sheets.length, 5);
+  assert.equal(pack.sheets.length, 7, 'framing, bottom, top, punching, two cable sheets (one per direction), cover');
+  const dc = pack.sheets.filter((s) => s.key === 'dcablat' || s.key === 'dcablon');
+  assert.equal(dc.length, 2);
+  assert.ok(dc.every((c) => !c.csvCols.some((k) => k.key === 'elong' || k.key === 'jack')), 'design cable sheets carry no elongation or jacking force');
+  assert.ok(dc.find((c) => c.key === 'dcablat').rows.some((r) => /H210/.test(r.hl) && /L125/.test(r.hl)), `high / low points from the profile: ${JSON.stringify(dc[0].rows.map((r) => r.hl))}`);
   const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);
   assert.ok(dxfTop.includes('\n1\nT16-150 (T)\n') && dxfTop.includes('\n1\nT12-150 U-BAR\n'), 'RAM band call-out and the perimeter U-bars on the top sheet');
   assert.ok(/\n0\nDIMENSION\n[\s\S]*?\n3\nDIM100\n/.test(dxfTop), 'distribution DIMENSIONs in DIM100');

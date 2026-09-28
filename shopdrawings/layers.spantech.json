@@ -238,6 +238,14 @@
     "CABLE-LIVE": {
       "name": "SPAN-PT-ANCHOR",
       "color": 3
+    },
+    "CABLE-HL": {
+      "name": "SPAN-PT-PROFILE",
+      "color": 1
+    },
+    "CABLE-CHAIR": {
+      "name": "SPAN-PT-CHAIR",
+      "color": 6
     }
   },
   "textStyles": {

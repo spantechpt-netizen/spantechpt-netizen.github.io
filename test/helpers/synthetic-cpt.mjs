@@ -51,6 +51,15 @@ export async function buildSyntheticCpt(dir, { beam = false, step = false } = {}
     { UID: 81, ParentUID: 71, TendonNode0: P(0, 2000), TendonNode1: P(6000, 2000), NumStrands: 4, Harped: 0 }, { UID: 82, ParentUID: 71, TendonNode0: P(6000, 2000), TendonNode1: P(12000, 2000), NumStrands: 4, Harped: 0 },
     { UID: 83, ParentUID: 72, TendonNode0: P(3000, 0), TendonNode1: P(3000, 8000), NumStrands: 3, Harped: 0 },
   ]);
+  // the CGS profile: nodes above the soffit (reference 4): high at the columns, low at mid-span
+  create('TendonNode', ['UID', 'Point0', 'ElevationReference', 'ElevationValue', 'Surface', 'Soffit']);
+  insert('TendonNode', [
+    { UID: 85, Point0: P(0, 2000), ElevationReference: 4, ElevationValue: 1250, Surface: 0, Soffit: -2500 },
+    { UID: 86, Point0: P(6000, 2000), ElevationReference: 4, ElevationValue: 2100, Surface: 0, Soffit: -2500 },
+    { UID: 87, Point0: P(12000, 2000), ElevationReference: 4, ElevationValue: 1250, Surface: 0, Soffit: -2500 },
+    { UID: 88, Point0: P(3000, 0), ElevationReference: 5, ElevationValue: 1250, Surface: 0, Soffit: -2500 },
+    { UID: 89, Point0: P(3000, 8000), ElevationReference: 5, ElevationValue: 1250, Surface: 0, Soffit: -2500 },
+  ]);
   create('Jack', ['UID', 'TendonNode0', 'JackStress', 'Elongation']); insert('Jack', [{ UID: 91, TendonNode0: P(0, 2000), JackStress: 14.88, Elongation: 850 }]);
   create('StrandMaterial', ['UID', 'Aps', 'Fpu']); insert('StrandMaterial', [{ UID: 1, Aps: 9870, Fpu: 18.6 }]);
   create('ConcentratedRebar', ['UID', 'ParentUID', 'BarFace', 'SpanDirection', 'BarType', 'BarCount', 'BarSpacing', 'Point0', 'Point1', 'LeftPoint', 'RightPoint', 'BarEnd0', 'BarEnd1', 'AbsoluteElevation']);

@@ -134,6 +134,15 @@ export function readRamConcept(path) {
     const layersList = [...layersById.values()];
     return layersList[idx] ? layersList[idx].SpanSet : 'latitude';
   };
+  // profile points: every tendon node carries its CGS elevation (reference 4 = above the soffit, 5 = below the
+  // surface, 6 = from mid-depth) with the local slab surface / soffit, so heights above the soffit follow
+  const nodeElev = new Map(rows('TendonNode').map((r) => {
+    const thk = L((r.Surface || 0) - (r.Soffit || 0)) || null;
+    const v = L(r.ElevationValue || 0);
+    const ref = r.ElevationReference;
+    const h = ref === 5 && thk ? thk - v : ref === 6 && thk ? thk / 2 + v : v;
+    return [r.Point0, { h: Math.round(h), ref, thickness: thk }];
+  }));
   // chain segments node to node
   const adj = new Map();
   for (const s of tendonSegs) { for (const n of [s.TendonNode0, s.TendonNode1]) { if (!adj.has(n)) adj.set(n, []); adj.get(n).push(s); } }
@@ -145,11 +154,13 @@ export function readRamConcept(path) {
     if (used.has(first.UID)) continue;
     let node = start; let seg = first;
     const pts = [point(node)];
+    const heights = [nodeElev.get(node)?.h ?? null];
     const segsOfTendon = [];
     while (seg && !used.has(seg.UID)) {
       used.add(seg.UID); segsOfTendon.push(seg);
       node = seg.TendonNode0 === node ? seg.TendonNode1 : seg.TendonNode0;
       pts.push(point(node));
+      heights.push(nodeElev.get(node)?.h ?? null);
       seg = (adj.get(node) || []).find((s) => !used.has(s.UID));
     }
     const strands = Math.max(...segsOfTendon.map((s) => s.NumStrands));
@@ -163,6 +174,10 @@ export function readRamConcept(path) {
       jackStress: jackEnds.length ? MPa(jackEnds[0].JackStress) : null,
       elongation: jackEnds.length ? Math.round(jackEnds.reduce((s, j) => s + L(j.Elongation), 0)) : null,
       harped: !!segsOfTendon[0].Harped,
+      // the CGS profile: height above the soffit at every node (null when the model carries none), reverse-curve ratio
+      heights: heights.every((h) => h == null) ? null : heights,
+      inflection: segsOfTendon[0].InflectionRatio || 0.2,
+      thickness: nodeElev.get(start)?.thickness || null,
     });
   }
   // closed loops (no degree-1 node) are ignored; number tendons per span set
@@ -238,6 +253,49 @@ export function readRamConcept(path) {
     slab: { outline, holes, allLoops, bodies, tocs, baseThickness, thicknesses: thicknesses.map(([thk, n]) => ({ thickness: thk, elements: n })), thickZones, areas: slabAreas, elements },
     columns, walls, beams, tendons, bands, shear, punching, ssr, background,
   };
+}
+
+/**
+ * The tendon CGS height above the soffit at a distance `s` along the tendon: between two nodes the profile is the
+ * usual reverse curve, a parabola over `inflection` x the span next to the high point tangent to the sagging
+ * parabola over the rest (straight when both nodes sit at one height).
+ */
+export function tendonHeightAt(t, s) {
+  if (!t.heights) return null;
+  let acc = 0;
+  for (let i = 0; i + 1 < t.pts.length; i++) {
+    const span = dist(t.pts[i], t.pts[i + 1]);
+    if (s > acc + span + 1e-6 && i + 2 < t.pts.length) { acc += span; continue; }
+    const x = Math.max(0, Math.min(span, s - acc));
+    const e0 = t.heights[i], e1 = t.heights[i + 1];
+    if (e0 == null || e1 == null) return e0 ?? e1 ?? null;
+    if (Math.abs(e1 - e0) < 1 || span < 1) return e0;
+    const ir = t.inflection || 0.2;
+    // measure from the high end
+    const fromHigh = e0 >= e1 ? x : span - x;
+    const eh = Math.max(e0, e1), el = Math.min(e0, e1), D = eh - el;
+    const L1 = ir * span, L2 = span - L1;
+    const y = fromHigh <= L1 ? eh - (D * fromHigh * fromHigh) / (L1 * span) : el + (D * (span - fromHigh) * (span - fromHigh)) / (L2 * span);
+    return Math.round(y);
+  }
+  return t.heights[t.heights.length - 1];
+}
+
+/** High / low points of a tendon: every node that is a local maximum / minimum of the profile (ends included). */
+export function tendonExtremes(t) {
+  if (!t.heights) return [];
+  const out = [];
+  const n = t.pts.length;
+  for (let i = 0; i < n; i++) {
+    const h = t.heights[i];
+    if (h == null) continue;
+    const prev = i > 0 ? t.heights[i - 1] : null, next = i + 1 < n ? t.heights[i + 1] : null;
+    const hi = (prev == null || h >= prev) && (next == null || h >= next);
+    const lo = (prev == null || h <= prev) && (next == null || h <= next);
+    if (hi && lo) continue; // flat: a straight tendon
+    out.push({ i, p: t.pts[i], h, kind: hi ? 'H' : 'L', end: i === 0 || i === n - 1 });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------- to the generator's model
