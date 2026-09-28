@@ -654,7 +654,7 @@ export function designAdditions(level, spec, opts = {}) {
       const nIn = inward(mm.f.a, mm.f.b, outline);
       const zone = zoneOf(run[0], run[1]);
       if (e.beam) items.push({ detail: 'D1', face: 'T', a: mm.p, b: add(mm.p, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, ind: k === 0 ? ind : undefined, side: 1, zone, legEnd: 'start', noTag: k > 0 });
-      else items.push({ detail: 'D6', face: 'TB', a: mm.p, b: add(mm.p, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, ind: k === 0 ? ind : undefined, side: 1, zone, legEnd: 'start', noTag: k > 0 });
+      else items.push({ detail: 'D6', face: 'TB', a: mm.p, b: add(mm.p, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, ind: k === 0 ? ind : undefined, side: 1, zone, hairpin: true, noTag: k > 0 });
     }
   }
 
@@ -682,7 +682,7 @@ export function designAdditions(level, spec, opts = {}) {
       const LA = la0 ? la0.L : 1200;
       const count = Math.floor(L / 200) + 1;
       // the distribution along the wall face: 700 into the slab, else further in, else over the wall itself, whichever is free of writing
-      items.push({ detail: 'D2', face: 'TB', a: m, b: add(m, nOut, 1200), l1: 'T12-200 U-BAR', l2: `L=${LA + 1200 + lc}`, ind: [add(a, nOut, PERIM_DIM_IN), add(b, nOut, PERIM_DIM_IN)], side: 1, zone: `${w.id} ${gridRef(level, bbox(poly))}` });
+      items.push({ detail: 'D2', face: 'TB', a: m, b: add(m, nOut, 1200), l1: 'T12-200 U-BAR', l2: `L=${LA + 1200 + lc}`, ind: [add(a, nOut, PERIM_DIM_IN), add(b, nOut, PERIM_DIM_IN)], hairpin: true, side: 1, zone: `${w.id} ${gridRef(level, bbox(poly))}` });
       addBar('T', { dia: 12, shape: `U ${LA}/${lc}/1200`, length: LA + 1200 + lc, qty: count, spacing: 200, zone: `D2 ${w.id}` });
       // the 10T12 (T&B) parallel bars of detail 2 only when asked for (office practice: the wall face gets the U-bars only)
       if (spec.walls?.parallelBars) {
@@ -770,7 +770,7 @@ export function designAdditions(level, spec, opts = {}) {
           addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: Math.floor(dist(a, bb) / su.spacing) + 1, spacing: su.spacing, zone: `D1 SHAFT ${o.id} ${gridRef(level, b)}` });
           k++; continue;
         }
-        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nOut, uLeg), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, ind: [add(a, nOut, PERIM_DIM_IN), add(bb, nOut, PERIM_DIM_IN)], side: 1, zone: `D6 ${o.id}`, legEnd: 'start', noTag: k > 0 });
+        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nOut, uLeg), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, ind: [add(a, nOut, PERIM_DIM_IN), add(bb, nOut, PERIM_DIM_IN)], side: 1, zone: `D6 ${o.id}`, hairpin: true, noTag: k > 0 });
         addBar('T', { dia: su.dia, shape: `U ${uLeg}/${h - 2 * cover}/${uLeg}`, length: su.total, qty: Math.floor(dist(a, bb) / su.spacing) + 1, spacing: su.spacing, zone: `D6 SHAFT ${o.id} ${gridRef(level, b)}` });
         k++;
       }
@@ -950,7 +950,8 @@ export function officeBar(pl, S, it, phase) {
   if (phase !== 'labels') {
     // the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
     pl.line(it.a, it.b, { layer });
-    if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; pl.line(e, add(e, n, -(it.side || 1) * 250), { layer }); } // leg of an L / U at the edge
+    if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; pl.line(e, add(e, n, -(it.side || 1) * 250), { layer }); } // leg of an L at the edge
+    if (it.hairpin) { pl.line(add(it.a, n, -150), add(it.b, n, -150), { layer }); pl.line(it.a, add(it.a, n, -150), { layer }); } // the U on the plan: two legs closed at the edge
     if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
     if (it.triple) { pl.line(add(it.a, n, 200), add(it.b, n, 200), { layer }); pl.line(add(it.a, n, -200), add(it.b, n, -200), { layer }); }
     if (it.distCands && !it.dist) {
@@ -976,7 +977,8 @@ export function officeBar(pl, S, it, phase) {
   // a short bar (a U-bar symbol on an edge or a wall face) can also carry its call-out beside it, along the edge
   const sideways = L < 2500 ? [0, 600, -600, 1200, -1200, 1800, -1800, 2400, -2400] : [0];
   const cands = []; for (const j of sideways) for (const k of shifts) for (const sd of [side, -side]) cands.push({ k, sd, j });
-  const pair = ({ k, sd, j = 0 }) => { const mm = add(add(m0, u, k), n, j); const t1 = add(mm, n, sd * 60), t2 = add(mm, n, -sd * 60); return [[sd > 0 ? t1 : t2, it.l1, CALL_H, sd > 0 ? 'B' : 'T'], [sd > 0 ? t2 : t1, it.l2, LEN_H, sd > 0 ? 'T' : 'B']]; };
+  const gap = it.hairpin ? 150 : 60; // a hairpin's second leg sits 150 below the axis: the lower call-out clears it
+  const pair = ({ k, sd, j = 0 }) => { const mm = add(add(m0, u, k), n, j); const t1 = add(mm, n, sd * 60), t2 = add(mm, n, -sd * (sd > 0 ? gap + 60 : 60)); return [[sd > 0 ? t1 : t2, it.l1, CALL_H, sd > 0 ? 'B' : 'T'], [sd > 0 ? t2 : t1, it.l2, LEN_H, sd > 0 ? 'T' : 'B']]; };
   const best = placer ? placer.pick(cands, (c) => pair(c).map(([p, str, h, va]) => textBox(p, str, h, rot, 'C', va, 0.8))) : { k: 0, sd: side, j: 0 };
   for (const [p, str, h, va] of pair(best)) pl.text(p, str, { ...to, h: h / S, valign: va });
   const m = add(add(m0, u, best.k), n, best.j || 0);
