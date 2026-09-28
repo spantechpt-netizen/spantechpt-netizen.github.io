@@ -349,7 +349,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
     const level = {
       // the level code registered for the project (B1, GF, L03 ...) goes into the drawing numbers when given
       id: levelId ? (bodies.length > 1 ? `${levelId}-${i + 1}` : String(levelId)) : `L${String(i + 1).padStart(2, '0')}`, customId: Boolean(levelId),
-      name: bodies.length > 1 ? `${levelName} - BODY ${i + 1}` : levelName, rotation: angleDeg,
+      name: bodies.length > 1 ? `${levelName} - BODY ${i + 1}` : levelName, rotation: angleDeg, frame: { cx: c0.x, cy: c0.y, angle: angleDeg },
       thickness: bodyThickness, outline, bbox: bbox(outline),
       columns: cols.map((c, j) => { const p = R({ x: c.cx, y: c.cy }); return { ...c, id: `C${j + 1}`, cx: p.x, cy: p.y, angle: Math.round(((c.angle - angleDeg) % 180 + 180) % 180 * 10) / 10 }; }),
       // (a hole in the RAM mesh has a vertex at every element node: the collinear ones are dropped so that a long

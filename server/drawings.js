@@ -83,6 +83,11 @@ export function projectFile(projectId, stored) {
   return target;
 }
 
+/** The reference plan (DXF) of a level, kept next to the project's files. */
+export function referencePath(projectId, levelId) {
+  return resolve(join(projectDir(projectId), 'ref', `${Number(levelId)}.dxf`));
+}
+
 /** P26-001, P26-002 … — one sequence per year, so the code says when the project was registered. */
 export function nextProjectCode(settings = drawingSettings()) {
   const year = new Date().getFullYear();

@@ -24,6 +24,7 @@
  *   GET    /api/drawings/runs/:id/quantities      the take-off of one run (steel, concrete, cables)
  *   GET    /api/drawings/projects/:id/quantities  the take-off of the project: the current run of every level
  *   GET    /api/drawings/projects/:id/cost        the cost study: the take-off priced with the office rates
+ *   POST/PATCH/DELETE /api/drawings/levels/:id/reference   the level's reference plan (the architect's DXF) and how it is aligned
  *   GET/POST /api/drawings/projects/:id/submittals   submittal request forms from the runs picked
  *   GET/PATCH/DELETE /api/drawings/submittals/:id  ;  GET /api/drawings/submittals/:id/form (printable HTML)
  */
@@ -31,7 +32,7 @@ import { createReadStream } from 'node:fs';
 import { stat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { copyFile, mkdir, unlink } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { extname, basename, dirname } from 'node:path';
 import { all, get, insert, update, run as runSql, nextCounter, audit, transaction, getSetting, setSetting } from '../db.js';
 import { requirePermission } from '../auth.js';
 import { badRequest, notFound, conflict } from '../http.js';
@@ -39,7 +40,7 @@ import { str, int, oneOf, jsonField, COUNTRIES } from '../validate.js';
 import {
   drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, saveUpload, runMeta, levelTitle,
   runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, FILE_CATEGORIES,
-  framePath, projectFile, projectDir, SUBMITTAL_STATUS, SUBMITTAL_PURPOSES,
+  framePath, projectFile, projectDir, referencePath, SUBMITTAL_STATUS, SUBMITTAL_PURPOSES,
 } from '../drawings.js';
 import { submittalCode, submittalItems, submittalHtml } from '../submittals.js';
 import { costStudy } from '../../shopdrawings/lib/quantities.mjs';
@@ -287,7 +288,7 @@ export function register(router) {
        WHERE f.project_id = ? ORDER BY f.category, f.created_at DESC`,
       project.id,
     );
-    for (const l of levels) l.edits = parseJson(l.edits_json, []);
+    for (const l of levels) { l.edits = parseJson(l.edits_json, []); l.reference = l.ref_file ? { name: l.ref_name, ...parseJson(l.ref_json, {}) } : null; delete l.ref_json; }
     const submittals = all(`SELECT ${SUBMITTAL_COLUMNS} FROM drawing_submittals s LEFT JOIN users u ON u.id = s.created_by WHERE s.project_id = ? ORDER BY s.serial DESC`, project.id).map(publicSubmittal);
     return { project: publicProject(project), levels, runs, files, submittals, settings: drawingSettings() };
   });
@@ -394,12 +395,14 @@ export function register(router) {
       }
       update('drawing_runs', runId, { source_file: source.file, source_bytes: source.bytes });
 
+      const reference = level.ref_file ? { file: referencePath(project.id, level.id), ...parseJson(level.ref_json, {}) } : null;
       const spec = {
         ...(settings.spec || {}),
         ...parseJson(project.spec_json, {}),
         ramBands,
         ...(level.wall_thickness ? { wallThickness: level.wall_thickness } : {}),
         ...(edits.length ? { edits } : {}),
+        ...(reference ? { reference } : {}),
       };
       const result = await runGeneration({ input: join(dir, source.file), out, meta, spec, levelNames: [levelTitle(level)], mode });
       if (!result.levels.length) {
@@ -476,6 +479,63 @@ export function register(router) {
     update('drawing_levels', level.id, { edits_json: edits.length ? JSON.stringify(edits) : null });
     audit(user.id, 'drawing_level', level.id, 'edits', { count: edits.length });
     return { level: { ...loadLevel(level.id), edits } };
+  });
+
+  // ---------------------------------------------------------------- reference plan
+  /**
+   * The architect's (or structural) plan of the level as DXF: its grid, columns and slab edges replace the RAM
+   * geometry on the sheets. The file is read once here to report what it holds; the alignment options live in
+   * `ref_json`: { use: { grid, columns, outline }, align: { mode: 'auto' | 'point', dxf: {x,y}, ram: {x,y}, rot } }.
+   */
+  router.post('/api/drawings/levels/:id/reference', async ({ req, params, query, user }) => {
+    requirePermission(user, 'drawings.create');
+    const level = loadLevel(params.id);
+    const name = str(query.name, 'name', { max: 200, fallback: 'reference.dxf' });
+    if (extname(name).toLowerCase() !== '.dxf') throw badRequest('The reference plan must be a DXF file (export the DWG with DXFOUT)', 'المخطط المرجعي لازم يكون DXF (اطلع الـ DWG بـ DXFOUT)');
+    const path = referencePath(level.project_id, level.id);
+    const saved = await saveUpload(req, dirname(path), basename(path), '.dxf');
+    let summary;
+    try {
+      const { readReferencePlan } = await import('../../shopdrawings/lib/reference.mjs');
+      const plan = readReferencePlan(await readFile(path, 'utf8'));
+      summary = { columns: plan.columns.length, outlines: plan.outlines.length, grid_x: plan.grid.x.map((g) => g.label), grid_y: plan.grid.y.map((g) => g.label), grid_from_drawing: plan.gridFromDrawing, units: plan.units, entities: plan.entities, bbox: plan.levels[0]?.bbox ? { minX: Math.round(plan.levels[0].bbox.minX), minY: Math.round(plan.levels[0].bbox.minY), maxX: Math.round(plan.levels[0].bbox.maxX), maxY: Math.round(plan.levels[0].bbox.maxY) } : null };
+    } catch (error) {
+      await unlink(path).catch(() => {});
+      throw badRequest(`The reference plan could not be read: ${String(error?.message || error).slice(0, 200)}`, `المخطط المرجعي مش مقروء: ${String(error?.message || error).slice(0, 200)}`);
+    }
+    if (!summary.columns && !summary.outlines) { await unlink(path).catch(() => {}); throw badRequest('No columns or slab outline found in that DXF', 'مفيش أعمدة ولا حدود بلاطة في الملف ده'); }
+    const current = parseJson(level.ref_json, {});
+    const refJson = { ...current, use: current.use || { grid: true, columns: true, outline: true }, align: current.align || { mode: 'auto' }, summary, bytes: saved.bytes };
+    update('drawing_levels', level.id, { ref_file: basename(path), ref_name: name, ref_json: JSON.stringify(refJson) });
+    audit(user.id, 'drawing_level', level.id, 'reference', { name, ...summary });
+    return { level: { ...loadLevel(level.id), reference: { name, ...refJson } } };
+  }, { rawBody: true });
+
+  router.patch('/api/drawings/levels/:id/reference', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const level = loadLevel(params.id);
+    if (!level.ref_file) throw notFound('No reference plan on this level', 'الدور ده مفيهوش مخطط مرجعي');
+    const current = parseJson(level.ref_json, {});
+    const use = body.use ? { grid: body.use.grid !== false, columns: body.use.columns !== false, outline: body.use.outline !== false } : current.use;
+    let align = current.align || { mode: 'auto' };
+    if (body.align) {
+      const mode = oneOf(body.align.mode, 'align.mode', ['auto', 'point']);
+      const num = (v, f) => { const n = Number(v); if (!Number.isFinite(n)) throw badRequest(`${f}: a number is required`, `${f}: لازم رقم`); return n; };
+      align = mode === 'point'
+        ? { mode, dxf: { x: num(body.align.dxf?.x, 'dxf.x'), y: num(body.align.dxf?.y, 'dxf.y') }, ram: { x: num(body.align.ram?.x, 'ram.x'), y: num(body.align.ram?.y, 'ram.y') }, rot: [0, 90, 180, 270].includes(Number(body.align.rot)) ? Number(body.align.rot) : 0 }
+        : { mode };
+    }
+    const refJson = { ...current, use, align };
+    update('drawing_levels', level.id, { ref_json: JSON.stringify(refJson) });
+    return { level: { ...loadLevel(level.id), reference: { name: level.ref_name, ...refJson } } };
+  });
+
+  router.delete('/api/drawings/levels/:id/reference', async ({ params, user }) => {
+    requirePermission(user, 'drawings.create');
+    const level = loadLevel(params.id);
+    update('drawing_levels', level.id, { ref_file: null, ref_name: null, ref_json: null });
+    try { await unlink(referencePath(level.project_id, level.id)); } catch { /* already gone */ }
+    return { ok: true };
   });
 
   // ---------------------------------------------------------------- documents

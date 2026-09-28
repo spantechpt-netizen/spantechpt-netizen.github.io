@@ -370,6 +370,45 @@ test('submittal request forms: the drawings of the runs picked, numbered per pro
   assert.equal(wrong.status, 400);
 });
 
+test('a reference plan (the architect\'s DXF) on the level: uploaded, aligned on the columns, used on the next run', async () => {
+  const { Canvas } = await import('../shopdrawings/lib/canvas.mjs');
+  const { toDxf } = await import('../shopdrawings/lib/dxf-writer.mjs');
+  const dx = 40000, dy = 25000;
+  const c = new Canvas();
+  c.pline([{ x: -1000 + dx, y: -1000 + dy }, { x: 13000 + dx, y: -1000 + dy }, { x: 13000 + dx, y: 9000 + dy }, { x: -1000 + dx, y: 9000 + dy }], { layer: 'S-RC slab', closed: true });
+  const col = c.block('COLUMN'); col.rect(-200, -400, 400, 800, { layer: 'STR-COLS', closed: true });
+  for (const [x, y] of [[0, 0], [12000, 0], [0, 8000], [12000, 8000], [6000, 4000]]) c.insert('COLUMN', x + dx, y + dy);
+  for (const [i, x] of [0, 6000, 12000].entries()) { c.line(x + dx, -3000 + dy, x + dx, 11000 + dy, { layer: 'S-GRID' }); c.circle(x + dx, 11600 + dy, 400, { layer: 'S-GRID-IDEN' }); c.text(x + dx, 11600 + dy, 'XYZ'[i], { layer: 'S-GRID-IDEN', h: 300, align: 'C', valign: 'M' }); }
+  for (const [i, y] of [0, 4000, 8000].entries()) { c.line(-3000 + dx, y + dy, 15000 + dx, y + dy, { layer: 'S-GRID' }); c.circle(-3600 + dx, y + dy, 400, { layer: 'S-GRID-IDEN' }); c.text(-3600 + dx, y + dy, String(i + 5), { layer: 'S-GRID-IDEN', h: 300, align: 'C', valign: 'M' }); }
+  const bad = await upload(`/api/drawings/levels/${level.id}/reference?name=plan.dwg`, Buffer.from('x'));
+  assert.equal(bad.status, 400, 'only DXF');
+  const up = await upload(`/api/drawings/levels/${level.id}/reference?name=ARCH-B1.dxf`, Buffer.from(toDxf(c), 'utf8'));
+  assert.equal(up.status, 201, JSON.stringify(up.body));
+  const ref = up.body.level.reference;
+  assert.equal(ref.summary.columns, 5);
+  assert.deepEqual(ref.summary.grid_x, ['X', 'Y', 'Z']);
+  assert.deepEqual(ref.summary.grid_y, ['5', '6', '7']);
+  assert.equal(ref.align.mode, 'auto');
+  const opts = await api('PATCH', `/api/drawings/levels/${level.id}/reference`, { use: { grid: true, columns: true, outline: false }, align: { mode: 'point', dxf: { x: dx, y: dy }, ram: { x: 0, y: 0 }, rot: 0 } });
+  assert.equal(opts.status, 200, JSON.stringify(opts.body));
+  assert.equal(opts.body.level.reference.align.mode, 'point');
+  const detail = await api('GET', `/api/drawings/projects/${project.id}`);
+  assert.equal(detail.body.levels.find((l) => l.id === level.id).reference.name, 'ARCH-B1.dxf');
+
+  const cpt = readFileSync(join(workDir, 'synthetic.cpt'));
+  const result = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-ref.cpt&mode=design`, cpt);
+  assert.equal(result.status, 201, JSON.stringify(result.body));
+  const run = result.body.run;
+  assert.ok(run.findings.some((f) => /Reference plan matched on the given point/.test(f)), JSON.stringify(run.findings));
+  assert.ok(run.assumptions.some((a) => /taken from the reference plan/.test(a)));
+  const back = await api('PATCH', `/api/drawings/levels/${level.id}/reference`, { align: { mode: 'auto' } });
+  assert.equal(back.body.level.reference.align.mode, 'auto');
+  const removed = await api('DELETE', `/api/drawings/levels/${level.id}/reference`);
+  assert.equal(removed.status, 200);
+  const after2 = await api('GET', `/api/drawings/projects/${project.id}`);
+  assert.equal(after2.body.levels.find((l) => l.id === level.id).reference, null);
+}, { timeout: 180000 });
+
 test('a bad file is refused and the run is recorded as failed', async () => {
   const wrong = await upload(`/api/drawings/levels/${level.id}/runs?name=plan.pdf`, Buffer.from('%PDF-1.4'));
   assert.equal(wrong.status, 400);
@@ -377,7 +416,7 @@ test('a bad file is refused and the run is recorded as failed', async () => {
   assert.equal(broken.status, 400, JSON.stringify(broken.body));
   const detail = await api('GET', `/api/drawings/projects/${project.id}`);
   assert.ok(detail.body.runs.some((r) => r.status === 'failed'));
-  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 5, 'three uploads, one regeneration, one framed run');
+  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 6, 'three uploads, one regeneration, one framed run, one on the reference plan');
 });
 
 test('deleting the project removes its levels, runs and files', async () => {

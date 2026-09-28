@@ -33,6 +33,7 @@ import { basename, extname } from 'node:path';
 import { extractModel, flatten } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
 import { quantities } from './lib/quantities.mjs';
+import { readReferencePlan, applyReference } from './lib/reference.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
@@ -90,7 +91,9 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     // design drawings straight from the RAM Concept model: its designed bands + the General Details rules
     const ram = readRamConcept(inputDxf);
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
-    model = prepareRamDesign(ramToModel(ram, { levelName, levelId: meta.levelId, spec }), { levelName, spec, wallThickness: spec.wallThickness });
+    const raw = ramToModel(ram, { levelName, levelId: meta.levelId, spec });
+    useReferencePlan(raw, ram, spec);
+    model = prepareRamDesign(raw, { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else if (mode === 'design') {
@@ -100,6 +103,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
   } else if (inputDxf && /\.cpt$/i.test(inputDxf)) {
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
+    useReferencePlan(model, ram, spec);
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {
@@ -131,6 +135,20 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
   writeFileSync(join(out, 'quantities.json'), JSON.stringify(qty, null, 2));
   writeFileSync(join(out, 'REPORT.md'), report(model, pack));
   return { model, pack, files, quantities: qty };
+}
+
+/**
+ * The reference plan of the level (`spec.reference`: { file | text, use: { grid, columns, outline }, align: { mode:
+ * 'auto' | 'point', dxf: {x, y}, ram: {x, y}, rot } }): the architect's grid, columns and slab edges replace the
+ * RAM ones, matched on the columns or on the point given.
+ */
+function useReferencePlan(model, ram, spec) {
+  const ref = spec && spec.reference;
+  if (!ref || (!ref.file && !ref.text)) return;
+  const text = ref.text || (existsSync(ref.file) ? readFileSync(ref.file, 'utf8') : null);
+  if (!text) { model.findings.push(`Reference plan ${ref.file} not found; the RAM geometry is used.`); return; }
+  const plan = readReferencePlan(text);
+  applyReference(model, plan, { use: ref.use || {}, align: ref.align || null, ramColumns: ram.columns });
 }
 
 /** The entities of a frame DXF (paper mm, bottom-left origin), blocks exploded, ready for Sheet.customFrame. */

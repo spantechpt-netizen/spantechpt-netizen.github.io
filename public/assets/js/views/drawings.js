@@ -228,6 +228,73 @@ function openLevelForm(projectId, level, after) {
   });
 }
 
+// ----------------------------------------------------------- reference plan
+function openReferenceForm(level, after) {
+  let ref = level.reference || null;
+  const status = el('div.small');
+  const found = el('div');
+  const drawFound = () => {
+    clear(found);
+    if (!ref) { status.textContent = t('dw_reference_none'); return; }
+    const sm = ref.summary || {};
+    status.textContent = `${t('dw_reference_current')}: ${ref.name || ''}`;
+    found.append(el('div.small.mt-1', {}, [
+      el('div', { text: `${t('dw_reference_found')}: ${sm.columns ?? '?'} ${t('dw_reference_columns')} · ${sm.outlines ?? '?'} ${t('dw_reference_outlines')} · ${sm.units || ''}` }),
+      el('div', { text: `${t('dw_reference_grid')}: ${(sm.grid_x || []).join(' ')} / ${(sm.grid_y || []).join(' ')}`, dir: 'ltr' }),
+      sm.grid_from_drawing === false ? el('div.muted', { text: t('dw_reference_grid_derived') }) : null,
+      sm.bbox ? el('div.tiny.muted', { text: `DXF extents: ${sm.bbox.minX}, ${sm.bbox.minY} → ${sm.bbox.maxX}, ${sm.bbox.maxY} mm`, dir: 'ltr' }) : null,
+    ]));
+  };
+  drawFound();
+  const input = el('input', { type: 'file', accept: '.dxf', style: { display: 'none' } });
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try { const res = await api.uploadDrawingReference(level.id, file); ref = res.level.reference; drawFound(); toast(t('saved'), 'success'); } catch (error) { toastError(error); }
+  });
+  const use = ref?.use || { grid: true, columns: true, outline: true };
+  const align = ref?.align || { mode: 'auto' };
+  const pointFields = el('div.grid.grid-2', {}, [
+    el('div', {}, [el('label.small', { text: t('dw_align_dxf') }), el('div.grid.grid-2', {}, [field({ name: 'dxf_x', label: t('dw_align_x'), type: 'number', value: align.dxf?.x ?? '', step: 1 }), field({ name: 'dxf_y', label: t('dw_align_y'), type: 'number', value: align.dxf?.y ?? '', step: 1 })])]),
+    el('div', {}, [el('label.small', { text: t('dw_align_ram') }), el('div.grid.grid-2', {}, [field({ name: 'ram_x', label: t('dw_align_x'), type: 'number', value: align.ram?.x ?? '', step: 1 }), field({ name: 'ram_y', label: t('dw_align_y'), type: 'number', value: align.ram?.y ?? '', step: 1 })])]),
+    field({ name: 'rot', label: t('dw_align_rot'), type: 'select', value: String(align.rot || 0), options: [0, 90, 180, 270].map((v) => ({ value: String(v), label: `${v}°` })) }),
+  ]);
+  const modeSel = field({ name: 'mode', label: t('dw_reference_align'), type: 'select', value: align.mode || 'auto', options: [{ value: 'auto', label: t('dw_align_auto') }, { value: 'point', label: t('dw_align_point') }] });
+  const syncMode = () => { pointFields.style.display = modeSel.querySelector('select').value === 'point' ? '' : 'none'; };
+  modeSel.querySelector('select').addEventListener('change', syncMode); syncMode();
+  const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+    el('div.alert.info', { text: t('dw_reference_hint') }),
+    el('div.row.wrap', {}, [input, el('button.btn.btn-sm', { type: 'button', onclick: () => input.click() }, [icon('upload', 14), t('dw_reference_upload')]), status]),
+    found,
+    el('h4.mt-1', { text: t('dw_reference_use') }),
+    el('div.grid.grid-3', {}, [
+      field({ name: 'use_grid', label: t('dw_use_grid'), type: 'checkbox', value: use.grid !== false }),
+      field({ name: 'use_columns', label: t('dw_use_columns'), type: 'checkbox', value: use.columns !== false }),
+      field({ name: 'use_outline', label: t('dw_use_outline'), type: 'checkbox', value: use.outline !== false }),
+    ]),
+    modeSel,
+    pointFields,
+  ]);
+  const { close } = openModal({
+    title: `${t('dw_reference')} — ${levelLabel(level)}`,
+    size: 'wide',
+    body: form,
+    footer: el('div.row', {}, [
+      el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+      ref || level.reference ? el('button.btn-secondary.btn', { type: 'button', onclick: async () => { if (!(await confirmDialog(t('dw_delete_reference_confirm')))) return; try { await api.deleteDrawingReference(level.id); toast(t('deleted'), 'success'); close(); after?.(); } catch (error) { toastError(error); } } }, [icon('trash', 14), t('dw_reference_remove')]) : null,
+      el('button.btn', {
+        type: 'button', text: t('save'),
+        onclick: async () => {
+          if (!ref) { input.click(); return; }
+          const d = readForm(form);
+          const payload = { use: { grid: d.use_grid, columns: d.use_columns, outline: d.use_outline }, align: d.mode === 'point' ? { mode: 'point', dxf: { x: d.dxf_x, y: d.dxf_y }, ram: { x: d.ram_x, y: d.ram_y }, rot: Number(d.rot) } : { mode: 'auto' } };
+          try { await api.updateDrawingReference(level.id, payload); toast(t('dw_reference_saved'), 'success'); close(); after?.(); } catch (error) { toastError(error); }
+        },
+      }),
+    ]),
+  });
+}
+
 // ----------------------------------------------------------- generate form
 function openGenerateForm(project, levels, settings, preselected, navigate) {
   const fileInput = el('input', { type: 'file', name: 'files', accept: '.cpt,.dxf', multiple: true, required: true });
@@ -392,10 +459,12 @@ async function projectPage(projectId, navigate) {
               { label: t('dw_last_rev'), render: (row) => (row.last_revision != null ? `REV ${row.last_revision}` : '—') },
               { label: t('dw_last_run'), render: (row) => (row.last_run_at ? formatDate(row.last_run_at) : '—') },
               { label: t('dw_edits_list'), className: 'num', render: (row) => (row.edits?.length ? el('span.badge.amber', { text: String(row.edits.length) }) : '—') },
+              { label: t('dw_reference_short'), render: (row) => (row.reference ? el('span.badge.green', { text: `${row.reference.summary?.columns ?? '?'} ${t('dw_reference_columns')} · ${(row.reference.summary?.grid_x || []).join('')}/${(row.reference.summary?.grid_y || []).join('')}`, dir: 'ltr' }) : '—') },
               {
                 label: t('actions'),
                 render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
                   can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', title: t('dw_generate'), onclick: () => openGenerateForm(project, levels, settings, row, navigate) }, [icon('play', 14), t('dw_generate_for')]) : null,
+                  can('drawings.create') ? el('button.btn-secondary.btn.btn-sm', { type: 'button', title: t('dw_reference'), onclick: () => openReferenceForm(row, load) }, [icon('upload', 14), t('dw_reference_short')]) : null,
                   can('drawings.create') ? el('button.btn-secondary.btn.btn-sm.btn-icon', { type: 'button', title: t('edit'), onclick: () => openLevelForm(project.id, row, load) }, [icon('edit', 14)]) : null,
                   can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
                     type: 'button', title: t('delete'),

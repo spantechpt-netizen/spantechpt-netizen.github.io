@@ -11,7 +11,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSyntheticCpt } from './helpers/synthetic-cpt.mjs';
-import { readFileSync, existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseDxf } from '../shopdrawings/lib/dxf-reader.mjs';
@@ -343,6 +343,61 @@ test('a RAM Concept file is read into a level with its bands, tendons and walls 
   assert.ok(/\n1\nA \d+\n/.test(dxfCross), 'the figure at the crossing names the direction on top (A) and the gap');
   const bPieces = (dxfCross.match(/\n8\nPT-Cross-B\n/g) || []).length;
   assert.ok(bPieces >= 2, 'the tendon under is drawn in two pieces, broken at the crossing');
+});
+
+/** The architect's plan of the synthetic slab: the same columns shifted by (dx, dy), the grid lettered A-C / 1-3, the slab drawn 1 m larger. */
+function buildReferencePlan(dx, dy) {
+  const c = new Canvas();
+  c.pline([{ x: -1000 + dx, y: -1000 + dy }, { x: 13000 + dx, y: -1000 + dy }, { x: 13000 + dx, y: 9000 + dy }, { x: -1000 + dx, y: 9000 + dy }], { layer: 'S-RC slab', closed: true });
+  const col = c.block('COLUMN'); col.rect(-200, -400, 400, 800, { layer: 'STR-COLS', closed: true });
+  for (const [x, y] of [[0, 0], [12000, 0], [0, 8000], [12000, 8000], [6000, 4000]]) c.insert('COLUMN', x + dx, y + dy);
+  for (const [i, x] of [0, 6000, 12000].entries()) { c.line(x + dx, -3000 + dy, x + dx, 11000 + dy, { layer: 'S-GRID' }); c.circle(x + dx, 11600 + dy, 400, { layer: 'S-GRID-IDEN' }); c.text(x + dx, 11600 + dy, 'ABC'[i], { layer: 'S-GRID-IDEN', h: 300, align: 'C', valign: 'M' }); }
+  for (const [i, y] of [0, 4000, 8000].entries()) { c.line(-3000 + dx, y + dy, 15000 + dx, y + dy, { layer: 'S-GRID' }); c.circle(-3600 + dx, y + dy, 400, { layer: 'S-GRID-IDEN' }); c.text(-3600 + dx, y + dy, String(i + 1), { layer: 'S-GRID-IDEN', h: 300, align: 'C', valign: 'M' }); }
+  return c;
+}
+
+test('a reference plan (the architect\'s grid, columns and slab edge) is fitted on the RAM columns and used instead of the RAM geometry', async () => {
+  const { readReferencePlan, alignByColumns, alignByPoint, applyReference } = await import('../shopdrawings/lib/reference.mjs');
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'spantech-ref-'));
+  const ram = readRamConcept(await buildSyntheticCpt(dir));
+  const ref = readReferencePlan(toDxf(buildReferencePlan(50000, 30000)));
+  assert.equal(ref.columns.length, 5);
+  assert.deepEqual(ref.grid.x.map((g) => g.label), ['A', 'B', 'C']);
+  assert.deepEqual(ref.grid.y.map((g) => g.label), ['1', '2', '3']);
+  assert.ok(ref.gridFromDrawing, 'the grid comes from the bubbles of the drawing');
+  const fit = alignByColumns(ref.columns, ram.columns);
+  assert.deepEqual([fit.rot, fit.dx, fit.dy, fit.matched, fit.total], [0, -50000, -30000, 5, 5], 'the drawing is shifted onto the model, every column matched');
+  // the plan turned by 90° is found too
+  const turned = readReferencePlan(toDxf(buildReferencePlan(0, 0)).replace(/^/, ''));
+  const fit90 = alignByColumns(turned.columns.map((c) => ({ ...c, cx: -c.cy, cy: c.cx })), ram.columns);
+  assert.equal(fit90.matched, 5, `turned drawing fitted: ${JSON.stringify(fit90)}`);
+  assert.ok([90, 270].includes(fit90.rot));
+  // by a common point: grid A/1 of the drawing is column (0, 0) of the model
+  const byPoint = alignByPoint({ dxf: { x: 50000, y: 30000 }, ram: { x: 0, y: 0 } });
+  assert.deepEqual([byPoint.dx, byPoint.dy], [-50000, -30000]);
+
+  const model = ramToModel(ram, { levelName: 'BASEMENT', levelId: 'B1' });
+  const res = applyReference(model, ref, { ramColumns: ram.columns });
+  const L = model.levels[0];
+  assert.equal(L.grid.source, 'reference plan');
+  assert.deepEqual(L.grid.x.map((g) => `${g.label}@${Math.round(g.x)}`), ['A@0', 'B@6000', 'C@12000']);
+  assert.deepEqual(L.grid.y.map((g) => `${g.label}@${Math.round(g.y)}`), ['1@0', '2@4000', '3@8000']);
+  assert.equal(L.columns.length, 5);
+  assert.ok(L.columns.every((c) => c.fromReference && c.ramId), 'every drawn column stands on a RAM column');
+  assert.ok(L.columns.some((c) => c.id === 'B/2'), 'column ids from the drawing grid');
+  assert.deepEqual(L.outline.map((p) => `${Math.round(p.x)},${Math.round(p.y)}`), ['-1000,-1000', '13000,-1000', '13000,9000', '-1000,9000'], 'the slab edge of the drawing, in model coordinates');
+  assert.ok(L.ramOutline && res.used.outline === 1);
+  assert.ok(model.assumptions.some((a) => /taken from the reference plan/.test(a.text)) && !model.assumptions.some((a) => /Grid lines are not modelled/.test(a.text)));
+  // through generate(): the package carries the drawing's grid references
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const out = join(dir, 'out');
+  const { model: m2, pack } = generate({ inputDxf: join(dir, 'synthetic.cpt'), out, meta: { project: 'REF', prefix: 'T', levelId: 'B1' }, spec: { reference: { text: toDxf(buildReferencePlan(50000, 30000)), use: { grid: true, columns: true, outline: false } } }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
+  assert.ok(m2.levels.every((l) => l.grid.source === 'reference plan'));
+  assert.ok(m2.findings.some((f) => /Reference plan fitted on the columns: 5 of 5/.test(f)));
+  const sheet = pack.sheets.find((s) => s.key === 'dtop');
+  assert.ok(sheet, 'top sheet built on the reference grid');
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test('walls, drop panels, pour strips and stepped zones are read from their layers', () => {
