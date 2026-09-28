@@ -440,6 +440,19 @@ test('beam design through RAM: one strip per beam span with a splitter on each e
   const t = sch.types[0];
   assert.deepEqual([t.mark, t.section, t.top.text, t.bottom.text, t.stirrups.text, t.count, t.beams], ['B1', '300x600', '4T16', '3T16', 'T12-2L@125', 1, ['BM1']]);
   assert.deepEqual(sch.undesigned, ['BM2'], 'the edge beam has no RAM bars in it');
+  assert.deepEqual(sch.added.map((x) => x.mark), ['B1'], 'without a project schedule the type is new');
+  // the project's unified schedule: a type on record that carries the beam is used as it is (the lightest one that does),
+  // a heavier or different-section record leaves the beam to a new type numbered after the last mark; records never change
+  const { typeCovers } = await import('../shopdrawings/lib/beam-strips.mjs');
+  const rec = (mark, top, bottom, spacing = 125, width = 300, depth = 600) => ({ mark, width, depth, top: { n: top, dia: 16 }, bottom: { n: bottom, dia: 16 }, stirrups: { dia: 12, legs: 2, spacing } });
+  const withLib = beamSchedule(ram, null, { library: [rec('B1', 6, 4, 100), rec('B2', 4, 3), rec('B3', 4, 3, 125, 400, 700)] });
+  assert.deepEqual(withLib.types.map((x) => [x.mark, x.count, !!x.existing]), [['B2', 1, true]], 'the lightest record that carries the beam (B2, not the heavier B1)');
+  assert.deepEqual(withLib.added, [], 'no new type');
+  assert.equal(withLib.beams.find((b) => b.id === 'BM1').mark, 'B2');
+  const tooLight = beamSchedule(ram, null, { library: [rec('B1', 3, 3), rec('B7', 4, 3, 125, 400, 700)] });
+  assert.deepEqual(tooLight.types.map((x) => [x.mark, !!x.isNew]), [['B8', true]], 'no record carries 4T16 top: a new type after the last mark, B1 untouched');
+  assert.deepEqual(tooLight.added.map((x) => [x.mark, x.top.text]), [['B8', '4T16']]);
+  assert.ok(typeCovers(rec('X', 4, 3, 125), { width: 300, depth: 600, top: { n: 4, dia: 16 }, bottom: { n: 3, dia: 16 }, stirrups: { dia: 12, legs: 2, spacing: 150 } }) && !typeCovers(rec('X', 4, 3, 150), { width: 300, depth: 600, top: { n: 4, dia: 16 }, bottom: { n: 3, dia: 16 }, stirrups: { dia: 12, legs: 2, spacing: 125 } }), 'stirrup capacity counts');
   // through both packages: the beams sheet appears with the schedule, the plan labelled
   const { generate } = await import('../shopdrawings/cli.mjs');
   const { pack } = generate({ inputDxf: src, out: join(dir, 'design'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
@@ -448,6 +461,10 @@ test('beam design through RAM: one strip per beam span with a splitter on each e
   assert.deepEqual(sheet.rows.map((r) => [r.mark, r.section, r.top, r.bottom, r.count]), [['B1', '300 x 600', '4T16', '3T16', 1]]);
   const dxf = toDxf(sheet.root);
   assert.ok(dxf.includes('\n1\nB1 300x600\n') && dxf.includes('\n1\n?? 300x600\n'), 'every beam labelled with its type and section on the plan');
+  const { pack: unified } = generate({ inputDxf: src, out: join(dir, 'unified'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, spec: { beamTypes: [rec('B1', 3, 3), rec('B2', 5, 4, 100)] }, svg: false, levelNames: ['BASEMENT'], mode: 'design' });
+  const us = unified.sheets.find((s) => s.key === 'dbeams');
+  assert.deepEqual(us.rows.map((r) => [r.mark, r.top]), [['B2', '5T16']], 'the beam takes the project type on record, printed with its bars');
+  assert.ok(toDxf(us.root).includes('UNIFIED BEAM SCHEDULE'), 'the sheet says so');
   const { pack: shop } = generate({ inputDxf: src, out: join(dir, 'shop'), meta: { project: 'BEAMS', prefix: 'T', levelId: 'B1' }, svg: false, levelNames: ['BASEMENT'], mode: 'shop' });
   assert.ok(shop.sheets.some((s) => s.key === 'beams' && s.drawingNo.endsWith('-09')), 'beam sheet 09 in the shop package');
   const plain = await buildSyntheticCpt(dir);

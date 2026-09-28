@@ -173,7 +173,30 @@ const barsText = (n, dia) => (n && dia ? `${n}T${dia}` : '-');
  * bars in the span, the heaviest of each) and the stirrup regions in it (the closest spacing). Beams of one
  * section whose bars are alike share a type.
  */
-export function beamSchedule(ram, level = null) {
+/** Stirrup capacity of a set (mm²/mm): legs x bar area / spacing. */
+const stirrupCapacity = (st) => (st && st.spacing > 0 ? (st.legs * BAR_AREA(st.dia)) / st.spacing : 0);
+const areaOf = (set) => (set ? set.area || Math.round(set.n * BAR_AREA(set.dia)) : 0);
+const markNumber = (mark) => { const m = /(\d+)\s*$/.exec(String(mark || '')); return m ? Number(m[1]) : 0; };
+
+/**
+ * Does the type carry the beam? Same section, and every set of the type at least as heavy as the beam asks
+ * (top, bottom and stirrup capacity). A type is never changed: a beam it does not carry gets a new type.
+ */
+export function typeCovers(t, r, tol = 10) {
+  if (Math.abs(t.width - r.width) > tol || Math.abs(t.depth - r.depth) > tol) return false;
+  if (areaOf(r.top) > areaOf(t.top)) return false;
+  if (areaOf(r.bottom) > areaOf(t.bottom)) return false;
+  if (r.stirrups && stirrupCapacity(r.stirrups) > stirrupCapacity(t.stirrups) * 1.001) return false;
+  return true;
+}
+
+/**
+ * The beams of a level typed against the project's unified schedule: `library` is the list of types the project
+ * already has (its own runs and the schedules imported from earlier projects). A beam takes the lightest library
+ * type that carries it; the beams no type carries are grouped among themselves (one section, bars alike) into new
+ * types numbered after the library's last mark. Library types are used as they are, never modified.
+ */
+export function beamSchedule(ram, level = null, { library = [] } = {}) {
   const beams = (level?.beams || ram.beams || []).map((b) => ({ ...b }));
   if (!beams.length) return null;
   const bands = (level?.ram?.bands || ram.bands || []).filter((b) => b.designedBy === 'program' || b.designedBy == null);
@@ -199,21 +222,36 @@ export function beamSchedule(ram, level = null) {
       bands: mine.length, designed: !!(top || bottom),
     };
   });
-  // types: one section, bars alike (within 15 % of the heaviest member's area, stirrups within 25 mm)
-  const sorted = rows.filter((r) => r.designed).sort((p, q) => (q.width * q.depth - p.width * p.depth) || ((q.top?.area || 0) + (q.bottom?.area || 0)) - ((p.top?.area || 0) + (p.bottom?.area || 0)));
-  const types = [];
+  // the project's schedule first: a designed beam takes the lightest existing type that carries it
+  const lib = (library || []).filter((t) => t && t.mark && t.width && t.depth).map((t) => ({ ...t, top: t.top ? { ...t.top, area: areaOf(t.top), text: t.top.text || barsText(t.top.n, t.top.dia) } : null, bottom: t.bottom ? { ...t.bottom, area: areaOf(t.bottom), text: t.bottom.text || barsText(t.bottom.n, t.bottom.dia) } : null, stirrups: t.stirrups ? { ...t.stirrups, text: t.stirrups.text || `T${t.stirrups.dia}-${t.stirrups.legs}L@${t.stirrups.spacing}` } : null, beams: [], existing: true }));
+  const weight = (t) => areaOf(t.top) + areaOf(t.bottom) + stirrupCapacity(t.stirrups) * 1000;
+  const uncovered = [];
+  for (const r of rows.filter((x) => x.designed)) {
+    const fits = lib.filter((t) => typeCovers(t, r)).sort((p, q) => weight(p) - weight(q))[0];
+    if (fits) { fits.beams.push(r.id); r.mark = fits.mark; r.existing = true; } else uncovered.push(r);
+  }
+  // new types for the rest: one section, bars alike (within 15 % of the heaviest member's area, stirrups within 25 mm),
+  // numbered after the last mark of the project's schedule; the existing types stay exactly as they are
+  let next = Math.max(0, ...lib.map((t) => markNumber(t.mark))) + 1;
+  const sorted = uncovered.sort((p, q) => (q.width * q.depth - p.width * p.depth) || ((q.top?.area || 0) + (q.bottom?.area || 0)) - ((p.top?.area || 0) + (p.bottom?.area || 0)));
+  const added = [];
   for (const r of sorted) {
-    const fits = types.find((t) => t.width === r.width && t.depth === r.depth
+    const fits = added.find((t) => t.width === r.width && t.depth === r.depth
       && (!t.top || !r.top ? !t.top === !r.top : r.top.area >= 0.85 * t.top.area && r.top.area <= t.top.area)
       && (!t.bottom || !r.bottom ? !t.bottom === !r.bottom : r.bottom.area >= 0.85 * t.bottom.area && r.bottom.area <= t.bottom.area)
       && (!t.stirrups || !r.stirrups ? true : Math.abs(t.stirrups.spacing - r.stirrups.spacing) <= 25 && t.stirrups.dia === r.stirrups.dia));
     if (fits) { fits.beams.push(r.id); r.mark = fits.mark; continue; }
-    const t = { mark: `B${types.length + 1}`, width: r.width, depth: r.depth, section: `${r.width}x${r.depth}`, top: r.top, bottom: r.bottom, stirrups: r.stirrups, beams: [r.id] };
-    types.push(t);
+    const t = { mark: `B${next++}`, width: r.width, depth: r.depth, section: `${r.width}x${r.depth}`, top: r.top, bottom: r.bottom, stirrups: r.stirrups, beams: [r.id], isNew: true };
+    added.push(t);
     r.mark = t.mark;
   }
   for (const r of rows) if (!r.designed) r.mark = null;
-  return { beams: rows, types: types.map((t) => ({ ...t, count: t.beams.length })), undesigned: rows.filter((r) => !r.designed).map((r) => r.id) };
+  const used = [...lib.filter((t) => t.beams.length), ...added].map((t) => ({ ...t, count: t.beams.length }));
+  return {
+    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed).map((r) => r.id),
+    added: added.map((t) => ({ mark: t.mark, width: t.width, depth: t.depth, section: t.section, top: t.top, bottom: t.bottom, stirrups: t.stirrups })),
+    library: lib.length,
+  };
 }
 
 /** The bar area of `nTdia` text, for the schedule totals. */

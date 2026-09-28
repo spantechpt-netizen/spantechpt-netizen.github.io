@@ -1344,7 +1344,7 @@ export function beamsSheet(model, level, meta) {
       pl.text({ x: m.x - n.x * off, y: m.y - n.y * off }, bars, { layer: 'TEXT', h: 1.6, rot, align: 'C', valign: 'T' });
       pl.text({ x: bm.a.x + u.x * 400 + n.x * off, y: bm.a.y + u.y * 400 + n.y * off }, bm.id, { layer: 'TEXT', h: 1.3, rot, align: 'L', valign: 'B' });
     }
-    const rows = sch.types.map((t) => ({ mark: t.mark, section: `${t.width} x ${t.depth}`, top: t.top?.text || '-', bottom: t.bottom?.text || '-', stirrups: t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs} LEGS @ ${t.stirrups.spacing}` : '-', count: t.count, beams: t.beams.join(', ') }));
+    const rows = sch.types.map((t) => ({ mark: t.isNew && sch.library ? `${t.mark} *` : t.mark, section: `${t.width} x ${t.depth}`, top: t.top?.text || '-', bottom: t.bottom?.text || '-', stirrups: t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs} LEGS @ ${t.stirrups.spacing}` : '-', count: t.count, beams: t.beams.join(', ') }));
     const cols = [
       { key: 'mark', title: 'TYPE', w: 14 }, { key: 'section', title: 'SECTION\nb x h (mm)', w: 24 }, { key: 'top', title: 'TOP BARS\n(SUPPORTS)', w: 24 }, { key: 'bottom', title: 'BOTTOM BARS\n(SPAN)', w: 24 },
       { key: 'stirrups', title: 'STIRRUPS', w: 34 }, { key: 'count', title: 'No.', w: 10 }, { key: 'beams', title: 'BEAMS', w: 55, align: 'L', max: 34 },
@@ -1384,6 +1384,7 @@ export function beamsSheet(model, level, meta) {
         'EVERY BEAM CARRIES ITS TYPE AND SECTION (b x h) ON THE PLAN; THE BARS OF THE TYPE ARE IN THE SCHEDULE AND THE SECTIONS. TOP BARS ARE THE HEAVIEST RAM DESIGNED OVER THE SUPPORTS OF THE BEAM, BOTTOM BARS THE HEAVIEST IN ITS SPANS, STIRRUPS THE CLOSEST SPACING RAM DESIGNED IN IT.',
         'THE DESIGN COMES FROM ONE RAM CONCEPT DESIGN STRIP ON THE CENTRE LINE OF EVERY BEAM SPAN, BOUNDED BY A SPLITTER ON EACH EDGE OF THE BEAM, DESIGNED AS A BEAM. BEAMS OF ONE SECTION WHOSE BARS ARE ALIKE (WITHIN 15 %) SHARE A TYPE AND TAKE THE HEAVIER BARS.',
         `${sch.undesigned.length ? `${sch.undesigned.length} BEAM(S) CARRY NO RAM DESIGN (${sch.undesigned.slice(0, 10).join(', ')}): RUN CALC ALL ON THE MODEL WITH THE BEAM STRIPS AND RE-ISSUE. ` : ''}CONTINUING TOP BARS, LAPS AND ANCHORAGES PER THE OFFICE BEAM DETAILS; STIRRUP SPACING TO BE HALVED OVER 2h FROM EVERY SUPPORT FACE.`,
+        sch.library ? `BEAM TYPES FOLLOW THE PROJECT'S UNIFIED BEAM SCHEDULE (${sch.library} TYPES ON RECORD): A BEAM TAKES THE LIGHTEST TYPE THAT CARRIES IT; ${sch.added?.length ? `TYPES MARKED * (${sch.added.map((t) => t.mark).join(', ')}) ARE NEW ON THIS SHEET, ADDED FOR BEAMS NO EXISTING TYPE CARRIES - THE EXISTING TYPES ARE UNCHANGED.` : 'NO NEW TYPE WAS NEEDED ON THIS SHEET.'}` : null,
       ],
       assumptions: levelAssumptions(model, level).slice(0, 3),
       legend: [['BEAM', 'BEAM (HATCHED) - TYPE AND SECTION BESIDE IT', 'hatch'], ['CALLOUT', 'BEAM NOT DESIGNED IN RAM', 'hatch'], ['COLUMN-HATCH', 'COLUMN', 'solid']],

@@ -125,9 +125,33 @@ function cleanEdits(input) {
 }
 
 function publicProject(row) {
-  const out = { ...row, spec: parseJson(row.spec_json, {}) };
-  delete out.spec_json;
+  const out = { ...row, spec: parseJson(row.spec_json, {}), beam_types: parseJson(row.beam_types_json, []) };
+  delete out.spec_json; delete out.beam_types_json;
   return out;
+}
+
+/** The project's unified beam schedule: the types on record, in mark order. */
+function projectBeamTypes(project) { return parseJson(project.beam_types_json, []) || []; }
+const beamMarkNo = (mark) => { const m = /(\d+)\s*$/.exec(String(mark || '')); return m ? Number(m[1]) : 0; };
+const sameBeamType = (a, b) => a.width === b.width && a.depth === b.depth && (a.top?.area || 0) === (b.top?.area || 0) && (a.bottom?.area || 0) === (b.bottom?.area || 0) && (a.stirrups?.dia || 0) === (b.stirrups?.dia || 0) && (a.stirrups?.legs || 0) === (b.stirrups?.legs || 0) && (a.stirrups?.spacing || 0) === (b.stirrups?.spacing || 0);
+/**
+ * Appends types to the project's schedule, never changing the ones on record: a type identical to one on record is
+ * skipped, a mark already taken by a different type is renumbered after the last mark. Returns the types added.
+ */
+function appendBeamTypes(project, incoming, source) {
+  const types = projectBeamTypes(project);
+  let next = Math.max(0, ...types.map((t) => beamMarkNo(t.mark))) + 1;
+  const added = [];
+  for (const t of incoming || []) {
+    if (!t || !t.width || !t.depth) continue;
+    if (types.some((x) => sameBeamType(x, t))) continue;
+    const clean = { mark: t.mark, width: t.width, depth: t.depth, section: `${t.width}x${t.depth}`, top: t.top || null, bottom: t.bottom || null, stirrups: t.stirrups || null, source: { ...source, mark: t.mark }, created_at: new Date().toISOString() };
+    if (!clean.mark || types.some((x) => x.mark === clean.mark)) clean.mark = `B${next}`;
+    next = Math.max(next, beamMarkNo(clean.mark)) + 1;
+    types.push(clean); added.push(clean);
+  }
+  if (added.length) update('drawing_projects', project.id, { beam_types_json: JSON.stringify(types) });
+  return { types, added };
 }
 
 function projectFields(body, { partial = false } = {}) {
@@ -306,6 +330,42 @@ export function register(router) {
     return { project: publicProject(project), levels, runs, files, submittals, settings: drawingSettings() };
   });
 
+  // ------------------------------------------------ the unified beam schedule of the project
+  router.get('/api/drawings/projects/:id/beam-types', ({ params, user }) => {
+    requirePermission(user, 'drawings.view');
+    const project = loadProject(params.id);
+    return { beam_types: projectBeamTypes(project) };
+  });
+
+  /** Calls up the schedule of an earlier project: its types are appended (identical ones skipped, clashing marks renumbered). */
+  router.post('/api/drawings/projects/:id/beam-types/import', ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const project = loadProject(params.id);
+    const fromId = int(body.from_project_id, 'from_project_id', { min: 1 });
+    if (fromId === project.id) throw badRequest('Pick another project', 'اختار مشروع تاني');
+    const from = loadProject(fromId);
+    const only = Array.isArray(body.marks) && body.marks.length ? new Set(body.marks.map((m) => String(m).toUpperCase())) : null;
+    const incoming = projectBeamTypes(from).filter((t) => !only || only.has(String(t.mark).toUpperCase()));
+    if (!incoming.length) throw badRequest('That project has no beam types on record', 'المشروع ده مفيهوش نماذج كمرات');
+    const { types, added } = appendBeamTypes(project, incoming, { project_id: from.id, project_code: from.code, imported: true, by: user.name });
+    audit(user.id, 'drawing_project', project.id, 'beam_types_import', { from: from.id, added: added.length });
+    return { beam_types: types, added: added.length, skipped: incoming.length - added.length };
+  });
+
+  router.delete('/api/drawings/projects/:id/beam-types/:mark', ({ params, user }) => {
+    requirePermission(user, 'drawings.delete');
+    const project = loadProject(params.id);
+    const types = projectBeamTypes(project);
+    const mark = String(params.mark).toUpperCase();
+    if (!types.some((t) => String(t.mark).toUpperCase() === mark)) throw notFound('Beam type not found', 'النموذج مش موجود');
+    // a type printed on an existing run stays: the schedule is unified across the project's drawings
+    const used = all("SELECT id, beams_json FROM drawing_runs WHERE project_id = ? AND status NOT IN ('failed', 'running')", project.id).some((r) => (parseJson(r.beams_json, []) || []).some((lv) => (lv.types || []).some((t) => String(t.mark).toUpperCase() === mark)));
+    if (used) throw conflict('This type is printed on a run of the project', 'النموذج ده مكتوب على لوحات إصدار في المشروع');
+    update('drawing_projects', project.id, { beam_types_json: JSON.stringify(types.filter((t) => String(t.mark).toUpperCase() !== mark)) });
+    audit(user.id, 'drawing_project', project.id, 'beam_type_delete', { mark });
+    return { beam_types: projectBeamTypes(loadProject(project.id)) };
+  });
+
   router.patch('/api/drawings/projects/:id', ({ params, body, user }) => {
     requirePermission(user, 'drawings.create');
     const project = loadProject(params.id);
@@ -434,6 +494,7 @@ export function register(router) {
         ramBands,
         mesh,
         punching: punchingSpec,
+        beamTypes: projectBeamTypes(project), // the unified beam schedule of the project: reused, never changed
         ...(level.wall_thickness ? { wallThickness: level.wall_thickness } : {}),
         ...(edits.length ? { edits } : {}),
         ...(reference ? { reference } : {}),
@@ -466,7 +527,10 @@ export function register(router) {
         quantities_json: result.quantities ? JSON.stringify(result.quantities) : null,
         beams_json: result.beams && result.beams.length ? JSON.stringify(result.beams) : null,
       });
-      audit(user.id, 'drawing_run', runId, 'generate', { serial, mode, revision, sheets: result.sheets.length, edits: edits.length });
+      // beams no type on record carries got new types: they join the project's schedule (appended, never edited)
+      const newTypes = (result.beams || []).flatMap((lv) => (lv.added || []).map((t) => ({ ...t, level: lv.level })));
+      if (newTypes.length) appendBeamTypes(loadProject(project.id), newTypes, { project_id: project.id, project_code: project.code, run_id: runId, revision, level: level.code, by: user.name });
+      audit(user.id, 'drawing_run', runId, 'generate', { serial, mode, revision, sheets: result.sheets.length, edits: edits.length, beam_types_added: newTypes.length });
       return publicRun(loadRun(runId));
     } catch (error) {
       const message = String(error?.message || error).split('\n')[0].slice(0, 500);

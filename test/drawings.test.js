@@ -428,6 +428,28 @@ test('beam design through RAM: the run\'s model comes back with one strip per be
   assert.equal(detail.body.run.beam_strips.spans, 2, 'kept on the run');
   const noBeams = await api('POST', `/api/drawings/runs/${firstRun.id}/beam-strips`, {});
   assert.equal(noBeams.status, 400, 'a model without beams is refused');
+  // the project's unified beam schedule: the run's new type joined it, and it is called up into another project
+  assert.deepEqual(run.beams[0].added.map((x) => x.mark), ['B1']);
+  const lib = await api('GET', `/api/drawings/projects/${project.id}/beam-types`);
+  assert.equal(lib.status, 200);
+  assert.deepEqual(lib.body.beam_types.map((x) => [x.mark, x.section, x.top.text, x.source.run_id]), [['B1', '300x600', '4T16', run.id]]);
+  const again = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-beams.cpt&mode=design`, cptBeam);
+  assert.equal(again.status, 201);
+  assert.deepEqual([again.body.run.beams[0].types[0].mark, again.body.run.beams[0].types[0].existing, again.body.run.beams[0].added], ['B1', true, []], 'the next run reuses the type on record');
+  assert.equal((await api('GET', `/api/drawings/projects/${project.id}/beam-types`)).body.beam_types.length, 1, 'nothing appended');
+  const other = await api('POST', '/api/drawings/projects', { name: 'Other tower', levels: [] });
+  assert.equal(other.status, 201, JSON.stringify(other.body));
+  const imp = await api('POST', `/api/drawings/projects/${other.body.project.id}/beam-types/import`, { from_project_id: project.id });
+  assert.equal(imp.status, 201, JSON.stringify(imp.body));
+  assert.deepEqual([imp.body.added, imp.body.skipped, imp.body.beam_types[0].mark, imp.body.beam_types[0].source.imported, imp.body.beam_types[0].source.project_code], [1, 0, 'B1', true, project.code]);
+  const twice = await api('POST', `/api/drawings/projects/${other.body.project.id}/beam-types/import`, { from_project_id: project.id });
+  assert.deepEqual([twice.body.added, twice.body.skipped], [0, 1], 'identical types are not duplicated');
+  const del = await api('DELETE', `/api/drawings/projects/${project.id}/beam-types/B1`);
+  assert.equal(del.status, 409, 'a type printed on a run stays');
+  const delOther = await api('DELETE', `/api/drawings/projects/${other.body.project.id}/beam-types/B1`);
+  assert.equal(delOther.status, 200);
+  assert.deepEqual(delOther.body.beam_types, []);
+  await api('DELETE', `/api/drawings/projects/${other.body.project.id}`);
 }, { timeout: 180000 });
 
 test('the punching alert: a column failing punching blocks the run, the engineer\'s bypass regenerates it with PS in their name, the mesh option and the designer are kept on the run', async () => {
@@ -484,7 +506,7 @@ test('a bad file is refused and the run is recorded as failed', async () => {
   assert.equal(broken.status, 400, JSON.stringify(broken.body));
   const detail = await api('GET', `/api/drawings/projects/${project.id}`);
   assert.ok(detail.body.runs.some((r) => r.status === 'failed'));
-  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 9, 'three uploads, one regeneration, one framed run, one on the reference plan, one with beams, one blocked and its bypass');
+  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 10, 'three uploads, one regeneration, one framed run, one on the reference plan, two with beams, one blocked and its bypass');
 });
 
 test('deleting the project removes its levels, runs and files', async () => {

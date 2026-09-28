@@ -442,6 +442,7 @@ async function projectPage(projectId, navigate) {
       { key: 'history', label: t('dw_tab_history'), build: () => historyPanel() },
       { key: 'submittals', label: t('dw_tab_submittals'), build: () => submittalsPanel(project, levels, runs, data.submittals || [], settings, load) },
       { key: 'quantities', label: t('dw_tab_quantities'), build: () => quantitiesPanel(project, settings) },
+      { key: 'beam_types', label: t('dw_tab_beam_types'), build: () => beamTypesPanel(project, load) },
     ];
     const draw = () => {
       clear(tabs);
@@ -801,6 +802,83 @@ function downloadText(name, text) {
   document.body.append(a); a.click(); a.remove();
 }
 
+// ----------------------------------------------------------- beam schedule
+/** The project's unified beam schedule: the types on record, where each came from, calling up an earlier project's schedule. */
+function beamTypesPanel(project, reload) {
+  const host = el('div');
+  const draw = (types) => {
+    clear(host);
+    const sourceOf = (t) => {
+      const sname = t.source || {};
+      if (sname.imported) return fill('dw_bt_source_import', { code: sname.project_code || sname.project_id || '?' });
+      if (sname.run_id) return fill('dw_bt_source_run', { run: sname.run_id, level: sname.level || '', rev: sname.revision || '' });
+      return '—';
+    };
+    host.append(el('div.card', {}, [
+      el('div.card-header', {}, [
+        el('h3', { text: `${t('dw_tab_beam_types')} (${types.length})` }), el('div.spacer'),
+        can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', onclick: () => openBeamTypesImport(project, (r) => draw(r.beam_types)) }, [icon('copy', 14), t('dw_bt_import')]) : null,
+      ]),
+      el('div.card-body', {}, [el('div.small.muted', { text: t('dw_bt_hint') })]),
+      types.length ? el('div.card-body.flush', {}, [dataTable({
+        rows: types,
+        columns: [
+          { label: t('dw_beam_type'), render: (r) => el('span.bold', { text: `${r.mark}`, dir: 'ltr' }) },
+          { label: t('dw_beam_section'), render: (r) => el('span', { text: `${r.width} x ${r.depth}`, dir: 'ltr' }) },
+          { label: t('dw_beam_top'), render: (r) => r.top?.text || '—' },
+          { label: t('dw_beam_bottom'), render: (r) => r.bottom?.text || '—' },
+          { label: t('dw_beam_stirrups'), render: (r) => (r.stirrups ? `T${r.stirrups.dia}-${r.stirrups.legs}L @ ${r.stirrups.spacing}` : '—') },
+          { label: t('dw_bt_source'), render: (r) => el('span.small', { text: `${sourceOf(r)}${r.source?.by ? ` · ${r.source.by}` : ''}`, dir: 'ltr' }) },
+          { label: t('date'), render: (r) => (r.created_at ? formatDate(r.created_at) : '—') },
+          {
+            label: t('actions'),
+            render: (r) => (can('drawings.delete') ? el('button.btn-secondary.btn.btn-sm.btn-icon', {
+              type: 'button', title: t('delete'),
+              onclick: async () => {
+                if (!(await confirmDialog(t('dw_bt_delete_confirm')))) return;
+                try { const res = await api.deleteDrawingBeamType(project.id, r.mark); toast(t('deleted'), 'success'); draw(res.beam_types); } catch (error) { toastError(error); }
+              },
+            }, [icon('trash', 14)]) : null),
+          },
+        ],
+      })]) : el('div.card-body', {}, [el('div.small.muted', { text: t('dw_bt_empty') })]),
+    ]));
+  };
+  draw(project.beam_types || []);
+  return host;
+}
+
+function openBeamTypesImport(project, after) {
+  const select = el('select', { name: 'from_project_id' });
+  const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+    el('div.small.muted', { text: t('dw_bt_import_hint') }),
+    el('div.field', {}, [el('label', { text: t('dw_bt_from') }), select]),
+  ]);
+  api.drawingProjects().then(({ projects }) => {
+    for (const p of projects.filter((p) => p.id !== project.id && (p.beam_types || []).length)) select.append(el('option', { value: p.id, text: `${p.code} · ${p.name} (${p.beam_types.length})` }));
+    if (!select.options.length) select.append(el('option', { value: '', text: '—' }));
+  }).catch(toastError);
+  const { close } = openModal({
+    title: t('dw_bt_import'),
+    body: form,
+    footer: el('div.row', {}, [
+      el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+      el('button.btn', {
+        type: 'button', text: t('dw_bt_import'),
+        onclick: async (e) => {
+          if (!select.value) return;
+          e.currentTarget.disabled = true;
+          try {
+            const res = await api.importDrawingBeamTypes(project.id, { from_project_id: Number(select.value) });
+            toast(fill('dw_bt_imported', { added: res.added, skipped: res.skipped }), 'success');
+            close(); after?.(res);
+          } catch (error) { toastError(error); e.currentTarget.disabled = false; }
+        },
+      }),
+    ]),
+  });
+}
+
 function quantitiesPanel(project, settings) {
   const host = el('div');
   host.append(el('div.alert.info', { text: t('dw_quantities_hint') }));
@@ -1114,13 +1192,14 @@ async function runPage(projectId, runId, navigate) {
     drawStrips(run.beam_strips);
     const types = (run.beams || []).flatMap((lv) => (lv.types || []).map((tp) => ({ ...tp, level: lv.level })));
     const undesigned = (run.beams || []).flatMap((lv) => lv.undesigned || []);
+    const addedMarks = (run.beams || []).flatMap((lv) => (lv.added || []).map((tp) => tp.mark));
     page.append(el('div.card', {}, [
       el('div.card-header', {}, [el('h3', { text: t('dw_beams') }), el('div.spacer'), can('drawings.create') ? el('button.btn.btn-sm', { type: 'button', onclick: async (e) => { e.currentTarget.disabled = true; try { const { beam_strips } = await api.prepareBeamStrips(run.id); drawStrips(beam_strips); toast(t('saved'), 'success'); } catch (error) { toastError(error); } e.currentTarget.disabled = false; } }, [icon('play', 14), t('dw_beams_prepare')]) : null]),
-      el('div.card-body', {}, [el('div.small.muted', { text: t('dw_beams_hint') }), bsHost]),
+      el('div.card-body', {}, [el('div.small.muted', { text: t('dw_beams_hint') }), bsHost, addedMarks.length ? el('div.mt-1', {}, [el('span.badge.amber', { text: fill('dw_bt_added_on_run', { marks: addedMarks.join(', ') }), dir: 'ltr' })]) : null]),
       types.length ? el('div.card-body.flush', {}, [dataTable({
         rows: types,
         columns: [
-          { label: t('dw_beam_type'), render: (r) => el('span.bold', { text: `${r.mark}`, dir: 'ltr' }) },
+          { label: t('dw_beam_type'), render: (r) => el('span.row', { style: { gap: '.3rem', alignItems: 'center' } }, [el('span.bold', { text: `${r.mark}`, dir: 'ltr' }), el('span', { class: `badge ${r.isNew ? 'amber' : 'grey'}`, text: t(r.isNew ? 'dw_bt_new' : 'dw_bt_existing') })]) },
           { label: t('dw_level'), render: (r) => r.level },
           { label: t('dw_beam_section'), render: (r) => el('span', { text: `${r.width} x ${r.depth}`, dir: 'ltr' }) },
           { label: t('dw_beam_top'), render: (r) => r.top?.text || '—' },
