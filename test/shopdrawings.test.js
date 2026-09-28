@@ -234,9 +234,9 @@ test('the generator writes a complete package for the sample drawing', () => {
   assert.ok(model.assumptions.length >= 4);
   // layers follow the Span Tech standard, not the generator's internal names
   const layerNames = [...pkg.matchAll(/\nLAYER\n5\n[0-9A-F]+\n330\n[0-9A-F]+\n100\nAcDbSymbolTableRecord\n100\nAcDbLayerTableRecord\n2\n([^\n]+)\n/g)].map((m) => m[1]);
-  assert.ok(layerNames.includes('ST-RB-T1') && layerNames.includes('ST-RB-B2') && layerNames.includes('ST-SLAB-EDGE') && layerNames.includes('ST-SHEET-TITLE'), layerNames.join(','));
+  assert.ok(layerNames.includes('SPAN-RB-T1') && layerNames.includes('SPAN-RB-B2') && layerNames.includes('SPAN-SLAB-EDGE') && layerNames.includes('SPAN-SHEET-TITLE'), layerNames.join(','));
   assert.ok(!layerNames.some((n) => /^REBAR|^COLUMN|BBR/.test(n)), 'no internal or BBR layer names remain');
-  assert.ok(/\n2\nST-REBAR\n70\n0\n/.test(pkg) && pkg.includes('romans.shx'), 'rebar text style present');
+  assert.ok(/\n2\nSPAN-REBAR\n70\n0\n/.test(pkg) && pkg.includes('romans.shx'), 'rebar text style present');
   assert.ok(!/\n8\nREBAR-T1\n/.test(pkg), 'entities were renamed too');
 });
 
@@ -593,7 +593,7 @@ test('the design package is written in the office layers and text style, on the 
   assert.ok(/\n0\nDIMSTYLE\n[\s\S]*?\n2\nDIM100\n[\s\S]*?\n44\n0\n[\s\S]*?\n140\n250\n[\s\S]*?\n142\n150\n[\s\S]*?\n75\n1\n76\n1\n[\s\S]*?\n178\n3\n/.test(dxfOut), 'DIM100 record: text 250, oblique tick 150, green text, no extension lines');
   assert.ok(/\n0\nBLOCK\n[\s\S]*?\n2\n\*D\d+\n70\n1\n/.test(dxfOut), 'anonymous picture blocks *Dn (numbered package-wide)');
   assert.ok(/\n0\nLAYER\n[\s\S]*?\n2\nREO-TOP\n[\s\S]*?\n6\nHIDDEN\n/.test(dxfOut), 'REO-TOP is a hidden-line layer');
-  assert.ok(dxfOut.includes('\n8\nST-GRID\n'), 'sheet furniture on the ST standard');
+  assert.ok(dxfOut.includes('\n8\nSPAN-GRID\n'), 'sheet furniture on the SPAN standard');
   const bottom = pack.sheets.find((s) => s.key === 'dbottom');
   assert.ok(toDxf(bottom.root).includes('\n1\nT12-250 (B) EXTRA\n'));
 });

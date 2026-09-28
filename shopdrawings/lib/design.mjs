@@ -1283,7 +1283,7 @@ function designCover(model, sheets, meta) {
     const d1 = sheet.detailBox(1, 'GENERAL DETAILS APPLIED', '');
     sheet.table(d1.x + 3, d1.y + d1.h - 10, DETAIL_KEY_COLS, detailsKeyRows(Object.keys(DETAILS)), { headH: 5, rowH: 4, h: 1.5, maxRows: 12 });
     const d2 = sheet.detailBox(2, 'HOW TO USE THE BLOCKS / XREFS', '');
-    ['EACH SHEET IS A BLOCK NAMED AS LISTED AND ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN GEOMETRY IS 1:1.', 'REINFORCEMENT LAYERS FOLLOW THE OFFICE DESIGN CONVENTION (REO-TOP, REO-BOT, REO-TXT, diamension, DOTS); SHEET FURNITURE FOLLOWS THE SPAN TECH ST- STANDARD.', 'BARS ADDED FROM THE GENERAL DETAILS CARRY A CIRCLED D# ON LAYER DETAIL-REF (FREEZE THE LAYER TO HIDE THE REFERENCES).'].forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.8, width: d2.w - 8 }));
+    ['EACH SHEET IS A BLOCK NAMED AS LISTED AND ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN GEOMETRY IS 1:1.', 'REINFORCEMENT LAYERS FOLLOW THE OFFICE DESIGN CONVENTION (REO-TOP, REO-BOT, REO-TXT, diamension, DOTS); SHEET FURNITURE FOLLOWS THE SPAN TECH SPAN- STANDARD.', 'BARS ADDED FROM THE GENERAL DETAILS CARRY A CIRCLED D# ON LAYER DETAIL-REF (FREEZE THE LAYER TO HIDE THE REFERENCES).'].forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.8, width: d2.w - 8 }));
     return { general: [`DESIGN DRAWINGS GENERATED FROM THE OFFICE DESIGN PLAN: ${model.levels.length} PART(S) READ.`, ...model.findings], assumptions: model.assumptions.map((a) => (a.level ? `[${a.level}] ` : '') + a.text), legend: [], detailsUsed: 3 };
   };
 }

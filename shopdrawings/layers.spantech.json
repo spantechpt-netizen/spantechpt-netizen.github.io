@@ -1,242 +1,242 @@
 {
   "_comment": "Span Tech layer standard for generated shop drawings. Keys are the generator's internal layer names; values are the names written to the DXF. Colors are ACI indexes (1 red, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 white/black, 8 grey), lineweights in 1/100 mm.",
-  "prefix": "ST",
+  "prefix": "SPAN",
   "layers": {
     "0": {
       "name": "0"
     },
     "FRAME": {
-      "name": "ST-SHEET-FRAME",
+      "name": "SPAN-SHEET-FRAME",
       "color": 7,
       "lw": 50
     },
     "TITLE": {
-      "name": "ST-SHEET-TITLE",
+      "name": "SPAN-SHEET-TITLE",
       "color": 7,
       "lw": 25
     },
     "TEXT-TITLE": {
-      "name": "ST-SHEET-TEXT",
+      "name": "SPAN-SHEET-TEXT",
       "color": 2
     },
     "NOTES": {
-      "name": "ST-SHEET-NOTES",
+      "name": "SPAN-SHEET-NOTES",
       "color": 7
     },
     "SCHEDULE": {
-      "name": "ST-SHEET-SCHEDULE",
+      "name": "SPAN-SHEET-SCHEDULE",
       "color": 7
     },
     "SCHEDULE-TEXT": {
-      "name": "ST-SHEET-SCHEDULE-TEXT",
+      "name": "SPAN-SHEET-SCHEDULE-TEXT",
       "color": 7
     },
     "DETAIL": {
-      "name": "ST-DETAIL",
+      "name": "SPAN-DETAIL",
       "color": 7
     },
     "DETAIL-HATCH": {
-      "name": "ST-DETAIL-HATCH",
+      "name": "SPAN-DETAIL-HATCH",
       "color": 8
     },
     "HATCH": {
-      "name": "ST-HATCH",
+      "name": "SPAN-HATCH",
       "color": 8
     },
     "XREF": {
-      "name": "ST-XREF",
+      "name": "SPAN-XREF",
       "color": 7
     },
     "TEXT": {
-      "name": "ST-TEXT",
+      "name": "SPAN-TEXT",
       "color": 7
     },
     "DIM": {
-      "name": "ST-DIM",
+      "name": "SPAN-DIM",
       "color": 8
     },
     "CALLOUT": {
-      "name": "ST-CALLOUT",
+      "name": "SPAN-CALLOUT",
       "color": 3
     },
     "GRID": {
-      "name": "ST-GRID",
+      "name": "SPAN-GRID",
       "color": 8,
       "ltype": "CENTER"
     },
     "GRID-BUBBLE": {
-      "name": "ST-GRID-BUBBLE",
+      "name": "SPAN-GRID-BUBBLE",
       "color": 8
     },
     "OUTLINE": {
-      "name": "ST-SLAB-EDGE",
+      "name": "SPAN-SLAB-EDGE",
       "color": 3,
       "lw": 35
     },
     "COLUMN": {
-      "name": "ST-COL",
+      "name": "SPAN-COL",
       "color": 7,
       "lw": 35
     },
     "COLUMN-HATCH": {
-      "name": "ST-COL-HATCH",
+      "name": "SPAN-COL-HATCH",
       "color": 7
     },
     "BEAM": {
-      "name": "ST-BEAM",
+      "name": "SPAN-BEAM",
       "color": 3,
       "lw": 25
     },
     "STAIR": {
-      "name": "ST-STAIR",
+      "name": "SPAN-STAIR",
       "color": 8
     },
     "OPENING": {
-      "name": "ST-OPENING",
+      "name": "SPAN-OPENING",
       "color": 6
     },
     "OPENING-HATCH": {
-      "name": "ST-OPENING-HATCH",
+      "name": "SPAN-OPENING-HATCH",
       "color": 6
     },
     "VOID": {
-      "name": "ST-VOID",
+      "name": "SPAN-VOID",
       "color": 30,
       "ltype": "DASHED"
     },
     "VOID-HATCH": {
-      "name": "ST-VOID-HATCH",
+      "name": "SPAN-VOID-HATCH",
       "color": 30
     },
     "SUNKEN": {
-      "name": "ST-SUNKEN",
+      "name": "SPAN-SUNKEN",
       "color": 4
     },
     "SUNKEN-HATCH": {
-      "name": "ST-SUNKEN-HATCH",
+      "name": "SPAN-SUNKEN-HATCH",
       "color": 8
     },
     "PT-ZONE": {
-      "name": "ST-PT-ZONE",
+      "name": "SPAN-PT-ZONE",
       "color": 4,
       "ltype": "DASHDOT"
     },
     "PT-TENDON": {
-      "name": "ST-PT-TENDON",
+      "name": "SPAN-PT-TENDON",
       "color": 3
     },
     "PT-HATCH": {
-      "name": "ST-PT-HATCH",
+      "name": "SPAN-PT-HATCH",
       "color": 4
     },
     "CABLE": {
-      "name": "ST-PT-CABLE",
+      "name": "SPAN-PT-CABLE",
       "color": 3,
       "lw": 50
     },
     "CABLE-TEXT": {
-      "name": "ST-PT-TEXT",
+      "name": "SPAN-PT-TEXT",
       "color": 3
     },
     "REBAR": {
-      "name": "ST-RB",
+      "name": "SPAN-RB",
       "color": 6,
       "lw": 50
     },
     "REBAR-B1": {
-      "name": "ST-RB-B1",
+      "name": "SPAN-RB-B1",
       "color": 6,
       "lw": 50
     },
     "REBAR-B2": {
-      "name": "ST-RB-B2",
+      "name": "SPAN-RB-B2",
       "color": 6,
       "lw": 50
     },
     "REBAR-T1": {
-      "name": "ST-RB-T1",
+      "name": "SPAN-RB-T1",
       "color": 6,
       "lw": 50
     },
     "REBAR-T2": {
-      "name": "ST-RB-T2",
+      "name": "SPAN-RB-T2",
       "color": 6,
       "lw": 50
     },
     "REBAR-BOT": {
-      "name": "ST-RB-BOT",
+      "name": "SPAN-RB-BOT",
       "color": 1,
       "lw": 50
     },
     "REBAR-TOP": {
-      "name": "ST-RB-TOP",
+      "name": "SPAN-RB-TOP",
       "color": 5,
       "lw": 50
     },
     "REBAR-U": {
-      "name": "ST-RB-UBAR",
+      "name": "SPAN-RB-UBAR",
       "color": 6,
       "lw": 50
     },
     "REBAR-TRIM": {
-      "name": "ST-RB-TRIM",
+      "name": "SPAN-RB-TRIM",
       "color": 6,
       "lw": 50
     },
     "REBAR-PUNCH": {
-      "name": "ST-RB-PUNCH",
+      "name": "SPAN-RB-PUNCH",
       "color": 6,
       "lw": 35
     },
     "REBAR-EXTENT": {
-      "name": "ST-RB-RANGE",
+      "name": "SPAN-RB-RANGE",
       "color": 6
     },
     "REBAR-TEXT": {
-      "name": "ST-RB-TEXT",
+      "name": "SPAN-RB-TEXT",
       "color": 7
     },
     "REBAR-MESH": {
-      "name": "ST-RB-MESH",
+      "name": "SPAN-RB-MESH",
       "color": 4
     },
     "REBAR-RED": {
-      "name": "ST-RB-TYPE",
+      "name": "SPAN-RB-TYPE",
       "color": 1
     },
     "WALL": {
-      "name": "ST-WALL",
+      "name": "SPAN-WALL",
       "color": 8,
       "lw": 50
     },
     "WALL-HATCH": {
-      "name": "ST-WALL-HATCH",
+      "name": "SPAN-WALL-HATCH",
       "color": 8
     },
     "POUR-STRIP": {
-      "name": "ST-POUR-STRIP",
+      "name": "SPAN-POUR-STRIP",
       "color": 30,
       "ltype": "DASHED"
     },
     "POUR-STRIP-HATCH": {
-      "name": "ST-POUR-STRIP-HATCH",
+      "name": "SPAN-POUR-STRIP-HATCH",
       "color": 30
     },
     "LEVEL": {
-      "name": "ST-LEVEL",
+      "name": "SPAN-LEVEL",
       "color": 4
     },
     "SLAB-THK": {
-      "name": "ST-SLAB-THK",
+      "name": "SPAN-SLAB-THK",
       "color": 3,
       "ltype": "DASHED"
     },
     "SLAB-THK-HATCH": {
-      "name": "ST-SLAB-THK-HATCH",
+      "name": "SPAN-SLAB-THK-HATCH",
       "color": 8
     },
     "CABLE-LIVE": {
-      "name": "ST-PT-ANCHOR",
+      "name": "SPAN-PT-ANCHOR",
       "color": 3
     }
   },
@@ -244,10 +244,10 @@
     "STANDARD": {
       "font": "arial.ttf"
     },
-    "ST-REBAR": {
+    "SPAN-REBAR": {
       "font": "romans.shx"
     },
-    "ST-TITLE": {
+    "SPAN-TITLE": {
       "font": "arial.ttf"
     }
   }

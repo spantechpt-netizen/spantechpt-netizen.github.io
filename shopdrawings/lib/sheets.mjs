@@ -49,7 +49,7 @@ export const SCHEDULE_COLS = [
 ];
 
 const CALL_H = 2.1, LEN_H = 1.7, HOOK_H = 1.5;
-const REBAR_STYLE = 'ST-REBAR';
+const REBAR_STYLE = 'SPAN-REBAR';
 export const fmtMM = (v) => Math.round(v).toLocaleString('en-US');
 const regionBox = (o) => R.regionBbox(o);
 const sizeOf = (o) => (o.kind === 'circle' ? `Ø${fmtMM(2 * o.r)}` : o.kind === 'rect' ? `${fmtMM(o.rect.w)} x ${fmtMM(o.rect.h)}` : `${fmtMM(regionBox(o).w)} x ${fmtMM(regionBox(o).h)} (POLY)`);
@@ -864,7 +864,7 @@ function coverSheet(model, sheets, meta) {
     const tcols = [{ key: 'dia', title: 'Ø', w: 16 }, { key: 'ld_bottom', title: 'ld BOT', w: 30 }, { key: 'ld_top', title: 'ld TOP', w: 30 }, { key: 'lap_bottom', title: 'LAP BOT', w: 32 }, { key: 'lap_top', title: 'LAP TOP', w: 32 }, { key: 'ldh', title: 'ldh HOOK', w: d1.w - 6 - 140 }];
     sheet.table(d1.x + 3, d1.y + d1.h - 10, tcols, R.lengthTable(model.spec), { headH: 5, rowH: 4, h: 1.6 });
     const d2 = sheet.detailBox(2, 'HOW TO USE THE BLOCKS / XREFS', '');
-    const how = ['EACH SHEET IS A BLOCK NAMED AS LISTED; THE SAME NAME IS ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN GEOMETRY IS 1:1 AND THE FRAME IS SCALED BY THE SHEET SCALE.', 'LAYERS PER THE SPAN TECH STANDARD (ST-): ST-RB-B1 / B2 / T1 / T2 (BARS), ST-RB-UBAR, ST-RB-TRIM, ST-RB-PUNCH, ST-RB-TEXT (CALL-OUTS), ST-RB-MESH, ST-RB-TYPE, ST-GRID, ST-SLAB-EDGE, ST-COL, ST-BEAM, ST-OPENING, ST-SUNKEN, ST-VOID, ST-PT-*, ST-SHEET-*, ST-DIM, ST-CALLOUT.', 'EXPLODE A BLOCK TO EDIT; RE-RUN THE GENERATOR AFTER THE CONSULTANT REVISES THE G.A. AND RE-ATTACH.'];
+    const how = ['EACH SHEET IS A BLOCK NAMED AS LISTED; THE SAME NAME IS ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN GEOMETRY IS 1:1 AND THE FRAME IS SCALED BY THE SHEET SCALE.', 'LAYERS PER THE SPAN TECH STANDARD (SPAN-): SPAN-RB-B1 / B2 / T1 / T2 (BARS), SPAN-RB-UBAR, SPAN-RB-TRIM, SPAN-RB-PUNCH, SPAN-RB-TEXT (CALL-OUTS), SPAN-RB-MESH, SPAN-RB-TYPE, SPAN-GRID, SPAN-SLAB-EDGE, SPAN-COL, SPAN-BEAM, SPAN-OPENING, SPAN-SUNKEN, SPAN-VOID, SPAN-PT-*, SPAN-SHEET-*, SPAN-DIM, SPAN-CALLOUT.', 'EXPLODE A BLOCK TO EDIT; RE-RUN THE GENERATOR AFTER THE CONSULTANT REVISES THE G.A. AND RE-ATTACH.'];
     how.forEach((h, i) => pp.mtext(d2.x + 4, d2.y + d2.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.8, width: d2.w - 8 }));
     return {
       general: [

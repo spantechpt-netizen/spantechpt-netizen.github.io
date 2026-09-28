@@ -268,28 +268,28 @@ drawing notes or by `--config`.
 ## Layer standard · معيار الطبقات
 
 Generated drawings use the **Span Tech layer standard** in
-`shopdrawings/layers.spantech.json` (prefix `ST-`). Edit that file, or pass
+`shopdrawings/layers.spantech.json` (prefix `SPAN-`). Edit that file, or pass
 another one with `--layers file.json` (or `"layers": "path"` in the config),
 to change names, colours, linetypes or lineweights; the generator maps its
 internal layer names to yours at write time, so nothing else changes.
 
 | Group | Layers |
 |---|---|
-| Sheet | `ST-SHEET-FRAME`, `ST-SHEET-TITLE`, `ST-SHEET-TEXT`, `ST-SHEET-NOTES`, `ST-SHEET-SCHEDULE`, `ST-SHEET-SCHEDULE-TEXT`, `ST-DETAIL`, `ST-DETAIL-HATCH`, `ST-XREF` |
-| Structure (from the G.A.) | `ST-GRID`, `ST-GRID-BUBBLE`, `ST-SLAB-EDGE`, `ST-COL`, `ST-COL-HATCH`, `ST-BEAM`, `ST-STAIR`, `ST-OPENING`, `ST-VOID`, `ST-SUNKEN` (+ `-HATCH`), `ST-PT-ZONE` |
-| Reinforcement | `ST-RB-B1`, `ST-RB-B2`, `ST-RB-T1`, `ST-RB-T2` (bars per layer), `ST-RB-UBAR`, `ST-RB-TRIM` (trimmers / diagonals), `ST-RB-PUNCH`, `ST-RB-TEXT` (call-outs, style `ST-REBAR` = romans.shx), `ST-RB-MESH` (mesh labels), `ST-RB-TYPE` (PS labels), `ST-RB-RANGE`, `ST-RB-BOT` / `ST-RB-TOP` (section details) |
-| PT | `ST-PT-TENDON`, `ST-PT-CABLE`, `ST-PT-TEXT`, `ST-PT-HATCH` |
-| General | `ST-TEXT`, `ST-DIM`, `ST-CALLOUT`, `ST-HATCH` |
+| Sheet | `SPAN-SHEET-FRAME`, `SPAN-SHEET-TITLE`, `SPAN-SHEET-TEXT`, `SPAN-SHEET-NOTES`, `SPAN-SHEET-SCHEDULE`, `SPAN-SHEET-SCHEDULE-TEXT`, `SPAN-DETAIL`, `SPAN-DETAIL-HATCH`, `SPAN-XREF` |
+| Structure (from the G.A.) | `SPAN-GRID`, `SPAN-GRID-BUBBLE`, `SPAN-SLAB-EDGE`, `SPAN-COL`, `SPAN-COL-HATCH`, `SPAN-BEAM`, `SPAN-STAIR`, `SPAN-OPENING`, `SPAN-VOID`, `SPAN-SUNKEN` (+ `-HATCH`), `SPAN-PT-ZONE` |
+| Reinforcement | `SPAN-RB-B1`, `SPAN-RB-B2`, `SPAN-RB-T1`, `SPAN-RB-T2` (bars per layer), `SPAN-RB-UBAR`, `SPAN-RB-TRIM` (trimmers / diagonals), `SPAN-RB-PUNCH`, `SPAN-RB-TEXT` (call-outs, style `SPAN-REBAR` = romans.shx), `SPAN-RB-MESH` (mesh labels), `SPAN-RB-TYPE` (PS labels), `SPAN-RB-RANGE`, `SPAN-RB-BOT` / `SPAN-RB-TOP` (section details) |
+| PT | `SPAN-PT-TENDON`, `SPAN-PT-CABLE`, `SPAN-PT-TEXT`, `SPAN-PT-HATCH` |
+| General | `SPAN-TEXT`, `SPAN-DIM`, `SPAN-CALLOUT`, `SPAN-HATCH` |
 
-Text styles written: `STANDARD` (arial.ttf), `ST-REBAR` (romans.shx, used
-for all bar call-outs), `ST-TITLE` (arial.ttf).
+Text styles written: `STANDARD` (arial.ttf), `SPAN-REBAR` (romans.shx, used
+for all bar call-outs), `SPAN-TITLE` (arial.ttf).
 
 ## In AutoCAD · داخل أوتوكاد
 
 - Insert or Xref any `dxf/*.dxf` at `0,0`, scale 1, units mm. Plan geometry
   is 1:1; the A1 frame is scaled by the sheet scale (1:100 → 84 100 × 59 400).
 - Layers per the standard above. Dimensions are plain lines and text on
-  `ST-DIM` so they stay editable without a dimension style. Arabic is
+  `SPAN-DIM` so they stay editable without a dimension style. Arabic is
   carried as `\U+` escapes (AutoCAD 2007+).
 - Explode a block to edit; re-run the generator after the consultant revises
   the structural drawings and re-attach.
