@@ -62,6 +62,9 @@ addColumn('drawing_runs', 'mesh', 'TEXT');
 addColumn('drawing_runs', 'punching_json', 'TEXT');
 addColumn('drawing_levels', 'punching_json', 'TEXT');
 addColumn('drawing_projects', 'beam_types_json', 'TEXT');
+addColumn('drawing_projects', 'beam_design', 'TEXT');
+addColumn('drawing_runs', 'beam_design', 'TEXT');
+addColumn('drawing_runs', 'beam_check_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

@@ -252,6 +252,7 @@ export const api = {
   deleteDrawingReference: (levelId) => request('DELETE', `/api/drawings/levels/${levelId}/reference`),
   prepareBeamStrips: (runId) => request('POST', `/api/drawings/runs/${runId}/beam-strips`, {}),
   punchingDecision: (runId, data) => request('POST', `/api/drawings/runs/${runId}/punching-decision`, data),
+  beamDecision: (runId, data) => request('POST', `/api/drawings/runs/${runId}/beam-decision`, data),
   drawingBeamTypes: (projectId) => request('GET', `/api/drawings/projects/${projectId}/beam-types`),
   importDrawingBeamTypes: (projectId, data) => request('POST', `/api/drawings/projects/${projectId}/beam-types/import`, data),
   deleteDrawingBeamType: (projectId, mark) => request('DELETE', `/api/drawings/projects/${projectId}/beam-types/${encodeURIComponent(mark)}`),

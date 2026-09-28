@@ -28,6 +28,10 @@ export const RUN_STATUS = ['draft', 'issued', 'superseded'];
 export const MESH_FACES = ['bottom', 'both'];
 /** The engineer's decision on a run blocked by the punching check. */
 export const PUNCHING_DECISIONS = ['thicken', 'bypass', 'ram_ok', 'clear'];
+/** Where the beam bars come from: RAM's design strips, the office design (continuous-beam analysis), or the heavier of the two set by set. */
+export const BEAM_DESIGN = ['ram', 'office', 'max'];
+/** The engineer's decision on a run blocked by the beam check (a beam failing deflection / flexure / shear). */
+export const BEAM_DECISIONS = ['deepen', 'bypass', 'ram_ok', 'clear'];
 /** Project document sections: the original design files, the RAM models, the PT design drawings, the PT shop drawings. */
 export const FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
 /** Sheet frame defaults (paper mm); see shopdrawings/lib/sheet.mjs DEFAULT_FRAME. */
@@ -65,6 +69,7 @@ export const DRAWING_DEFAULTS = {
   default_mode: 'design',
   ram_bands: 'all',
   mesh: 'bottom',
+  beam_design: 'ram',
   spec: {},
   frame: FRAME_DEFAULTS,
   frame_dxf: null,

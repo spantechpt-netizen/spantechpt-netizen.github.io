@@ -36,6 +36,7 @@ import { quantities } from './lib/quantities.mjs';
 import { readReferencePlan, applyReference } from './lib/reference.mjs';
 import { beamSchedule } from './lib/beam-strips.mjs';
 import { punchingCheck } from './lib/punching.mjs';
+import { designBeams } from './lib/beam-design.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
 import { toDxf } from './lib/dxf-writer.mjs';
 import { toSvg } from './lib/svg-writer.mjs';
@@ -95,7 +96,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
     const raw = ramToModel(ram, { levelName, levelId: meta.levelId, spec });
     useReferencePlan(raw, ram, spec);
-    for (const l of raw.levels) { l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [] }); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
+    for (const l of raw.levels) { l.beamCheck = designBeams(l, { ...raw.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck }); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
     model = prepareRamDesign(raw, { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
@@ -107,7 +108,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
     useReferencePlan(model, ram, spec);
-    for (const l of model.levels) { l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [] }); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
+    for (const l of model.levels) { l.beamCheck = designBeams(l, { ...model.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck }); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {
@@ -139,8 +140,10 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
   writeFileSync(join(out, 'quantities.json'), JSON.stringify(qty, null, 2));
   const punching = model.levels.map((l) => (l.punchingCheck ? { level: l.id, name: l.name, ...l.punchingCheck, overridden: l.punchingOverridden || [] } : null)).filter(Boolean);
   if (punching.length) writeFileSync(join(out, 'punching.json'), JSON.stringify(punching, null, 2));
+  const beamChecks = model.levels.map((l) => (l.beamCheck && l.beamCheck.beams.length ? { level: l.id, name: l.name, design: spec.beamDesign || 'ram', ...l.beamCheck } : null)).filter(Boolean);
+  if (beamChecks.length) writeFileSync(join(out, 'beams.json'), JSON.stringify(beamChecks, null, 2));
   writeFileSync(join(out, 'REPORT.md'), report(model, pack));
-  return { model, pack, files, quantities: qty, punching };
+  return { model, pack, files, quantities: qty, punching, beamChecks };
 }
 
 /**
@@ -211,6 +214,17 @@ function report(model, pack) {
     L.push('|---|---|---|---|---|---|---|---|---|---|---|');
     for (const l of checked) for (const c of l.punchingCheck.columns) L.push(`| ${l.id} | ${c.id} | ${c.loc} | ${c.h} | ${c.trib_m2} | ${c.wu_kn_m2} | ${c.Vu_kn} | ${c.vu_mpa} | ${c.phi_vc_mpa} | ${c.ratio} | ${c.status}${c.ssr ? ' (SSR in RAM)' : ''}${c.ram_failed ? ' (FAILS IN RAM)' : ''}${(l.punchingOverridden || []).includes(c.id) ? ' (PS AT THE ENGINEER\'S RESPONSIBILITY)' : ''} |`);
     for (const l of checked) if (l.punchingCheck.flagged.length) L.push(`\n**${l.id}: columns to look at in the RAM punching report: ${l.punchingCheck.flagged.join(', ')}** (blocking: ${l.punchingCheck.blocking.join(', ') || 'none'}).`);
+  }
+  const beamLevels = model.levels.filter((l) => l.beamCheck && l.beamCheck.beams.length);
+  if (beamLevels.length) {
+    L.push('');
+    L.push('## Office beam design (continuous-beam analysis on the model loads - the RAM design report governs)');
+    L.push('');
+    L.push('| Level | Beam | b x h | Spans (m) | Trib. (m) | wu kN/m | Mu- kN·m | Mu+ kN·m | Vu kN | Top | Bottom | Stirrups | Deflection | Status |');
+    L.push('|---|---|---|---|---|---|---|---|---|---|---|---|---|---|');
+    for (const l of beamLevels) for (const b of l.beamCheck.beams) L.push(`| ${l.id} | ${b.id} | ${b.width}x${b.depth} | ${b.spans.map((s) => (s.length / 1000).toFixed(1)).join(' + ')} | ${(b.trib_mm.total / 1000).toFixed(1)} | ${b.loads.wu} | ${b.Mneg_max} | ${b.Mpos_max} | ${b.Vu} | ${b.top?.text || '-'} | ${b.bottom?.text || '-'} | ${b.stirrups?.text || '-'} | ${b.deflection.table_ok ? `h >= L/${b.deflection.h_min ? Math.round(b.spans[0]?.length / b.deflection.h_min * 10) / 10 : '?'} ok` : `${b.deflection.ratio} of the limit`} | ${b.status}${b.reasons.length ? ` (${b.reasons.join(', ')})` : ''}${b.ram_failed ? ' (FAILS IN RAM)' : ''} |`);
+    for (const l of beamLevels) if (l.beamCheck.assumed.length) L.push(`\n${l.id}: ${l.beamCheck.assumed.join('; ')}.`);
+    for (const l of beamLevels) if (l.beamCheck.failing.length) L.push(`\n**${l.id}: beams not passing the office check: ${l.beamCheck.failing.join(', ')}.**`);
   }
   if (!design) {
     const checks = pack.sheets.flatMap((s) => s.checks.map((c) => ({ ...c, level: s.level })));

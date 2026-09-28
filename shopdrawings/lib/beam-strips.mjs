@@ -196,9 +196,10 @@ export function typeCovers(t, r, tol = 10) {
  * type that carries it; the beams no type carries are grouped among themselves (one section, bars alike) into new
  * types numbered after the library's last mark. Library types are used as they are, never modified.
  */
-export function beamSchedule(ram, level = null, { library = [] } = {}) {
+export function beamSchedule(ram, level = null, { library = [], design = 'ram', office = null } = {}) {
   const beams = (level?.beams || ram.beams || []).map((b) => ({ ...b }));
   if (!beams.length) return null;
+  const officeOf = (id) => (office?.beams || []).find((b) => String(b.id).toUpperCase() === String(id).toUpperCase()) || null;
   const bands = (level?.ram?.bands || ram.bands || []).filter((b) => b.designedBy === 'program' || b.designedBy == null);
   const shear = level?.ram?.shear || ram.shear || [];
   const expand = (bm, m) => { const u = { x: (bm.b.x - bm.a.x) / dist(bm.a, bm.b), y: (bm.b.y - bm.a.y) / dist(bm.a, bm.b) }, n = { x: -u.y, y: u.x }; const w = bm.t / 2 + m; return [{ x: bm.a.x + n.x * w - u.x * m, y: bm.a.y + n.y * w - u.y * m }, { x: bm.b.x + n.x * w + u.x * m, y: bm.b.y + n.y * w + u.y * m }, { x: bm.b.x - n.x * w + u.x * m, y: bm.b.y - n.y * w + u.y * m }, { x: bm.a.x - n.x * w - u.x * m, y: bm.a.y - n.y * w - u.y * m }]; };
@@ -214,12 +215,24 @@ export function beamSchedule(ram, level = null, { library = [] } = {}) {
     const top = heaviest('T'), bottom = heaviest('B');
     const links = shear.filter((s) => pointInPolygon({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, zone)).sort((p, q) => p.spacing - q.spacing);
     const st = links[0] || null;
-    return {
-      id: bm.id, a: bm.a, b: bm.b, width: bm.t, depth: bm.depth, length: Math.round(dist(bm.a, bm.b)),
+    const ramSets = {
       top: top ? { n: top.n, dia: top.dia, area: Math.round(top.area), text: barsText(top.n, top.dia) } : null,
       bottom: bottom ? { n: bottom.n, dia: bottom.dia, area: Math.round(bottom.area), text: barsText(bottom.n, bottom.dia) } : null,
       stirrups: st ? { dia: st.dia, legs: st.legs, spacing: st.spacing, text: `T${st.dia}-${st.legs}L@${st.spacing}` } : null,
-      bands: mine.length, designed: !!(top || bottom),
+    };
+    // the office design of the beam (lib/beam-design.mjs) beside RAM's; the design option picks the bars drawn:
+    // 'ram' (RAM's bands), 'office' (the office design) or 'max' (set by set, the heavier of the two)
+    const off = officeOf(bm.id);
+    const offSets = off ? { top: off.top, bottom: off.bottom, stirrups: off.stirrups } : null;
+    const heavier = (a, b2) => (!a ? b2 : !b2 ? a : (a.area || 0) >= (b2.area || 0) ? a : b2);
+    const stiffer = (a, b2) => (!a ? b2 : !b2 ? a : stirrupCapacity(a) >= stirrupCapacity(b2) ? a : b2);
+    const chosen = design === 'office' && offSets ? offSets
+      : design === 'max' && offSets ? { top: heavier(ramSets.top, offSets.top), bottom: heavier(ramSets.bottom, offSets.bottom), stirrups: stiffer(ramSets.stirrups, offSets.stirrups) }
+      : ramSets;
+    return {
+      id: bm.id, a: bm.a, b: bm.b, width: bm.t, depth: bm.depth, length: Math.round(dist(bm.a, bm.b)),
+      ...chosen, ram: ramSets, office: offSets, design: design === 'ram' || !offSets ? 'ram' : design,
+      bands: mine.length, designed: !!(chosen.top || chosen.bottom), ramDesigned: !!(ramSets.top || ramSets.bottom),
     };
   });
   // the project's schedule first: a designed beam takes the lightest existing type that carries it
@@ -248,9 +261,9 @@ export function beamSchedule(ram, level = null, { library = [] } = {}) {
   for (const r of rows) if (!r.designed) r.mark = null;
   const used = [...lib.filter((t) => t.beams.length), ...added].map((t) => ({ ...t, count: t.beams.length }));
   return {
-    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed).map((r) => r.id),
+    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed).map((r) => r.id), ramUndesigned: rows.filter((r) => !r.ramDesigned).map((r) => r.id),
     added: added.map((t) => ({ mark: t.mark, width: t.width, depth: t.depth, section: t.section, top: t.top, bottom: t.bottom, stirrups: t.stirrups })),
-    library: lib.length,
+    library: lib.length, design, office: office ? { beams: office.beams, failing: office.failing, blocking: office.blocking, warnings: office.warnings, assumed: office.assumed } : null,
   };
 }
 

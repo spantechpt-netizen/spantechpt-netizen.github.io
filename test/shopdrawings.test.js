@@ -760,6 +760,65 @@ test('slab mesh option, punching check and the engineer\'s bypass: the top mesh 
   rmSync(dir, { recursive: true, force: true });
 });
 
+test('office beam design: continuous-beam envelope on the model loads, bars and stirrups, the deflection check that blocks, and the ram / office / max option', async () => {
+  const { threeMoment, analyseBeam, flexureAs, shearDesign, deflectionCheck, designBeams, pickBars, beamBlockingAfter } = await import('../shopdrawings/lib/beam-design.mjs');
+  // the three-moment equation: two equal spans under w give -wL²/8 at the middle support
+  assert.deepEqual(threeMoment([6000, 6000], [10, 10]).map((v) => Math.round(v * 10) / 10), [0, -45, 0]);
+  const env = analyseBeam([{ length: 6000 }, { length: 6000 }], 20, 10);
+  assert.ok(env.Mneg[1] < -(1.2 * 20 + 1.6 * 10) * 36 / 8 + 1 && env.Mpos[0] > 0 && env.Vend[0][1] > env.Vend[0][0], 'patterned live load: hogging at least the full-load value, sagging positive, more shear at the interior end');
+  assert.ok(Math.abs(flexureAs(100, 300, 540, 30, 420).as - 520) < 40, 'As for 100 kN·m on 300 x 600 ≈ 520 mm²');
+  assert.equal(flexureAs(2000, 300, 540, 30, 420).ok, false, 'a section that cannot carry the moment singly reinforced is flagged');
+  const sh = shearDesign(150, 300, 540, 30, 420);
+  assert.ok(sh.ok && sh.legs === 2 && sh.spacing <= 270 && sh.spacing >= 75, JSON.stringify(sh));
+  assert.equal(shearDesign(2000, 300, 540, 30, 420).ok, false, 'Vs over 0.66 sqrt(fc) b d: section too small');
+  assert.deepEqual(pickBars(1200, 300, 40).text, '4T20');
+  assert.equal(deflectionCheck({ L: 6000, b: 300, h: 600, d: 540, as: 800, fc: 30, ends: 2, Ma: 100, live: 40 }).table_ok, true, 'h >= L/21');
+  const dc = deflectionCheck({ L: 12000, b: 300, h: 500, d: 440, as: 1500, fc: 30, ends: 0, Ma: 350, MaLeft: 0, MaRight: 0, live: 120 });
+  assert.ok(!dc.table_ok && dc.ratio > 1 && !dc.ok, JSON.stringify(dc));
+  // a hand-made level: a 300 x 400 beam over two 6 m spans on three columns under a 3 + 5 kN/m² slab
+  const outline = [{ x: 0, y: 0 }, { x: 12000, y: 0 }, { x: 12000, y: 8000 }, { x: 0, y: 8000 }];
+  const level = { thickness: 250, outline, walls: [], columns: [{ id: 'C1', cx: 0, cy: 4000, w: 400, h: 400 }, { id: 'C2', cx: 6000, cy: 4000, w: 400, h: 400 }, { id: 'C3', cx: 12000, cy: 4000, w: 400, h: 400 }], beams: [{ id: 'BM1', a: { x: 0, y: 4000 }, b: { x: 12000, y: 4000 }, t: 300, depth: 400 }], ram: { areaLoads: [{ type: 'dead', q: 3, polygon: outline }, { type: 'live', q: 5, polygon: outline }] } };
+  const r = designBeams(level, { fc: 30, fy: 420 });
+  const bm = r.beams[0];
+  assert.equal(bm.spans.length, 2); assert.equal(bm.spans[0].support0, 'column');
+  assert.ok(Math.abs(bm.Mneg_max - bm.loads.wu * 36 / 8) < 1, 'hogging at the middle support = wu L² / 8');
+  assert.ok(bm.reasons.includes('flexure') || bm.reasons.includes('shear'), 'a 400 deep beam cannot carry it');
+  level.beams[0].depth = 700;
+  const r2 = designBeams(level, { fc: 30, fy: 420 });
+  assert.deepEqual(r2.beams[0].reasons, []); assert.ok(r2.beams[0].top.area >= r2.beams[0].as_top_req && r2.beams[0].stirrups.spacing >= 75);
+  assert.deepEqual(r2.failing, []);
+  // the engineer's list of beams failing in RAM blocks whatever the estimate says; decisions clear it
+  const r3 = designBeams(level, { fc: 30, fy: 420, beams: { ramFailed: ['bm1'] } });
+  assert.deepEqual([r3.blocking, r3.beams[0].ram_failed], [['BM1'], true]);
+  assert.deepEqual(beamBlockingAfter(r3, { mode: 'deepen' }), ['BM1']);
+  assert.deepEqual(beamBlockingAfter(r3, { mode: 'bypass', beams: 'all' }), []);
+  // through the generator: the option decides the bars drawn, the edge beam without RAM bars gets the office design, a 12 m 300 x 600 edge beam fails deflection
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'bd-'));
+  const src = await buildSyntheticCpt(dir, { beam: true, loads: { dead: 3, live: 4 } });
+  const by = {};
+  for (const mode of ['ram', 'office', 'max']) {
+    const out = generate({ inputDxf: src, out: join(dir, mode), meta: {}, spec: { beamDesign: mode }, svg: false, levelNames: ['B1'], mode: 'design' });
+    by[mode] = out.model.levels[0].beamSchedule;
+    assert.equal(out.beamChecks[0].design, mode);
+  }
+  const bm1 = (m) => by[m].beams.find((b) => b.id === 'BM1');
+  assert.deepEqual([bm1('ram').top.text, bm1('ram').bottom.text, bm1('ram').stirrups.text], ['4T16', '3T16', 'T12-2L@125'], 'RAM bars as before');
+  assert.equal(bm1('office').bottom.text, bm1('office').office.bottom.text);
+  assert.ok(bm1('office').office.bottom.area > bm1('ram').bottom.area, 'the office design of the 8 m simply supported beam is heavier than the RAM band in the file');
+  assert.deepEqual([bm1('max').top.text, bm1('max').bottom.text, bm1('max').stirrups.text], ['4T16', bm1('office').bottom.text, 'T12-2L@125'], 'max: set by set the heavier (RAM top and stirrups, office bottom)');
+  assert.deepEqual(by.ram.undesigned, ['BM2']); assert.deepEqual(by.office.undesigned, [], 'the office design covers the beam RAM did not');
+  assert.ok(by.office.office.failing.includes('BM2') && by.office.office.beams.find((b) => b.id === 'BM2').reasons.includes('deflection'), 'the 12 m 300 x 600 edge beam fails deflection');
+  const sheet = readFileSync(readdirSync(join(dir, 'office', 'dxf')).map((f) => join(dir, 'office', 'dxf', f)).find((f) => /BEAM/.test(f)), 'utf8');
+  assert.ok(sheet.includes('OFFICE DESIGN') && sheet.includes('NOT PASSING (DEFLECTION)') && sheet.includes('BEAMS NOT PASSING THE OFFICE CHECK: BM2'), 'the sheet says which beam fails and why');
+  const ok = generate({ inputDxf: src, out: join(dir, 'bypass'), meta: {}, spec: { beamDesign: 'office', beams: { override: { beams: 'all', by: 'Eng. Sara Test', date: '2026-09-28', note: 'camber 20 mm' } } }, svg: false, levelNames: ['B1'], mode: 'design' });
+  const sheet2 = readFileSync(readdirSync(join(dir, 'bypass', 'dxf')).map((f) => join(dir, 'bypass', 'dxf', f)).find((f) => /BEAM/.test(f)), 'utf8');
+  assert.ok(sheet2.includes("ACCEPTED AT THE DESIGN ENGINEER'S RESPONSIBILITY (ENG. SARA TEST, 2026-09-28): CAMBER 20 MM"), 'the bypass is printed with the engineer\'s name');
+  assert.ok(readFileSync(join(dir, 'office', 'REPORT.md'), 'utf8').includes('Office beam design') && existsSync(join(dir, 'office', 'beams.json')));
+  void ok;
+  rmSync(dir, { recursive: true, force: true });
+});
+
 test('the design package is written in the office layers and text style, on the shop-drawing frame', () => {
   const dxf = parseDxf(toDxf(buildOfficePlan()));
   const model = extractDesign(dxf, { levelNames: ['TYPICAL FLOOR'] });

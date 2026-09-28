@@ -9,7 +9,7 @@ import { generate } from '../shopdrawings/cli.mjs';
 try {
   const { input, out, meta, spec, levelNames, mode } = workerData;
   const t0 = Date.now();
-  const { model, pack, quantities, punching } = generate({ inputDxf: input, out, meta, spec, svg: true, levelNames, mode });
+  const { model, pack, quantities, punching, beamChecks } = generate({ inputDxf: input, out, meta, spec, svg: true, levelNames, mode });
   parentPort.postMessage({
     ok: true,
     duration_ms: Date.now() - t0,
@@ -27,6 +27,7 @@ try {
     findings: model.findings,
     quantities,
     punching,
+    beamChecks,
     beams: model.levels.map((l) => (l.beamSchedule ? { level: l.id, name: l.name, ...l.beamSchedule } : null)).filter(Boolean),
     levels: model.levels.map((l) => ({ id: l.id, name: l.name, thickness: l.thickness, columns: (l.columns || []).length })),
   });

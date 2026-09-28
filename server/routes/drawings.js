@@ -41,12 +41,13 @@ import { badRequest, notFound, conflict } from '../http.js';
 import { str, int, oneOf, jsonField, COUNTRIES } from '../validate.js';
 import {
   drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, saveUpload, runMeta, levelTitle,
-  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, MESH_FACES, PUNCHING_DECISIONS, FILE_CATEGORIES,
+  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, MESH_FACES, PUNCHING_DECISIONS, BEAM_DESIGN, BEAM_DECISIONS, FILE_CATEGORIES,
   framePath, projectFile, projectDir, referencePath, SUBMITTAL_STATUS, SUBMITTAL_PURPOSES,
 } from '../drawings.js';
 import { submittalCode, submittalItems, submittalHtml } from '../submittals.js';
 import { costStudy } from '../../shopdrawings/lib/quantities.mjs';
 import { blockingAfter } from '../../shopdrawings/lib/punching.mjs';
+import { beamBlockingAfter } from '../../shopdrawings/lib/beam-design.mjs';
 
 const PROJECT_COLUMNS = `p.*, u.name AS owner_name, u.name_ar AS owner_name_ar,
   (SELECT COUNT(*) FROM drawing_levels l WHERE l.project_id = p.id) AS level_count,
@@ -88,7 +89,8 @@ function publicRun(row, { withReport = false } = {}) {
   out.beams = parseJson(row.beams_json, []);
   out.beam_strips = parseJson(row.beam_strips_json, null);
   out.punching = parseJson(row.punching_json, null);
-  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json; delete out.beams_json; delete out.beam_strips_json; delete out.punching_json;
+  out.beam_check = parseJson(row.beam_check_json, null);
+  delete out.sheets_json; delete out.assumptions_json; delete out.findings_json; delete out.edits_json; delete out.quantities_json; delete out.beams_json; delete out.beam_strips_json; delete out.punching_json; delete out.beam_check_json;
   if (!withReport) delete out.report_md;
   return out;
 }
@@ -170,6 +172,7 @@ function projectFields(body, { partial = false } = {}) {
     default_mode: oneOf(body.default_mode, 'default_mode', MODES, { fallback: partial ? undefined : 'design' }),
     ram_bands: oneOf(body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: partial ? undefined : 'all' }),
     mesh: oneOf(body.mesh, 'mesh', MESH_FACES, { fallback: partial ? undefined : 'bottom' }),
+    beam_design: oneOf(body.beam_design, 'beam_design', BEAM_DESIGN, { fallback: partial ? undefined : 'ram' }),
     spec_json: body.spec === undefined ? undefined : JSON.stringify(jsonField(body.spec, 'spec', {}) || {}),
     notes: str(body.notes, 'notes', { max: 4000, fallback: undefined }),
   };
@@ -414,10 +417,11 @@ export function register(router) {
     if (fields.code && get('SELECT id FROM drawing_levels WHERE project_id = ? AND code = ? AND id <> ?', level.project_id, fields.code, level.id)) {
       throw conflict(`Level ${fields.code} is already registered`, `الدور ${fields.code} متسجل قبل كده`);
     }
-    if (body.ram_failed_columns !== undefined) {
-      // the columns RAM reports as failing punching (the program cannot read RAM's verdict from the file)
+    if (body.ram_failed_columns !== undefined || body.ram_failed_beams !== undefined) {
+      // the columns RAM reports as failing punching, and the beams RAM reports as failing deflection (the program cannot read RAM's verdicts from the file)
       const rec = levelPunching(level);
-      rec.ram_failed = columnList(body.ram_failed_columns);
+      if (body.ram_failed_columns !== undefined) rec.ram_failed = columnList(body.ram_failed_columns);
+      if (body.ram_failed_beams !== undefined) rec.beams_ram_failed = columnList(body.ram_failed_beams);
       fields.punching_json = JSON.stringify(rec);
     }
     update('drawing_levels', level.id, fields);
@@ -446,6 +450,7 @@ export function register(router) {
     const mode = oneOf(query.mode ?? body.mode, 'mode', MODES, { fallback: sourceRun?.mode || project.default_mode || settings.default_mode || 'design' });
     const ramBands = oneOf(query.ram_bands ?? body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: sourceRun?.ram_bands || project.ram_bands || settings.ram_bands || 'all' });
     const mesh = oneOf(query.mesh ?? body.mesh, 'mesh', MESH_FACES, { fallback: sourceRun?.mesh || project.mesh || settings.mesh || 'bottom' });
+    const beamDesign = oneOf(query.beam_design ?? body.beam_design, 'beam_design', BEAM_DESIGN, { fallback: sourceRun?.beam_design || project.beam_design || settings.beam_design || 'ram' });
     let revision = str(query.revision ?? body.revision, 'revision', { max: 6, fallback: null });
     if (revision === null) {
       const previous = get("SELECT COUNT(*) AS n FROM drawing_runs WHERE level_id = ? AND mode = ? AND status <> 'failed' AND status <> 'running'", level.id, mode).n;
@@ -459,7 +464,7 @@ export function register(router) {
     const meta = runMeta({ settings, project, level, mode, revision, user });
     const serial = nextCounter(`drawing_runs:${project.id}`);
     const runId = insert('drawing_runs', {
-      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, mesh, notes,
+      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, mesh, beam_design: beamDesign, notes,
       prefix: meta.prefix, source_name: str(query.name ?? body.name, 'name', { max: 200, fallback: sourceRun?.source_name || null }), status: 'running', created_by: user.id,
       edits_json: edits.length ? JSON.stringify(edits) : null,
     });
@@ -481,6 +486,7 @@ export function register(router) {
       // the punching record of the level: the columns failing in RAM, and the engineer's decision on the earlier blocked run
       const punchRec = levelPunching(level);
       const decision = punchRec.decision && punchRec.decision.mode !== 'clear' ? punchRec.decision : null;
+      const beamDecision = punchRec.beam_decision && punchRec.beam_decision.mode !== 'clear' ? punchRec.beam_decision : null;
       const projectSpec = parseJson(project.spec_json, {});
       const punchingSpec = {
         ...((settings.spec || {}).punching || {}), ...(projectSpec.punching || {}),
@@ -495,6 +501,12 @@ export function register(router) {
         mesh,
         punching: punchingSpec,
         beamTypes: projectBeamTypes(project), // the unified beam schedule of the project: reused, never changed
+        beamDesign,
+        beams: {
+          ...(projectSpec.beams || {}),
+          ramFailed: punchRec.beams_ram_failed || [],
+          ...(beamDecision?.mode === 'bypass' ? { override: { beams: beamDecision.columns, by: beamDecision.by, date: beamDecision.date, note: beamDecision.note } } : {}),
+        },
         ...(level.wall_thickness ? { wallThickness: level.wall_thickness } : {}),
         ...(edits.length ? { edits } : {}),
         ...(reference ? { reference } : {}),
@@ -515,9 +527,14 @@ export function register(router) {
       const punching = (result.punching || []).map((pc) => ({ ...pc, blocking_after: blockingAfter(pc, decision) }));
       const blocking = punching.flatMap((pc) => pc.blocking_after);
       const punchingRec = punching.length ? { levels: punching, blocking, warnings: punching.flatMap((pc) => pc.warnings || []), decision, ram_failed: punchRec.ram_failed || [] } : null;
+      // the beam check: a beam failing deflection / flexure / shear (or reported failing in RAM) blocks the run the same way
+      const beamChecks = (result.beamChecks || []).map((bc) => ({ ...bc, blocking_after: beamBlockingAfter(bc, beamDecision) }));
+      const beamBlocking = beamChecks.flatMap((bc) => bc.blocking_after);
+      const beamRec = beamChecks.length ? { design: beamDesign, levels: beamChecks, blocking: beamBlocking, warnings: beamChecks.flatMap((bc) => bc.warnings || []), decision: beamDecision, ram_failed: punchRec.beams_ram_failed || [] } : null;
       update('drawing_runs', runId, {
-        status: blocking.length ? 'blocked' : 'draft',
+        status: blocking.length || beamBlocking.length ? 'blocked' : 'draft',
         punching_json: punchingRec ? JSON.stringify(punchingRec) : null,
+        beam_check_json: beamRec ? JSON.stringify(beamRec) : null,
         sheet_count: result.sheets.length,
         sheets_json: JSON.stringify(result.sheets),
         assumptions_json: JSON.stringify(result.assumptions),
@@ -595,6 +612,44 @@ export function register(router) {
     return { run: next, decision, previous: run.id };
   });
 
+  /**
+   * The engineer's decision on a run blocked by the beam check (deflection / flexure / shear, or a beam reported failing
+   * in RAM): `deepen` keeps the run blocked (a deeper beam comes as a new model), `ram_ok` declares the beams passing in
+   * the RAM report and regenerates, `bypass` records the acknowledgement and regenerates with the failure printed on the
+   * beam sheet as accepted at the design engineer's responsibility, `clear` forgets the decision.
+   */
+  router.post('/api/drawings/runs/:id/beam-decision', async ({ params, body, user }) => {
+    requirePermission(user, 'drawings.create');
+    const run = loadRun(params.id);
+    const level = loadLevel(run.level_id);
+    const project = loadProject(level.project_id);
+    const mode = oneOf(body.mode, 'mode', BEAM_DECISIONS);
+    const rec = levelPunching(level);
+    const current = publicRun(run).beam_check;
+    if (mode === 'clear') {
+      delete rec.beam_decision;
+      update('drawing_levels', level.id, { punching_json: JSON.stringify(rec) });
+      audit(user.id, 'drawing_level', level.id, 'beam_decision', { mode });
+      return { run: publicRun(run), decision: null };
+    }
+    if (!current || !(current.blocking || []).length && mode !== 'deepen') throw badRequest('This run is not blocked by the beam check', 'الإصدار ده مش متوقف بسبب الكمرات');
+    if ((mode === 'bypass' || mode === 'ram_ok') && body.acknowledge !== true) throw badRequest('The decision needs the engineer\'s acknowledgement', 'القرار محتاج إقرار المهندس');
+    const flagged = [...new Set((current?.levels || []).flatMap((bc) => bc.failing || []))];
+    const beams = body.beams === 'all' || body.beams === undefined ? 'all' : columnList(body.beams);
+    if (beams !== 'all' && !beams.length) throw badRequest('Pick the beams the decision covers', 'اختار الكمرات اللي القرار بيغطيها');
+    const decision = {
+      mode, columns: beams, beams, flagged, by: user.name, by_id: user.id, date: new Date().toISOString().slice(0, 10), run_id: run.id, revision: run.revision,
+      note: str(body.note, 'note', { max: 1000, fallback: null }),
+    };
+    rec.beam_decision = decision;
+    update('drawing_levels', level.id, { punching_json: JSON.stringify(rec) });
+    audit(user.id, 'drawing_run', run.id, 'beam_decision', { mode, beams, note: decision.note });
+    if (mode === 'deepen') return { run: publicRun(loadRun(run.id)), decision };
+    const next = await startRun({ sourceRun: run, level: loadLevel(level.id), project, user, body: { revision: run.revision, notes: run.notes } });
+    if (next.status !== 'blocked') update('drawing_runs', run.id, { status: 'superseded' });
+    return { run: next, decision, previous: run.id };
+  });
+
   router.patch('/api/drawings/runs/:id', ({ params, body, user }) => {
     requirePermission(user, 'drawings.create');
     const run = loadRun(params.id);
@@ -602,7 +657,7 @@ export function register(router) {
     if (body.status !== undefined) {
       const status = oneOf(body.status, 'status', RUN_STATUS);
       if (run.status === 'failed' || run.status === 'running') throw badRequest('This run produced no drawings', 'الإصدار ده مطلعش لوحات');
-      if (run.status === 'blocked' && status === 'issued') throw badRequest('This run is blocked by the punching check: take a decision on it first', 'الإصدار ده متوقف بسبب البانشنج: لازم قرار المهندس الأول');
+      if (run.status === 'blocked' && status === 'issued') throw badRequest('This run is blocked by the punching / beam check: take a decision on it first', 'الإصدار ده متوقف بسبب البانشنج أو الكمرات: لازم قرار المهندس الأول');
       fields.status = status;
       // one issued revision per level and type: issuing this one supersedes the earlier issued ones
       if (status === 'issued') runSql("UPDATE drawing_runs SET status = 'superseded', updated_at = datetime('now') WHERE level_id = ? AND mode = ? AND status = 'issued' AND id <> ?", run.level_id, run.mode, run.id);
@@ -852,7 +907,7 @@ export function register(router) {
     const runs = runIds.map((id) => publicRun(loadRun(id)));
     if (runs.some((r) => r.project_id !== project.id)) throw badRequest('A run of another project was picked', 'فيه إصدار من مشروع تاني');
     if (runs.some((r) => r.status === 'failed' || r.status === 'running')) throw badRequest('A run without drawings was picked', 'فيه إصدار مطلعش لوحات');
-    if (runs.some((r) => r.status === 'blocked')) throw badRequest('A run blocked by the punching check cannot be submitted', 'فيه إصدار متوقف بسبب البانشنج: مينفعش يتقدم قبل قرار المهندس');
+    if (runs.some((r) => r.status === 'blocked')) throw badRequest('A run blocked by the punching / beam check cannot be submitted', 'فيه إصدار متوقف بسبب البانشنج أو الكمرات: مينفعش يتقدم قبل قرار المهندس');
     const only = Array.isArray(body.sheets) && body.sheets.length ? body.sheets.map((v) => String(v)) : null;
     const previous = all('SELECT * FROM drawing_submittals WHERE project_id = ? AND status <> ? ORDER BY serial', project.id, 'withdrawn').map(publicSubmittal);
     const items = submittalItems(runs, { only, previous });

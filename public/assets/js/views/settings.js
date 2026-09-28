@@ -972,6 +972,10 @@ function drawingsPanel(settings) {
         name: 'mesh', label: t('dw_mesh'), type: 'select', value: current.mesh || 'bottom', disabled: readOnly(), hint: t('dw_mesh_hint'),
         options: ['bottom', 'both'].map((m) => ({ value: m, label: t(`dw_mesh_${m}`) })),
       }),
+      field({
+        name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: current.beam_design || 'ram', disabled: readOnly(), hint: t('dw_bd_hint'),
+        options: ['ram', 'office', 'max'].map((m) => ({ value: m, label: t(`dw_bd_${m}`) })),
+      }),
       field({ name: 'company', label: t('dw_company'), value: current.company || '', dir: 'ltr', disabled: readOnly() }),
       field({ name: 'company_line', label: t('dw_company_line'), value: current.company_line || '', dir: 'ltr', disabled: readOnly() }),
       field({ name: 'prepared', label: t('dw_prepared'), value: current.prepared || '', dir: 'ltr', disabled: readOnly() }),

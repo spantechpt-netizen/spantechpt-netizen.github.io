@@ -446,6 +446,23 @@ test('beam design through RAM: the run\'s model comes back with one strip per be
   assert.deepEqual([twice.body.added, twice.body.skipped], [0, 1], 'identical types are not duplicated');
   const del = await api('DELETE', `/api/drawings/projects/${project.id}/beam-types/B1`);
   assert.equal(del.status, 409, 'a type printed on a run stays');
+  // the office beam design option and the beam alert: a beam reported failing deflection in RAM blocks the run, the bypass regenerates it
+  const lvb = await api('PATCH', `/api/drawings/levels/${level.id}`, { ram_failed_beams: 'bm1' });
+  assert.deepEqual(lvb.body.level.punching.beams_ram_failed, ['BM1']);
+  const office = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-beams.cpt&mode=design&beam_design=max`, cptBeam);
+  assert.equal(office.status, 201, JSON.stringify(office.body));
+  const ob = office.body.run;
+  assert.equal(ob.beam_design, 'max');
+  assert.equal(ob.status, 'blocked');
+  assert.deepEqual(ob.beam_check.blocking, ['BM1', 'BM2'], 'BM1 reported failing in RAM, BM2 (12 m x 300 x 600 edge beam) failing deflection by the office check');
+  assert.ok(ob.beam_check.levels[0].beams.find((b) => b.id === 'BM1').ram_failed && ob.beam_check.levels[0].beams.find((b) => b.id === 'BM2').reasons.includes('deflection') && ob.beam_check.levels[0].beams[0].loads.wu > 0);
+  assert.equal(ob.beams[0].beams.find((b) => b.id === 'BM1').design, 'max');
+  const bd = await api('POST', `/api/drawings/runs/${ob.id}/beam-decision`, { mode: 'bypass', beams: 'all', note: 'camber 20 mm', acknowledge: true });
+  assert.equal(bd.status, 201, JSON.stringify(bd.body));
+  assert.equal(bd.body.run.status, 'draft'); assert.equal(bd.body.run.beam_check.decision.mode, 'bypass');
+  assert.equal((await api('GET', `/api/drawings/runs/${ob.id}`)).body.run.status, 'superseded');
+  await api('POST', `/api/drawings/runs/${bd.body.run.id}/beam-decision`, { mode: 'clear' });
+  await api('PATCH', `/api/drawings/levels/${level.id}`, { ram_failed_beams: '' });
   const delOther = await api('DELETE', `/api/drawings/projects/${other.body.project.id}/beam-types/B1`);
   assert.equal(delOther.status, 200);
   assert.deepEqual(delOther.body.beam_types, []);
@@ -506,7 +523,7 @@ test('a bad file is refused and the run is recorded as failed', async () => {
   assert.equal(broken.status, 400, JSON.stringify(broken.body));
   const detail = await api('GET', `/api/drawings/projects/${project.id}`);
   assert.ok(detail.body.runs.some((r) => r.status === 'failed'));
-  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 10, 'three uploads, one regeneration, one framed run, one on the reference plan, two with beams, one blocked and its bypass');
+  assert.equal(detail.body.runs.filter((r) => r.status !== 'failed').length, 12, 'three uploads, one regeneration, one framed run, one on the reference plan, two with beams, a blocked beam run and its bypass, one blocked punching run and its bypass');
 });
 
 test('deleting the project removes its levels, runs and files', async () => {

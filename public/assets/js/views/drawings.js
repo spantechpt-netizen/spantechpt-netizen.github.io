@@ -55,6 +55,8 @@ const modeLabel = (mode) => t(mode === 'shop' ? 'dw_mode_shop' : 'dw_mode_design
 const bandsLabel = (bands) => t(`dw_bands_${bands || 'all'}`);
 const MESHES = ['bottom', 'both'];
 const meshLabel = (mesh) => t(`dw_mesh_${mesh || 'bottom'}`);
+const BEAM_DESIGNS = ['ram', 'office', 'max'];
+const beamDesignLabel = (v) => t(`dw_bd_${v || 'ram'}`);
 const statusBadge = (status) => el('span', {
   class: `badge ${status === 'issued' ? 'green' : status === 'failed' || status === 'blocked' ? 'red' : status === 'superseded' ? 'grey' : status === 'running' ? 'amber' : 'blue'}`,
   text: t(`dw_status_${status || 'running'}`),
@@ -165,6 +167,10 @@ function openProjectForm(project, after) {
         name: 'mesh', label: t('dw_mesh'), type: 'select', value: project?.mesh || 'bottom', hint: t('dw_mesh_hint'),
         options: MESHES.map((m) => ({ value: m, label: meshLabel(m) })),
       }),
+      field({
+        name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: project?.beam_design || 'ram', hint: t('dw_bd_hint'),
+        options: BEAM_DESIGNS.map((m) => ({ value: m, label: beamDesignLabel(m) })),
+      }),
     ]),
     field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: project?.notes || '', rows: 2 }),
     field({ name: 'spec', label: t('dw_spec'), type: 'textarea', value: project?.spec && Object.keys(project.spec).length ? JSON.stringify(project.spec, null, 2) : '', rows: 3, dir: 'ltr' }),
@@ -209,6 +215,7 @@ function openLevelForm(projectId, level, after) {
       field({ name: 'sort_order', label: t('dw_sort_order'), type: 'number', value: level?.sort_order ?? '', min: 0, max: 999 }),
     ]),
     field({ name: 'ram_failed_columns', label: t('dw_ram_failed'), value: (level?.punching?.ram_failed || []).join(', '), dir: 'ltr', hint: t('dw_ram_failed_hint') }),
+    field({ name: 'ram_failed_beams', label: t('dw_ram_failed_beams'), value: (level?.punching?.beams_ram_failed || []).join(', '), dir: 'ltr', hint: t('dw_ram_failed_beams_hint') }),
     field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: level?.notes || '', rows: 2 }),
   ]);
   const { close } = openModal({
@@ -339,6 +346,10 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
         name: 'mesh', label: t('dw_mesh'), type: 'select', value: project.mesh || settings.mesh || 'bottom',
         options: MESHES.map((m) => ({ value: m, label: meshLabel(m) })),
       }),
+      field({
+        name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: project.beam_design || settings.beam_design || 'ram',
+        options: BEAM_DESIGNS.map((m) => ({ value: m, label: beamDesignLabel(m) })),
+      }),
     ]),
     field({ name: 'revision', label: t('dw_revision'), value: '', dir: 'ltr', hint: t('dw_revision_hint') }),
     field({ name: 'notes', label: t('dw_run_notes'), type: 'textarea', value: '', rows: 2, hint: t('dw_run_notes_hint') }),
@@ -366,7 +377,7 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
             const { file, levelId } = picked[i];
             status.textContent = fill('dw_batch_progress', { n: i + 1, total: picked.length }) + ` ${file.name}`;
             try {
-              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, mesh: data.mesh, revision: data.revision || undefined, notes: data.notes || undefined });
+              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, mesh: data.mesh, beam_design: data.beam_design, revision: data.revision || undefined, notes: data.notes || undefined });
               results.push({ ok: true, run, file });
             } catch (error) {
               results.push({ ok: false, error, file });
@@ -427,6 +438,7 @@ async function projectPage(projectId, navigate) {
           item(t('dw_default_mode'), modeLabel(project.default_mode)),
           item(t('dw_ram_bands'), bandsLabel(project.ram_bands)),
           item(t('dw_mesh'), meshLabel(project.mesh)),
+          item(t('dw_beam_design'), beamDesignLabel(project.beam_design)),
           item(t('dw_numbering'), exampleNo(settings, project, levels[0]), 'ltr'),
         ]),
         project.notes ? el('div.small.muted.mt-1', { text: project.notes }) : null,
@@ -1117,6 +1129,84 @@ function punchingCard(run, project, navigate) {
   ]);
 }
 
+// ------------------------------------------------------------- beam check
+/** The office beam design of a run: forces, bars (RAM / office / drawn), the deflection check, and the decision when a beam blocks. */
+function beamCheckCard(run, project, navigate) {
+  const B = run.beam_check;
+  const blocking = B.blocking || [];
+  const rows = (B.levels || []).flatMap((lv) => (lv.beams || []).map((b) => ({ ...b, level: lv.level })));
+  const schedRows = (run.beams || []).flatMap((lv) => lv.beams || []);
+  const sched = (id) => schedRows.find((r) => String(r.id).toUpperCase() === String(id).toUpperCase());
+  const decision = B.decision;
+  const reasonsOf = (b) => [...(b.ram_failed ? [t('dw_beam_in_ram')] : []), ...(b.reasons || []).map((r) => t(`dw_beam_reason_${r}`))].join(' · ');
+  const body = el('div.card-body', {}, [
+    blocking.length ? el('div.alert.danger', {}, [el('strong', { text: fill('dw_beam_blocked', { n: blocking.length, beams: blocking.join(', ') }) })]) : null,
+    decision ? el('div.small.mt-1', {}, [el('span.badge.blue', { text: fill('dw_punch_decided', { mode: t(`dw_beam_mode_${decision.mode}`), by: decision.by, date: decision.date }) }), decision.note ? el('span.muted', { text: ` ${decision.note}` }) : null]) : null,
+    el('div.tiny.muted.mt-1', { text: t('dw_bd_hint') }),
+    (B.levels || []).some((lv) => (lv.assumed || []).length) ? el('div.tiny.muted', { text: (B.levels || []).flatMap((lv) => lv.assumed || []).join('; '), dir: 'ltr' }) : null,
+    rows.length ? dataTable({
+      rows,
+      columns: [
+        { label: t('dw_beam_list'), render: (b) => el('span.bold', { text: `${b.id} ${b.width}x${b.depth}`, dir: 'ltr' }) },
+        { label: t('dw_beam_spans'), render: (b) => el('span', { text: b.spans.map((s) => (s.length / 1000).toFixed(1)).join(' + ') + (b.no_supports ? ' ?' : ''), dir: 'ltr', title: b.no_supports ? t('dw_beam_no_supports') : '' }) },
+        { label: t('dw_beam_trib'), className: 'num', render: (b) => (b.trib_mm.total / 1000).toFixed(1) },
+        { label: t('dw_beam_wu'), className: 'num', render: (b) => `${b.loads.wu}` },
+        { label: t('dw_beam_mneg'), className: 'num', render: (b) => `${b.Mneg_max}` },
+        { label: t('dw_beam_mpos'), className: 'num', render: (b) => `${b.Mpos_max}` },
+        { label: t('dw_beam_vu'), className: 'num', render: (b) => `${b.Vu}` },
+        { label: t('dw_beam_ram_bars'), render: (b) => { const r = sched(b.id); return el('span', { text: r?.ram ? `${r.ram.top?.text || '-'} / ${r.ram.bottom?.text || '-'} / ${r.ram.stirrups?.text || '-'}` : '—', dir: 'ltr' }); } },
+        { label: t('dw_beam_office_bars'), render: (b) => el('span', { text: `${b.top?.text || '-'} / ${b.bottom?.text || '-'} / ${b.stirrups?.text || '-'}`, dir: 'ltr' }) },
+        { label: t('dw_beam_chosen'), render: (b) => { const r = sched(b.id); return el('span.bold', { text: r ? `${r.mark || '??'}: ${r.top?.text || '-'} / ${r.bottom?.text || '-'} / ${r.stirrups?.text || '-'}` : '—', dir: 'ltr' }); } },
+        { label: t('dw_beam_defl'), render: (b) => el('span', { class: b.deflection.ok ? '' : 'text-danger bold', text: b.deflection.table_ok ? t('dw_beam_defl_table') : fill('dw_beam_defl_ratio', { r: b.deflection.ratio }) }) },
+        { label: t('dw_beam_status'), render: (b) => el('span', { class: `badge ${blocking.includes(b.id) ? 'red' : b.status === 'ok' ? 'green' : 'amber'}`, text: b.status === 'ok' && !b.ram_failed ? t('dw_beam_ok') : `${t('dw_beam_fail')}: ${reasonsOf(b)}` }) },
+      ],
+    }) : null,
+  ]);
+  const act = async (mode, extra = {}) => {
+    try {
+      const res = await api.beamDecision(run.id, { mode, ...extra });
+      toast(mode === 'deepen' ? t('saved') : t('dw_punch_regenerated'), 'success');
+      navigate(`drawings/${project.id}/run/${res.run.id}`);
+    } catch (error) { toastError(error); }
+  };
+  const flagged = [...new Set((B.levels || []).flatMap((lv) => lv.failing || []))];
+  const decide = (mode) => {
+    const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+      el('div.alert.warn', { text: t(mode === 'bypass' ? 'dw_beam_bypass_hint' : 'dw_beam_ram_ok_hint') }),
+      field({ name: 'beams', label: t('dw_beam_columns'), value: flagged.join(', '), dir: 'ltr', hint: t('dw_punch_all_flagged') }),
+      field({ name: 'note', label: t('dw_punch_note'), type: 'textarea', value: '', rows: 2 }),
+      el('label.row', { style: { gap: '.5rem', alignItems: 'flex-start' } }, [el('input', { type: 'checkbox', name: 'acknowledge' }), el('span', { text: t('dw_punch_ack') })]),
+    ]);
+    const { close } = openModal({
+      title: t(mode === 'bypass' ? 'dw_beam_bypass' : 'dw_beam_ram_ok'),
+      body: form,
+      footer: el('div.row', {}, [
+        el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+        el('button.btn-danger.btn', {
+          type: 'button', text: t(mode === 'bypass' ? 'dw_beam_bypass' : 'dw_beam_ram_ok'),
+          onclick: async (e) => {
+            if (!form.querySelector('input[name=acknowledge]').checked) { toast(t('dw_punch_ack'), 'error'); return; }
+            const data = readForm(form);
+            e.currentTarget.disabled = true; close();
+            await act(mode, { beams: data.beams && data.beams.trim() ? data.beams : 'all', note: data.note || undefined, acknowledge: true });
+          },
+        }),
+      ]),
+    });
+  };
+  const actions = can('drawings.create') && blocking.length && run.status !== 'superseded' ? el('div.row.wrap.mt-1', { style: { gap: '.5rem' } }, [
+    el('button.btn-secondary.btn', { type: 'button', title: t('dw_beam_deepen_hint'), onclick: () => act('deepen') }, [icon('edit', 14), t('dw_beam_deepen')]),
+    el('button.btn.btn-success', { type: 'button', title: t('dw_beam_ram_ok_hint'), onclick: () => decide('ram_ok') }, [icon('check', 14), t('dw_beam_ram_ok')]),
+    el('button.btn-danger.btn', { type: 'button', title: t('dw_beam_bypass_hint'), onclick: () => decide('bypass') }, [icon('bell', 14), t('dw_beam_bypass')]),
+    decision ? el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => act('clear') }, [t('dw_punch_clear')]) : null,
+  ]) : null;
+  if (actions) body.append(actions);
+  return el('div.card', {}, [
+    el('div.card-header', {}, [el('h3', { text: blocking.length ? t('dw_beam_check_title') : t('dw_beam_check') }), el('div.spacer'), el('span.badge.grey', { text: beamDesignLabel(B.design) }), statusBadge(run.status)]),
+    body,
+  ]);
+}
+
 // ---------------------------------------------------------------------- run
 async function runPage(projectId, runId, navigate) {
   const page = el('div');
@@ -1156,6 +1246,7 @@ async function runPage(projectId, runId, navigate) {
     kpi(t('dw_mode'), modeLabel(run.mode)),
     kpi(t('dw_ram_bands'), bandsLabel(run.ram_bands)),
     kpi(t('dw_mesh'), meshLabel(run.mesh)),
+    kpi(t('dw_beam_design'), beamDesignLabel(run.beam_design)),
     kpi(t('dw_designer'), run.created_by_name || '—'),
     kpi(t('dw_duration'), run.duration_ms ? `${(run.duration_ms / 1000).toFixed(1)} s` : '—'),
     kpi(t('dw_source'), run.source_name || run.source_file || '—'),
@@ -1165,6 +1256,7 @@ async function runPage(projectId, runId, navigate) {
     page.append(el('div.alert.danger', { text: run.error || t('error') }));
   }
   if (run.punching) page.append(punchingCard(run, project, navigate));
+  if (run.beam_check) page.append(beamCheckCard(run, project, navigate));
   // revision notes and status
   const notesBox = el('textarea', { rows: 2, placeholder: t('dw_run_notes_hint') });
   notesBox.value = run.notes || '';
