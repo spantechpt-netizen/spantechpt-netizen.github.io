@@ -690,7 +690,7 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   assert.equal(dc.length, 2);
   assert.ok(dc.every((c) => !c.csvCols.some((k) => k.key === 'elong' || k.key === 'jack')), 'design cable sheets carry no elongation or jacking force');
   const dxfCab = toDxf(dc.find((c) => c.key === 'dcablat').root);
-  assert.ok(dxfCab.includes('\n1\nH210\n') && !dxfCab.includes('\n1\nL125\n'), 'the high point written at the point (H + CGS height); the anchors at 125 are ends, not low points');
+  assert.ok(dxfCab.includes('\n1\n200\n') && !/\n1\n[HL]\d+\n/.test(dxfCab), 'the high point written as the chair height (CGS 210 - 10) with no H / L prefix');
   assert.ok(dxfCab.includes('\n8\nText-Profile-A-HIGH\n') && dxfCab.includes('\n8\nPT-HighLow-A\n') && dxfCab.includes('\n2\nLiveEnd\n'), 'office cable layers and anchor blocks');
   assert.ok(dc.every((c) => c.rows.every((r) => /^[AB]\.\d\d$/.test(r.mark))), 'design cable schedule keyed by mark');
   const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);
@@ -817,6 +817,78 @@ test('office beam design: continuous-beam envelope on the model loads, bars and 
   assert.ok(readFileSync(join(dir, 'office', 'REPORT.md'), 'utf8').includes('Office beam design') && existsSync(join(dir, 'office', 'beams.json')));
   void ok;
   rmSync(dir, { recursive: true, force: true });
+});
+
+test('parts and bodies cut the tendons at their edge (CONT., no anchor), chair heights carry no H / L prefix, the package carries the anchor blocks and spaces its sheets by scale, the top mesh and column bars take the settings', async () => {
+  const { clipPolylineToPolygon } = await import('../shopdrawings/lib/geometry.mjs');
+  const { clipTendon } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const box = [{ x: 0, y: 0 }, { x: 6000, y: 0 }, { x: 6000, y: 4000 }, { x: 0, y: 4000 }];
+  const c = clipPolylineToPolygon([{ x: -1000, y: 2000 }, { x: 3000, y: 2000 }, { x: 9000, y: 2000 }], box, 300);
+  assert.ok(c.cutStart && c.cutEnd && Math.round(c.pts[0].x) === 0 && Math.round(c.pts[c.pts.length - 1].x) === 6000 && c.pts.length === 3, JSON.stringify(c));
+  const t = clipTendon({ pts: [{ x: -1000, y: 2000 }, { x: 3000, y: 2000 }, { x: 9000, y: 2000 }], heights: [100, 200, 100], thks: [250, 250, 250], live: [true, true], elongations: [50, 50], length: 10000, strands: 4 }, box, 300);
+  assert.deepEqual([t.cut, t.live, t.elongations, t.heights.map(Math.round), t.length], [[true, true], [false, false], [null, null], [125, 200, 150], 6000], 'profile interpolated at the cuts, no live end or elongation at a cut');
+  const dir = mkdtempSync(join(tmpdir(), 'cut-'));
+  const src = await buildSyntheticCpt(dir);
+  const r = generate({ inputDxf: src, out: join(dir, 'parts'), meta: {}, spec: { partMax: 7000, mesh: 'both', topMesh: { dia: 10, spacing: 150 }, topColumns: { dia: 20, spacing: 200, length: 5000 } }, svg: false, levelNames: ['B1'], mode: 'design' });
+  assert.equal(r.model.levels.length, 2, 'the 12 m slab is drawn in two parts at partMax 7 m');
+  const [A, B] = r.model.levels;
+  const ta = A.ram.tendons.find((x) => x.id === 'TA-01'), tb = B.ram.tendons.find((x) => x.id === 'TA-01');
+  assert.ok(ta.pts.every((p) => p.x <= A.bbox.maxX + 1) && tb.pts.every((p) => p.x >= B.bbox.minX - 1), 'the 12 m tendon is cut at the part edge on both parts');
+  assert.deepEqual([ta.cut, ta.live, tb.cut, tb.live], [[false, true], [true, false], [true, false], [false, false]]);
+  const cab = readFileSync(r.files.find((f) => /CABLES_LATITUDE_L01/.test(f)), 'utf8');
+  assert.ok(cab.includes('\n1\nCONT.\n') && !/\n1\n[HL]\d+\n/.test(cab), 'CONT. at the cut, no H / L prefix on the heights');
+  assert.ok((cab.match(/\n2\nLiveEnd\n/g) || []).length >= 1 && (cab.match(/\n2\nDeadEnd\n/g) || []).length >= 1, 'anchor blocks inserted at the real ends');
+  assert.ok(cab.includes('CHAIR HEIGHT (CGS - 10)'), 'the legend says the figures are chair heights');
+  const pkg = readFileSync(join(dir, 'parts', 'DESIGN_DRAWINGS_PACKAGE.dxf'), 'utf8');
+  const tables = pkg.split('\nENTITIES\n')[0];
+  assert.ok(tables.includes('\n2\nLiveEnd\n') && tables.includes('\n2\nDeadEnd\n'), 'the package DXF defines the anchor blocks its sheets insert');
+  const inserts = [...pkg.split('\nENTITIES\n')[1].matchAll(/\n0\nINSERT\n[\s\S]*?\n10\n([-\d.]+)\n20\n([-\d.]+)\n/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  const maxScale = Math.max(...r.pack.sheets.map((sh) => sh.scale || 100));
+  const xs = [...new Set(inserts.map((q) => q[0]))].sort((a, b) => a - b);
+  assert.ok(xs.length >= 2 && xs[1] - xs[0] >= 841 * maxScale, `sheets spaced by the largest scale (${xs[1] - xs[0]} >= ${841 * maxScale})`);
+  const top = readFileSync(r.files.find((f) => /TOP_REINFORCEMENT_L01/.test(f)), 'utf8');
+  assert.ok(top.includes('TOP MESH T10@150') && top.includes('\n1\nT20-200 (T)\n'), 'the top mesh and the column bar diameter / spacing from the settings');
+  assert.equal(r.quantities.levels[0].mesh.top_dia, 10);
+  // the column bar length from the settings shows where no part edge or slab edge cuts the bar (the slab in one piece)
+  const whole = generate({ inputDxf: src, out: join(dir, 'whole'), meta: {}, spec: { topColumns: { dia: 20, spacing: 200, length: 5000 } }, svg: false, levelNames: ['B1'], mode: 'design' });
+  assert.ok(readFileSync(whole.files.find((f) => /TOP_REINFORCEMENT/.test(f)), 'utf8').includes('\n1\nL=5000\n'), 'the column bar length from the settings');
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test('the pour strip against a retaining wall takes the office detail: a U-bar anchored in the wall, a U-bar straddling the slab joint, T12-200 top and bottom from the wall face, T12-150 along; long bars come in stock pieces', async () => {
+  const { designAdditions, markCoreWalls } = await import('../shopdrawings/lib/design.mjs');
+  const outline = [{ x: 0, y: 0 }, { x: 30000, y: 0 }, { x: 30000, y: 8000 }, { x: 0, y: 8000 }];
+  const level = {
+    id: 'L01', name: 'T', thickness: 250, outline, bbox: { minX: 0, minY: 0, maxX: 30000, maxY: 8000, w: 30000, h: 8000 },
+    grid: { x: [{ x: 0, label: 'A' }, { x: 30000, label: 'B' }], y: [{ y: 0, label: '1' }, { y: 8000, label: '2' }] },
+    columns: [], openings: [], voids: [], sunken: [], stairs: [], thickZones: [], beams: [], edges: [],
+    walls: [{ id: 'W1', a: { x: 0, y: 0 }, b: { x: 0, y: 8000 }, t: 250, polygon: [{ x: -250, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 8000 }, { x: -250, y: 8000 }], length: 8000 }],
+    pourStrips: [{ id: 'PS1', polygon: [{ x: 0, y: 0 }, { x: 1000, y: 0 }, { x: 1000, y: 8000 }, { x: 0, y: 8000 }], width: 1000, length: 8000 }, { id: 'PS2', polygon: [{ x: 15000, y: 0 }, { x: 16000, y: 0 }, { x: 16000, y: 8000 }, { x: 15000, y: 8000 }], width: 1000, length: 8000 }],
+    existing: { lines: [], callouts: [], dims: [], dots: [], items: [] }, ram: { tendons: [], bands: [] },
+  };
+  const spec = { ...DEFAULT_SPEC, cover: 25 };
+  for (const k of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching', 'drops']) spec[k] = { ...DEFAULT_SPEC[k] };
+  markCoreWalls(level);
+  const adds = designAdditions(level, spec);
+  const d8 = adds.items.filter((it) => it.detail === 'D8' && it.zone.includes('PS1'));
+  const tb = d8.find((it) => it.l1 === 'T12-200 TOP&BOTTOM');
+  assert.ok(tb && tb.l2 === 'L=2000' && tb.face === 'TB' && Math.round(tb.a.x) === 0 && Math.round(tb.b.x) === 2000 && tb.posCands, 'straight T12-200 top and bottom, 2 m from the wall face into the slab, the symbol free to slide along the strip');
+  const uWall = d8.find((it) => it.l1 === 'T12-200 U-BAR (WALL)');
+  assert.ok(uWall && uWall.l2 === 'L=2500' && uWall.hairpin && Math.round(uWall.a.x) === -250 && uWall.b.x > 500, 'the wall U-bar 2500 anchored one wall thickness inside the wall, out into the strip');
+  const uSlab = d8.find((it) => it.l1 === 'T12-200 U-BAR');
+  assert.ok(uSlab && uSlab.l2 === 'L=2000' && uSlab.hairpin && uSlab.a.x > 1000 && uSlab.b.x < 1000, 'the slab-side U-bar 2000 straddles the joint');
+  const along = d8.find((it) => /ALONG STRIP/.test(it.l1));
+  assert.equal(along.l1, 'T12-150 (T&B) ALONG STRIP');
+  assert.equal(along.l2, 'L=8000');
+  assert.ok(adds.assumptions.some((a) => /CAST AGAINST A RETAINING WALL - OFFICE DETAIL/.test(a)));
+  // a plain strip far from the wall keeps the standard detail, and its 8 m bars need no lap; a 27 m strip would
+  const plain = adds.items.filter((it) => it.detail === 'D8' && it.zone.includes('PS2'));
+  assert.ok(plain.some((it) => it.l1 === 'T16-200 (T)' && it.l2 === 'L=3000') && plain.some((it) => it.l1 === 'T16-200 (B)'));
+  level.pourStrips = [{ id: 'PS3', polygon: [{ x: 5000, y: 0 }, { x: 32000, y: 0 }, { x: 32000, y: 1000 }, { x: 5000, y: 1000 }], width: 1000, length: 27000 }];
+  level.outline = [{ x: 0, y: 0 }, { x: 40000, y: 0 }, { x: 40000, y: 8000 }, { x: 0, y: 8000 }]; level.bbox = { minX: 0, minY: 0, maxX: 40000, maxY: 8000, w: 40000, h: 8000 };
+  const long = designAdditions(level, spec).items.find((it) => it.detail === 'D8' && /ALONG STRIP/.test(it.l1));
+  assert.ok(/^L=27000 \(3 PCS, LAP \d+\)$/.test(long.l2), `a 27 m bar is written in stock pieces with the lap: ${long.l2}`);
 });
 
 test('the design package is written in the office layers and text style, on the shop-drawing frame', () => {

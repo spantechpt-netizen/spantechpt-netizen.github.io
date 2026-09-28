@@ -6,7 +6,7 @@
  * stress 100 MPa (0.1 kN/mm²), area 0.01 mm².
  */
 import { DatabaseSync } from 'node:sqlite';
-import { bbox, polygonArea, dist, cleanPolygon, simplifyPolygon, centroid, pointInPolygon, clipSegmentToPolygon, distToPolygon } from './geometry.mjs';
+import { bbox, polygonArea, dist, cleanPolygon, simplifyPolygon, centroid, pointInPolygon, clipSegmentToPolygon, distToPolygon, clipPolylineToPolygon } from './geometry.mjs';
 import { chainSegments } from './extract.mjs';
 
 const L = (v) => v / 10; // 0.1 mm → mm
@@ -327,6 +327,35 @@ const modeAngle = (angles) => {
  * outline), rotate each body into its own orthogonal frame and hand back a
  * model the sheet composers understand, with the RAM design attached.
  */
+/**
+ * A tendon cut to a polygon (a slab body, or a drawing part): the piece inside it with its profile arrays kept in
+ * step (heights and thicknesses interpolated at the cut), the cut ends marked (`cut`) and no longer live; null when
+ * the tendon has no piece inside. `tol` lets the anchors sit a little outside the slab edge.
+ */
+export function clipTendon(t, poly, tol = 400) {
+  const c = clipPolylineToPolygon(t.pts, poly, tol);
+  if (!c || c.pts.length < 2) return null;
+  if (!c.cutStart && !c.cutEnd) return t;
+  // a cut point was added at an end when the clipped polyline starts / ends away from the original points kept
+  const addStart = c.cutStart && dist(c.pts[0], t.pts[c.from]) > 1;
+  const addEnd = c.cutEnd && dist(c.pts[c.pts.length - 1], t.pts[c.to]) > 1;
+  const along = (arr) => {
+    if (!arr) return arr;
+    const kept = arr.slice(c.from, c.to + 1);
+    const lerp = (i, j, q) => { const a = arr[i], b = arr[j]; if (a == null || b == null) return a ?? b ?? null; const L = dist(t.pts[i], t.pts[j]) || 1; const f = Math.min(1, dist(t.pts[i], q) / L); return a + (b - a) * f; };
+    if (addStart) kept.unshift(lerp(c.from, c.from - 1, c.pts[0]));
+    if (addEnd) kept.push(lerp(c.to, c.to + 1, c.pts[c.pts.length - 1]));
+    return kept;
+  };
+  const length = c.pts.reduce((sum, p, i) => (i ? sum + dist(c.pts[i - 1], p) : 0), 0);
+  return {
+    ...t, pts: c.pts, heights: along(t.heights), thks: along(t.thks), length: Math.round(length),
+    live: [c.cutStart ? false : t.live[0], c.cutEnd ? false : t.live[1]],
+    elongations: t.elongations ? [c.cutStart ? null : t.elongations[0], c.cutEnd ? null : t.elongations[1]] : t.elongations,
+    cut: [c.cutStart, c.cutEnd], fullLength: t.fullLength || t.length,
+  };
+}
+
 export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec: specOverrides = {} } = {}) {
   const assumptions = [], findings = [];
   // bodies: the outline plus every other outer loop
@@ -369,7 +398,12 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
       openings: holes.map((h, j) => ({ id: `O${j + 1}`, kind: 'polygon', polygon: simplifyPolygon(h.map(R), 30) })),
       voids: [], sunken: [], stairs: [],
       // beams whose axis lies in this body (an edge beam along the slab edge, or an interior beam with slab both sides)
-      beams: (ram.beams || []).filter((bm) => inside(centroid(bm.polygon), body) || near(centroid(bm.polygon), body, bm.t)).map((bm) => ({ ...bm, a: R(bm.a), b: R(bm.b), polygon: bm.polygon.map(R) })),
+      // beams: the part of each beam axis inside this body (an axis crossing into another body is cut there)
+      beams: (ram.beams || []).filter((bm) => inside(centroid(bm.polygon), body) || near(centroid(bm.polygon), body, bm.t)).flatMap((bm) => {
+        const pieces = clipSegmentToPolygon(bm.a, bm.b, body).filter(([a, b]) => dist(a, b) > 300);
+        if (!pieces.length) return [{ ...bm, a: R(bm.a), b: R(bm.b), polygon: bm.polygon.map(R) }];
+        return pieces.map(([a, b]) => { const L = dist(a, b) || 1, u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L }, n = { x: -u.y, y: u.x }, w = bm.t / 2; return { ...bm, a: R(a), b: R(b), polygon: [{ x: a.x + n.x * w, y: a.y + n.y * w }, { x: b.x + n.x * w, y: b.y + n.y * w }, { x: b.x - n.x * w, y: b.y - n.y * w }, { x: a.x - n.x * w, y: a.y - n.y * w }].map(R) }; });
+      }),
       tos: stepped ? tocOf(body) : undefined, toc: tocOf(body),
       walls: ram.walls.flatMap((w) => clipSegmentToPolygon(w.a, w.b, body).map((seg) => [...seg, w.t])).filter(([a, b]) => Math.hypot(b.x - a.x, b.y - a.y) > 50).map(([a, b, t]) => ({ a: R(a), b: R(b), t })),
       thickZones: areasIn.filter((a) => a.thickness > bodyThickness + 1 && a.behaviour !== 'custom').map((a, j) => ({ id: `Z${j + 1}`, thickness: a.thickness, polygon: a.polygon.map(R) })),
@@ -380,7 +414,8 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
       pt: { zones: [{ id: 'PT1', polygon: outline }], tendons: [] }, // the whole body is post-tensioned
       ram: {
         bands: ram.bands.filter((b) => inside({ x: (b.p0.x + b.p1.x) / 2, y: (b.p0.y + b.p1.y) / 2 }, body) || b.bars.some((bar) => inside(bar.a, body))).map((b) => ({ ...b, p0: R(b.p0), p1: R(b.p1), bars: b.bars.map((bar) => ({ a: R(bar.a), b: R(bar.b) })) })),
-        tendons: ram.tendons.filter((t) => t.pts.some((p) => inside(p, body))).map((t) => ({ ...t, pts: t.pts.map(R) })),
+        // a tendon is drawn on the body it lies in; one crossing into another body is cut at the edge (nothing drawn outside the slab)
+        tendons: ram.tendons.filter((t) => t.pts.some((p) => inside(p, body))).map((t) => clipTendon(t, body, 400)).filter(Boolean).map((t) => ({ ...t, pts: t.pts.map(R) })),
         shear: ram.shear.filter((s) => inside({ x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, body)).map((s) => ({ ...s, a: R(s.a), b: R(s.b) })),
         punching: ram.punching.filter((p) => near(p.p, body, 500)).map((p) => ({ ...p, p: R(p.p) })),
         ssr: (ram.ssr || []).filter((st) => near(st.loc, body, 500)).map((st) => ({ ...st, loc: R(st.loc), rails: st.rails.map((r) => ({ ...r, a: R(r.a), b: R(r.b) })) })),

@@ -1037,6 +1037,19 @@ function drawingsPanel(settings) {
   ]);
   const rates = { currency: 'SAR', steel_per_ton: 3200, rebar_labour_per_ton: 350, concrete_per_m3: 280, formwork_per_m2: 45, strand_per_kg: 9.5, anchor_live: 45, anchor_dead: 25, duct_per_m: 6, pt_labour_per_m2: 18, markup_pct: 15, vat_pct: 15, ...(current.rates || {}) };
   const RATE_KEYS = ['steel_per_ton', 'rebar_labour_per_ton', 'concrete_per_m3', 'formwork_per_m2', 'strand_per_kg', 'anchor_live', 'anchor_dead', 'duct_per_m', 'pt_labour_per_m2', 'markup_pct', 'vat_pct'];
+  // the office reinforcement defaults: diameter / spacing / length of the column top bars, the drop bars, the bottom and top mesh
+  const sp = current.spec || {};
+  const rd = { tc: { dia: 16, spacing: 150, length: 4000, ...(sp.topColumns || {}) }, dr: { dia: 12, spacing: 150, leg: 500, ...(sp.drops || {}) }, bm: { dia: 12, spacing: 200, ...(sp.bottom || {}) }, tm: { dia: 12, spacing: 200, ...(sp.bottom || {}), ...(sp.topMesh || {}) } };
+  const numField = (name, label, value, step = 1) => field({ name, label, type: 'number', value, min: 6, max: 12000, step, disabled: readOnly() });
+  const rebarForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.small.muted', { text: t('dw_rebar_defaults_hint') }),
+    el('div.grid.grid-3', {}, [
+      numField('tc_dia', `${t('dw_rd_columns')} — ${t('dw_rd_dia')}`, rd.tc.dia), numField('tc_spacing', `${t('dw_rd_columns')} — ${t('dw_rd_spacing')}`, rd.tc.spacing, 5), numField('tc_length', `${t('dw_rd_columns')} — ${t('dw_rd_length')}`, rd.tc.length, 50),
+      numField('dr_dia', `${t('dw_rd_drops')} — ${t('dw_rd_dia')}`, rd.dr.dia), numField('dr_spacing', `${t('dw_rd_drops')} — ${t('dw_rd_spacing')}`, rd.dr.spacing, 5), numField('dr_leg', `${t('dw_rd_drops')} — ${t('dw_rd_leg')}`, rd.dr.leg, 50),
+      numField('bm_dia', `${t('dw_rd_bottom')} — ${t('dw_rd_dia')}`, rd.bm.dia), numField('bm_spacing', `${t('dw_rd_bottom')} — ${t('dw_rd_spacing')}`, rd.bm.spacing, 5), el('div'),
+      numField('tm_dia', `${t('dw_rd_top')} — ${t('dw_rd_dia')}`, rd.tm.dia), numField('tm_spacing', `${t('dw_rd_top')} — ${t('dw_rd_spacing')}`, rd.tm.spacing, 5), el('div'),
+    ]),
+  ]);
   const ratesForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
     el('div.grid.grid-4', {}, [
       field({ name: 'currency', label: t('dw_rate_currency'), value: rates.currency, dir: 'ltr', disabled: readOnly() }),
@@ -1049,6 +1062,8 @@ function drawingsPanel(settings) {
     el('div.card-body', {}, [
       el('div.alert.info', { text: t('dw_numbering_hint'), dir: 'ltr' }),
       form,
+      el('h4.mt-2', { text: t('dw_rebar_defaults') }),
+      rebarForm,
       el('h4.mt-2', { text: t('dw_submittal_template') }),
       el('div.small.muted', { text: t('dw_submittal_template_hint') }),
       subForm,
@@ -1077,6 +1092,13 @@ function drawingsPanel(settings) {
               try { parsed = JSON.parse(data.spec); } catch { toast(`${t('dw_spec')}: JSON`, 'error'); return; }
             }
             delete data.spec;
+            // the reinforcement defaults live inside the spec the generator reads
+            const rb = readForm(rebarForm);
+            const n = (v, d) => (v == null || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
+            parsed.topColumns = { ...(parsed.topColumns || {}), dia: n(rb.tc_dia, 16), spacing: n(rb.tc_spacing, 150), length: n(rb.tc_length, 4000) };
+            parsed.drops = { ...(parsed.drops || {}), dia: n(rb.dr_dia, 12), spacing: n(rb.dr_spacing, 150), leg: n(rb.dr_leg, 500) };
+            parsed.bottom = { ...(parsed.bottom || {}), dia: n(rb.bm_dia, 12), spacing: n(rb.bm_spacing, 200) };
+            parsed.topMesh = { ...(parsed.topMesh || {}), dia: n(rb.tm_dia, 12), spacing: n(rb.tm_spacing, 200) };
             const frame = readForm(frameForm);
             for (const k of ['rightWidth', 'bottomStrip', 'titleH', 'refsH', 'keyH', 'schedH']) if (frame[k] == null) delete frame[k];
             const subData = readForm(subForm);

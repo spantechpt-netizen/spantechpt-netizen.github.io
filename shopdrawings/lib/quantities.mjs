@@ -50,12 +50,14 @@ export function meshOf(level) {
   const [dia, spacing] = level.meshSpec;
   if (!dia || !spacing) return null;
   const faces = level.topMesh ? 2 : 1;
+  const [tdia, tspacing] = level.topMesh ? (level.topMeshSpec || level.meshSpec) : [0, 0];
   const gross = area(level.outline) / 1e6;
   const openings = (level.openings || []).map((o) => R.regionPolygon(o)).reduce((s, p) => s + area(p) / 1e6, 0);
   const net = Math.max(0, gross - openings);
-  const kgPerM = R.barWeightPerM(dia);
-  const m = net * (1000 / spacing) * 2 * faces * 1.12; // both directions, 12 % laps and waste
-  return { dia, spacing, faces, faces_label: faces === 2 ? 'TOP & BOTTOM' : 'BOTTOM', net_area_m2: r1(net), total_m: r1(m), kg: r1(m * kgPerM) };
+  const perFace = (sp) => net * (1000 / sp) * 2 * 1.12; // both directions, 12 % laps and waste
+  const mBottom = perFace(spacing), mTop = faces === 2 ? perFace(tspacing) : 0;
+  const kg = mBottom * R.barWeightPerM(dia) + mTop * R.barWeightPerM(tdia || dia);
+  return { dia, spacing, top_dia: tdia || null, top_spacing: tspacing || null, faces, faces_label: faces === 2 ? 'TOP & BOTTOM' : 'BOTTOM', net_area_m2: r1(net), total_m: r1(mBottom + mTop), bottom_m: r1(mBottom), top_m: r1(mTop), kg: r1(kg), bottom_kg: r1(mBottom * R.barWeightPerM(dia)), top_kg: r1(mTop * R.barWeightPerM(tdia || dia)) };
 }
 
 /** The concrete of one level: slab net of openings, the extra of drops / thickened zones, the extra of beams below the slab, formwork. */
@@ -139,10 +141,14 @@ export function quantities(model, pack) {
       // the mesh joins the take-off with the scheduled bars (its own line, and in the diameter totals)
       steel.mesh_kg = mesh.kg;
       steel.kg = r1(steel.kg + mesh.kg);
-      if (mesh.faces === 2) steel.top_kg = r1(steel.top_kg + mesh.kg / 2);
-      steel.bottom_kg = r1(steel.bottom_kg + (mesh.faces === 2 ? mesh.kg / 2 : mesh.kg));
-      const d = steel.byDia.find((x) => x.dia === mesh.dia);
-      if (d) { d.kg = r1(d.kg + mesh.kg); d.total_m = r1(d.total_m + mesh.total_m); } else { steel.byDia.push({ dia: mesh.dia, total_m: mesh.total_m, kg: mesh.kg, count: 0 }); steel.byDia.sort((a, b) => a.dia - b.dia); }
+      steel.top_kg = r1(steel.top_kg + mesh.top_kg);
+      steel.bottom_kg = r1(steel.bottom_kg + mesh.bottom_kg);
+      for (const [dia, m, kg] of [[mesh.dia, mesh.bottom_m, mesh.bottom_kg], [mesh.top_dia, mesh.top_m, mesh.top_kg]]) {
+        if (!dia || !kg) continue;
+        const d = steel.byDia.find((x) => x.dia === dia);
+        if (d) { d.kg = r1(d.kg + kg); d.total_m = r1(d.total_m + m); } else { steel.byDia.push({ dia, total_m: m, kg, count: 0 }); }
+      }
+      steel.byDia.sort((a, b) => a.dia - b.dia);
     }
     return {
       id: level.id, name: level.name, thickness: level.thickness,

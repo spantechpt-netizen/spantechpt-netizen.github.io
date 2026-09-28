@@ -270,6 +270,24 @@ export const codeText = (model) => (model.spec.sources.code === 'drawing'
 export const levelAssumptions = (model, level) => model.assumptions.filter((a) => !a.level || a.level === level.id).map((a) => a.text);
 
 /** Build one sheet. `draw(sheet, pens)` returns { rows, cols, scheduleTitle, totals, general, legend, extra, detailsUsed } */
+/**
+ * The extent of everything a level's sheets draw: the slab outline with the walls, beams, columns, thickness zones,
+ * openings and tendons that reach beyond it (a wall or beam running past the slab edge, a tendon anchored outside).
+ * The sheet scale is picked on this, so the plan never runs out of the frame.
+ */
+export function contentBbox(level) {
+  const pts = [...(level.outline || [])];
+  for (const w of level.walls || []) { if (w.polygon) pts.push(...w.polygon); else if (w.a && w.b) pts.push(w.a, w.b); }
+  for (const bm of level.beams || []) { if (bm.a && bm.b) pts.push(bm.a, bm.b); }
+  for (const c of level.columns || []) { const r = Math.max(c.w || 0, c.h || 0, c.d || 0) / 2; pts.push({ x: c.cx - r, y: c.cy - r }, { x: c.cx + r, y: c.cy + r }); }
+  for (const z of [...(level.thickZones || []), ...(level.openings || [])]) if (z.polygon) pts.push(...z.polygon);
+  for (const t of level.ram?.tendons || []) pts.push(...(t.pts || []));
+  const b = pts.length >= 2 ? bbox(pts) : level.bbox;
+  // nothing farther than a bay from the slab drives the scale (a stray reference entity must not shrink the plan)
+  const lim = expandBbox(level.bbox, 6000);
+  return bbox([{ x: Math.max(b.minX, lim.minX), y: Math.max(b.minY, lim.minY) }, { x: Math.min(b.maxX, lim.maxX), y: Math.min(b.maxY, lim.maxY) }]);
+}
+
 export function buildSheet({ model, level, def, meta, index, total, draw }) {
   const root = new Canvas();
   const blockName = level ? `${def.base}_${level.id}` : def.base;
@@ -278,7 +296,8 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
   // plan margin: room for the grid bubbles (3000 + 2 x 4S) plus a little air; the
   // scale is picked with a provisional margin and the margin re-fitted to it.
   const marginFor = (sc) => 3000 + 8 * (sc / 100) + 400;
-  let pb = level ? expandBbox(level.bbox, marginFor(200)) : null;
+  const extent = level ? contentBbox(level) : null;
+  let pb = level ? expandBbox(extent, marginFor(200)) : null;
   const stacked = [{ x: L.plan.x, y: L.plan.y + L.plan.h / 2, w: L.plan.w, h: L.plan.h / 2 }, { x: L.plan.x, y: L.plan.y, w: L.plan.w, h: L.plan.h / 2 }];
   const pick = () => {
     let areas = def.plans === 2 ? L.halves : [L.plan];
@@ -287,7 +306,7 @@ export function buildSheet({ model, level, def, meta, index, total, draw }) {
   };
   let areas = pick();
   let scale = level ? Math.max(...areas.map((a) => chooseScale(pb, a))) : 100;
-  if (level) { pb = expandBbox(level.bbox, marginFor(scale)); areas = pick(); scale = Math.max(...areas.map((a) => chooseScale(pb, a))); }
+  if (level) { pb = expandBbox(extent, marginFor(scale)); areas = pick(); scale = Math.max(...areas.map((a) => chooseScale(pb, a))); }
   const sheet = new Sheet(root, { blockName, scale, frame: frameOpts });
   const custom = Array.isArray(meta.frameEntities) && meta.frameEntities.length > 0;
   if (!custom) sheet.frame();
@@ -920,7 +939,8 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     const thicknessAt = thicknessFn(level);
     const outsideSlab = (p) => (outline.length >= 3 && !pointInPolygon(p, outline)) || openings.some((o) => pointInPolygon(p, o));
     const tendons = level.ram.tendons.filter((t) => t.spanSet === set);
-    const samplesOf = new Map(tendons.map((t) => [t, cableStations(t, thicknessAt, { cgs: design })]));
+    // every height written is the chair height: RAM's CGS height less the chair drop (10 mm), rounded to 5 - on the design sheets too
+    const samplesOf = new Map(tendons.map((t) => [t, cableStations(t, thicknessAt, { cgs: false })]));
     // marks: tendons of one strand count and one profile (high / low / end stations within 100 mm and 5 mm) share one
     // (always from the chair stations, so the design and shop sheets and the crossings plan name a tendon alike)
     const markOf = cableMarksOf(tendons, fam, thicknessAt);
@@ -949,7 +969,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
         pl.line({ x: x.p.x - n.x * TICK * big, y: x.p.y - n.y * TICK * big }, { x: x.p.x + n.x * TICK * big, y: x.p.y + n.y * TICK * big }, { layer: `Hline-Profile-${fam}${suffix}` });
         if (suffix) pl.circle(x.p, TICK * 0.55, { layer: `PT-HighLow-${fam}` });
         const off = TH * 0.35 * big;
-        pl.text({ x: x.p.x + n.x * off, y: x.p.y + n.y * off }, `${design && suffix ? (x.kind === 'high' ? 'H' : 'L') : ''}${x.h}`, { layer: `Text-Profile-${fam}${suffix}`, h: CAB.txt, rot: ang({ x: n.y, y: -n.x }), align: 'C', valign: 'B', ...PT_TEXT });
+        pl.text({ x: x.p.x + n.x * off, y: x.p.y + n.y * off }, `${x.h}`, { layer: `Text-Profile-${fam}${suffix}`, h: CAB.txt, rot: ang({ x: n.y, y: -n.x }), align: 'C', valign: 'B', ...PT_TEXT });
         stationCount++;
         if (!design) chairCounts.set(x.h, (chairCounts.get(x.h) || 0) + 1);
       });
@@ -970,15 +990,23 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       // the anchors: the live-end block where a jack sits in the model, the dead-end block elsewhere
       const p0 = t.pts[0], p1 = t.pts[1] || p0, q0 = t.pts[t.pts.length - 1], q1 = t.pts[t.pts.length - 2] || q0;
       const out0 = ang({ x: p0.x - p1.x, y: p0.y - p1.y }), out1 = ang({ x: q0.x - q1.x, y: q0.y - q1.y });
-      for (const [p, a, live] of [[p0, out0, t.live[0]], [q0, out1, t.live[1]]]) {
+      const cut = t.cut || [false, false];
+      for (const [p, a, live, isCut] of [[p0, out0, t.live[0], cut[0]], [q0, out1, t.live[1], cut[1]]]) {
         const Q = pl.P(p);
+        if (isCut) {
+          // the tendon continues on the next part / body: a break mark and CONT. instead of an anchor
+          const ux = Math.cos((a * Math.PI) / 180), uy = Math.sin((a * Math.PI) / 180);
+          pl.line({ x: p.x - uy * TICK * 1.6, y: p.y + ux * TICK * 1.6 }, { x: p.x + uy * TICK * 1.6, y: p.y - ux * TICK * 1.6 }, { layer: `Details-${fam}` });
+          pl.text({ x: p.x + ux * TH * 0.8, y: p.y + uy * TH * 0.8 }, 'CONT.', { layer: `Text-Profile-${fam}`, h: CAB.txt, rot: ang({ x: ux, y: uy }), align: 'C', valign: 'B', ...PT_TEXT });
+          continue;
+        }
         sheet.blk.insert(live ? 'LiveEnd' : 'DeadEnd', Q.x, Q.y, { rot: a + 180, layer: `Details-${fam}` });
       }
       // the tag on the tendon line, out of its live end (the start when both or neither are live): five cells on a
       // leader; where the box would sit in the slab it steps 250 aside towards the outside
       const ext = design ? null : cableExtension(t);
       const lengthM = (t.length / 1000).toFixed(1);
-      const [tagAt, tagAng] = t.live[0] || !t.live[1] ? [p0, out0] : [q0, out1];
+      const [tagAt, tagAng] = cut[0] && !cut[1] ? [q0, out1] : cut[1] && !cut[0] ? [p0, out0] : t.live[0] || !t.live[1] ? [p0, out0] : [q0, out1];
       const u = { x: Math.cos((tagAng * Math.PI) / 180), y: Math.sin((tagAng * Math.PI) / 180) }, n = { x: -u.y, y: u.x };
       const xs = CAB.tagXs.map((v) => v * G);
       let ins = tagAt;
@@ -998,7 +1026,8 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       for (const x of xs) pl.line(at(x, -hh), at(x, hh), { layer: `Details-${fam}` });
       const cells = [String(t.strands), ext == null ? '' : String(ext), lengthM, markOf.get(t), String(seqOf(t))];
       cells.forEach((v, i) => { if (v) pl.text(at((xs[i] + xs[i + 1]) / 2, -100 * G), v, { layer: `Details-${fam}`, h: CAB.txt, rot: tagAng, align: 'C', valign: 'B', color: 3, ...PT_TEXT }); });
-      anchors.push({ p: p0, live: t.live[0] }, { p: q0, live: t.live[1] });
+      if (!cut[0]) anchors.push({ p: p0, live: t.live[0] });
+      if (!cut[1]) anchors.push({ p: q0, live: t.live[1] });
       // one schedule row per mark
       const mark = markOf.get(t);
       let row = rowsByMark.get(mark);
@@ -1059,8 +1088,8 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       const d1 = sheet.detailBox(0, 'CHAIR HEIGHT SCHEDULE', '');
       const base = level.thickness;
       const dead = new Map();
-      for (const t of tendons) for (const [p, live] of [[t.pts[0], t.live[0]], [t.pts[t.pts.length - 1], t.live[1]]]) {
-        if (live) continue;
+      for (const t of tendons) for (const [p, live, isCut] of [[t.pts[0], t.live[0], t.cut?.[0]], [t.pts[t.pts.length - 1], t.live[1], t.cut?.[1]]]) {
+        if (live || isCut) continue;
         const th = thicknessAt(p);
         const h = Math.round(Math.max(0, th > base + 1e-6 ? th - base / 2 - 10 : base / 2 - 10));
         dead.set(h, (dead.get(h) || 0) + 1);
@@ -1104,7 +1133,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     } else {
       const d1 = sheet.detailBox(0, 'PROFILE POINTS', '');
       const pp = sheet.pp;
-      ['H### = HIGH POINT, L### = LOW POINT OF THE TENDON CGS PROFILE, mm ABOVE THE SLAB SOFFIT, AS DESIGNED IN RAM CONCEPT (THE CIRCLE MARKS THE POINT ITSELF). THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.',
+      [`THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE CHAIR HEIGHT IN mm: THE TENDON CGS HEIGHT ABOVE THE SLAB SOFFIT AS DESIGNED IN RAM CONCEPT LESS ${CAB.chairDrop} mm, ROUNDED TO ${CAB.roundH}. THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.`,
         'DESIGN DRAWING: STRAND COUNTS, PATHS, STRESSING ENDS AND PROFILE POINTS ONLY. EXTENSIONS, JACKING FORCES AND CHAIRS ARE ON THE SHOP DRAWINGS.'].forEach((h, i) => pp.mtext(d1.x + 4, d1.y + d1.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.7, width: d1.w - 8 }));
       const d2 = sheet.detailBox(1, 'TENDON SYMBOLS', 'N.T.S.');
       const det = D.tendonLegend();
@@ -1130,8 +1159,8 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       assumptions: levelAssumptions(model, level).slice(0, 3),
       legend: [
         [`Tendons-${fam}`, `TENDON, ${dirTitle}`, 'thick'],
-        [`Text-Profile-${fam}-HIGH`, design ? 'HIGH POINT (H + CGS HEIGHT)' : 'HIGH POINT CHAIR HEIGHT', 'line'],
-        [`Text-Profile-${fam}-LOW`, design ? 'LOW POINT (L + CGS HEIGHT)' : 'LOW POINT CHAIR HEIGHT', 'line'],
+        [`Text-Profile-${fam}-HIGH`, `HIGH POINT CHAIR HEIGHT (CGS - ${CAB.chairDrop})`, 'line'],
+        [`Text-Profile-${fam}-LOW`, `LOW POINT CHAIR HEIGHT (CGS - ${CAB.chairDrop})`, 'line'],
         ...(design ? [] : [[`Text-Profile-${fam}`, 'INTERMEDIATE CHAIR HEIGHT (1000 STATIONS)', 'line'], [`Dimensions-Profile-${fam}`, 'ODD STATION SPACING', 'line']]),
         [`Details-${fam}`, 'LIVE END (BLOCK) / DEAD END (BLOCK) / TENDON TAG', 'line'],
         [`Dimensions-Sec-${fam}`, 'ANCHOR SPACING AT THE FACE', 'line'],
@@ -1504,12 +1533,16 @@ export function packSheets(all, meta, opts = {}) {
   if (std?.textStyles) for (const [n, d] of Object.entries(std.textStyles)) pkg.textStyleDef(n, d);
   for (const [n, d] of Object.entries(opts.textStyles || {})) pkg.textStyleDef(n, d);
   const perRow = 4;
-  const gapX = 900 * 100, gapY = 650 * 100;
+  // the sheets sit in a grid spaced by the largest sheet (841 x 594 paper mm at the largest scale), so no two overlap
+  const maxScale = Math.max(100, ...all.map((s) => s.scale || 100));
+  const gapX = 900 * maxScale, gapY = 650 * maxScale;
   all.forEach((s, i) => {
     for (const [name, def] of s.root.layers) if (!pkg.layers.has(name)) pkg.layers.set(name, def);
     for (const [name, def] of s.root.textStyles || []) if (!pkg.textStyles.has(name)) pkg.textStyles.set(name, def);
     for (const [name, def] of s.root.dimStyles || []) if (!pkg.dimStyles.has(name)) pkg.dimStyles.set(name, def);
     pkg.blocks.set(s.blockName, s.root.blocks.get(s.blockName));
+    // the blocks the sheet inserts (anchors LiveEnd / DeadEnd, symbols) go with it; the dimension pictures are renumbered below
+    for (const [bn, bd] of s.root.blocks) if (bn !== s.blockName && !bn.startsWith('*D') && !pkg.blocks.has(bn)) pkg.blocks.set(bn, bd);
     // dimension picture blocks (*D1, *D2 ...) are numbered per sheet: renumber them package-wide (in the sheet root too, so both stay consistent)
     // (all renames are decided first, then applied once, so *D1 → *D143 never collides with the sheet's own *D143)
     const renames = new Map();

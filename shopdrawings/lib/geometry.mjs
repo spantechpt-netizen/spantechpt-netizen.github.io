@@ -205,6 +205,40 @@ export function clipSegmentToPolygon(a, b, poly) {
   return out;
 }
 
+/**
+ * The longest run of a polyline inside a polygon (points within `tol` of the boundary count as inside), cut exactly
+ * where it leaves: `{ pts, from, to, cutStart, cutEnd }` with `from` / `to` the indices of the first and last
+ * original points kept, the cut points added at the ends, and the flags saying which ends are cuts. Null when
+ * nothing lies inside.
+ */
+export function clipPolylineToPolygon(pts, poly, tol = 0) {
+  if (!pts || pts.length < 2 || !poly || poly.length < 3) return null;
+  const inside = (q) => pointInPolygon(q, poly) || (tol > 0 && distToPolygon(q, poly) <= tol);
+  const crossing = (a, b) => {
+    // the piece of a->b inside the polygon that touches a: its far end is where the polyline leaves
+    const pieces = clipSegmentToPolygon(a, b, poly);
+    const piece = pieces.find((seg) => Math.hypot(seg[0].x - a.x, seg[0].y - a.y) < 1) || pieces.sort((u, v) => Math.hypot(u[0].x - a.x, u[0].y - a.y) - Math.hypot(v[0].x - a.x, v[0].y - a.y))[0];
+    return piece ? piece[1] : a;
+  };
+  const runs = [];
+  let run = null;
+  for (let i = 0; i < pts.length; i++) {
+    if (inside(pts[i])) {
+      if (!run) run = { from: i, to: i, cutStart: i > 0 };
+      run.to = i;
+    } else if (run) { run.cutEnd = true; runs.push(run); run = null; }
+  }
+  if (run) { run.cutEnd = false; runs.push(run); }
+  if (!runs.length) return null;
+  const span = (r) => { let L = 0; for (let i = r.from; i < r.to; i++) L += Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y); return L; };
+  const best = runs.sort((a, b) => span(b) - span(a))[0];
+  const out = pts.slice(best.from, best.to + 1);
+  let cutStart = false, cutEnd = false;
+  if (best.cutStart) { const c = crossing(pts[best.from], pts[best.from - 1]); if (Math.hypot(c.x - out[0].x, c.y - out[0].y) > 1) out.unshift(c); cutStart = true; }
+  if (best.cutEnd) { const c = crossing(pts[best.to], pts[best.to + 1]); if (Math.hypot(c.x - out[out.length - 1].x, c.y - out[out.length - 1].y) > 1) out.push(c); cutEnd = true; }
+  return { pts: out, from: best.from, to: best.to, cutStart, cutEnd };
+}
+
 /** Distance from a point to the boundary of a polygon. */
 export function distToPolygon(p, poly) {
   let best = Infinity;

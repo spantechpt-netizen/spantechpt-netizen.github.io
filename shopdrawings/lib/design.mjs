@@ -32,6 +32,7 @@ import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet, beamsSheet } from './sheets.mjs';
 import { overrideColumns } from './punching.mjs';
+import * as RC from './ram-concept.mjs';
 /** The office's DIM100: 250 text, 150 oblique ticks, green number, text above the line, and no extension lines at all (dimse1/dimse2 on, dimexe 0). */
 export const DIM100 = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, tad: 1, clrt: 3, clrd: 256, clre: 256, dec: 0, txsty: 'BW', se1: true, se2: true };
 
@@ -338,7 +339,8 @@ function splitLevels(model, spec) {
         ram: {
           ...ram,
           bands: (ram.bands || []).filter((bd) => band(mid(bd.p0, bd.p1))),
-          tendons: (ram.tendons || []).filter((t) => (t.pts || []).some(inPart)),
+          // a tendon running through the cut is drawn up to it on each part (cut end: no anchor, 'CONT.' on the sheet)
+          tendons: (ram.tendons || []).filter((t) => (t.pts || []).some(inPart)).map((t) => RC.clipTendon(t, outline, 300)).filter(Boolean),
           shear: (ram.shear || []).filter((sr) => band(mid(sr.a, sr.b))),
           punching: (ram.punching || []).filter((pc) => band(pc.p)),
           ssr: (ram.ssr || []).filter((st) => band(st.loc)),
@@ -380,7 +382,10 @@ export function prepareRamDesign(model, options = {}) {
   splitLevels(model, { ...spec, ...(options.spec || {}) });
   // the office rules need their full parameter sets (perimeter U / L bars, column bars, mesh at thickness changes)
   // (the office rules, not the RAM file's G.A. assumptions; the user's config overrides them)
-  for (const key of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching']) spec[key] = { ...R.DEFAULT_SPEC[key], ...(options.spec?.[key] || {}) };
+  for (const key of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching', 'drops']) spec[key] = { ...R.DEFAULT_SPEC[key], ...(options.spec?.[key] || {}) };
+  // the office reinforcement defaults from the settings: bottom mesh, top mesh (both-faces option), column bars, drop bars
+  if (options.spec?.bottom) spec.bottom = { ...(spec.bottom || R.DEFAULT_SPEC.bottom), ...options.spec.bottom };
+  if (options.spec?.topMesh) spec.topMesh = { ...(spec.bottom || R.DEFAULT_SPEC.bottom), ...options.spec.topMesh };
   const A = (level, text) => model.assumptions.push({ level: level.id, text });
   model.assumptions = model.assumptions.filter((a) => !/office standard reinforcement .* ADDITIONAL reinforcement/i.test(a.text));
   const baseName = options.levelName || (model.levels[0]?.name || 'SLAB').replace(/\s*-\s*PART.*$/i, '');
@@ -423,11 +428,15 @@ export function prepareRamDesign(model, options = {}) {
     // mesh: RAM designs the bands, not the mesh; the mesh of the specification is written in the office box
     const mesh = spec.bottom || R.DEFAULT_SPEC.bottom;
     level.meshSpec = [mesh.dia, mesh.spacing];
-    // the slab mesh option: a bottom mesh only (default) or a mesh on both faces (spec.mesh = 'both')
+    // the slab mesh option: a bottom mesh only (default) or a mesh on both faces (spec.mesh = 'both'); the top mesh
+    // takes its own diameter / spacing from the settings (spec.topMesh) or the bottom mesh's
     level.meshFaces = (options.spec?.mesh || spec.mesh) === 'both' ? 'both' : 'bottom';
     level.topMesh = level.meshFaces === 'both';
+    const tmesh = spec.topMesh || mesh;
+    level.topMeshSpec = [tmesh.dia, tmesh.spacing];
+    const sameMesh = tmesh.dia === mesh.dia && tmesh.spacing === mesh.spacing;
     const b0 = bbox(outline);
-    level.meshLabels = [{ x: b0.minX + 600, y: b0.maxY - 700, lines: [`MESH T${mesh.dia}@${mesh.spacing}`, level.topMesh ? 'TOP & BOTTOM TWO WAY' : 'BOTTOM TWO WAY'] }];
+    level.meshLabels = [{ x: b0.minX + 600, y: b0.maxY - 700, lines: level.topMesh && !sameMesh ? [`BOTTOM MESH T${mesh.dia}@${mesh.spacing}`, `TOP MESH T${tmesh.dia}@${tmesh.spacing}`, 'TWO WAY'] : [`MESH T${mesh.dia}@${mesh.spacing}`, level.topMesh ? 'TOP & BOTTOM TWO WAY' : 'BOTTOM TWO WAY'] }];
     // designed bands → office items
     const atBoundary = (p) => ((level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300) ? 'U' : distToPolygon(p, outline) < (spec.cover || 25) + 300 ? R.edgeEndAt(level, spec, p).type : false);
     const items = [];
@@ -474,7 +483,7 @@ export function prepareRamDesign(model, options = {}) {
     level.existing = { lines: [], callouts: [], dims: [], dots: [], items };
     model.findings.push(`${level.id} ${level.name}: ${level.walls.length} walls, ${(level.thickZones || []).length} thickness zones, ${level.edges.filter((e) => e.beam).length} of ${level.edges.length} slab edges with an edge beam, RAM designed reinforcement: ${items.length} bands (${items.filter((i) => i.face === 'T').length} top, ${items.filter((i) => i.face === 'B').length} bottom).`);
     const nProg = items.filter((i) => (level.ram?.bands || []).find((b) => b.id === i.ram)?.designedBy === 'program').length;
-    A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands drawn as designed, ${nProg} of them generated by the program for its design strips, ${items.length - nProg} drawn by the engineer); the General Details additions are placed on top of it. ${level.topMesh ? 'Top and bottom' : 'Bottom'} mesh T${mesh.dia}@${mesh.spacing} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the specification'}${level.topMesh ? ' (slab mesh option: both faces)' : ' (slab mesh option: bottom only)'}.`);
+    A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands drawn as designed, ${nProg} of them generated by the program for its design strips, ${items.length - nProg} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing}${level.topMesh ? ` and top mesh T${level.topMeshSpec[0]}@${level.topMeshSpec[1]}` : ''} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the settings'}${level.topMesh ? ' (slab mesh option: both faces)' : ' (slab mesh option: bottom only)'}.`);
     if (!level.walls.length) A(level, `No walls in the RAM model of ${level.name}: details 2 and 5 (core walls) not applied.`);
     else if (level.walls.some((w) => w.assumedT)) A(level, `${level.walls.filter((w) => w.assumedT).length} walls of ${level.name} are line supports in RAM without a thickness: ${wallT} mm assumed for the plan (set spec.wallThickness).`);
   });
@@ -1230,33 +1239,62 @@ export function designAdditions(level, spec, opts = {}) {
     const faceOf = (sg) => [add(add(c, along, -Ls / 2), acr, sg * Ws / 2), add(add(c, along, Ls / 2), acr, sg * Ws / 2)];
     const wallSg = [-1, 1].find((sg) => R.sideLining(level, ...faceOf(sg)) === 'wall') ?? 0;
     const sw = sp8.wall || {};
-    // straight bars across the strip, top and bottom, one symbol each at 35 % along, distributed over the strip length
+    // straight bars across the strip, top and bottom, one symbol at 35 % along (slid along the strip where a column
+    // bar already sits there), distributed over the strip length
     const at = add(c, along, -Ls * 0.15);
-    const half = sp8.length / 2;
+    const slide = Math.max(0, Ls / 2 - 600);
+    const posCands = [0, -Ls * 0.15, Ls * 0.15, -Ls * 0.3, Ls * 0.3, -Ls * 0.4, Ls * 0.4].map((k) => Math.max(-slide, Math.min(slide, k)));
     const distP = add(c, along, -Ls / 2), distQ = add(c, along, Ls / 2);
     const dOff = (Ws / 2 + 400) * (wallSg ? -wallSg : 1); // the distribution on the slab side, never over the wall
-    items.push({ detail: 'D8', face: 'T', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (T)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at });
-    items.push({ detail: 'D8', face: 'B', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (B)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at });
-    addBar('T', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
-    addBar('B', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+    const nAcrossW = wallSg ? Math.floor(Ls / (sw.spacing || sp8.spacing)) + 1 : nAcross;
+    if (wallSg) {
+      // against a retaining wall (office detail): T12 @ 200 top and bottom, L = 2000, from the wall face into the slab
+      const wd = sw.dia || 12, wsp = sw.spacing || 200, wl = sw.length || 2000;
+      const face = add(at, acr, wallSg * Ws / 2);
+      const inward = { x: -wallSg * acr.x, y: -wallSg * acr.y };
+      items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, inward, wl), l1: `T${wd}-${wsp} TOP&BOTTOM`, l2: `L=${wl}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at, posCands });
+      addBar('T', { dia: wd, shape: 'STR', length: wl, qty: nAcrossW, spacing: wsp, zone });
+      addBar('B', { dia: wd, shape: 'STR', length: wl, qty: nAcrossW, spacing: wsp, zone });
+    } else {
+      const half = sp8.length / 2;
+      items.push({ detail: 'D8', face: 'T', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (T)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at, posCands });
+      items.push({ detail: 'D8', face: 'B', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (B)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at, posCands: posCands.slice().reverse() });
+      addBar('T', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+      addBar('B', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+    }
     // U-bars from each face of the strip, one symbol per face at 65 % along (from the wall face: `wall.uTotal`,
     // 2400; from the slab side of a wall strip: `wall.uSlab`, 2 m; a plain strip: `uTotal` both sides)
     const atU = add(c, along, Ls * 0.15);
     for (const sg of [-1, 1]) {
       const total = wallSg ? (sg === wallSg ? sw.uTotal || sp8.uTotal : sw.uSlab || 2000) : sp8.uTotal;
       const uLegS = ceilTo((total - (h - 2 * cover)) / 2, 10);
-      const face = add(atU, acr, sg * Ws / 2);
+      let face = add(atU, acr, sg * Ws / 2);
       const inward = { x: -sg * acr.x, y: -sg * acr.y };
+      if (wallSg && sg === wallSg) {
+        // the U-bar at the wall sits inside the wall (anchored in it) and comes out into the strip; its closed end
+        // one wall thickness behind the face (as deep as the leg allows)
+        const wall = (level.walls || []).find((w) => w.polygon && w.polygon.some((pp) => distToSeg(pp, ...faceOf(sg)) < 300));
+        const into = Math.min(wall?.t || 250, Math.max(0, uLegS - 400));
+        face = add(face, inward, -into);
+      } else if (wallSg) {
+        // the U-bar from the slab side straddles the joint: half its leg in the slab, half in the strip
+        face = add(face, inward, -uLegS / 2);
+      }
       items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, inward, uLegS), l1: `T${sp8.uDia}-${sp8.uSpacing} U-BAR${wallSg && sg === wallSg ? ' (WALL)' : ''}`, l2: `L=${total}`, hairpin: true, side: 1, zone, noTag: true });
       addBar('T', { dia: sp8.uDia, shape: `U ${uLegS}/${h - 2 * cover}/${uLegS}`, length: total, qty: Math.floor(Ls / sp8.uSpacing) + 1, spacing: sp8.uSpacing, zone: `${zone} U${wallSg && sg === wallSg ? ' WALL' : ''}` });
     }
     // longitudinal bars along the strip, top and bottom, fixed before the infill pour (7T16 each layer at a wall)
-    const longDia = wallSg ? sw.longDia || 16 : sp8.longDia;
-    const nLong = wallSg ? sw.longCount || 7 : Math.floor(Ws / sp8.longSpacing) + 1;
-    const longLabel = wallSg ? `${nLong}T${longDia} (T&B) ALONG STRIP` : `T${longDia}-${sp8.longSpacing} (T&B) ALONG STRIP`;
-    items.push({ detail: 'D8', face: 'TB', a: add(c, along, -Ls / 2), b: add(c, along, Ls / 2), l1: longLabel, l2: `L=${Math.round(Ls)}`, dist: { p: add(add(c, along, Ls * 0.4), acr, -Ws / 2), q: add(add(c, along, Ls * 0.4), acr, Ws / 2) }, side: -1, zone, noTag: true });
-    addBar('TB', { dia: longDia, shape: 'STR', length: Math.round(Ls), qty: nLong, spacing: wallSg ? undefined : sp8.longSpacing, zone: `${zone} ALONG` });
-    if (wallSg) assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG, CAST AGAINST A RETAINING WALL - WALL VARIANT: U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sw.uTotal || sp8.uTotal} TOTAL) FROM THE WALL FACE, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sw.uSlab || 2000} TOTAL) FROM THE SLAB SIDE, T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS, ${nLong}T${longDia} TOP AND BOTTOM ALONG IT; BONDING AGENT ON THE JOINT FACES; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
+    const longDia = wallSg ? sw.longDia || sp8.longDia : sp8.longDia;
+    const longSpacing = wallSg ? sw.longSpacing || (sw.longCount ? null : sp8.longSpacing) : sp8.longSpacing;
+    const nLong = longSpacing ? Math.floor(Ws / longSpacing) + 1 : sw.longCount || 7;
+    const longLabel = longSpacing ? `T${longDia}-${longSpacing} (T&B) ALONG STRIP` : `${nLong}T${longDia} (T&B) ALONG STRIP`;
+    // the bars along the strip come in stock lengths lapped (never one 27 m bar): the plan writes the strip length and the pieces
+    const lapL = R.lapLength(spec, longDia);
+    const pieces = R.splitRun(Ls, { stock: spec.stock || R.DEFAULT_SPEC.stock || 12000, lap: lapL });
+    const Lw = ceilTo(Ls, 10);
+    items.push({ detail: 'D8', face: 'TB', a: add(c, along, -Ls / 2), b: add(c, along, Ls / 2), l1: longLabel, l2: pieces.length > 1 ? `L=${Lw} (${pieces.length} PCS, LAP ${lapL})` : `L=${Lw}`, dist: { p: add(add(c, along, Ls * 0.4), acr, -Ws / 2), q: add(add(c, along, Ls * 0.4), acr, Ws / 2) }, side: -1, zone, noTag: true });
+    for (const [len, qty] of [...pieces.reduce((m, len) => m.set(len, (m.get(len) || 0) + 1), new Map())]) addBar('TB', { dia: longDia, shape: 'STR', length: len, qty: nLong * qty, spacing: longSpacing || undefined, zone: `${zone} ALONG${pieces.length > 1 ? ` (LAP ${lapL})` : ''}` });
+    if (wallSg) assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG, CAST AGAINST A RETAINING WALL - OFFICE DETAIL: U-BARS T${sp8.uDia}@${sp8.uSpacing} L=${sw.uTotal || sp8.uTotal} ANCHORED IN THE WALL AND OUT INTO THE STRIP, U-BARS T${sp8.uDia}@${sp8.uSpacing} L=${sw.uSlab || 2000} FROM THE SLAB SIDE, T${sw.dia || 12}@${sw.spacing || 200} L=${sw.length || 2000} TOP & BOTTOM FROM THE WALL FACE INTO THE SLAB, ${longLabel} (T&B); BONDING AGENT ON THE JOINT FACES; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
     else assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG - ADD T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS IT, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sp8.uTotal} TOTAL) FROM EACH FACE, T${sp8.longDia}@${sp8.longSpacing} T&B ALONG IT FIXED BEFORE THE INFILL POUR; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
   }
 
@@ -1460,14 +1498,21 @@ function distWidthOf(it) {
   const sp = /-(\d{2,4})\b/.exec(l1);
   const spacing = sp ? Number(sp[1]) : 200;
   if (count && Number(count[1]) > 1) return Math.max(spacing, 100) * (Number(count[1]) - 1);
-  return Math.max(spacing, 100);
+  if (it.n > 1) return Math.max(spacing, 100) * (it.n - 1); // a group whose count is known (column bars)
+  // a spacing-only bar stands for a run of bars: never a dimension of one spacing (unreadable, and not what it means)
+  return Math.max(spacing * 4, 1000);
 }
 
 /** The distribution indicator: a real DIMENSION in style DIM100 (red lines, oblique ticks, green number). */
 function officeDim(pl, S, p, q, opts = {}) {
-  if (dist(p, q) < 1) return;
-  if (placer) { const u = unit(p, q), n = perp(u); const tm = opts.textAt || add(mid(p, q), n, DIM100.gap + DIM100.txt / 2); placer.add(textBox(tm, opts.text || String(Math.round(dist(p, q))), DIM100.txt, readableRot(u).rot, 'C', 'M', 0.8)); }
-  pl.dimension(p, q, opts.dl || p, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', textMid: opts.textAt, text: opts.text });
+  const L = dist(p, q);
+  if (L < 1) return;
+  const u = unit(p, q), n = perp(u);
+  let textAt = opts.textAt;
+  // a dimension shorter than its own text (a 400 group of three bars) carries the text past its end, where it reads
+  if (!textAt && L < DIM100.txt * (String(opts.text || Math.round(L)).length * 0.8 + 1.5)) textAt = add(add(q, u, DIM100.txt * 0.6 + (String(opts.text || Math.round(L)).length * DIM100.txt * 0.8) / 2), n, DIM100.gap + DIM100.txt / 2);
+  if (placer) { const tm = textAt || add(mid(p, q), n, DIM100.gap + DIM100.txt / 2); placer.add(textBox(tm, opts.text || String(Math.round(L)), DIM100.txt, readableRot(u).rot, 'C', 'M', 0.8)); }
+  pl.dimension(p, q, opts.dl || p, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', textMid: textAt, text: opts.text });
 }
 
 function officeDot(pl, S, p) {
@@ -1537,6 +1582,13 @@ export function officeBar(pl, S, it, phase) {
       if (Math.abs(den) > 1e-6) {
         const t = ((m0.x - it.dist.p.x) * u.y - (m0.y - it.dist.p.y) * u.x) / -den;
         if (t >= -300 && t <= Ld + 300) dotAt = add(it.dist.p, du, Math.max(0, Math.min(Ld, t)));
+        else if (Math.abs(den) > 0.3 && t > -4000 && t < Ld + 4000 && !it.distAuto) {
+          // the symbol slid past the end of its group dimension (clipped group, moved symbol): the dimension is
+          // stretched to the bar, so it still measures the run the bar stands for and the dot sits on the bar
+          const c = add(it.dist.p, du, t);
+          if (t < 0) it.dist = { ...it.dist, p: c }; else it.dist = { ...it.dist, q: c };
+          dotAt = c;
+        }
       }
       if (!dotAt) {
         const w = distWidthOf(it);
@@ -1751,7 +1803,7 @@ function rebarSheet(model, level, meta, adds, face) {
     }
     if (face === 'T' && level.topMesh && level.meshSpec) {
       // the top mesh is written at the thickness tag like the bottom one (slab mesh option: both faces)
-      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.y - 350 }, `TOP MESH T${level.meshSpec[0]}@${level.meshSpec[1]}`, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
+      for (const t of (level.rcTags || []).filter((t) => !(level.thickZones || []).some((z) => pointInPolygon(t, z.polygon)))) pl.text({ x: t.x, y: t.y - 350 }, `TOP MESH T${(level.topMeshSpec || level.meshSpec)[0]}@${(level.topMeshSpec || level.meshSpec)[1]}`, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
     }
     placer = null;
     const list = adds.bars[face];
@@ -1770,7 +1822,8 @@ function rebarSheet(model, level, meta, adds, face) {
       ? D.sectionMesh({ h: level.thickness, cover: model.spec.cover, dia: level.meshSpec?.[0] || 10, lap: R.lapLength(model.spec, level.meshSpec?.[0] || 10), spacing: level.meshSpec?.[1] || 150 })
       : D.sectionUEdge({ h: level.thickness, cover: model.spec.cover, leg: 1200, dia: 12, edgeDia: 12, spacing: 200 });
     det2.draw(sheet.detailPen(d2, 20, det2.bbox));
-    const meshLine = level.meshSpec ? `MESH T${level.meshSpec[0]}@${level.meshSpec[1]} ${level.topMesh ? 'TOP & BOTTOM (BOTH FACES)' : 'BOTTOM ONLY'} TWO WAY AS LABELLED ON THE PLAN (DESIGN)${level.topMesh && face === 'T' ? '; THE TOP MESH RUNS UNDER THE TOP BARS SHOWN, LAPPED AS THE BOTTOM MESH' : ''}.` : 'NO MESH LABEL FOUND ON THE DESIGN PLAN.';
+    const tms = level.topMeshSpec || level.meshSpec;
+    const meshLine = level.meshSpec ? `${level.topMesh && tms && (tms[0] !== level.meshSpec[0] || tms[1] !== level.meshSpec[1]) ? `BOTTOM MESH T${level.meshSpec[0]}@${level.meshSpec[1]} AND TOP MESH T${tms[0]}@${tms[1]}` : `MESH T${level.meshSpec[0]}@${level.meshSpec[1]} ${level.topMesh ? 'TOP & BOTTOM (BOTH FACES)' : 'BOTTOM ONLY'}`} TWO WAY AS LABELLED ON THE PLAN (DESIGN)${level.topMesh && face === 'T' ? '; THE TOP MESH RUNS UNDER THE TOP BARS SHOWN, LAPPED AS THE BOTTOM MESH' : ''}.` : 'NO MESH LABEL FOUND ON THE DESIGN PLAN.';
     return {
       rows, totals: `ADDED FROM THE GENERAL DETAILS: ${tot.weight_kg.toLocaleString('en-US')} kg (DESIGNER'S BARS NOT SCHEDULED HERE)`, weight: tot.weight_kg,
       scheduleTitle: `BAR SCHEDULE - GENERAL DETAILS ADDITIONS (${face === 'B' ? 'BOTTOM' : 'TOP'})`,
