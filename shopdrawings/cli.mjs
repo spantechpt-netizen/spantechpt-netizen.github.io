@@ -87,7 +87,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     // design drawings straight from the RAM Concept model: its designed bands + the General Details rules
     const ram = readRamConcept(inputDxf);
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
-    model = prepareRamDesign(ramToModel(ram, { levelName, spec }), { levelName, spec, wallThickness: spec.wallThickness });
+    model = prepareRamDesign(ramToModel(ram, { levelName, levelId: meta.levelId, spec }), { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else if (mode === 'design') {
@@ -96,7 +96,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     model = extractDesign(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
   } else if (inputDxf && /\.cpt$/i.test(inputDxf)) {
     const ram = readRamConcept(inputDxf);
-    model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', spec });
+    model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {

@@ -65,6 +65,20 @@ npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/outp
 
 See [shopdrawings/README.md](shopdrawings/README.md).
 
+**Inside the app.** The same generator sits behind the **Drawings** screen
+(`لوحات التسليح`): a project is registered once with the data every title block
+carries (name, client, consultant, contractor, location, signatures), its levels
+/ zones are registered under it with the codes that go into the drawing
+numbers, and each RAM Concept `.cpt` uploaded for a level comes back as a
+numbered package — `SPAN-DD-P26-001-B1-02` is prefix, project code, level code,
+sheet — with previews, per-sheet DXF, the schedules and one ZIP. Revisions and
+serials are counted automatically per level; the office prefixes, company line,
+signatures and status texts live under **Settings → Drawings**. The step-by-step
+office procedure (preparing the RAM model, registering, generating, reviewing,
+AutoCAD, revision cycle) is in
+[docs/RAM-DRAWINGS-WORKFLOW.md](docs/RAM-DRAWINGS-WORKFLOW.md) and opens from
+the screen itself (`/help/ram-drawings-workflow.html`).
+
 ---
 
 ## Email intake
@@ -472,6 +486,8 @@ server/
   templates.js    Default quotation content and per-country price book
   seed.js         First admin, default settings, optional demo data
   routes/         REST API, one module per resource
+  drawings.js     Reinforcement-drawings service: numbering, storage, generation in a worker thread
+  zip.js          Store-only ZIP writer for the drawing packages
 public/
   index.html      Single-page app shell
   assets/js/      Vanilla ES modules — no framework, no build
@@ -480,6 +496,10 @@ public/
     views/        One module per screen
 test/
   api.test.js     End-to-end API tests against a throwaway database
+  drawings.test.js  The drawings module end to end (project → level → RAM upload → numbered package)
+  shopdrawings.test.js  The generator itself
+docs/
+  RAM-DRAWINGS-WORKFLOW.md  Office procedure for reinforcement drawings from RAM Concept (Arabic)
 ```
 
 ## Tests

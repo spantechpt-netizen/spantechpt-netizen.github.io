@@ -212,6 +212,39 @@ export const api = {
   aiSettings: () => request('GET', '/api/mail/ai'),
   saveAiSettings: (data) => request('PUT', '/api/mail/ai', data),
 
+  // ------------------------------------------------- reinforcement drawings
+  drawingProjects: (params) => request('GET', `/api/drawings/projects${qs(params)}`),
+  drawingProject: (id) => request('GET', `/api/drawings/projects/${id}`),
+  createDrawingProject: (data) => request('POST', '/api/drawings/projects', data),
+  updateDrawingProject: (id, data) => request('PATCH', `/api/drawings/projects/${id}`, data),
+  deleteDrawingProject: (id) => request('DELETE', `/api/drawings/projects/${id}`),
+  createDrawingLevel: (projectId, data) => request('POST', `/api/drawings/projects/${projectId}/levels`, data),
+  updateDrawingLevel: (id, data) => request('PATCH', `/api/drawings/levels/${id}`, data),
+  deleteDrawingLevel: (id) => request('DELETE', `/api/drawings/levels/${id}`),
+  drawingRun: (id) => request('GET', `/api/drawings/runs/${id}`),
+  deleteDrawingRun: (id) => request('DELETE', `/api/drawings/runs/${id}`),
+  drawingRunZipUrl: (id) => `/api/drawings/runs/${id}/zip`,
+  drawingRunFileUrl: (id, kind, name, download = false) =>
+    `/api/drawings/runs/${id}/files/${kind}/${encodeURIComponent(name)}${download ? '?download=1' : ''}`,
+  /** The model file is the request body (see server/drawings.js); options travel in the query string. */
+  generateDrawings: async (levelId, file, options = {}) => {
+    const url = `/api/drawings/levels/${levelId}/runs${qs({ name: file.name, ...options })}`;
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      });
+    } catch {
+      throw new ApiError(0, await networkFailure());
+    }
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, payload);
+    return payload;
+  },
+
   // ------------------------------------------------------- users & settings
   users: () => request('GET', '/api/users'),
   permissionCatalogue: () => request('GET', '/api/permissions'),

@@ -317,7 +317,7 @@ function splitLevels(model, spec) {
       const ram = level.ram || {};
       out.push({
         ...level,
-        id: `L${String(out.length + 1).padStart(2, '0')}`, name: `${level.name} - PART ${k + 1}`, partOf: level.id, partCut: { axis, lo, hi },
+        id: level.customId ? `${level.id}${'ABCDEFGHIJ'[k] || k + 1}` : `L${String(out.length + 1).padStart(2, '0')}`, name: `${level.name} - PART ${k + 1}`, partOf: level.id, partCut: { axis, lo, hi },
         outline, bbox: bbox(outline),
         // the grid keeps the body's labels; only the lines that cross this part are drawn, trimmed to the part
         grid: level.grid ? {

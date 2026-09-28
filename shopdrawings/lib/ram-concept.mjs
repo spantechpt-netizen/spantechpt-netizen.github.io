@@ -229,7 +229,7 @@ const modeAngle = (angles) => {
  * outline), rotate each body into its own orthogonal frame and hand back a
  * model the sheet composers understand, with the RAM design attached.
  */
-export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides = {} } = {}) {
+export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec: specOverrides = {} } = {}) {
   const assumptions = [], findings = [];
   // bodies: the outline plus every other outer loop
   const loops = [ram.slab.outline, ...ram.slab.holes].filter(Boolean);
@@ -257,7 +257,9 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides =
     const dominant = [...byThk.entries()].sort((a, b) => b[1] - a[1])[0];
     const bodyThickness = dominant ? dominant[0] : (areasIn.length ? areasIn[0].thickness : ram.slab.baseThickness);
     const level = {
-      id: `L${String(i + 1).padStart(2, '0')}`, name: `${levelName} - BODY ${i + 1}`, rotation: angleDeg,
+      // the level code registered for the project (B1, GF, L03 ...) goes into the drawing numbers when given
+      id: levelId ? (bodies.length > 1 ? `${levelId}-${i + 1}` : String(levelId)) : `L${String(i + 1).padStart(2, '0')}`, customId: Boolean(levelId),
+      name: bodies.length > 1 ? `${levelName} - BODY ${i + 1}` : levelName, rotation: angleDeg,
       thickness: bodyThickness, outline, bbox: bbox(outline),
       columns: cols.map((c, j) => { const p = R({ x: c.cx, y: c.cy }); return { ...c, id: `C${j + 1}`, cx: p.x, cy: p.y, angle: Math.round(((c.angle - angleDeg) % 180 + 180) % 180 * 10) / 10 }; }),
       // (a hole in the RAM mesh has a vertex at every element node: the collinear ones are dropped so that a long

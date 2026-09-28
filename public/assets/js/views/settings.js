@@ -27,6 +27,7 @@ export async function render() {
     { key: 'company', label: t('company_profile'), build: () => companyPanel(settings) },
     { key: 'prices', label: t('price_book'), build: () => pricePanel(settings) },
     { key: 'templates', label: t('templates'), build: () => templatePanel(settings) },
+    { key: 'drawings', label: t('dw_settings'), build: () => drawingsPanel(settings), need: 'drawings.view' },
     { key: 'mail', label: t('mailboxes'), build: () => mailPanel(), need: 'mail.manage' },
     { key: 'users', label: t('users'), build: () => usersPanel(), need: 'users.manage' },
   ].filter((tab) => !tab.need || can(tab.need));
@@ -948,4 +949,61 @@ function branchEditor(initial) {
       return out;
     },
   };
+}
+
+// ----------------------------------------------------- reinforcement drawings
+function drawingsPanel(settings) {
+  const current = JSON.parse(JSON.stringify(settings.drawings || {}));
+  const spec = current.spec && Object.keys(current.spec).length ? JSON.stringify(current.spec, null, 2) : '';
+  const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'project_prefix', label: t('dw_project_prefix'), value: current.project_prefix || 'P', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'design_prefix', label: t('dw_design_prefix'), value: current.design_prefix || 'SPAN-DD', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'shop_prefix', label: t('dw_shop_prefix'), value: current.shop_prefix || 'SPAN-SD', dir: 'ltr', disabled: readOnly() }),
+      field({
+        name: 'default_mode', label: t('dw_default_mode'), type: 'select', value: current.default_mode || 'design', disabled: readOnly(),
+        options: [{ value: 'design', label: t('dw_mode_design') }, { value: 'shop', label: t('dw_mode_shop') }],
+      }),
+      field({
+        name: 'ram_bands', label: t('dw_ram_bands'), type: 'select', value: current.ram_bands || 'all', disabled: readOnly(),
+        options: ['all', 'user', 'none'].map((b) => ({ value: b, label: t(`dw_bands_${b}`) })),
+      }),
+      field({ name: 'company', label: t('dw_company'), value: current.company || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'company_line', label: t('dw_company_line'), value: current.company_line || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'prepared', label: t('dw_prepared'), value: current.prepared || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'checked', label: t('dw_checked'), value: current.checked || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'approved', label: t('dw_approved'), value: current.approved || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'status_design', label: t('dw_status_design'), value: current.status_design || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'status_shop', label: t('dw_status_shop'), value: current.status_shop || '', dir: 'ltr', disabled: readOnly() }),
+    ]),
+    field({ name: 'spec', label: t('dw_spec'), type: 'textarea', value: spec, rows: 4, dir: 'ltr', disabled: readOnly() }),
+  ]);
+
+  return el('div.card', {}, [
+    el('div.card-header', {}, [el('h3', { text: t('dw_settings') })]),
+    el('div.card-body', {}, [
+      el('div.alert.info', { text: t('dw_numbering_hint'), dir: 'ltr' }),
+      form,
+      readOnly() ? null : el('div.row.mt-2', {}, [
+        el('button.btn', {
+          type: 'button', text: t('save'),
+          onclick: () => {
+            const data = readForm(form);
+            let parsed = {};
+            if (data.spec) {
+              try { parsed = JSON.parse(data.spec); } catch { toast(`${t('dw_spec')}: JSON`, 'error'); return; }
+            }
+            delete data.spec;
+            save('drawings', { ...current, ...data, spec: parsed });
+          },
+        }),
+        el('button.btn-secondary.btn', {
+          type: 'button', text: t('reset_defaults'),
+          onclick: async () => {
+            try { await api.resetSetting('drawings'); toast(t('saved'), 'success'); location.reload(); } catch (error) { toastError(error); }
+          },
+        }),
+      ]),
+    ].filter(Boolean)),
+  ]);
 }
