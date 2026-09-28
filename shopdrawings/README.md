@@ -122,6 +122,7 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 |---|---|---|
 | Perimeter (office rule) | continuous T12@150 between the column top bars: D6 **U-bar** 4 m (equal top / bottom legs) at a free edge, D1 **L-bar** of the same 4 m total, 400 into the beam + 3600 on top, at an edge beam; curved edges are one run with the length along the edge | every slab edge |
 | U ends (office rule) | every top bar ending at the outer slab edge or at an opening ends in a U with a 500 mm bottom leg (`U500`) | designer's bars and additions |
+| Column top bars (office rule) | the bars of one direction are distributed over the length of the crossing bars at the same column (RAM bands and generated bars alike) | every column |
 | D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it) + 10T12 (T&B) parallel | every wall face that looks onto the slab |
 | D3 varying thickness | lap 500 at the step (note) | thickness zones |
 | D4 column drop / thickened zone | T12@250 (B) extra reinforcement both ways, 50 Ø beyond the zone | nested outline with a thickness written inside (e.g. `280`) |
@@ -130,7 +131,11 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 | Bottom mesh indication | `BOTTOM MESH T10@200` (optional, `thicknessMesh`) | at every change of slab thickness (thickened zones, RC tags) |
 | D12 punching | PS1 10R-4-T12 (interior) / PS2 12R-4-T12 (edge), s = 100, with the schedule | every column, to be confirmed by the punching design |
 
-Anchorage-dependent details (slab edge at live anchors, bursting spirals, pan-box trimmers) need the tendon layout and
+Every added call-out looks for a free place: the pair `T12-150 U-BAR` / `L=4000` slides along its bar (and may swap
+sides), the `D#` tag and the `U500` tags move likewise, the perimeter distribution dimensions sit just outside the slab
+edge, and the wall U-bar dimension picks the freest of three offsets. Everything already on the plan (the designer's
+call-outs and dimensions, columns, walls, notes) is an obstacle; when no free place exists the least-overlapping one is
+used. Anchorage-dependent details (slab edge at live anchors, bursting spirals, pan-box trimmers) need the tendon layout and
 are left out on purpose; site-specific details (blockwork support beam, crane and placing-boom openings) apply only
 where drawn. What the plan reads: walls = long or non-rectangular shapes on the column layer, thickness from the `RC230`
 tag, edge beams from `S-BEAM` line pairs along the outline, the designer's reinforcement from the `REO-*` layers with
@@ -218,7 +223,9 @@ the drawing names another reference.
   when there is one (+ 200 mm each side), otherwise it is 4 m long
   (`topColumns.length`, optional per slab); an edge column applies the U rule
   at the edge and the top extends 70 % of the interior length
-  (`edgeFactor`, 2.80 m for 4 m). `rule: "code"` keeps the SBC option:
+  (`edgeFactor`, 2.80 m for 4 m). The bars of one direction are distributed
+  over the length of the crossing bars at the same column (the two groups
+  cover one square), dimensioned on the plan. `rule: "code"` keeps the SBC option:
   within `c2 + 1.5h` each side, extend ≥ `ln/6` from the face of support,
   ≥ 4 bars, and not less than `As = 0.00075·Acf` (§8.6.2.3).
 - Every top bar that ends at the outer slab edge or at an opening ends in a

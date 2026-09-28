@@ -49,6 +49,7 @@ export const OFFICE_LAYERS = {
   'PS-TAG': { color: 1, ltype: 'CONTINUOUS' },
 };
 export const OFFICE_TEXT_STYLE = { name: 'BW', font: 'isocp.shx', widthFactor: 0.8 };
+const PERIM_DIM_OUT = 450; // the perimeter distribution dimension sits this far outside the slab edge
 const CALL_H = 150, LEN_H = 150, DIM_H = 250, DIM_TICK = 150, DIM_EXO = 50, DIM_EXE = 100, DOT_R = 33;
 
 export const DETAILS = {
@@ -305,6 +306,21 @@ export function prepareRamDesign(model, options = {}) {
       if (band.face === 'T') it.uEnd = { start: atBoundary(a), end: atBoundary(b) };
       items.push(it);
     }
+    // office rule: over a column the top bars of one direction are distributed over the length of the crossing bars
+    const tops = items.filter((i) => i.face === 'T');
+    for (const c of level.columns || []) {
+      const cc = { x: c.cx, y: c.cy }, reach = Math.max(c.shape === 'circle' ? c.d : Math.max(c.w, c.h), 600) + 1000;
+      const here = tops.filter((i) => distToSeg(cc, i.a, i.b) < reach);
+      for (const it of here) {
+        const u = unit(it.a, it.b);
+        const cross = here.filter((o) => o !== it && Math.abs(u.x * unit(o.a, o.b).x + u.y * unit(o.a, o.b).y) < 0.3).sort((p, q) => dist(p.a, p.b) - dist(q.a, q.b)).pop();
+        if (!cross) continue;
+        const nn = perp(u), half = dist(cross.a, cross.b) / 2;
+        const st = add(it.a, u, Math.max(200, Math.min(dist(it.a, it.b) - 200, ((cc.x - it.a.x) * u.x + (cc.y - it.a.y) * u.y) - Math.min(half, 1200))));
+        it.dist = { p: add(st, nn, -half), q: add(st, nn, half) };
+        it.distFrom = cross.ram;
+      }
+    }
     level.existing = { lines: [], callouts: [], dims: [], dots: [], items };
     model.findings.push(`${level.id} ${level.name}: ${level.walls.length} walls, ${(level.thickZones || []).length} thickness zones, ${level.edges.filter((e) => e.beam).length} of ${level.edges.length} slab edges with an edge beam, RAM designed reinforcement: ${items.length} bands (${items.filter((i) => i.face === 'T').length} top, ${items.filter((i) => i.face === 'B').length} bottom).`);
     A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands, drawn as designed); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the specification'}.`);
@@ -440,16 +456,21 @@ export function designAdditions(level, spec, opts = {}) {
       const nIn = inward(mm.f.a, mm.f.b, outline);
       const count = Math.floor(len / su.spacing) + 1;
       const zone = gridRef(level, bbox([p1, p2]));
-      // distribution: the run itself on a straight edge; on a curved run a short dimension at the middle carrying the length along the edge
+      // distribution: the run itself on a straight edge, drawn just OUTSIDE the slab edge where nothing else is written;
+      // on a curved run a short dimension at the middle carrying the length along the edge
       const curved = at(t1).f !== at(t2 - 1).f;
-      const distAt = (off) => curved
-        ? { p: add(add(m, mm.u, -Math.min(len / 2, 1500)), nIn, off), q: add(add(m, mm.u, Math.min(len / 2, 1500)), nIn, off), text: `${Math.round(len)} ALONG EDGE` }
-        : { p: add(p1, nIn, off), q: add(p2, nIn, off) };
+      const distAt = (off) => {
+        const d = curved
+          ? { p: add(add(m, mm.u, -Math.min(len / 2, 1500)), nIn, off), q: add(add(m, mm.u, Math.min(len / 2, 1500)), nIn, off), text: `${Math.round(len)} ALONG EDGE` }
+          : { p: add(p1, nIn, off), q: add(p2, nIn, off) };
+        if (off < 0) d.textAt = add(mid(d.p, d.q), nIn, off - (DIM100.gap + DIM100.txt / 2)); // number on the outer side, away from the slab
+        return d;
+      };
       if (e.beam) {
-        items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: distAt(su.beamTop * 0.45), side: 1, zone, legEnd: 'start' });
+        items.push({ detail: 'D1', face: 'T', a: m, b: add(m, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: distAt(-PERIM_DIM_OUT), side: 1, zone, legEnd: 'start' });
         addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: count, spacing: su.spacing, zone: `D1 EDGE BEAM ${zone}` });
       } else {
-        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: distAt(uLegTop * 0.45), side: 1, zone, legEnd: 'start' });
+        items.push({ detail: 'D6', face: 'TB', a: m, b: add(m, nIn, uLegTop), l1: `T${su.dia}-${su.spacing} U-BAR`, l2: `L=${su.total}`, dist: distAt(-PERIM_DIM_OUT), side: 1, zone, legEnd: 'start' });
         addBar('T', { dia: su.dia, shape: `U ${uLegTop}/${web}/${uLegTop}`, length: su.total, qty: count, spacing: su.spacing, zone: `D6 FREE EDGE ${zone}` });
       }
     }
@@ -474,7 +495,8 @@ export function designAdditions(level, spec, opts = {}) {
       const la0 = (level.wallBarLengths || []).filter((t) => distToSeg(t, a, b) < 2500 && inSlab(add(m, nOut, 300))).sort((p, q) => q.L - p.L)[0];
       const LA = la0 ? la0.L : 1200;
       const count = Math.floor(L / 200) + 1;
-      items.push({ detail: 'D2', face: 'TB', a: m, b: add(m, nOut, 1200), l1: 'T12-200 U-BAR', l2: `L=${LA + 1200 + lc}`, dist: { p: add(a, nOut, 700), q: add(b, nOut, 700) }, side: 1, zone: `${w.id} ${gridRef(level, bbox(poly))}` });
+      // the distribution along the wall face: 700 into the slab, else further in, else over the wall itself, whichever is free of writing
+      items.push({ detail: 'D2', face: 'TB', a: m, b: add(m, nOut, 1200), l1: 'T12-200 U-BAR', l2: `L=${LA + 1200 + lc}`, distCands: [700, 1500, -300].map((k) => ({ p: add(a, nOut, k), q: add(b, nOut, k) })), side: 1, zone: `${w.id} ${gridRef(level, bbox(poly))}` });
       addBar('T', { dia: 12, shape: `U ${LA}/${lc}/1200`, length: LA + 1200 + lc, qty: count, spacing: 200, zone: `D2 ${w.id}` });
       const par = Math.min(12000, Math.round(L + 1200));
       items.push({ detail: 'D2', face: 'TB', a: add(add(a, nOut, 400), u, -600), b: add(add(b, nOut, 400), u, 600), l1: '10T12 (T&B)', l2: `L=${par}`, side: -1, noTag: true });
@@ -613,9 +635,61 @@ function inward(a, b, outline) {
 // ------------------------------------------------------------------ office-convention drafting
 const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r > 90 || r <= -90) { r += 180; flip = -1; } return { rot: r, flip }; };
 
+// ---------------------------------------------------------------- label placement
+const TEXT_W = 0.85; // advance per character in text heights (isocp), before the width factor
+
+/** Axis-aligned box of a text: anchor p, height h (model mm), rotation, alignment. */
+function textBox(p, str, h, rot = 0, align = 'L', valign = 'B', wf = 1) {
+  const w = String(str).length * h * TEXT_W * wf, hh = h;
+  const x0 = align === 'C' ? -w / 2 : align === 'R' ? -w : 0;
+  const y0 = valign === 'M' ? -hh / 2 : valign === 'T' ? -hh : 0;
+  const r = (rot * Math.PI) / 180, c = Math.cos(r), sn = Math.sin(r);
+  return bbox([[x0, y0], [x0 + w, y0], [x0 + w, y0 + hh], [x0, y0 + hh]].map(([x, y]) => ({ x: p.x + x * c - y * sn, y: p.y + x * sn + y * c })));
+}
+
+/**
+ * Keeps the boxes of everything written on the plan (the designer's call-outs and dimensions,
+ * notes, columns, walls) so that every added label can move along its bar, or to the other side,
+ * to the first place where it overlaps nothing; when every place is taken, the least overlapping wins.
+ */
+class LabelPlacer {
+  constructor() { this.boxes = []; this.uTags = []; }
+  add(b) { if (b && Number.isFinite(b.minX)) this.boxes.push(b); }
+  overlap(b) {
+    let a = 0;
+    for (const o of this.boxes) { const w = Math.min(b.maxX, o.maxX) - Math.max(b.minX, o.minX), h = Math.min(b.maxY, o.maxY) - Math.max(b.minY, o.minY); if (w > 0 && h > 0) a += w * h; }
+    return a;
+  }
+  pick(cands, boxesOf) {
+    let best = null;
+    for (const c of cands) { const a = boxesOf(c).reduce((sum, b) => sum + this.overlap(b), 0); if (a === 0) return c; if (!best || a < best.a) best = { c, a }; }
+    return best ? best.c : cands[0];
+  }
+}
+let placer = null;
+
+/** Start a placer for a plan pen: every text drawn through the pen registers its box. */
+function attachPlacer(pl, S, level) {
+  placer = new LabelPlacer();
+  const text0 = pl.text.bind(pl);
+  pl.text = (p, str, o = {}) => { placer.add(textBox(p, str, (o.h || 2.5) * S, o.rot || 0, o.align || 'L', o.valign || 'B', o.widthFactor || 1)); return text0(p, str, o); };
+  for (const c of level.columns || []) placer.add(c.shape === 'circle' ? { minX: c.cx - c.d / 2, minY: c.cy - c.d / 2, maxX: c.cx + c.d / 2, maxY: c.cy + c.d / 2 } : { minX: c.cx - c.w / 2, minY: c.cy - c.h / 2, maxX: c.cx + c.w / 2, maxY: c.cy + c.h / 2 });
+  for (const w of level.walls || []) if (w.polygon) placer.add(bbox(w.polygon));
+  return placer;
+}
+
+/** A text placed at the first of the candidate anchors that overlaps nothing (candidates = offsets of p). */
+function placeText(pl, p, str, o, offsets, S) {
+  if (!placer) return pl.text(p, str, o);
+  const h = (o.h || 2.5) * S;
+  const q = placer.pick(offsets.map((d) => ({ x: p.x + d.x, y: p.y + d.y })), (c) => [textBox(c, str, h, o.rot || 0, o.align || 'L', o.valign || 'B', o.widthFactor || 1)]);
+  return pl.text(q, str, o);
+}
+
 /** The distribution indicator: a real DIMENSION in style DIM100 (red lines, oblique ticks, green number). */
 function officeDim(pl, S, p, q, opts = {}) {
   if (dist(p, q) < 1) return;
+  if (placer) { const u = unit(p, q), n = perp(u); const tm = opts.textAt || add(mid(p, q), n, DIM100.gap + DIM100.txt / 2); placer.add(textBox(tm, opts.text || String(Math.round(dist(p, q))), DIM100.txt, readableRot(u).rot, 'C', 'M', 0.8)); }
   pl.dimension(p, q, opts.dl || p, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', textMid: opts.textAt, text: opts.text });
 }
 
@@ -625,31 +699,48 @@ function officeDot(pl, S, p) {
 }
 
 /** One added bar in the office convention. */
-export function officeBar(pl, S, it) {
+export function officeBar(pl, S, it, phase) {
   const layer = it.face === 'B' ? 'REO-BOT' : 'REO-TOP';
   const u = unit(it.a, it.b), n = perp(u);
   const { rot, flip } = readableRot(u);
   const side = (it.side || 1) * flip;
-  pl.line(it.a, it.b, { layer });
-  if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; pl.line(e, add(e, n, -(it.side || 1) * 250), { layer }); } // leg of an L / U at the edge
-  if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
-  if (it.triple) { pl.line(add(it.a, n, 200), add(it.b, n, 200), { layer }); pl.line(add(it.a, n, -200), add(it.b, n, -200), { layer }); }
-  const m = mid(it.a, it.b);
-  const t1 = add(m, n, side * 60), t2 = add(m, n, -side * 60);
-  const to = { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, rot, align: 'C' };
-  pl.text(side > 0 ? t1 : t2, it.l1, { ...to, h: CALL_H / S, valign: side > 0 ? 'B' : 'T' });
-  pl.text(side > 0 ? t2 : t1, it.l2, { ...to, h: LEN_H / S, valign: side > 0 ? 'T' : 'B' });
-  if (it.dist) {
-    officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text });
-    // the dot where the bar axis crosses the distribution line
-    const du = unit(it.dist.p, it.dist.q);
-    const t = (m.x - it.dist.p.x) * du.x + (m.y - it.dist.p.y) * du.y;
-    officeDot(pl, S, add(it.dist.p, du, Math.max(0, Math.min(dist(it.dist.p, it.dist.q), t))));
+  const m0 = mid(it.a, it.b);
+  if (phase !== 'labels') {
+    // the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
+    pl.line(it.a, it.b, { layer });
+    if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; pl.line(e, add(e, n, -(it.side || 1) * 250), { layer }); } // leg of an L / U at the edge
+    if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
+    if (it.triple) { pl.line(add(it.a, n, 200), add(it.b, n, 200), { layer }); pl.line(add(it.a, n, -200), add(it.b, n, -200), { layer }); }
+    if (it.distCands && !it.dist) {
+      const boxOf = (d) => { const du = unit(d.p, d.q), dn = perp(du); return [textBox(d.textAt || add(mid(d.p, d.q), dn, DIM100.gap + DIM100.txt / 2), d.text || String(Math.round(dist(d.p, d.q))), DIM100.txt, readableRot(du).rot, 'C', 'M', 0.8)]; };
+      it.dist = placer ? placer.pick(it.distCands, boxOf) : it.distCands[0];
+    }
+    if (it.dist) {
+      officeDim(pl, S, it.dist.p, it.dist.q, { text: it.dist.text, textAt: it.dist.textAt });
+      // the dot where the bar axis crosses the distribution line
+      const du = unit(it.dist.p, it.dist.q);
+      const t = (m0.x - it.dist.p.x) * du.x + (m0.y - it.dist.p.y) * du.y;
+      officeDot(pl, S, add(it.dist.p, du, Math.max(0, Math.min(dist(it.dist.p, it.dist.q), t))));
+    }
+    if (phase === 'bars') return;
   }
+  // the call-out pair slides along the bar (and may swap sides) to the first place free of other writing
+  const to = { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, rot, align: 'C' };
+  const L = dist(it.a, it.b);
+  const wTxt = Math.max(String(it.l1).length, String(it.l2).length) * CALL_H * TEXT_W * 0.8;
+  const shifts = [0, 400, -400, 800, -800, 1200, -1200, 1600, -1600, 2000, -2000, 2500, -2500, 3000, -3000].filter((k) => Math.abs(k) + wTxt / 2 <= L / 2 + 250);
+  if (!shifts.length) shifts.push(0);
+  const cands = []; for (const k of shifts) for (const sd of [side, -side]) cands.push({ k, sd });
+  const pair = ({ k, sd }) => { const mm = add(m0, u, k); const t1 = add(mm, n, sd * 60), t2 = add(mm, n, -sd * 60); return [[sd > 0 ? t1 : t2, it.l1, CALL_H, sd > 0 ? 'B' : 'T'], [sd > 0 ? t2 : t1, it.l2, LEN_H, sd > 0 ? 'T' : 'B']]; };
+  const best = placer ? placer.pick(cands, (c) => pair(c).map(([p, str, h, va]) => textBox(p, str, h, rot, 'C', va, 0.8))) : { k: 0, sd: side };
+  for (const [p, str, h, va] of pair(best)) pl.text(p, str, { ...to, h: h / S, valign: va });
+  const m = add(m0, u, best.k);
   if (it.detail && !it.noTag) {
-    const c = add(m, n, side * 520);
+    const tagAt = (k) => add(add(m0, u, k), n, best.sd * 520);
+    const c = placer ? placer.pick([best.k, best.k + 600, best.k - 600, best.k + 1200, best.k - 1200].map(tagAt), (q) => [{ minX: q.x - 150, minY: q.y - 150, maxX: q.x + 150, maxY: q.y + 150 }]) : tagAt(best.k);
     pl.circle(c, 150, { layer: 'DETAIL-REF' });
     pl.text(c, it.detail, { layer: 'DETAIL-REF', h: 130 / S, align: 'C', valign: 'M', bold: true });
+    if (placer) placer.add({ minX: c.x - 150, minY: c.y - 150, maxX: c.x + 150, maxY: c.y + 150 });
   }
 }
 
@@ -660,7 +751,9 @@ function drawUEnds(pl, S, a, b, uEnd, layer) {
   for (const [on, p] of [[uEnd.start, a], [uEnd.end, b]]) {
     if (!on) continue;
     pl.line(p, add(p, n, 250), { layer });
-    pl.text(add(p, n, 300), `U${R.U_BOTTOM_LEG}`, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' });
+    if (placer) { if (placer.uTags.some((q) => dist(q, p) < 400)) continue; placer.uTags.push(p); } // one tag where two bars end together
+    const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), n, 300), add(add({ x: 0, y: 0 }, u, k), n, -300 - 110)]);
+    placeText(pl, add(p, n, 0), `U${R.U_BOTTOM_LEG}`, { layer: 'REO-TXT', style: 'BW', widthFactor: 0.8, h: 110 / S, rot, align: 'C', valign: 'B' }, offs, S);
   }
 }
 
@@ -685,6 +778,7 @@ export function drawDimension(pl, S, e) {
   const angle = e.dimType === 1 ? (Math.atan2(p4.y - p3.y, p4.x - p3.x) * 180) / Math.PI : (e.rotation || 0);
   const textMid = e.x2 != null && (e.x2 || e.y2) ? { x: e.x2, y: e.y2 } : undefined;
   const text = e.text && e.text !== '<>' && !/^\s*$/.test(e.text) ? e.text : undefined;
+  if (placer) { const r = (angle * Math.PI) / 180, u = { x: Math.cos(r), y: Math.sin(r) }, n = perp(u); const along = (p) => (p.x - dp.x) * u.x + (p.y - dp.y) * u.y; const tm = textMid || add(add(dp, u, (along(p3) + along(p4)) / 2), n, DIM100.gap + DIM100.txt / 2); placer.add(textBox(tm, text || String(Math.round(Math.abs(along(p4) - along(p3)))), DIM100.txt, angle, 'C', 'M', 0.8)); }
   pl.dimension(p3, p4, dp, { style: 'DIM100', styleDef: DIM100, layer: 'diamension', angle, textMid, text });
 }
 
@@ -762,6 +856,7 @@ function rebarSheet(model, level, meta, adds, face) {
   return (sheet, [pl]) => {
     const S = sheet.S;
     drawBase(sheet, pl, level, { gridTag: meta.gridTag, dims: false, pt: false, ubarRegions: false, regionLabels: false });
+    attachPlacer(pl, S, level); // everything written from here on is kept clear of what is already there
     drawDesignerNotes(pl, S, level, { thickness: true });
     const faces = face === 'B' ? ['B', 'TB'] : ['T', 'TB'];
     drawExisting(pl, S, level.existing, faces);
@@ -774,8 +869,10 @@ function rebarSheet(model, level, meta, adds, face) {
       for (const t of level.rcTags || []) pl.text({ x: t.x, y: t.y - 350 }, label, { layer: '9_TEXT', h: 170 / S, align: 'C', valign: 'M', style: 'BW', widthFactor: 0.8 });
     }
     const mine = adds.items.filter((it) => faces.includes(it.face));
-    for (const it of mine) officeBar(pl, S, it);
-    if (face === 'T') for (const n of adds.notes) pl.text({ x: n.x, y: n.y }, n.text, { layer: 'DETAIL-REF', h: 150 / S, align: 'C', style: 'BW', widthFactor: 0.8 });
+    for (const it of mine) officeBar(pl, S, it, 'bars');   // bars and dimensions first ...
+    for (const it of mine) officeBar(pl, S, it, 'labels'); // ... then every call-out finds a free place
+    if (face === 'T') for (const n of adds.notes) placeText(pl, { x: n.x, y: n.y }, n.text, { layer: 'DETAIL-REF', h: 150 / S, align: 'C', style: 'BW', widthFactor: 0.8 }, [0, 400, -400, 800, -800, 1200, -1200].map((dy) => ({ x: 0, y: dy })), S);
+    placer = null;
     const list = adds.bars[face];
     const rows = list.rows().filter((r) => r.note !== 'PUNCHING');
     const tot = { weight_kg: Math.round(rows.reduce((s, r) => s + r.weight_kg, 0) * 10) / 10 };

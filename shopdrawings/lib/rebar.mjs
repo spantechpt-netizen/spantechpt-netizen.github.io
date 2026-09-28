@@ -435,7 +435,11 @@ export function topAtColumns(level, spec) {
       // across the wall is a slab span (its own length is not).
       const l2 = col.isWall ? (dir === 'x' ? (size.x > size.y ? Math.max(...other) : Math.max(...spans)) : (size.y > size.x ? Math.max(...other) : Math.max(...spans)))
         : Math.max(...spans, ...other);
-      const band = c2 + 3 * h; // bars placed within c2 + 1.5h each side, §8.7.5.5.1
+      // office rule: the bars of one direction are distributed over the length of the crossing bars at the
+      // same column (the two groups cover the same square); code rule: within c2 + 1.5h each side (§8.7.5.5.1)
+      const o = spanOf[dir === 'x' ? 'y' : 'x'];
+      const otherStraight = o.ext[-1] + c2 + o.ext[1];
+      const band = (s.rule || 'office') === 'office' && !col.isWall ? otherStraight : c2 + 3 * h;
       let n = Math.max(4, Math.floor(band / s.spacing) + 1);
       const asReq = 0.00075 * h * l2;
       const nReq = col.isWall ? 0 : Math.ceil(asReq / BAR_AREA(s.dia)); // §8.6.2.3 is a column rule; over a wall the spacing governs

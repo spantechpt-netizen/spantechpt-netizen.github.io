@@ -496,6 +496,12 @@ function topSheet(model, level, meta) {
         const a = dir === 'x' ? { x: a0, y: t } : { x: t, y: a0 };
         const b = dir === 'x' ? { x: b0, y: t } : { x: t, y: b0 };
         drawRun(pl, S, { a, b, pieces: [p.length], lap: 0, hooks: { start: !!p.hooks[-1], end: !!p.hooks[1] }, hookLeg: p.hookLeg, hookLabel: p.hookLabel, layer: `REBAR-${p.code}`, label: (i, cut) => callout(p.n, s.dia, s.spacing, type[dir].mark.mark, cut) });
+        // the width the bars are distributed over (office rule: the length of the crossing bars at this column)
+        if (p.band) {
+          const st = a0 + (b0 - a0) * 0.3;
+          const q1 = dir === 'x' ? { x: st, y: t - p.band / 2 } : { x: t - p.band / 2, y: st }, q2 = dir === 'x' ? { x: st, y: t + p.band / 2 } : { x: t + p.band / 2, y: st };
+          pl.dim(q1, q2, 0, { layer: 'DIM', h: 1.6, text: String(Math.round(p.band)) });
+        }
         const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
         pl.bubble({ x: col.cx + size.x / 2, y: col.cy + size.y / 2 }, type.id, { dx: 6, dy: 6, layer: 'CALLOUT', r: 3, h: 1.6 });
         seen.add(type.id);
@@ -911,11 +917,15 @@ export function packSheets(all, meta, opts = {}) {
     for (const [name, def] of s.root.dimStyles || []) if (!pkg.dimStyles.has(name)) pkg.dimStyles.set(name, def);
     pkg.blocks.set(s.blockName, s.root.blocks.get(s.blockName));
     // dimension picture blocks (*D1, *D2 ...) are numbered per sheet: renumber them package-wide (in the sheet root too, so both stay consistent)
-    for (const [bn, bd] of [...s.root.blocks.entries()]) {
-      if (!bn.startsWith('*D')) continue;
-      const nn = `*D${++pkg.dimCount}`;
-      s.root.blocks.delete(bn); s.root.blocks.set(nn, bd); pkg.blocks.set(nn, bd);
-      const rename = (cv) => { for (const e of cv.entities) if (e.t === 'dimension' && e.block === bn) e.block = nn; };
+    // (all renames are decided first, then applied once, so *D1 → *D143 never collides with the sheet's own *D143)
+    const renames = new Map();
+    for (const bn of s.root.blocks.keys()) if (bn.startsWith('*D')) renames.set(bn, `*D${++pkg.dimCount}`);
+    if (renames.size) {
+      const fresh = new Map();
+      for (const [bn, bd] of s.root.blocks) fresh.set(renames.get(bn) || bn, bd);
+      s.root.blocks = fresh;
+      for (const [bn, nn] of renames) pkg.blocks.set(nn, s.root.blocks.get(nn));
+      const rename = (cv) => { for (const e of cv.entities) if (e.t === 'dimension' && renames.has(e.block)) e.block = renames.get(e.block); };
       rename(s.root); for (const b2 of s.root.blocks.values()) rename(b2);
     }
     const x = (i % perRow) * gapX, y = -Math.floor(i / perRow) * gapY;
