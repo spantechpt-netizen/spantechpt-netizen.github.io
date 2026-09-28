@@ -459,6 +459,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
   const base = { bottom: { dia: 12, spacing: 200 }, topColumns: { dia: 16, spacing: 150 }, uEdge: { dia: 12, spacing: 200, leg: 1200, total: 4000, beamLeg: 400, beamTop: 3600 }, uCircle: { dia: 12, spacing: 150, leg: 1200 }, edgeBars: { dia: 12, count: 2 }, ringBars: { dia: 12, count: 2 }, voids: { dia: 12, count: 2 }, openings: { dia: 16, count: 2, diagDia: 12, diagCount: 2, uDia: 12, uSpacing: 200, uLeg: 600 }, sunken: { dia: 12, count: 2, uDia: 10, uSpacing: 200, uLeg: 600 }, punching: { dia: 10, legSpacing: 100, extentFactor: 2.0 } };
   return {
     source: { units: 'mm (RAM internal 0.1 mm)', entities: ram.bands.length + ram.tendons.length + ram.columns.length, layers: [], ram: true },
-    code_reference: null, spec: { ...base, ...ptSpec }, levels, assumptions, findings, ram,
+    // the office / project spec overrides the base per group: `uEdge: { total: 4400 }` keeps the base's legs
+    code_reference: null, spec: { ...base, ...ptSpec, ...Object.fromEntries(Object.keys(base).filter((k) => ptSpec[k] && typeof ptSpec[k] === 'object' && !Array.isArray(ptSpec[k])).map((k) => [k, { ...base[k], ...ptSpec[k] }])) }, levels, assumptions, findings, ram,
   };
 }

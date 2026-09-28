@@ -61,6 +61,7 @@ node shopdrawings/cli.mjs --input SLAB.cpt --out ./package --level "1ST FLOOR"  
 node shopdrawings/cli.mjs --input RFT.dxf --out ./design --mode design            # design drawings from the office's own RFT plan + General Details
 node shopdrawings/cli.mjs --input SLAB.cpt --out ./design --mode design           # design drawings straight from the RAM Concept model
 python3 -m pydrawings --input SLAB.cpt --out ./design --mode design                # the same, standalone Python version (pydrawings/, no CRM, no Node)
+python3 pydrawings/app.py                                                        # the Python version with the CRM drawings screens, in one file (local page, no server, no database)
 npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/output
 ```
 

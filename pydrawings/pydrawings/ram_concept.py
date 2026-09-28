@@ -736,5 +736,6 @@ def ram_to_model(ram, level_name='1ST FLOOR', level_id=None, spec=None):
     base = {'bottom': {'dia': 12, 'spacing': 200}, 'topColumns': {'dia': 16, 'spacing': 150}, 'uEdge': {'dia': 12, 'spacing': 200, 'leg': 1200, 'total': 4000, 'beamLeg': 400, 'beamTop': 3600}, 'uCircle': {'dia': 12, 'spacing': 150, 'leg': 1200}, 'edgeBars': {'dia': 12, 'count': 2}, 'ringBars': {'dia': 12, 'count': 2}, 'voids': {'dia': 12, 'count': 2}, 'openings': {'dia': 16, 'count': 2, 'diagDia': 12, 'diagCount': 2, 'uDia': 12, 'uSpacing': 200, 'uLeg': 600}, 'sunken': {'dia': 12, 'count': 2, 'uDia': 10, 'uSpacing': 200, 'uLeg': 600}, 'punching': {'dia': 10, 'legSpacing': 100, 'extentFactor': 2.0}}
     return {
         'source': {'units': 'mm (RAM internal 0.1 mm)', 'entities': len(ram['bands']) + len(ram['tendons']) + len(ram['columns']), 'layers': [], 'ram': True},
-        'code_reference': None, 'spec': {**base, **pt_spec}, 'levels': levels, 'assumptions': assumptions, 'findings': findings, 'ram': ram,
+        # the office / project spec overrides the base per group: `uEdge: {total: 4400}` keeps the base's legs
+        'code_reference': None, 'spec': {**base, **pt_spec, **{k: {**base[k], **pt_spec[k]} for k in base if isinstance(pt_spec.get(k), dict)}}, 'levels': levels, 'assumptions': assumptions, 'findings': findings, 'ram': ram,
     }
