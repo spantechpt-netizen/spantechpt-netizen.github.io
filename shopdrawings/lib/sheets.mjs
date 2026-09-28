@@ -123,7 +123,8 @@ export function drawBase(sheet, pl, level, o = {}) {
   if (o.pourStrips !== false) for (const ps of level.pourStrips || []) {
     pl.pline(ps.polygon, { layer: 'POUR-STRIP', closed: true });
     pl.hatch([ps.polygon], { layer: 'POUR-STRIP-HATCH', pattern: 'ANSI37', spacing: 2.5 });
-    if (o.regionLabels) { const b = bbox(ps.polygon); const vertical = b.h > b.w; pl.text({ x: b.cx, y: b.cy }, `${ps.id} POUR STRIP ${fmtMM(ps.width)}`, { layer: 'POUR-STRIP', h: 1.5, align: 'C', valign: 'M', rot: vertical ? 90 : 0 }); }
+    // (office rule: the strip is named, its width is not written on the plan - the hatch shows it; the width stays in the element list)
+    if (o.regionLabels) { const b = bbox(ps.polygon); const vertical = b.h > b.w; pl.text({ x: b.cx, y: b.cy }, `${ps.id} POUR STRIP`, { layer: 'POUR-STRIP', h: 1.5, align: 'C', valign: 'M', rot: vertical ? 90 : 0 }); }
   }
   // level tags
   if (o.regionLabels) for (const t of level.levelTags || []) pl.text({ x: t.x, y: t.y }, `${t.label} ${t.value}`, { layer: 'LEVEL', h: 1.8, align: 'C', valign: 'M' });
