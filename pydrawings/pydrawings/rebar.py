@@ -653,6 +653,12 @@ def support_columns(level, gap=500):
     return lst
 
 
+def _js_max(*vals):
+    """JS Math.max: NaN when any value is NaN."""
+    import math as _m
+    return float('nan') if any(isinstance(v, float) and _m.isnan(v) for v in vals) else max(vals)
+
+
 def top_at_columns(level, spec):
     s = spec['topColumns']
     supports = support_columns(level, _nn(s.get('mergeGap'), 500))
@@ -665,8 +671,10 @@ def top_at_columns(level, spec):
     # walls below carry top bars too: a wall is treated as a long rectangular support (bars across it
     # along its length, bars along it within t + 3h), without joining the grid or the punching sheet
     # (an isolated wall gets the two column groups over it; a core wall - three or more walls around an opening - keeps the wall U-bars)
-    wall_supports = [{'id': w['id'], 'shape': 'rect', 'cx': w['cx'], 'cy': w['cy'], 'w': w['w'], 'h': w['h'], 'isWall': True, 'core': bool(w.get('core')),
-                      'skipAlong': ('x' if w['w'] >= w['h'] else 'y') if max(w['w'], w['h']) > (s.get('wallAlongMax') or 6000) else None}
+    # (a wall record without cx / cy / w / h reads NaN in the JS: kept here as NaN, never as a KeyError)
+    _nan = float('nan')
+    wall_supports = [{'id': w['id'], 'shape': 'rect', 'cx': w.get('cx', _nan), 'cy': w.get('cy', _nan), 'w': w.get('w', _nan), 'h': w.get('h', _nan), 'isWall': True, 'core': bool(w.get('core')),
+                      'skipAlong': ('x' if w.get('w', _nan) >= w.get('h', _nan) else 'y') if _js_max(w.get('w', _nan), w.get('h', _nan)) > (s.get('wallAlongMax') or 6000) else None}
                      for w in (level.get('walls') or []) if w.get('polygon') and w.get('t')]
     # office rule: an interior beam (slab on both sides) carries a group of top bars across it, `length` (4 m) or
     # `minBeyond` (1.5 m) past each face whichever is larger, distributed along the beam; nothing along it

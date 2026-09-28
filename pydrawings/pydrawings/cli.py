@@ -364,7 +364,8 @@ def report(model, pack):
             if l['beamCheck'].get('failing'):
                 L.append(f"\n**{l['id']}: beams not passing the office check: {', '.join(l['beamCheck']['failing'])}.**")
     if not design:
-        checks = [{**c, 'level': s.get('level')} for s in pack['sheets'] for c in (s.get('checks') or [])]
+        # (a sheet's checks are objects on the column sheets and plain sentences elsewhere: the JS spread of a string is harmless)
+        checks = [{**(c if isinstance(c, dict) else {}), 'level': s.get('level')} for s in pack['sheets'] for c in (s.get('checks') or [])]
         governed = [c for c in checks if isinstance(c, dict) and c.get('asProv') is not None and c.get('asReq') is not None and c['asProv'] < c['asReq']]
         L.append('')
         L.append(f'## Top bar As,min checks: {len(checks)} column-directions checked, {len(governed)} short')
