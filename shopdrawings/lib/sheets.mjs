@@ -178,7 +178,7 @@ function drawRun(pl, S, { a, b, pieces, lap, hooks = {}, hookLeg = 0, hookLabel,
   const nx = -uy, ny = ux;
   const at = (s, off = 0) => ({ x: a.x + ux * s + nx * off, y: a.y + uy * s + ny * off });
   let rot = (Math.atan2(uy, ux) * 180) / Math.PI;
-  if (rot > 90 || rot <= -90) rot += 180;
+  if (rot >= 89.5 || rot < -90.5) rot += 180;
   const flip = rot !== (Math.atan2(uy, ux) * 180) / Math.PI ? -1 : 1; // text reads left-to-right / bottom-to-top
   const tn = textSide * flip;
   let pos = 0;
@@ -578,7 +578,7 @@ function ubarSheet(model, level, meta) {
         else hairpin(pl, at, { x: nx, y: ny }, e.leg, 120);
       }
       const mid = { x: (e.a.x + e.b.x) / 2 + nx * (su.leg + 500), y: (e.a.y + e.b.y) / 2 + ny * (su.leg + 500) };
-      let rot = (Math.atan2(uy, ux) * 180) / Math.PI; if (rot > 90 || rot <= -90) rot += 180;
+      let rot = (Math.atan2(uy, ux) * 180) / Math.PI; if (rot >= 89.5 || rot < -90.5) rot += 180;
       pl.text(mid, e.beam ? `${e.n}T${su.dia}@${su.spacing}-${e.uMark.mark}-(L=${e.uMark.length}) L-BARS ${su.beamLeg} IN BEAM + ${su.beamTop} TOP` : `${e.n}T${su.dia}@${su.spacing}-${e.uMark.mark}-(L=${e.uMark.length}) U-BARS LEGS ${e.leg} T&B`, { layer: 'REBAR-TEXT', h: CALL_H, rot, align: 'C' });
       pl.bubble({ x: (e.a.x + e.b.x) / 2, y: (e.a.y + e.b.y) / 2 }, e.id, { dx: -nx * 6, dy: -ny * 6, layer: 'CALLOUT', r: 3, h: 1.6 });
     }
@@ -630,7 +630,7 @@ function drawTrimmers(pl, S, regions, spec, kindLabel, opts = {}) {
     }
     if (corners && corners.length && diagMark) {
       const c = corners[0];
-      let rot = (Math.atan2(c.dy, c.dx) * 180) / Math.PI; if (rot > 90 || rot <= -90) rot += 180;
+      let rot = (Math.atan2(c.dy, c.dx) * 180) / Math.PI; if (rot >= 89.5 || rot < -90.5) rot += 180;
       pl.text({ x: c.c.x - c.dy * 0.6 * S, y: c.c.y + c.dx * 0.6 * S }, `${2 * spec.diagCount}T${spec.diagDia}-DIAG-${diagMark.mark}-(L=${diagMark.length}) AT ${corners.length} CORNERS`, { layer: 'REBAR-TEXT', h: LEN_H, rot, align: 'C' });
     }
     if (uMark && nU) {
@@ -747,7 +747,7 @@ function punchingSheet(model, level, meta) {
     for (const sr of level.ram?.shear || []) {
       pl.line(sr.a, sr.b, { layer: 'REBAR-PUNCH' });
       pl.barEnds(sr.a, sr.b, { layer: 'REBAR-PUNCH', size: 0.8 });
-      let rotd = (Math.atan2(sr.b.y - sr.a.y, sr.b.x - sr.a.x) * 180) / Math.PI; if (rotd > 90 || rotd <= -90) rotd += 180;
+      let rotd = (Math.atan2(sr.b.y - sr.a.y, sr.b.x - sr.a.x) * 180) / Math.PI; if (rotd >= 89.5 || rotd < -90.5) rotd += 180;
       pl.text({ x: (sr.a.x + sr.b.x) / 2, y: (sr.a.y + sr.b.y) / 2 + 0.5 * S }, `${sr.id}: T${sr.dia}-${sr.legs}LEGS@${sr.spacing} (${sr.length})`, { layer: 'REBAR-TEXT', h: 1.6, rot: rotd, align: 'C' });
     }
     const d0 = sheet.detailBox(0, 'PUNCHING LINK - SHAPE AND ARRANGEMENT', '1:10');
@@ -792,7 +792,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     const rows = [];
     const tendons = level.ram.tendons.filter((t) => t.spanSet === set);
     let hlCount = 0, chairCount = 0, noProfile = 0;
-    const along = (t, i) => { const p = t.pts[i], q = t.pts[Math.min(i + 1, t.pts.length - 1)] || p; const q0 = i + 1 < t.pts.length ? q : t.pts[i - 1] || p; let a = (Math.atan2(q0.y - p.y, q0.x - p.x) * 180) / Math.PI; if (i + 1 >= t.pts.length) a += 180; if (a > 90 || a <= -90) a += 180; return a; };
+    const along = (t, i) => { const p = t.pts[i], q = t.pts[Math.min(i + 1, t.pts.length - 1)] || p; const q0 = i + 1 < t.pts.length ? q : t.pts[i - 1] || p; let a = (Math.atan2(q0.y - p.y, q0.x - p.x) * 180) / Math.PI; if (i + 1 >= t.pts.length) a += 180; if (a >= 89.5 || a < -90.5) a += 180; return a; };
     for (const t of tendons) {
       pl.pline(t.pts, { layer: 'CABLE' });
       const [a, b] = [t.pts[0], t.pts[t.pts.length - 1]];
@@ -804,7 +804,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       endSym(a, t.pts[1], t.live[0]); endSym(b, t.pts[t.pts.length - 2], t.live[1]);
       const mi = Math.floor(t.pts.length / 2);
       const m1 = t.pts[mi - 1] || a, m2 = t.pts[mi] || b;
-      let rotd = (Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180) / Math.PI; if (rotd > 90 || rotd <= -90) rotd += 180;
+      let rotd = (Math.atan2(m2.y - m1.y, m2.x - m1.x) * 180) / Math.PI; if (rotd >= 89.5 || rotd < -90.5) rotd += 180;
       pl.text({ x: (m1.x + m2.x) / 2, y: (m1.y + m2.y) / 2 + 0.5 * S }, `${t.id} (${t.strands}S)`, { layer: 'CABLE-TEXT', h: 1.7, rot: rotd, align: 'C' });
       // high / low points with their CGS height above the soffit (both variants)
       const ext = RC.tendonExtremes(t);
@@ -829,7 +829,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
           const cgs = RC.tendonHeightAt(t, sAlong);
           if (cgs == null) continue;
           const nrm = { x: -u.y, y: u.x };
-          let rotc = (Math.atan2(u.y, u.x) * 180) / Math.PI; if (rotc > 90 || rotc <= -90) rotc += 180;
+          let rotc = (Math.atan2(u.y, u.x) * 180) / Math.PI; if (rotc >= 89.5 || rotc < -90.5) rotc += 180;
           pl.line({ x: q.x - nrm.x * 0.25 * S, y: q.y - nrm.y * 0.25 * S }, { x: q.x + nrm.x * 0.25 * S, y: q.y + nrm.y * 0.25 * S }, { layer: 'CABLE-CHAIR' });
           pl.text({ x: q.x + nrm.x * 0.35 * S, y: q.y + nrm.y * 0.35 * S }, String(chairOf(cgs)), { layer: 'CABLE-CHAIR', h: 1.2, rot: rotc, align: 'C', valign: 'B' });
           chairs++; chairCount++;

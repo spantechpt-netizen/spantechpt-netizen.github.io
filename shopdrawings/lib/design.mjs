@@ -1346,7 +1346,9 @@ function inward(a, b, outline) {
 
 // ------------------------------------------------------------------ office-convention drafting
 // (a bar within half a degree of vertical reads bottom to top, never top to bottom)
-const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r > 90.5 || r < -89.5) { r += 180; flip = -1; } return { rot: r, flip }; };
+// the reading direction of a text along a bar: left to right, or top to bottom when the bar is vertical (the office reads
+// vertical writing standing at the left edge of the sheet); `flip` is -1 when the reading direction is opposite to u
+const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r >= 89.5) { r -= 180; flip = -1; } else if (r < -90.5) { r += 180; flip = -1; } return { rot: r, flip }; };
 
 // ---------------------------------------------------------------- label placement
 const TEXT_W = 0.85; // advance per character in text heights (isocp), before the width factor

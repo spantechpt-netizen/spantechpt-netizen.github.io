@@ -120,7 +120,7 @@ export async function editorPage(projectId, runId, navigate) {
       g.append(svg('line', { class: cls, x1: bar.a.x, y1: bar.a.y, x2: bar.b.x, y2: bar.b.y }));
       const m = { x: (bar.a.x + bar.b.x) / 2, y: (bar.a.y + bar.b.y) / 2 };
       const ang = (Math.atan2(bar.b.y - bar.a.y, bar.b.x - bar.a.x) * 180) / Math.PI;
-      const rot = ang > 90 || ang <= -90 ? ang + 180 : ang;
+      const rot = ang >= 89.5 || ang < -90.5 ? ang + 180 : ang; // vertical labels read top to bottom, as on the sheets
       const txt = svg('text', { class: 'lbl', 'font-size': 11, 'text-anchor': 'middle' }, `${bar.l1} ${bar.l2}`);
       txt.dataset.at = `translate(${m.x} ${m.y}) rotate(${rot})`;
       txt.setAttribute('dy', -4);

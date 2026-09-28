@@ -155,7 +155,7 @@ place is taken; the dot sits where the bar crosses its distribution dimension. C
 office's `s-hatch`); every reinforcement bar is a polyline of constant width 20 (model mm) so the bars stand out among the
 plan lines (the reinforcement layers also carry 0.20 mm). Legs and hooks follow the engineering convention: a bottom
 bar's legs point up (a horizontal bar) / right (a vertical bar), a top bar's legs point down / left. No text ever reads
-upside down: a rotation past the vertical is turned by 180° with its anchor mirrored. A hole in the RAM mesh loses its collinear element nodes, so a long void side is one side with one
+upside down, and a vertical text reads top to bottom (the office reads vertical writing standing at the left edge of the sheet): a rotation in [89.5°, 269.5°) is turned by 180° with its anchor mirrored. A hole in the RAM mesh loses its collinear element nodes, so a long void side is one side with one
 U-bar symbol. Everything already on the plan (the designer's
 call-outs and dimensions, columns, walls, notes) is an obstacle; when no free place exists the least-overlapping one is
 used. Anchorage-dependent details (slab edge at live anchors, bursting spirals, pan-box trimmers) need the tendon layout and
