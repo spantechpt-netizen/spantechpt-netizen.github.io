@@ -297,7 +297,7 @@ def read_ram_concept(path):
         v = _L(r.get('ElevationValue') or 0)
         ref = r.get('ElevationReference')
         h = thk - v if ref == 5 and thk else (thk / 2 + v if ref == 6 and thk else v)
-        node_elev[r.get('Point0')] = {'h': _round(h), 'ref': ref, 'thickness': thk}
+        node_elev[r.get('Point0')] = {'h': _round(h), 'v': _round(v), 'ref': ref, 'thickness': thk}
     # chain segments node to node
     adj = {}
     for s in tendon_segs:
@@ -318,6 +318,8 @@ def read_ram_concept(path):
         pts = [_point(node)]
         ne = node_elev.get(node)
         heights = [ne['h'] if ne else None]
+        # the figure as entered in RAM at every node (mm, in the model's own reference) - printed as it is on the cable sheets
+        elevs = [{'v': ne['v'], 'ref': ne['ref']} if ne else None]
         thks = [ne['thickness'] if ne else None]
         segs_of_tendon = []
         while seg and seg['UID'] not in used:
@@ -327,6 +329,7 @@ def read_ram_concept(path):
             pts.append(_point(node))
             ne = node_elev.get(node)
             heights.append(ne['h'] if ne else None)
+            elevs.append({'v': ne['v'], 'ref': ne['ref']} if ne else None)
             thks.append(ne['thickness'] if ne else None)
             seg = next((s for s in (adj.get(node) or []) if s['UID'] not in used), None)
         strands = max(_num(s.get('NumStrands')) for s in segs_of_tendon)
@@ -343,6 +346,7 @@ def read_ram_concept(path):
             'harped': _truthy(segs_of_tendon[0].get('Harped')),
             # the CGS profile: height above the soffit at every node (null when the model carries none), reverse-curve ratio
             'heights': None if all(h is None for h in heights) else heights,
+            'elevs': None if all(h is None for h in heights) else elevs,
             'thks': None if all(h is None for h in thks) else thks,
             'inflection': segs_of_tendon[0].get('InflectionRatio') or 0.2,
             'thickness': (node_elev.get(start) or {}).get('thickness') or None,

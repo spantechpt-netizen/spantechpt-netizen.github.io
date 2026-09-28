@@ -143,7 +143,7 @@ export function readRamConcept(path) {
     const v = L(r.ElevationValue || 0);
     const ref = r.ElevationReference;
     const h = ref === 5 && thk ? thk - v : ref === 6 && thk ? thk / 2 + v : v;
-    return [r.Point0, { h: Math.round(h), ref, thickness: thk }];
+    return [r.Point0, { h: Math.round(h), v: Math.round(v), ref, thickness: thk }];
   }));
   // chain segments node to node
   const adj = new Map();
@@ -157,6 +157,9 @@ export function readRamConcept(path) {
     let node = start; let seg = first;
     const pts = [point(node)];
     const heights = [nodeElev.get(node)?.h ?? null];
+    // the figure as entered in RAM at every node (mm, in the model's own reference) - printed as it is on the cable sheets
+    const ramElev = (n) => { const e = nodeElev.get(n); return e ? { v: e.v, ref: e.ref } : null; };
+    const elevs = [ramElev(node)];
     const thks = [nodeElev.get(node)?.thickness ?? null];
     const segsOfTendon = [];
     while (seg && !used.has(seg.UID)) {
@@ -164,6 +167,7 @@ export function readRamConcept(path) {
       node = seg.TendonNode0 === node ? seg.TendonNode1 : seg.TendonNode0;
       pts.push(point(node));
       heights.push(nodeElev.get(node)?.h ?? null);
+      elevs.push(ramElev(node));
       thks.push(nodeElev.get(node)?.thickness ?? null);
       seg = (adj.get(node) || []).find((s) => !used.has(s.UID));
     }
@@ -181,6 +185,7 @@ export function readRamConcept(path) {
       harped: !!segsOfTendon[0].Harped,
       // the CGS profile: height above the soffit at every node (null when the model carries none), reverse-curve ratio
       heights: heights.every((h) => h == null) ? null : heights,
+      elevs: heights.every((h) => h == null) ? null : elevs,
       thks: thks.every((h) => h == null) ? null : thks,
       inflection: segsOfTendon[0].InflectionRatio || 0.2,
       thickness: nodeElev.get(start)?.thickness || null,

@@ -1205,16 +1205,20 @@ def along_tendon(t, s):
     return {'p': pts[-1], 'u': {'x': 1, 'y': 0}}
 
 
-def cable_stations(t, thickness_at, o=None, chair_drop=None, cgs=False, **kw):
+def cable_stations(t, thickness_at, o=None, chair_drop=None, cgs=False, figures='ram', **kw):
     """
     The chair-height stations of a tendon (office rule): every profile node, and exactly 1000 between them from each
     node on, the remainder before the next node kept as the one odd spacing (merged into the last metre when it is
-    under 500). Height = CGS above the soffit less the chair drop (the chair carries the underside of the duct),
-    rounded to 5 and never above the slab; `cgs` gives the profile height itself (design sheets).
+    under 500). `figures` 'ram' (the default): at every profile node the figure exactly as entered in RAM Concept (mm,
+    in the model's own reference - above the soffit, or below the surface - no chair drop, no rounding), and at the
+    stations between them the tendon CGS above the soffit rounded to 5; 'chair': height = CGS above the soffit less
+    the chair drop (the chair carries the underside of the duct), rounded to 5 and never above the slab (`cgs` gives
+    the profile height itself).
     """
     o = opts(o, kw)
     chair_drop = o['chairDrop'] if o.get('chairDrop') is not None else (CAB['chairDrop'] if chair_drop is None else chair_drop)
     cgs = o.get('cgs', cgs)
+    figures = o.get('figures', figures)
     if not t.get('heights'):
         return []
     st = [0]
@@ -1255,9 +1259,14 @@ def cable_stations(t, thickness_at, o=None, chair_drop=None, cgs=False, **kw):
         cg = RC.tendon_height_at(t, s)
         if cg is None:
             continue
-        h = cg if cgs else cg - chair_drop
-        h = max(0, min(h, th))
-        h = js_round(h / CAB['roundH']) * CAB['roundH']
+        elevs = t.get('elevs')
+        ram_v = elevs[i_node]['v'] if (figures == 'ram' and i_node >= 0 and elevs and i_node < len(elevs) and elevs[i_node]) else None
+        if ram_v is not None:
+            h = ram_v  # the RAM figure as it is
+        else:
+            h = cg if (figures == 'ram' or cgs) else cg - chair_drop
+            h = max(0, min(h, th))
+            h = js_round(h / CAB['roundH']) * CAB['roundH']
         out.append({'s': s, 'p': p, 'u': u, 'h': h, 'kind': kind, 'i': i_node, 'th': th})
     return out
 
@@ -1335,11 +1344,14 @@ def ram_cables_sheet(model, level, meta, o=None, set_='latitude', variant='shop'
         def outside_slab(p):
             return (len(outline) >= 3 and not point_in_polygon(p, outline)) or any(point_in_polygon(p, o_) for o_ in openings)
         tendons = [t for t in level['ram']['tendons'] if t.get('spanSet') == set_]
-        # every height written is the chair height: RAM's CGS height less the chair drop (10 mm), rounded to 5 - on the design sheets too
-        samples_of = {id(t): cable_stations(t, thickness_at, cgs=False) for t in tendons}
+        # the figures written: RAM's own profile values at the high / low points (spec.cables.figures 'ram', the default) or the
+        # chair heights (RAM's CGS height less the chair drop, rounded to 5; 'chair') - on the design sheets too
+        figures = 'chair' if (model['spec'].get('cables') or {}).get('figures') == 'chair' else 'ram'
+        ram_fig = figures == 'ram'
+        samples_of = {id(t): cable_stations(t, thickness_at, cgs=False, figures=figures) for t in tendons}
         # marks: tendons of one strand count and one profile (high / low / end stations within 100 mm and 5 mm) share one
         # (always from the chair stations, so the design and shop sheets and the crossings plan name a tendon alike)
-        mark_of = cable_marks_of(tendons, fam, thickness_at)
+        mark_of = cable_marks_of(tendons, fam, thickness_at, figures)
 
         station_count = dim_count = skipped = no_profile = 0
         anchors = []
@@ -1504,7 +1516,7 @@ def ram_cables_sheet(model, level, meta, o=None, set_='latitude', variant='shop'
         details_used = 2
         if not design:
             # 1: chair height schedule (the dead-end chairs, 300 wide, on their own rows)
-            d1 = sheet.detail_box(0, 'CHAIR HEIGHT SCHEDULE', '')
+            d1 = sheet.detail_box(0, 'PROFILE FIGURE SCHEDULE' if ram_fig else 'CHAIR HEIGHT SCHEDULE', '')
             base = level['thickness']
             dead = {}
             for t in tendons:
@@ -1525,7 +1537,7 @@ def ram_cables_sheet(model, level, meta, o=None, set_='latitude', variant='shop'
                 res = sheet.table(cx0, d1['y'] + d1['h'] - 10, chair_cols, left, {'maxRows': per_col, 'headH': 6, 'rowH': 3.2, 'h': 1.3})
                 left = res['leftover']
                 cx0 += 44
-            sheet.pp.text(d1['x'] + 3, d1['y'] + 2, f"DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10). CHAIR SET {CAB['chairDrop']} mm BELOW THE TENDON CENTRELINE.", {'layer': 'NOTES', 'h': 1.4})
+            sheet.pp.text(d1['x'] + 3, d1['y'] + 2, 'FIGURES AS ENTERED IN RAM CONCEPT AT THE PROFILE POINTS, CGS ABOVE THE SOFFIT AT THE 1000 STATIONS. DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10).' if ram_fig else f"DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10). CHAIR SET {CAB['chairDrop']} mm BELOW THE TENDON CENTRELINE.", {'layer': 'NOTES', 'h': 1.4})
             # 2: duct schedule and bill of quantities
             d2 = sheet.detail_box(1, 'DUCT SCHEDULE AND BILL OF QUANTITIES', '')
 
@@ -1559,7 +1571,7 @@ def ram_cables_sheet(model, level, meta, o=None, set_='latitude', variant='shop'
         else:
             d1 = sheet.detail_box(0, 'PROFILE POINTS', '')
             pp = sheet.pp
-            for i, h in enumerate([f"THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE CHAIR HEIGHT IN mm: THE TENDON CGS HEIGHT ABOVE THE SLAB SOFFIT AS DESIGNED IN RAM CONCEPT LESS {CAB['chairDrop']} mm, ROUNDED TO {CAB['roundH']}. THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.",
+            for i, h in enumerate(['THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE TENDON PROFILE VALUE IN mm EXACTLY AS ENTERED IN RAM CONCEPT, IN THE REFERENCE OF THE MODEL (ABOVE THE SLAB SOFFIT, OR BELOW THE SLAB SURFACE AT THE SUPPORTS). THE FIGURES AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.' if ram_fig else f"THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE CHAIR HEIGHT IN mm: THE TENDON CGS HEIGHT ABOVE THE SLAB SOFFIT AS DESIGNED IN RAM CONCEPT LESS {CAB['chairDrop']} mm, ROUNDED TO {CAB['roundH']}. THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.",
                                    'DESIGN DRAWING: STRAND COUNTS, PATHS, STRESSING ENDS AND PROFILE POINTS ONLY. EXTENSIONS, JACKING FORCES AND CHAIRS ARE ON THE SHOP DRAWINGS.']):
                 pp.mtext(d1['x'] + 4, d1['y'] + d1['h'] - 12 - i * 14, h, {'layer': 'NOTES', 'h': 1.7, 'width': d1['w'] - 8})
             d2 = sheet.detail_box(1, 'TENDON SYMBOLS', 'N.T.S.')
@@ -1577,20 +1589,20 @@ def ram_cables_sheet(model, level, meta, o=None, set_='latitude', variant='shop'
         else:
             notes = [
                 *CAB_NOTES,
-                f"SLAB {_s(level['thickness'])}{(' / DROP ' + _s(drop)) if drop else ''} · COVER TOP {_s(cover)} BOTTOM {_s(cover)} · CHAIR SET {CAB['chairDrop']} mm BELOW THE TENDON CENTRELINE. STRAND {dia} mm, Aps = {_s(area)} mm², fpu = {js_round(fpu)} MPa, JACKING {js_round(jack_ratio * 100)} % fpu. THE TAG ON EVERY TENDON READS STRANDS / EXTENSION / LENGTH / MARK / No. THE OTHER DIRECTION IS ON ITS OWN SHEET.{(' ' + _s(no_profile) + ' TENDONS CARRY NO PROFILE IN THE MODEL: THEIR CHAIRS ARE TO BE SET FROM THE RAM PROFILE REPORT.') if no_profile else ''}",
+                f"SLAB {_s(level['thickness'])}{(' / DROP ' + _s(drop)) if drop else ''} · COVER TOP {_s(cover)} BOTTOM {_s(cover)} · {'THE FIGURES AT THE HIGH / LOW POINTS ARE THE PROFILE VALUES EXACTLY AS ENTERED IN RAM CONCEPT (ABOVE THE SOFFIT, OR BELOW THE SURFACE, AS IN THE MODEL); THE FIGURES AT THE 1000 STATIONS BETWEEN THEM ARE THE TENDON CGS ABOVE THE SOFFIT' if ram_fig else ('CHAIR SET ' + str(CAB['chairDrop']) + ' mm BELOW THE TENDON CENTRELINE')}. STRAND {dia} mm, Aps = {_s(area)} mm², fpu = {js_round(fpu)} MPa, JACKING {js_round(jack_ratio * 100)} % fpu. THE TAG ON EVERY TENDON READS STRANDS / EXTENSION / LENGTH / MARK / No. THE OTHER DIRECTION IS ON ITS OWN SHEET.{(' ' + _s(no_profile) + ' TENDONS CARRY NO PROFILE IN THE MODEL: THEIR CHAIRS ARE TO BE SET FROM THE RAM PROFILE REPORT.') if no_profile else ''}",
             ]
         return {
             'rows': rows, 'cols': cols, 'rowH': 3, 'scheduleTitle': f"TENDON SCHEDULE ({fam}){' - DESIGN' if design else ''}", 'detailsUsed': details_used,
             'totals': f"{len(tendons)} TENDONS · {_s(strands)} STRANDS · {js_round(strand_m)} m STRAND · {live_ends} LIVE ENDS{'' if design else ' · ' + _s(station_count) + ' CHAIRS'}",
             'weight': js_round(strand_m * kg_per_m),
-            'planTitles': [f'PT TENDON LAYOUT - {dir_title} - DESIGN (HIGH / LOW POINTS)' if design else f'CHAIR HEIGHTS - {dir_title}'],
+            'planTitles': [f'PT TENDON LAYOUT - {dir_title} - DESIGN (HIGH / LOW POINTS)' if design else f'TENDON PROFILES - {dir_title}' if ram_fig else f'CHAIR HEIGHTS - {dir_title}'],
             'general': notes,
             'assumptions': level_assumptions(model, level)[:3],
             'legend': [
                 [f'Tendons-{fam}', f'TENDON, {dir_title}', 'thick'],
-                [f'Text-Profile-{fam}-HIGH', f"HIGH POINT CHAIR HEIGHT (CGS - {CAB['chairDrop']})", 'line'],
-                [f'Text-Profile-{fam}-LOW', f"LOW POINT CHAIR HEIGHT (CGS - {CAB['chairDrop']})", 'line'],
-                *([] if design else [[f'Text-Profile-{fam}', 'INTERMEDIATE CHAIR HEIGHT (1000 STATIONS)', 'line'], [f'Dimensions-Profile-{fam}', 'ODD STATION SPACING', 'line']]),
+                [f'Text-Profile-{fam}-HIGH', 'HIGH POINT - RAM PROFILE VALUE AS ENTERED' if ram_fig else f"HIGH POINT CHAIR HEIGHT (CGS - {CAB['chairDrop']})", 'line'],
+                [f'Text-Profile-{fam}-LOW', 'LOW POINT - RAM PROFILE VALUE AS ENTERED' if ram_fig else f"LOW POINT CHAIR HEIGHT (CGS - {CAB['chairDrop']})", 'line'],
+                *([] if design else [[f'Text-Profile-{fam}', 'INTERMEDIATE CGS ABOVE SOFFIT (1000 STATIONS)' if ram_fig else 'INTERMEDIATE CHAIR HEIGHT (1000 STATIONS)', 'line'], [f'Dimensions-Profile-{fam}', 'ODD STATION SPACING', 'line']]),
                 [f'Details-{fam}', 'LIVE END (BLOCK) / DEAD END (BLOCK) / TENDON TAG', 'line'],
                 [f'Dimensions-Sec-{fam}', 'ANCHOR SPACING AT THE FACE', 'line'],
                 ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL', 'WALL BELOW', 'thick'],
@@ -1600,12 +1612,12 @@ def ram_cables_sheet(model, level, meta, o=None, set_='latitude', variant='shop'
     return draw
 
 
-def cable_marks_of(tendons, fam, thickness_at):
+def cable_marks_of(tendons, fam, thickness_at, figures='ram'):
     """The marks of one direction: tendons of one strand count and one profile (chair stations) share a mark; keyed by tendon (its id())."""
     sig_to_mark = {}
     mark_of = {}
     for t in tendons:
-        smp = cable_stations(t, thickness_at)
+        smp = cable_stations(t, thickness_at, figures=figures)
         flags = ','.join(x['kind'] + _s(js_round(x['s'] / 100)) + ':' + _s(x['h']) for x in smp if x['kind'])
         sig = f"{_s(t['strands'])}|{flags}|{'' if len(smp) else js_round(t['length'] / 100)}"
         mark = sig_to_mark.get(sig)

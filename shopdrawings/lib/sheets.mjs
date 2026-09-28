@@ -894,10 +894,13 @@ function alongTendon(t, s) {
 /**
  * The chair-height stations of a tendon (office rule): every profile node, and exactly 1000 between them from each
  * node on, the remainder before the next node kept as the one odd spacing (merged into the last metre when it is
- * under 500). Height = CGS above the soffit less the chair drop (the chair carries the underside of the duct),
- * rounded to 5 and never above the slab; `cgs` gives the profile height itself (design sheets).
+ * under 500). `figures` 'ram' (the default): at every profile node the figure exactly as entered in RAM Concept (mm,
+ * in the model's own reference - above the soffit, or below the surface - no chair drop, no rounding), and at the
+ * stations between them the tendon CGS above the soffit rounded to 5; 'chair': height = CGS above the soffit less
+ * the chair drop (the chair carries the underside of the duct), rounded to 5 and never above the slab (`cgs` gives
+ * the profile height itself).
  */
-function cableStations(t, thicknessAt, { chairDrop = CAB.chairDrop, cgs = false } = {}) {
+function cableStations(t, thicknessAt, { chairDrop = CAB.chairDrop, cgs = false, figures = 'ram' } = {}) {
   if (!t.heights) return [];
   const st = [0];
   for (let i = 1; i < t.pts.length; i++) st.push(st[i - 1] + dist(t.pts[i - 1], t.pts[i]));
@@ -926,9 +929,14 @@ function cableStations(t, thicknessAt, { chairDrop = CAB.chairDrop, cgs = false 
     const th = (iNode >= 0 && t.thks?.[iNode]) || thicknessAt(p);
     const cg = RC.tendonHeightAt(t, s);
     if (cg == null) continue;
-    let h = cgs ? cg : cg - chairDrop;
-    h = Math.max(0, Math.min(h, th));
-    h = Math.round(h / CAB.roundH) * CAB.roundH;
+    const ramV = figures === 'ram' && iNode >= 0 ? t.elevs?.[iNode]?.v : null;
+    let h;
+    if (ramV != null) h = ramV; // the RAM figure as it is
+    else {
+      h = figures === 'ram' || cgs ? cg : cg - chairDrop;
+      h = Math.max(0, Math.min(h, th));
+      h = Math.round(h / CAB.roundH) * CAB.roundH;
+    }
     out.push({ s, p, u, h, kind, i: iNode, th });
   }
   return out;
@@ -988,11 +996,14 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     const thicknessAt = thicknessFn(level);
     const outsideSlab = (p) => (outline.length >= 3 && !pointInPolygon(p, outline)) || openings.some((o) => pointInPolygon(p, o));
     const tendons = level.ram.tendons.filter((t) => t.spanSet === set);
-    // every height written is the chair height: RAM's CGS height less the chair drop (10 mm), rounded to 5 - on the design sheets too
-    const samplesOf = new Map(tendons.map((t) => [t, cableStations(t, thicknessAt, { cgs: false })]));
+    // the figures written: RAM's own profile values at the high / low points (spec.cables.figures 'ram', the default) or the
+    // chair heights (RAM's CGS height less the chair drop, rounded to 5; 'chair') - on the design sheets too
+    const figures = model.spec.cables?.figures === 'chair' ? 'chair' : 'ram';
+    const ramFig = figures === 'ram';
+    const samplesOf = new Map(tendons.map((t) => [t, cableStations(t, thicknessAt, { cgs: false, figures })]));
     // marks: tendons of one strand count and one profile (high / low / end stations within 100 mm and 5 mm) share one
     // (always from the chair stations, so the design and shop sheets and the crossings plan name a tendon alike)
-    const markOf = cableMarksOf(tendons, fam, thicknessAt);
+    const markOf = cableMarksOf(tendons, fam, thicknessAt, figures);
     const seqOf = (t) => Number((t.id || '').split('-')[1]) || tendons.indexOf(t) + 1;
     const ang = (u) => (Math.atan2(u.y, u.x) * 180) / Math.PI;
 
@@ -1138,7 +1149,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     let detailsUsed = 2;
     if (!design) {
       // 1: chair height schedule (the dead-end chairs, 300 wide, on their own rows)
-      const d1 = sheet.detailBox(0, 'CHAIR HEIGHT SCHEDULE', '');
+      const d1 = sheet.detailBox(0, ramFig ? 'PROFILE FIGURE SCHEDULE' : 'CHAIR HEIGHT SCHEDULE', '');
       const base = level.thickness;
       const dead = new Map();
       for (const t of tendons) for (const [p, live, isCut] of [[t.pts[0], t.live[0], t.cut?.[0]], [t.pts[t.pts.length - 1], t.live[1], t.cut?.[1]]]) {
@@ -1156,7 +1167,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
         const res = sheet.table(cx0, d1.y + d1.h - 10, chairCols, left, { maxRows: perCol, headH: 6, rowH: 3.2, h: 1.3 });
         left = res.leftover; cx0 += 44;
       }
-      sheet.pp.text(d1.x + 3, d1.y + 2, `DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10). CHAIR SET ${CAB.chairDrop} mm BELOW THE TENDON CENTRELINE.`, { layer: 'NOTES', h: 1.4 });
+      sheet.pp.text(d1.x + 3, d1.y + 2, ramFig ? 'FIGURES AS ENTERED IN RAM CONCEPT AT THE PROFILE POINTS, CGS ABOVE THE SOFFIT AT THE 1000 STATIONS. DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10).' : `DEAD-END CHAIRS 300 mm WIDE (SLAB / 2 - 10, OR DROP - SLAB / 2 - 10). CHAIR SET ${CAB.chairDrop} mm BELOW THE TENDON CENTRELINE.`, { layer: 'NOTES', h: 1.4 });
       // 2: duct schedule and bill of quantities
       const d2 = sheet.detailBox(1, 'DUCT SCHEDULE AND BILL OF QUANTITIES', '');
       const ductLen = (t) => Math.max(0, t.length / 1000 - (t.live.filter(Boolean).length === 1 ? 1 : 0));
@@ -1186,7 +1197,7 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
     } else {
       const d1 = sheet.detailBox(0, 'PROFILE POINTS', '');
       const pp = sheet.pp;
-      [`THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE CHAIR HEIGHT IN mm: THE TENDON CGS HEIGHT ABOVE THE SLAB SOFFIT AS DESIGNED IN RAM CONCEPT LESS ${CAB.chairDrop} mm, ROUNDED TO ${CAB.roundH}. THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.`,
+      [ramFig ? 'THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE TENDON PROFILE VALUE IN mm EXACTLY AS ENTERED IN RAM CONCEPT, IN THE REFERENCE OF THE MODEL (ABOVE THE SLAB SOFFIT, OR BELOW THE SLAB SURFACE AT THE SUPPORTS). THE FIGURES AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.' : `THE FIGURE AT EVERY HIGH / LOW POINT (THE CIRCLE MARKS THE POINT ITSELF) IS THE CHAIR HEIGHT IN mm: THE TENDON CGS HEIGHT ABOVE THE SLAB SOFFIT AS DESIGNED IN RAM CONCEPT LESS ${CAB.chairDrop} mm, ROUNDED TO ${CAB.roundH}. THE CHAIR HEIGHTS AT EVERY STATION BETWEEN THEM ARE GIVEN ON THE SHOP DRAWINGS.`,
         'DESIGN DRAWING: STRAND COUNTS, PATHS, STRESSING ENDS AND PROFILE POINTS ONLY. EXTENSIONS, JACKING FORCES AND CHAIRS ARE ON THE SHOP DRAWINGS.'].forEach((h, i) => pp.mtext(d1.x + 4, d1.y + d1.h - 12 - i * 14, h, { layer: 'NOTES', h: 1.7, width: d1.w - 8 }));
       const d2 = sheet.detailBox(1, 'TENDON SYMBOLS', 'N.T.S.');
       const det = D.tendonLegend();
@@ -1201,20 +1212,20 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       'DESIGN DRAWING - NOT FOR FABRICATION. EXTENSIONS, JACKING FORCES AND CHAIR HEIGHTS ARE GIVEN ON THE SHOP DRAWINGS.',
     ] : [
       ...CAB_NOTES,
-      `SLAB ${level.thickness}${drop ? ` / DROP ${drop}` : ''} · COVER TOP ${cover} BOTTOM ${cover} · CHAIR SET ${CAB.chairDrop} mm BELOW THE TENDON CENTRELINE. STRAND ${dia} mm, Aps = ${area} mm², fpu = ${Math.round(fpu)} MPa, JACKING ${Math.round(jackRatio * 100)} % fpu. THE TAG ON EVERY TENDON READS STRANDS / EXTENSION / LENGTH / MARK / No. THE OTHER DIRECTION IS ON ITS OWN SHEET.${noProfile ? ` ${noProfile} TENDONS CARRY NO PROFILE IN THE MODEL: THEIR CHAIRS ARE TO BE SET FROM THE RAM PROFILE REPORT.` : ''}`,
+      `SLAB ${level.thickness}${drop ? ` / DROP ${drop}` : ''} · COVER TOP ${cover} BOTTOM ${cover} · ${ramFig ? 'THE FIGURES AT THE HIGH / LOW POINTS ARE THE PROFILE VALUES EXACTLY AS ENTERED IN RAM CONCEPT (ABOVE THE SOFFIT, OR BELOW THE SURFACE, AS IN THE MODEL); THE FIGURES AT THE 1000 STATIONS BETWEEN THEM ARE THE TENDON CGS ABOVE THE SOFFIT' : `CHAIR SET ${CAB.chairDrop} mm BELOW THE TENDON CENTRELINE`}. STRAND ${dia} mm, Aps = ${area} mm², fpu = ${Math.round(fpu)} MPa, JACKING ${Math.round(jackRatio * 100)} % fpu. THE TAG ON EVERY TENDON READS STRANDS / EXTENSION / LENGTH / MARK / No. THE OTHER DIRECTION IS ON ITS OWN SHEET.${noProfile ? ` ${noProfile} TENDONS CARRY NO PROFILE IN THE MODEL: THEIR CHAIRS ARE TO BE SET FROM THE RAM PROFILE REPORT.` : ''}`,
     ];
     return {
       rows, cols, rowH: 3, scheduleTitle: `TENDON SCHEDULE (${fam})${design ? ' - DESIGN' : ''}`, detailsUsed,
       totals: `${tendons.length} TENDONS · ${strands} STRANDS · ${Math.round(strandM)} m STRAND · ${liveEnds} LIVE ENDS${design ? '' : ` · ${stationCount} CHAIRS`}`,
       weight: Math.round(strandM * kgPerM),
-      planTitles: [design ? `PT TENDON LAYOUT - ${dirTitle} - DESIGN (HIGH / LOW POINTS)` : `CHAIR HEIGHTS - ${dirTitle}`],
+      planTitles: [design ? `PT TENDON LAYOUT - ${dirTitle} - DESIGN (HIGH / LOW POINTS)` : ramFig ? `TENDON PROFILES - ${dirTitle}` : `CHAIR HEIGHTS - ${dirTitle}`],
       general: notes,
       assumptions: levelAssumptions(model, level).slice(0, 3),
       legend: [
         [`Tendons-${fam}`, `TENDON, ${dirTitle}`, 'thick'],
-        [`Text-Profile-${fam}-HIGH`, `HIGH POINT CHAIR HEIGHT (CGS - ${CAB.chairDrop})`, 'line'],
-        [`Text-Profile-${fam}-LOW`, `LOW POINT CHAIR HEIGHT (CGS - ${CAB.chairDrop})`, 'line'],
-        ...(design ? [] : [[`Text-Profile-${fam}`, 'INTERMEDIATE CHAIR HEIGHT (1000 STATIONS)', 'line'], [`Dimensions-Profile-${fam}`, 'ODD STATION SPACING', 'line']]),
+        [`Text-Profile-${fam}-HIGH`, ramFig ? 'HIGH POINT - RAM PROFILE VALUE AS ENTERED' : `HIGH POINT CHAIR HEIGHT (CGS - ${CAB.chairDrop})`, 'line'],
+        [`Text-Profile-${fam}-LOW`, ramFig ? 'LOW POINT - RAM PROFILE VALUE AS ENTERED' : `LOW POINT CHAIR HEIGHT (CGS - ${CAB.chairDrop})`, 'line'],
+        ...(design ? [] : [[`Text-Profile-${fam}`, ramFig ? 'INTERMEDIATE CGS ABOVE SOFFIT (1000 STATIONS)' : 'INTERMEDIATE CHAIR HEIGHT (1000 STATIONS)', 'line'], [`Dimensions-Profile-${fam}`, 'ODD STATION SPACING', 'line']]),
         [`Details-${fam}`, 'LIVE END (BLOCK) / DEAD END (BLOCK) / TENDON TAG', 'line'],
         [`Dimensions-Sec-${fam}`, 'ANCHOR SPACING AT THE FACE', 'line'],
         ['COLUMN-HATCH', 'COLUMN', 'solid'], ['WALL', 'WALL BELOW', 'thick'],
@@ -1225,11 +1236,11 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
 }
 
 /** The marks of one direction: tendons of one strand count and one profile (chair stations) share a mark; keyed by tendon. */
-function cableMarksOf(tendons, fam, thicknessAt) {
+function cableMarksOf(tendons, fam, thicknessAt, figures = 'ram') {
   const sigToMark = new Map();
   const markOf = new Map();
   for (const t of tendons) {
-    const smp = cableStations(t, thicknessAt);
+    const smp = cableStations(t, thicknessAt, { figures });
     const sig = `${t.strands}|${smp.filter((x) => x.kind).map((x) => `${x.kind}${Math.round(x.s / 100)}:${x.h}`).join(',')}|${smp.length ? '' : Math.round(t.length / 100)}`;
     let mark = sigToMark.get(sig);
     if (!mark) { mark = `${fam}.${String(sigToMark.size + 1).padStart(2, '0')}`; sigToMark.set(sig, mark); }

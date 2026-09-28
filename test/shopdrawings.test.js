@@ -692,7 +692,10 @@ test('a RAM Concept model goes straight to the design package: its bands in the 
   assert.equal(dc.length, 2);
   assert.ok(dc.every((c) => !c.csvCols.some((k) => k.key === 'elong' || k.key === 'jack')), 'design cable sheets carry no elongation or jacking force');
   const dxfCab = toDxf(dc.find((c) => c.key === 'dcablat').root);
-  assert.ok(dxfCab.includes('\n1\n200\n') && !/\n1\n[HL]\d+\n/.test(dxfCab), 'the high point written as the chair height (CGS 210 - 10) with no H / L prefix');
+  assert.ok(dxfCab.includes('\n1\n210\n') && !dxfCab.includes('\n1\n200\n') && !/\n1\n[HL]\d+\n/.test(dxfCab), 'the high point written as the RAM profile value as entered (210, no chair drop) with no H / L prefix');
+  const chairPack = composeDesignPackage({ ...model, spec: { ...model.spec, cables: { figures: 'chair' } } }, { project: 'RAM', prefix: 'SPAN-DD', layerStandard: JSON.parse(readFileSync(join('shopdrawings', 'layers.spantech.json'), 'utf8')) });
+  const dxfChair = toDxf(chairPack.sheets.find((c) => c.key === 'dcablat').root);
+  assert.ok(dxfChair.includes('\n1\n200\n') && dxfChair.includes('CHAIR HEIGHT (CGS - 10)'), "spec.cables.figures 'chair' restores the chair heights (CGS 210 - 10)");
   assert.ok(dxfCab.includes('\n8\nText-Profile-A-HIGH\n') && dxfCab.includes('\n8\nPT-HighLow-A\n') && dxfCab.includes('\n2\nLiveEnd\n'), 'office cable layers and anchor blocks');
   assert.ok(dc.every((c) => c.rows.every((r) => /^[AB]\.\d\d$/.test(r.mark))), 'design cable schedule keyed by mark');
   const dxfTop = toDxf(pack.sheets.find((s) => s.key === 'dtop').root);
@@ -841,7 +844,7 @@ test('parts and bodies cut the tendons at their edge (CONT., no anchor), chair h
   const cab = readFileSync(r.files.find((f) => /CABLES_LATITUDE_L01/.test(f)), 'utf8');
   assert.ok(cab.includes('\n1\nCONT.\n') && !/\n1\n[HL]\d+\n/.test(cab), 'CONT. at the cut, no H / L prefix on the heights');
   assert.ok((cab.match(/\n2\nLiveEnd\n/g) || []).length >= 1 && (cab.match(/\n2\nDeadEnd\n/g) || []).length >= 1, 'anchor blocks inserted at the real ends');
-  assert.ok(cab.includes('CHAIR HEIGHT (CGS - 10)'), 'the legend says the figures are chair heights');
+  assert.ok(cab.includes('RAM PROFILE VALUE AS ENTERED'), 'the legend says the figures are the RAM profile values');
   const pkg = readFileSync(join(dir, 'parts', 'DESIGN_DRAWINGS_PACKAGE.dxf'), 'utf8');
   const tables = pkg.split('\nENTITIES\n')[0];
   assert.ok(tables.includes('\n2\nLiveEnd\n') && tables.includes('\n2\nDeadEnd\n'), 'the package DXF defines the anchor blocks its sheets insert');
