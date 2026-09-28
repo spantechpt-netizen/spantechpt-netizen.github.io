@@ -23,15 +23,15 @@ def _num(v):
     return NAN if v is None else v
 
 
-def L(v):  # 0.1 mm → mm
+def _L(v):  # 0.1 mm → mm
     return _num(v) / 10
 
 
-def MPa(v):
+def _MPa(v):
     return _num(v) * 100
 
 
-def mm2(v):
+def _mm2(v):
     return _num(v) / 100
 
 
@@ -59,28 +59,28 @@ def _round(v):
     return js_round(v)
 
 
-def nums(s):
+def _nums(s):
     # String(s || '') then every number
     text = _S(s) if s else ''
     return [float(m) for m in re.findall(r'-?\d+(?:\.\d+)?', text)]
 
 
-def point(s):
-    v = nums(s)
-    return {'x': L(v[0] if len(v) > 0 else None), 'y': L(v[1] if len(v) > 1 else None)}
+def _point(s):
+    v = _nums(s)
+    return {'x': _L(v[0] if len(v) > 0 else None), 'y': _L(v[1] if len(v) > 1 else None)}
 
 
-def points(s):
-    v = nums(s)
+def _points(s):
+    v = _nums(s)
     out = []
     i = 0
     while i + 1 < len(v):
-        out.append({'x': L(v[i]), 'y': L(v[i + 1])})
+        out.append({'x': _L(v[i]), 'y': _L(v[i + 1])})
         i += 2
     return out
 
 
-def bools(s):
+def _bools(s):
     text = _S(s) if s else ''
     return [b == 'true' for b in re.findall(r'true|false', text)]
 
@@ -124,8 +124,8 @@ def read_ram_concept(path):
 
     def rebar_type(r):
         digits = re.sub(r'\D', '', _S(r.get('Name')))
-        dia = (int(digits) if digits else 0) or _round(math.sqrt((4 * mm2(r.get('As'))) / math.pi))
-        return {**r, 'dia': dia, 'fy': MPa(r.get('Fy')), 'area': mm2(r.get('As'))}
+        dia = (int(digits) if digits else 0) or _round(math.sqrt((4 * _mm2(r.get('As'))) / math.pi))
+        return {**r, 'dia': dia, 'fy': _MPa(r.get('Fy')), 'area': _mm2(r.get('As'))}
     rebar_types = by_uid([rebar_type(r) for r in rows('Rebar')])
     pt_system = (rows('PTSystem') or [{}])[0]
     strand = (rows('StrandMaterial') or [{}])[0]
@@ -133,14 +133,14 @@ def read_ram_concept(path):
     anchor = (rows('AnchorSystem') or [{}])[0]
     span_seg = rows('SpanSegment')
     punch_checks = rows('PunchCheck')
-    cover_top = L(max(s.get('ColumnStripTopCover') or 0 for s in span_seg)) if span_seg else (L(punch_checks[0].get('TopCover')) if punch_checks else 25)
-    cover_bot = L(max(s.get('ColumnStripBottomCover') or 0 for s in span_seg)) if span_seg else (L(punch_checks[0].get('BottomCover')) if punch_checks else 25)
-    fc = _round(MPa(concrete.get('FcFinal'))) if _truthy(concrete.get('FcFinal')) else None
+    cover_top = _L(max(s.get('ColumnStripTopCover') or 0 for s in span_seg)) if span_seg else (_L(punch_checks[0].get('TopCover')) if punch_checks else 25)
+    cover_bot = _L(max(s.get('ColumnStripBottomCover') or 0 for s in span_seg)) if span_seg else (_L(punch_checks[0].get('BottomCover')) if punch_checks else 25)
+    fc = _round(_MPa(concrete.get('FcFinal'))) if _truthy(concrete.get('FcFinal')) else None
     fy = _round(list(rebar_types.values())[0]['fy']) if rebar_types else None
 
     # ---------------------------------------------------------------- slab areas and mesh
-    slab_areas = [{'polygon': clean_polygon(points(r.get('MultiPoint'))), 'thickness': L(r.get('SlabThickness')), 'priority': r.get('Priority'), 'behaviour': r.get('SlabBehavior'), 'toc': L(r.get('TOC'))} for r in rows('SlabArea')]
-    nodes = {r['Point0']: point(r['Point0']) for r in rows('ElementCornerNode')}
+    slab_areas = [{'polygon': clean_polygon(_points(r.get('MultiPoint'))), 'thickness': _L(r.get('SlabThickness')), 'priority': r.get('Priority'), 'behaviour': r.get('SlabBehavior'), 'toc': _L(r.get('TOC'))} for r in rows('SlabArea')]
+    nodes = {r['Point0']: _point(r['Point0']) for r in rows('ElementCornerNode')}
     edge_count = {}
     elem_thk = []
 
@@ -154,15 +154,15 @@ def read_ram_concept(path):
         n = [q.get('CornerNode0'), q.get('CornerNode1'), q.get('CornerNode2'), q.get('CornerNode3')]
         for i in range(4):
             add_edge(n[i], n[(i + 1) % 4])
-        elem_thk.append({'thk': L(q.get('SlabThickness')), 'toc': L(q.get('TOC') or 0), 'n': n})
+        elem_thk.append({'thk': _L(q.get('SlabThickness')), 'toc': _L(q.get('TOC') or 0), 'n': n})
     for q in rows('TriSlabElement'):
         n = [q.get('CornerNode0'), q.get('CornerNode1'), q.get('CornerNode2')]
         for i in range(3):
             add_edge(n[i], n[(i + 1) % 3])
-        elem_thk.append({'thk': L(q.get('SlabThickness')), 'toc': L(q.get('TOC') or 0), 'n': n})
+        elem_thk.append({'thk': _L(q.get('SlabThickness')), 'toc': _L(q.get('TOC') or 0), 'n': n})
 
     def node_of(k):
-        return nodes.get(k) or point(k)
+        return nodes.get(k) or _point(k)
     elements = []
     for e in elem_thk:
         poly = [node_of(k) for k in e['n']]
@@ -220,24 +220,24 @@ def read_ram_concept(path):
     # beams: RAM beam objects (an axis, a width, a depth); an edge beam lies along the slab edge, an interior one has slab both sides
     beams = []
     for i, r in enumerate([r for r in rows('Beam') if _truthy(r.get('Point0')) and _truthy(r.get('Point1'))]):
-        a, b = point(r['Point0']), point(r['Point1'])
+        a, b = _point(r['Point0']), _point(r['Point1'])
 
         # (office convention: beam sizes are written to the nearest 50 mm, never with decimals: 350x600)
         def r50(v):
             return _round(v / 50) * 50
-        w = r50(L(r.get('Width') or 0)) or 300
-        d = r50(L(r.get('SlabThickness') or 0))
+        w = r50(_L(r.get('Width') or 0)) or 300
+        d = r50(_L(r.get('SlabThickness') or 0))
         ln = math.hypot(b['x'] - a['x'], b['y'] - a['y']) or 1
         n = {'x': -(b['y'] - a['y']) / ln, 'y': (b['x'] - a['x']) / ln}
-        beams.append({'id': f'BM{i + 1}', 'a': a, 'b': b, 't': w, 'depth': d, 'toc': L(r.get('TOC') or 0), 'meshedAsSlab': _truthy(r.get('BeamIsMeshedAsSlab')),
+        beams.append({'id': f'BM{i + 1}', 'a': a, 'b': b, 't': w, 'depth': d, 'toc': _L(r.get('TOC') or 0), 'meshedAsSlab': _truthy(r.get('BeamIsMeshedAsSlab')),
                       'polygon': [{'x': a['x'] + n['x'] * w / 2, 'y': a['y'] + n['y'] * w / 2}, {'x': b['x'] + n['x'] * w / 2, 'y': b['y'] + n['y'] * w / 2}, {'x': b['x'] - n['x'] * w / 2, 'y': b['y'] - n['y'] * w / 2}, {'x': a['x'] - n['x'] * w / 2, 'y': a['y'] - n['y'] * w / 2}]})
     beams = [bm for bm in beams if math.hypot(bm['b']['x'] - bm['a']['x'], bm['b']['y'] - bm['a']['y']) > 500]
 
     # ---------------------------------------------------------------- supports
     columns = []
     for i, r in enumerate(rows('Column')):
-        p = point(r.get('Point0'))
-        w, h, angle = L(r.get('B')), L(r.get('D')), _mod180(((r.get('Angle') or 0) * 180) / math.pi)
+        p = _point(r.get('Point0'))
+        w, h, angle = _L(r.get('B')), _L(r.get('D')), _mod180(((r.get('Angle') or 0) * 180) / math.pi)
         if w < 1:
             columns.append({'id': f'C{i + 1}', 'shape': 'circle', 'cx': p['x'], 'cy': p['y'], 'd': h, 'w': h, 'h': h, 'angle': 0, 'below': r.get('SupportSet') == 'below'})
             continue
@@ -265,9 +265,9 @@ def read_ram_concept(path):
     wall_rows = rows('Wall')
     below = [r for r in wall_rows if r.get('SupportSet') == 'below']
     chosen = below if below else wall_rows
-    walls = [{'a': point(r.get('Point0')), 'b': point(r.get('Point1')), 't': L(r.get('WallThickness')) if _truthy(r.get('WallThickness')) else None} for r in chosen]
+    walls = [{'a': _point(r.get('Point0')), 'b': _point(r.get('Point1')), 't': _L(r.get('WallThickness')) if _truthy(r.get('WallThickness')) else None} for r in chosen]
     for r in rows('LineSupport'):
-        a, b = point(r.get('Point0')), point(r.get('Point1'))
+        a, b = _point(r.get('Point0')), _point(r.get('Point1'))
         if not any((math.hypot(w['a']['x'] - a['x'], w['a']['y'] - a['y']) < 50 and math.hypot(w['b']['x'] - b['x'], w['b']['y'] - b['y']) < 50) or (math.hypot(w['a']['x'] - b['x'], w['a']['y'] - b['y']) < 50 and math.hypot(w['b']['x'] - a['x'], w['b']['y'] - a['y']) < 50) for w in walls):
             walls.append({'a': a, 'b': b})
 
@@ -293,8 +293,8 @@ def read_ram_concept(path):
     # surface, 6 = from mid-depth) with the local slab surface / soffit, so heights above the soffit follow
     node_elev = {}
     for r in rows('TendonNode'):
-        thk = L((r.get('Surface') or 0) - (r.get('Soffit') or 0)) or None
-        v = L(r.get('ElevationValue') or 0)
+        thk = _L((r.get('Surface') or 0) - (r.get('Soffit') or 0)) or None
+        v = _L(r.get('ElevationValue') or 0)
         ref = r.get('ElevationReference')
         h = thk - v if ref == 5 and thk else (thk / 2 + v if ref == 6 and thk else v)
         node_elev[r.get('Point0')] = {'h': _round(h), 'ref': ref, 'thickness': thk}
@@ -315,7 +315,7 @@ def read_ram_concept(path):
             continue
         node = start
         seg = first
-        pts = [point(node)]
+        pts = [_point(node)]
         ne = node_elev.get(node)
         heights = [ne['h'] if ne else None]
         thks = [ne['thickness'] if ne else None]
@@ -324,7 +324,7 @@ def read_ram_concept(path):
             used.add(seg['UID'])
             segs_of_tendon.append(seg)
             node = seg.get('TendonNode1') if seg.get('TendonNode0') == node else seg.get('TendonNode0')
-            pts.append(point(node))
+            pts.append(_point(node))
             ne = node_elev.get(node)
             heights.append(ne['h'] if ne else None)
             thks.append(ne['thickness'] if ne else None)
@@ -337,9 +337,9 @@ def read_ram_concept(path):
         tendons.append({
             'id': '', 'spanSet': span_set, 'strands': strands, 'pts': pts, 'length': _round(length), 'segments': len(segs_of_tendon),
             'live': [bool(jack_by_node.get(start)), bool(jack_by_node.get(node))],
-            'jackStress': MPa(jack_ends[0].get('JackStress')) if jack_ends else None,
-            'elongation': _round(sum(L(j.get('Elongation')) for j in jack_ends)) if jack_ends else None,
-            'elongations': [_round(L(jack_by_node[n].get('Elongation'))) if jack_by_node.get(n) else None for n in [start, node]],  # per end (null at a dead end)
+            'jackStress': _MPa(jack_ends[0].get('JackStress')) if jack_ends else None,
+            'elongation': _round(sum(_L(j.get('Elongation')) for j in jack_ends)) if jack_ends else None,
+            'elongations': [_round(_L(jack_by_node[n].get('Elongation'))) if jack_by_node.get(n) else None for n in [start, node]],  # per end (null at a dead end)
             'harped': _truthy(segs_of_tendon[0].get('Harped')),
             # the CGS profile: height above the soffit at every node (null when the model carries none), reverse-curve ratio
             'heights': None if all(h is None for h in heights) else heights,
@@ -348,7 +348,7 @@ def read_ram_concept(path):
             'thickness': (node_elev.get(start) or {}).get('thickness') or None,
         })
     # closed loops (no degree-1 node) are ignored; number tendons per span set
-    strand_area = mm2(strand.get('Aps')) if _truthy(strand.get('Aps')) else 98.7
+    strand_area = _mm2(strand.get('Aps')) if _truthy(strand.get('Aps')) else 98.7
     for s in ['latitude', 'longitude']:
         lst = sorted([t for t in tendons if t['spanSet'] == s], key=(lambda t: t['pts'][0]['y']) if s == 'latitude' else (lambda t: t['pts'][0]['x']))
         for i, t in enumerate(lst):
@@ -364,15 +364,15 @@ def read_ram_concept(path):
         return f"{_S(_js_mod(r.get('ParentUID'), 2))}|{_S(r.get('BarFace'))}|{_S(r.get('SpanDirection'))}|{_S(n)}|{_S(_round(r.get('AbsoluteElevation')))}"
     indiv_by_key = {}
     for b in indiv:
-        k = f"{_S(b.get('BarFace'))}|{_S(b.get('SpanDirection'))}|{len(points(b.get('Point0')))}|{_S(_round(_num(b.get('AbsoluteElevation'))))}"
+        k = f"{_S(b.get('BarFace'))}|{_S(b.get('SpanDirection'))}|{len(_points(b.get('Point0')))}|{_S(_round(_num(b.get('AbsoluteElevation'))))}"
         if k not in indiv_by_key:
             indiv_by_key[k] = []
         indiv_by_key[k].append(b)
     bands = []
     for i, r in enumerate(bands_raw):
         typ = rebar_types.get(r.get('BarType')) or {'dia': 12, 'name': 'T12'}
-        p0, p1 = point(r.get('Point0')), point(r.get('Point1'))
-        left, right = point(r.get('LeftPoint')), point(r.get('RightPoint'))
+        p0, p1 = _point(r.get('Point0')), _point(r.get('Point1'))
+        left, right = _point(r.get('LeftPoint')), _point(r.get('RightPoint'))
         k = f"{_S(r.get('BarFace'))}|{_S(r.get('SpanDirection'))}|{_S(r.get('BarCount'))}|{_S(_round(_num(r.get('AbsoluteElevation'))))}"
         # pick the individual-bar set whose bars lie on this band (closest first-bar midpoint to the band line)
         cands = indiv_by_key.get(k) or []
@@ -380,7 +380,7 @@ def read_ram_concept(path):
         best_d = math.inf
         mid = {'x': (p0['x'] + p1['x']) / 2, 'y': (p0['y'] + p1['y']) / 2}
         for c in cands:
-            a, b = points(c.get('Point0')), points(c.get('Point1'))
+            a, b = _points(c.get('Point0')), _points(c.get('Point1'))
             cm = {'x': 0, 'y': 0}
             for j, p in enumerate(a):
                 bj = b[j] if j < len(b) else {'x': NAN, 'y': NAN}  # (b[j] undefined in JS: NaN)
@@ -391,7 +391,7 @@ def read_ram_concept(path):
                 best = c
         bars = []
         if best:
-            a, b = points(best.get('Point0')), points(best.get('Point1'))
+            a, b = _points(best.get('Point0')), _points(best.get('Point1'))
             bars = [{'a': p, 'b': b[j] if j < len(b) else None} for j, p in enumerate(a)]
         else:
             n = r.get('BarCount')
@@ -403,7 +403,7 @@ def read_ram_concept(path):
         bands.append({
             'id': f'RB{i + 1}', 'face': 'T' if r.get('BarFace') == 1 else 'B', 'dir': r.get('SpanDirection'), 'dia': typ['dia'], 'typeName': typ.get('Name') or f"T{_S(typ['dia'])}",
             'designedBy': 'program' if r.get('DesignedBy') == 2 else 'user',  # RAM: 1 = drawn by the engineer, 2 = generated by the program for a design strip
-            'count': r.get('BarCount'), 'spacing': _round(L(r.get('BarSpacing'))), 'width': _round(dist(left, right)), 'length': length, 'elevation': L(r.get('AbsoluteElevation')),
+            'count': r.get('BarCount'), 'spacing': _round(_L(r.get('BarSpacing'))), 'width': _round(dist(left, right)), 'length': length, 'elevation': _L(r.get('AbsoluteElevation')),
             'ends': [r.get('BarEnd0'), r.get('BarEnd1')], 'bars': bars, 'p0': p0, 'p1': p1, 'matched': bool(best),
         })
 
@@ -411,10 +411,10 @@ def read_ram_concept(path):
     shear = []
     for i, r in enumerate(rows('TransverseRebarRegion')):
         typ = rebar_types.get(r.get('BarType')) or {'dia': 10}
-        shear.append({'id': f'SR{i + 1}', 'a': point(r.get('Point0')), 'b': point(r.get('Point1')), 'dia': typ['dia'], 'legs': r.get('StirrupLegs'), 'spacing': _round(L(r.get('StirrupSpacing'))), 'length': _round(dist(point(r.get('Point0')), point(r.get('Point1'))))})
+        shear.append({'id': f'SR{i + 1}', 'a': _point(r.get('Point0')), 'b': _point(r.get('Point1')), 'dia': typ['dia'], 'legs': r.get('StirrupLegs'), 'spacing': _round(_L(r.get('StirrupSpacing'))), 'length': _round(dist(_point(r.get('Point0')), _point(r.get('Point1'))))})
     # the punching checks carry their settings only (RAM keeps no pass / fail result in the file): the tributary area RAM
     # computed (0.01 mm² → m²) and the cover to the bar centroid feed the office's indicative check (lib/punching.mjs)
-    punching = [{'name': r.get('Name'), 'p': point(r.get('Point0')), 'ssr': r.get('SsrSystem'), 'coverToCgs': L(r.get('CoverToCGS')), 'tribArea': r['AutoTribArea'] / 1e8 if (r.get('AutoTribArea') or 0) > 0 else None, 'ssrDesired': _truthy(r.get('SsrDesignDesired'))} for r in punch_checks]
+    punching = [{'name': r.get('Name'), 'p': _point(r.get('Point0')), 'ssr': r.get('SsrSystem'), 'coverToCgs': _L(r.get('CoverToCGS')), 'tribArea': r['AutoTribArea'] / 1e8 if (r.get('AutoTribArea') or 0) > 0 else None, 'ssrDesired': _truthy(r.get('SsrDesignDesired'))} for r in punch_checks]
     # area loads by loading type (RAM units: N per 0.01 mm² → kN/m² is x 1e5; negative = downwards). The loading layer
     # (self_dead / other_dead / live_*) is reached through the category → loading level → loading layer chain.
     loading_types = {r['UID']: r.get('LoadingType') or _S(r.get('Name') or '').lower() for r in rows('LoadingLayer')}
@@ -427,35 +427,35 @@ def read_ram_concept(path):
         typ = load_cats.get(r.get('ParentUID')) or 'unknown'
         q = -min(r.get('ALFz0') if r.get('ALFz0') is not None else 0, r.get('ALFz1') if r.get('ALFz1') is not None else 0, r.get('ALFz2') if r.get('ALFz2') is not None else 0) * 1e5  # kN/m², downwards positive
         kind = 'live' if re.search(r'live', _S(typ)) else ('dead' if re.search(r'other_dead|dead', _S(typ)) and not re.search(r'self', _S(typ)) else typ)
-        area_loads.append({'type': kind, 'q': _round(q * 100) / 100, 'polygon': clean_polygon(points(r.get('MultiPoint')))})
+        area_loads.append({'type': kind, 'q': _round(q * 100) / 100, 'polygon': clean_polygon(_points(r.get('MultiPoint')))})
     area_loads = [l for l in area_loads if len(l['polygon']) >= 3]
     # stud rail sets (SSR) designed by RAM (or drawn by the user) at the columns that need punching reinforcement:
     # the rails (start / end per rail), the studs per rail and the stud spacing; the office draws its stirrup detail instead
     ssr_systems = by_uid(rows('SsrSystem'))
     ssr = []
     for i, r in enumerate([r for r in rows('SsrSet') if _truthy(r.get('Point0')) and _truthy(r.get('Point1')) and _truthy(r.get('LocationPoint'))]):
-        p0, p1 = points(r.get('Point0')), points(r.get('Point1'))
+        p0, p1 = _points(r.get('Point0')), _points(r.get('Point1'))
         counts = [int(m) for m in re.findall(r'-?\d+', _S(r.get('StudCount')) if _truthy(r.get('StudCount')) else '')]
         sys_ = ssr_systems.get(r.get('SsrSystem')) or {}
-        stud_area = mm2(sys_['StudArea']) if _truthy(sys_.get('StudArea')) else 78.5
+        stud_area = _mm2(sys_['StudArea']) if _truthy(sys_.get('StudArea')) else 78.5
         ssr.append({
-            'id': f'SSR{i + 1}', 'loc': point(r.get('LocationPoint')), 'designedBy': 'program' if r.get('DesignedBy') == 2 else 'user',
-            'first': L(r.get('StudSpacingFirst') or 0), 'typ': L(r.get('StudSpacingTypical') or 0), 'studArea': stud_area, 'studDia': _round(math.sqrt((4 * stud_area) / math.pi)),
+            'id': f'SSR{i + 1}', 'loc': _point(r.get('LocationPoint')), 'designedBy': 'program' if r.get('DesignedBy') == 2 else 'user',
+            'first': _L(r.get('StudSpacingFirst') or 0), 'typ': _L(r.get('StudSpacingTypical') or 0), 'studArea': stud_area, 'studDia': _round(math.sqrt((4 * stud_area) / math.pi)),
             'rails': [{'a': a, 'b': p1[k] if k < len(p1) else a, 'count': (counts[k] if k < len(counts) else 0) or max([0, *counts])} for k, a in enumerate(p0)],
         })
 
     # background DXF geometry imported into RAM (for reference only)
     background = []
     for r in rows('DXFLine'):
-        background.append({'type': 'LINE', 'layer': r.get('CadLayerName'), 'pts': [point(r.get('Point0') or r.get('MultiPoint')), point(r.get('Point1'))]})
+        background.append({'type': 'LINE', 'layer': r.get('CadLayerName'), 'pts': [_point(r.get('Point0') or r.get('MultiPoint')), _point(r.get('Point1'))]})
     for r in rows('DXFPolyline'):
-        background.append({'type': 'PLINE', 'layer': r.get('CadLayerName'), 'pts': points(r.get('MultiPoint'))})
+        background.append({'type': 'PLINE', 'layer': r.get('CadLayerName'), 'pts': _points(r.get('MultiPoint'))})
 
     db.close()
     return {
         'project': {'headings': headings, 'company': headings[0] if len(headings) > 0 else '', 'name': headings[1] if len(headings) > 1 else '', 'part': headings[2] if len(headings) > 2 else '', 'revision': headings[3] if len(headings) > 3 else ''},
-        'materials': {'fc': fc, 'fcu': _round(MPa(concrete.get('FcuFinal'))) if _truthy(concrete.get('FcuFinal')) else None, 'fy': fy, 'coverTop': cover_top, 'coverBot': cover_bot, 'concreteName': concrete.get('Name'), 'rebarTypes': [{'name': t.get('Name'), 'dia': t['dia'], 'area': t['area']} for t in rebar_types.values()]},
-        'pt': {'system': pt_system.get('Name'), 'strandArea': strand_area, 'fpu': MPa(strand.get('Fpu')) if _truthy(strand.get('Fpu')) else None, 'jackStress': MPa(anchor.get('JackStress')) if _truthy(anchor.get('JackStress')) else None, 'strandsPerDuct': duct.get('StrandsPerDuct'), 'ductType': duct.get('PTSystemType'), 'ductWidth': L(duct.get('DuctWidth')) if _truthy(duct.get('DuctWidth')) else None, 'ductHeight': L(duct.get('DuctHeight')) if _truthy(duct.get('DuctHeight')) else None, 'fse': MPa(pt_system.get('Fse')) if _truthy(pt_system.get('Fse')) else None},
+        'materials': {'fc': fc, 'fcu': _round(_MPa(concrete.get('FcuFinal'))) if _truthy(concrete.get('FcuFinal')) else None, 'fy': fy, 'coverTop': cover_top, 'coverBot': cover_bot, 'concreteName': concrete.get('Name'), 'rebarTypes': [{'name': t.get('Name'), 'dia': t['dia'], 'area': t['area']} for t in rebar_types.values()]},
+        'pt': {'system': pt_system.get('Name'), 'strandArea': strand_area, 'fpu': _MPa(strand.get('Fpu')) if _truthy(strand.get('Fpu')) else None, 'jackStress': _MPa(anchor.get('JackStress')) if _truthy(anchor.get('JackStress')) else None, 'strandsPerDuct': duct.get('StrandsPerDuct'), 'ductType': duct.get('PTSystemType'), 'ductWidth': _L(duct.get('DuctWidth')) if _truthy(duct.get('DuctWidth')) else None, 'ductHeight': _L(duct.get('DuctHeight')) if _truthy(duct.get('DuctHeight')) else None, 'fse': _MPa(pt_system.get('Fse')) if _truthy(pt_system.get('Fse')) else None},
         'slab': {'outline': outline, 'holes': holes, 'allLoops': all_loops, 'bodies': bodies, 'tocs': tocs, 'baseThickness': base_thickness, 'thicknesses': [{'thickness': thk, 'elements': n} for thk, n in thicknesses], 'thickZones': thick_zones, 'areas': slab_areas, 'elements': elements},
         'columns': columns, 'walls': walls, 'beams': beams, 'tendons': tendons, 'bands': bands, 'shear': shear, 'punching': punching, 'ssr': ssr, 'areaLoads': area_loads, 'background': background,
     }
@@ -515,7 +515,7 @@ def tendon_extremes(t):
 
 
 # ---------------------------------------------------------------- to the generator's model
-def rot(p, c, a):
+def _rot(p, c, a):
     s, k = math.sin(a), math.cos(a)
     x, y = p['x'] - c['x'], p['y'] - c['y']
     return {'x': c['x'] + x * k - y * s, 'y': c['y'] + x * s + y * k}
@@ -618,14 +618,14 @@ def ram_to_model(ram, level_name='1ST FLOOR', level_id=None, spec=None):
         # the plan on the sheet (`spec.rotate`): 'auto' turns a plan that stands taller than wide by 90° so that its long
         # side lies along the landscape sheet (a plan that would not fit fits, or fits at a larger scale); 0 / 90 force it
         # (judged body by body: each body is its own plan on its own sheets)
-        bb0 = bbox([rot(p, c0, -(angle_cols * math.pi) / 180) for p in body])
+        bb0 = bbox([_rot(p, c0, -(angle_cols * math.pi) / 180) for p in body])
         rot_opt = _S(spec_overrides.get('rotate') if spec_overrides.get('rotate') is not None else 'auto')
         turn = 90 if rot_opt == '90' else (0 if rot_opt == '0' else (90 if bb0['h'] > bb0['w'] * 1.05 else 0))
         angle_deg = angle_cols + turn
         theta = -(angle_deg * math.pi) / 180
 
         def R(p):
-            return rot(p, c0, theta)
+            return _rot(p, c0, theta)
         outline = [R(p) for p in body]
         areas_in = sorted([{**a, 'area': abs(polygon_area(a['polygon']))} for a in ram['slab']['areas'] if inside(centroid(a['polygon']), body)], key=lambda a: a['area'], reverse=True)
         by_thk = {}
