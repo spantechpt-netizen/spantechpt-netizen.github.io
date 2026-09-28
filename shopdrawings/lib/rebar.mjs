@@ -380,16 +380,20 @@ export function edgeHasBeam(level, a, b) {
 }
 function centroidOf(poly) { let x = 0, y = 0; for (const p of poly) { x += p.x; y += p.y; } return { x: x / (poly.length || 1), y: y / (poly.length || 1) }; }
 
-export function edgeRunsBetweenColumns(level, a, b, h) {
+export function edgeRunsBetweenColumns(level, a, b, h, bandOf) {
   const L = dist(a, b) || 1;
   const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
   const cuts = [];
-  for (const c of level.columns) {
+  const supports = [...level.columns, ...(level.walls || []).filter((w) => w.polygon && w.t && !w.core).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true }))];
+  for (const c of supports) {
     const t = (c.cx - a.x) * ux + (c.cy - a.y) * uy;
     const off = Math.abs((c.cx - a.x) * -uy + (c.cy - a.y) * ux);
     const size = c.shape === 'circle' ? c.d : Math.max(c.w, c.h);
-    if (t < -size || t > L + size || off > Math.max(size, 1000)) continue; // not a column on this edge
-    const band = (c.shape === 'circle' ? c.d : (Math.abs(ux) > 0.7 ? c.w : c.h)) + 3 * h; // c2 + 1.5h each side
+    const reach = Math.max(size, 1000, (bandOf && bandOf(c, 'across')) || 0) / 2 + 500;
+    if (t < -size || t > L + size || off > reach) continue; // not a support on this edge
+    const along = Math.abs(ux) > 0.7 ? 'x' : 'y';
+    // the perimeter bars stop where the support's bars along the edge are (their group width), else at c2 + 1.5h each side
+    const band = (bandOf && bandOf(c, along)) || (c.shape === 'circle' ? c.d : (along === 'x' ? c.w : c.h)) + 3 * h;
     cuts.push([t - band / 2, t + band / 2]);
   }
   return subtractIntervals([[0, L]], cuts).filter(([p, q]) => q - p > 300);
@@ -447,7 +451,10 @@ export function topAtColumns(level, spec) {
         const beyond = s.minBeyond ?? 1500;
         Lint = Math.max(Lint, ceilTo(c1 + 2 * beyond, 10));
         const half = (Lint - c1) / 2;
-        const edgeSign = [-1, 1].find((sg) => toEdges[sg] - c1 / 2 < half);
+        // an edge column: the bar would reach the slab edge, or end inside the perimeter U-bar zone (the U-bar's top
+        // leg from the edge): then it runs to the edge and ends in the U, and the perimeter U-bars stop before / after it
+        const uZone = spec.uEdge?.total ? Math.max(0, (spec.uEdge.total - (h - 2 * cover)) / 2) : 1200;
+        const edgeSign = [-1, 1].find((sg) => toEdges[sg] - c1 / 2 - half < uZone);
         if (edgeSign == null) { ext[-1] = half; ext[1] = half; }
         else {
           const other = -edgeSign;

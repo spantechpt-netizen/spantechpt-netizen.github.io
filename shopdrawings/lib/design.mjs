@@ -685,19 +685,32 @@ export function designAdditions(level, spec, opts = {}) {
   const su = spec.uEdge;
   const web = h - 2 * cover;
   const uLegTop = ceilTo((su.total - web) / 2, 10);
-  for (const e of (level.edges || []).filter((x) => !x.joint)) {
-    // the edge as a path (one facet for a straight edge, several for a curved one), runs in arc length
-    const pts = e.pts || [e.a, e.b];
+  // the column / wall bar groups along the edge decide where the perimeter bars stop (the U-bars run before and after them)
+  const tcRes = R.topAtColumns(level, spec);
+  const bandOf = (c, dir) => { const r = tcRes.columns.find((x) => x.col.id === c.id); if (!r) return 0; const g = dir === 'across' ? Math.max(r.per.x.straight, r.per.y.straight) : r.per[dir].straight; return g; };
+  // consecutive slab edges of one kind (free / beam) form one chain: one long indication line and one bar symbol
+  // every `perimSpan` along the whole chain, instead of a symbol per facet
+  const edgesIn = (level.edges || []).filter((x) => !x.joint);
+  const chains = [];
+  for (const e of edgesIn) {
+    const last = chains[chains.length - 1];
+    if (last && last.beam === !!e.beam && dist(last.pts[last.pts.length - 1], e.a) < 1) { last.pts.push(...(e.pts || [e.a, e.b]).slice(1)); continue; }
+    chains.push({ beam: !!e.beam, pts: [...(e.pts || [e.a, e.b])] });
+  }
+  if (chains.length > 1) { const f = chains[0], l = chains[chains.length - 1]; if (f.beam === l.beam && dist(l.pts[l.pts.length - 1], f.pts[0]) < 1) { l.pts.push(...f.pts.slice(1)); chains.shift(); } }
+  for (const e of chains) {
+    const pts = e.pts;
     const facets = [];
     let s0 = 0;
-    for (let i = 0; i + 1 < pts.length; i++) { const L = dist(pts[i], pts[i + 1]); facets.push({ a: pts[i], b: pts[i + 1], s0, L }); s0 += L; }
+    for (let i = 0; i + 1 < pts.length; i++) { const L = dist(pts[i], pts[i + 1]); if (L < 1) continue; facets.push({ a: pts[i], b: pts[i + 1], s0, L }); s0 += L; }
+    if (!facets.length) continue;
     const at = (sv) => { const f = facets.find((x) => sv <= x.s0 + x.L) || facets[facets.length - 1]; const u = unit(f.a, f.b); return { p: add(f.a, u, sv - f.s0), u, f }; };
     const runs = [];
-    for (const f of facets) for (const [t1, t2] of R.edgeRunsBetweenColumns(level, f.a, f.b, h)) {
+    for (const f of facets) for (const [t1, t2] of R.edgeRunsBetweenColumns(level, f.a, f.b, h, bandOf)) {
       const last = runs[runs.length - 1];
       if (last && Math.abs(last[1] - (f.s0 + t1)) < 1) last[1] = f.s0 + t2; else runs.push([f.s0 + t1, f.s0 + t2]);
     }
-    // the bar schedule counts every run between the column top bars ...
+    // the bar schedule counts every run between the column bars ...
     const zoneOf = (t1, t2) => gridRef(level, bbox([at(t1).p, at(t2).p]));
     for (const [t1, t2] of runs) {
       const len = t2 - t1;
@@ -709,8 +722,9 @@ export function designAdditions(level, spec, opts = {}) {
     // ... but the plan shows one long indication line offset inside the edge and one bar symbol every `perimSpan`
     if (!runs.length) continue;
     const total = s0;
+    const fpts = [facets[0].a, ...facets.map((f) => f.b)];
     const nInAt = (i) => { const f0 = facets[Math.max(0, i - 1)], f1 = facets[Math.min(facets.length - 1, i)]; const n0 = inward(f0.a, f0.b, outline), n1 = inward(f1.a, f1.b, outline); return unit({ x: 0, y: 0 }, { x: n0.x + n1.x, y: n0.y + n1.y }); };
-    const ind = pts.map((p, i) => add(p, nInAt(i), PERIM_DIM_IN));
+    const ind = fpts.map((p, i) => add(p, nInAt(i), PERIM_DIM_IN));
     const span = spec.perimSpan || 12000;
     const nSym = Math.max(1, Math.round(total / span));
     for (let k = 0; k < nSym; k++) {
