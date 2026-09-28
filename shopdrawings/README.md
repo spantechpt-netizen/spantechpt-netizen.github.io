@@ -97,7 +97,7 @@ design plan (the RFT drawing as the design team draws it) and the rules of the o
 for PT / flat slabs. Everything the designer drew is kept exactly as drawn (bars, call-outs, distribution
 dimensions, dots, mesh labels, camber notes, level tags), and the reinforcement the General Details ask for is added
 on the plan at the places each detail refers to, in the **same bar convention**: one line on `REO-TOP` / `REO-BOT`,
-the call-out `T10-200 (T)` over `L=2400` in text style `BW` (isocp.shx) h = 150 parallel to the bar, the
+the call-out `T10-200 (T)` stacked over `L=2400` on one side of the bar, both starting at the same point (left-aligned in the reading direction), in text style `BW` (isocp.shx) h = 150 parallel to the bar, the
 distribution width as a **real DIMENSION entity in the office style `DIM100`** (text 250, oblique ticks 150, green
 number, text above the line, and no extension lines at all — `DIMSE1/DIMSE2` on, `DIMEXE` 0), and a yellow dot where
 the bar meets it. The designer's own DIMENSIONs are re-emitted the same way. Every added bar carries a circled `D#`

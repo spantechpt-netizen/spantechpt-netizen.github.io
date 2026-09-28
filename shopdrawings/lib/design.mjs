@@ -1469,12 +1469,21 @@ export function officeBar(pl, S, it, phase) {
   const sideways = L < 2500 ? [0, 600, -600, 1200, -1200, 1800, -1800, 2400, -2400] : [0];
   const cands = []; for (const j of sideways) for (const k of shifts) for (const sd of [side, -side]) cands.push({ k, sd, j });
   const gap = it.hairpin ? 150 : 60; // a hairpin's second leg sits 150 beside the axis: the call-out on that side clears it
-  // the call-out sits on the `sd` side of the bar, the length on the other side; each text is aligned so that it
-  // grows away from the bar: the text's "up" is +n when the reading direction follows the bar, -n when it is flipped
-  const away = (sg) => (sg * flip > 0 ? 'B' : 'T');
-  const pair = ({ k, sd, j = 0 }) => { const mm = add(add(m0, u, k), n, j); const t1 = add(mm, n, sd * 60), t2 = add(mm, n, -sd * (sd > 0 ? gap + 60 : 60)); return [[t1, it.l1, CALL_H, away(sd)], [t2, it.l2, LEN_H, away(-sd)]]; };
-  const best = placer ? placer.pick(cands, (c) => pair(c).map(([p, str, h, va]) => textBox(p, str, h, rot, 'C', va, 0.8))) : { k: 0, sd: side, j: 0 };
-  for (const [p, str, h, va] of pair(best)) pl.text(p, str, { ...to, h: h / S, valign: va });
+  // office convention: the two texts sit together on the `sd` side of the bar, the bar call-out ("T12-150 (B)")
+  // above the length ("L=5340") in the reading direction, both starting at the same point (left-aligned).
+  // The text's "up" on the page is +n when the reading direction follows the bar, -n when it is flipped: on the
+  // text-up side the length is nearer the bar and the call-out stacks above it; on the text-down side the call-out
+  // is nearer the bar and the length hangs under it.
+  const wMax = Math.max(String(it.l1).length, String(it.l2).length) * CALL_H * TEXT_W * 0.8;
+  const pair = ({ k, sd, j = 0 }) => {
+    const mm = add(add(add(m0, u, k), n, j), u, -flip * wMax / 2); // the common start (reading-left) of both lines
+    const base = sd < 0 ? gap + 60 : 60;
+    const up = sd * flip > 0; // this side is the text's "up"
+    const near = add(mm, n, sd * base), far = add(mm, n, sd * (base + CALL_H + 50));
+    return up ? [[far, it.l1, CALL_H, 'B', 'L'], [near, it.l2, LEN_H, 'B', 'L']] : [[near, it.l1, CALL_H, 'T', 'L'], [far, it.l2, LEN_H, 'T', 'L']];
+  };
+  const best = placer ? placer.pick(cands, (c) => pair(c).map(([p, str, h, va, al]) => textBox(p, str, h, rot, al, va, 0.8))) : { k: 0, sd: side, j: 0 };
+  for (const [p, str, h, va, al] of pair(best)) pl.text(p, str, { ...to, h: h / S, valign: va, align: al });
   const m = add(add(m0, u, best.k), n, best.j || 0);
   if (it.detail && !it.noTag) {
     const tagAt = (k, sg) => add(add(add(m0, u, k), n, best.j || 0), n, sg * 520);
