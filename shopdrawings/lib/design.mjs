@@ -634,9 +634,9 @@ export function designAdditions(level, spec, opts = {}) {
       const m = mid(a, b);
       // (a point inside the hull of a U / L shaped wall is the core it encloses, not the slab)
       const hull = convexHull(poly);
-      const slabSide = (p) => inSlab(p) && !pointInPolygon(p, hull);
-      const s1 = add(m, n, 600), s2 = add(m, n, -600);
-      const dirOut = slabSide(s1) ? 1 : slabSide(s2) ? -1 : 0;
+      // the face must open directly onto the slab: just off the face (150) is neither wall nor core, and 600 away is slab
+      const slabSide = (sg) => { const q = add(m, n, sg * 150); return !pointInPolygon(q, poly) && !pointInPolygon(q, hull) && inSlab(add(m, n, sg * 600)); };
+      const dirOut = slabSide(1) ? 1 : slabSide(-1) ? -1 : 0;
       if (!dirOut) continue;
       const nOut = { x: n.x * dirOut, y: n.y * dirOut };
       // LA follows the designer's wall top bar length next to this face when there is one
