@@ -141,52 +141,52 @@
     "REBAR": {
       "name": "SPAN-RB",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-B1": {
       "name": "SPAN-RB-B1",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-B2": {
       "name": "SPAN-RB-B2",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-T1": {
       "name": "SPAN-RB-T1",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-T2": {
       "name": "SPAN-RB-T2",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-BOT": {
       "name": "SPAN-RB-BOT",
       "color": 1,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-TOP": {
       "name": "SPAN-RB-TOP",
       "color": 5,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-U": {
       "name": "SPAN-RB-UBAR",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-TRIM": {
       "name": "SPAN-RB-TRIM",
       "color": 6,
-      "lw": 50
+      "lw": 20
     },
     "REBAR-PUNCH": {
       "name": "SPAN-RB-PUNCH",
       "color": 6,
-      "lw": 35
+      "lw": 20
     },
     "REBAR-EXTENT": {
       "name": "SPAN-RB-RANGE",

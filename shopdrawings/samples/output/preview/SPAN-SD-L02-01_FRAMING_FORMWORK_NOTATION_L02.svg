@@ -243,9 +243,9 @@
 <path d="M20550 -41650 L24550 -41650 L24550 -44650 L20550 -44650 Z" stroke="#ff8c1a" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44"/>
 <path d="M20550 -41650 L24550 -41650 L24550 -44650 L20550 -44650 Z" fill="url(#hp0)" fill-rule="evenodd" stroke="none" opacity="0.9"/>
 <text x="22550" y="-44850" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#ff8c1a" transform="rotate(0 22550 -44850)">V1 VOID 4,000 x 3,000</text>
-<circle cx="44550" cy="-28650" r="1200" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
+<circle cx="44550" cy="-28650" r="1200" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
 <text x="44550" y="-26750" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e13cd6" transform="rotate(0 44550 -26750)">R1 U-BAR REGION Ø2,400</text>
-<circle cx="22550" cy="-28650" r="900" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
+<circle cx="22550" cy="-28650" r="900" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
 <text x="22550" y="-27050" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e13cd6" transform="rotate(0 22550 -27050)">R2 U-BAR REGION Ø1,800</text>
 <text x="17850" y="-22450" font-size="358.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 17850 -22450)" font-weight="bold">PT FLAT SLAB TH=220mm</text>
 <circle cx="31750" cy="-39850" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -274,8 +274,8 @@
 <path d="M11233.333333333332 -3760 L13633.333333333332 -3760 L13633.333333333332 -7360 L11233.333333333332 -7360 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M11233.333333333332 -3760 L13633.333333333332 -3760 L13633.333333333332 -7360 L11233.333333333332 -7360 Z" fill="url(#hp2)" fill-rule="evenodd" stroke="none" opacity="0.9"/>
 <path d="M6433.333333333332 -8108 L18433.333333333332 -8108" stroke="#3a6cff" stroke-width="55.690" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<line x1="6433.333333333332" y1="-8008" x2="6433.333333333332" y2="-8208" stroke="#3a6cff" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<line x1="18433.333333333332" y1="-8008" x2="18433.333333333332" y2="-8208" stroke="#3a6cff" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="6433.333333333332" y1="-8008" x2="6433.333333333332" y2="-8208" stroke="#3a6cff" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="18433.333333333332" y1="-8008" x2="18433.333333333332" y2="-8208" stroke="#3a6cff" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <line x1="5273.333333333332" y1="-7484" x2="19593.333333333332" y2="-7484" stroke="#ff2b2b" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M5033.333333333332 -7640 L11233.333333333332 -7960 L13633.333333333332 -7960 L19833.333333333332 -7640" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44"/>
 <line x1="6433.333333333332" y1="-8240" x2="6433.333333333332" y2="-9090" stroke="#8a8a8a" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
@@ -323,7 +323,7 @@
 <text x="29740" y="-6500" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 29740 -6500)">VOID / ACUAR FORMER ZONE</text>
 <line x1="26700" y1="-5780" x2="29100" y2="-5780" stroke="#1ec8d8" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44,90.41,542.44"/>
 <text x="29740" y="-5580" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 29740 -5580)">PT SLAB ZONE BOUNDARY</text>
-<line x1="26700" y1="-4860" x2="29100" y2="-4860" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="26700" y1="-4860" x2="29100" y2="-4860" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="29740" y="-4660" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 29740 -4660)">U-BAR REGION (CIRCULAR)</text>
 <line x1="26700" y1="-3940" x2="29100" y2="-3940" stroke="#8a8a8a" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="2712.18,542.44,542.44,542.44"/>
 <text x="29740" y="-3740" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 29740 -3740)">GRID LINE</text>
@@ -336,14 +336,14 @@
 <path d="M48566.666666666664 -5920 L62166.666666666664 -5920 L62166.666666666664 -7680 L48566.666666666664 -7680 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M48566.666666666664 -5920 L62166.666666666664 -5920 L62166.666666666664 -7680 L48566.666666666664 -7680 Z" fill="url(#hp5)" fill-rule="evenodd" stroke="none" opacity="0.9"/>
 <path d="M58166.666666666664 -6168 L48814.666666666664 -6168 L48814.666666666664 -7432 L58166.666666666664 -7432" stroke="#e13cd6" stroke-width="55.690" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<line x1="58166.666666666664" y1="-6168" x2="58166.666666666664" y2="-6168" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<line x1="58166.666666666664" y1="-6168" x2="58166.666666666664" y2="-6168" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<line x1="58166.666666666664" y1="-7432" x2="58166.666666666664" y2="-7432" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<line x1="58166.666666666664" y1="-7432" x2="58166.666666666664" y2="-7432" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="49070.666666666664" cy="-6296" r="48" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="49790.666666666664" cy="-6296" r="48" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="49070.666666666664" cy="-7304" r="48" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-<circle cx="49790.666666666664" cy="-7304" r="48" stroke="#e13cd6" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="58166.666666666664" y1="-6168" x2="58166.666666666664" y2="-6168" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="58166.666666666664" y1="-6168" x2="58166.666666666664" y2="-6168" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="58166.666666666664" y1="-7432" x2="58166.666666666664" y2="-7432" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="58166.666666666664" y1="-7432" x2="58166.666666666664" y2="-7432" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="49070.666666666664" cy="-6296" r="48" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="49790.666666666664" cy="-6296" r="48" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="49070.666666666664" cy="-7304" r="48" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="49790.666666666664" cy="-7304" r="48" stroke="#e13cd6" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M48566.666666666664 -6080 L50646.666666666664 -6080 L50646.666666666664 -7520 L48566.666666666664 -7520 Z" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
 <text x="50966.666666666664" y="-6640" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#22b14c" transform="rotate(0 50966.666666666664 -6640)">PT ANCHORAGE</text>
 <path d="M50646.666666666664 -6800 L62166.666666666664 -6560" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1084.87,542.44"/>

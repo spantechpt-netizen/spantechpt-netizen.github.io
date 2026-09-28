@@ -260,10 +260,15 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides =
       id: `L${String(i + 1).padStart(2, '0')}`, name: `${levelName} - BODY ${i + 1}`, rotation: angleDeg,
       thickness: bodyThickness, outline, bbox: bbox(outline),
       columns: cols.map((c, j) => { const p = R({ x: c.cx, y: c.cy }); return { ...c, id: `C${j + 1}`, cx: p.x, cy: p.y, angle: Math.round(((c.angle - angleDeg) % 180 + 180) % 180 * 10) / 10 }; }),
-      openings: holes.map((h, j) => ({ id: `O${j + 1}`, kind: 'polygon', polygon: h.map(R) })),
+      // (a hole in the RAM mesh has a vertex at every element node: the collinear ones are dropped so that a long
+      // void side is one side, with one U-bar symbol and one call-out)
+      openings: holes.map((h, j) => ({ id: `O${j + 1}`, kind: 'polygon', polygon: simplifyPolygon(h.map(R), 30) })),
       voids: [], sunken: [], stairs: [], beams: [],
       walls: ram.walls.flatMap((w) => clipSegmentToPolygon(w.a, w.b, body).map((seg) => [...seg, w.t])).filter(([a, b]) => Math.hypot(b.x - a.x, b.y - a.y) > 50).map(([a, b, t]) => ({ a: R(a), b: R(b), t })),
-      thickZones: areasIn.filter((a) => a.thickness > bodyThickness + 1).map((a, j) => ({ id: `Z${j + 1}`, thickness: a.thickness, polygon: a.polygon.map(R) })),
+      thickZones: areasIn.filter((a) => a.thickness > bodyThickness + 1 && a.behaviour !== 'custom').map((a, j) => ({ id: `Z${j + 1}`, thickness: a.thickness, polygon: a.polygon.map(R) })),
+      // a slab area of "custom" behaviour no wider than 1.5 m is a pour (infill) strip: the office's pour strip detail applies
+      pourStrips: areasIn.filter((a) => a.behaviour === 'custom' && Math.min(bbox(a.polygon).w, bbox(a.polygon).h) <= 1500).map((a, j) => { const b = bbox(a.polygon); return { id: `PS${j + 1}`, polygon: a.polygon.map(R), width: Math.min(b.w, b.h), length: Math.max(b.w, b.h) }; }),
+      customZones: areasIn.filter((a) => a.behaviour === 'custom' && Math.min(bbox(a.polygon).w, bbox(a.polygon).h) > 1500).map((a) => ({ polygon: a.polygon.map(R), thickness: a.thickness })),
       ubar: { edges: 'all', circles: [] },
       pt: { zones: [{ id: 'PT1', polygon: outline }], tendons: [] }, // the whole body is post-tensioned
       ram: {
@@ -288,7 +293,8 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', spec: specOverrides =
       const gx = level.grid.x.find((g) => Math.abs(g.x - c.cx) < 400), gy = level.grid.y.find((g) => Math.abs(g.y - c.cy) < 400);
       if (gx && gy) c.id = `${gx.label}/${gy.label}`;
     });
-    findings.push(`${level.id} ${level.name}: ${Math.round(Math.abs(polygonArea(outline)) / 1e6)} m², ${level.columns.length} columns, ${level.walls.length} wall segments, ${level.thickZones.length} thickened zones, ${level.ram.bands.length} designed bar bands, ${level.ram.tendons.length} tendons, ${level.openings.length} openings${angleDeg ? `, rotated ${angleDeg}° to its local frame` : ''}.`);
+    findings.push(`${level.id} ${level.name}: ${Math.round(Math.abs(polygonArea(outline)) / 1e6)} m², ${level.columns.length} columns, ${level.walls.length} wall segments, ${level.thickZones.length} thickened zones, ${level.pourStrips.length} pour strips, ${level.ram.bands.length} designed bar bands, ${level.ram.tendons.length} tendons, ${level.openings.length} openings${angleDeg ? `, rotated ${angleDeg}° to its local frame` : ''}.`);
+    if (level.customZones.length) assumptions.push({ level: level.id, text: `${level.customZones.length} slab area(s) of "custom" behaviour wider than 1.5 m in ${level.name} (${level.customZones.map((z) => `${Math.round(bbox(z.polygon).w / 1000)} x ${Math.round(bbox(z.polygon).h / 1000)} m`).join(', ')}) are drawn as slab; if one is a pour strip or a ramp, set it on the plan.` });
     if (angleDeg) assumptions.push({ level: level.id, text: `Body ${i + 1} is rotated ${angleDeg}° on the site; the plan is drawn in its local frame (north arrow rotated accordingly).` });
     assumptions.push({ level: level.id, text: 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.' });
     return level;

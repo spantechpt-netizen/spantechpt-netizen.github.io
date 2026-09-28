@@ -97,9 +97,20 @@
     },
     "drops": {
       "dia": 12,
-      "spacing": 150
+      "spacing": 150,
+      "leg": 500
     },
     "barOffset": 500,
+    "pourStrip": {
+      "dia": 16,
+      "spacing": 200,
+      "length": 3000,
+      "uDia": 12,
+      "uSpacing": 200,
+      "uTotal": 2400,
+      "longDia": 12,
+      "longSpacing": 150
+    },
     "blockBeam": {
       "dia": 16,
       "count": 2,

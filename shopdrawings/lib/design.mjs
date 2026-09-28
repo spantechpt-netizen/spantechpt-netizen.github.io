@@ -36,8 +36,8 @@ export const DIM100 = { txt: 250, asz: 150, tsz: 150, exo: 0, exe: 0, gap: 70, t
 
 // ------------------------------------------------------------------ office convention
 export const OFFICE_LAYERS = {
-  'REO-TOP': { color: 6, ltype: 'HIDDEN' },
-  'REO-BOT': { color: 3, ltype: 'CONTINUOUS' },
+  'REO-TOP': { color: 6, ltype: 'HIDDEN', lw: 20 }, // reinforcement always 0.20 mm: it stands out among the plan lines
+  'REO-BOT': { color: 3, ltype: 'CONTINUOUS', lw: 20 },
   'REO-TXT': { color: 7, ltype: 'CONTINUOUS' },
   'S-TEXT': { color: 7, ltype: 'CONTINUOUS' },
   diamension: { color: 1, ltype: 'CONTINUOUS' },
@@ -48,6 +48,7 @@ export const OFFICE_LAYERS = {
   'DETAIL-REF': { color: 5, ltype: 'CONTINUOUS' },
   'PS-TAG': { color: 1, ltype: 'CONTINUOUS' },
   'PS-ROW': { color: 8, ltype: 'CONTINUOUS' },
+  'REBAR-PUNCH': { color: 6, ltype: 'CONTINUOUS', lw: 20 },
   's-hatch': { color: 8, ltype: 'CONTINUOUS' }, // the office's column fill: solid grey
 };
 export const OFFICE_TEXT_STYLE = { name: 'BW', font: 'isocp.shx', widthFactor: 0.8 };
@@ -62,6 +63,7 @@ export const DETAILS = {
   D5: 'TYPICAL SLAB DETAIL AT CORE WALL AND SLAB CORNERS',
   D6: 'TYPICAL SLAB EDGE REINFORCEMENT DETAIL (U.N.O.) - FREE EDGE U-BARS',
   D7: 'TYPICAL MEP VOID DETAIL',
+  D8: 'TYPICAL POUR STRIP DETAIL (PT DETAILS 3)',
   D9: 'TYPICAL BLOCKWORK SUPPORT BEAM DETAIL THROUGH VOID',
   D12: 'TYPICAL PUNCHING DETAIL (PS TYPES: ROWS - LEGS - BAR)',
 };
@@ -315,6 +317,7 @@ function splitLevels(model, spec) {
         walls: (level.walls || []).flatMap((w) => (w.polygon ? [w].filter(() => band(centroid(w.polygon))) : clipSegmentToPolygon(w.a, w.b, outline).filter(([a, bb]) => dist(a, bb) > 50).map(([a, bb]) => ({ ...w, a, b: bb })))),
         openings: clipPolys((level.openings || []).map((o) => ({ ...o, kind: 'polygon', polygon: R.regionPolygon(o) }))),
         thickZones: clipPolys(level.thickZones || []),
+        pourStrips: clipPolys(level.pourStrips || []).map((ps) => { const b = bbox(ps.polygon); return { ...ps, width: Math.min(b.w, b.h), length: Math.max(b.w, b.h) }; }),
         ram: {
           ...ram,
           bands: (ram.bands || []).filter((bd) => band(mid(bd.p0, bd.p1))),
@@ -691,7 +694,14 @@ function clipToSlab(level, items, spec = {}) {
     const seg = longest(it.a, it.b);
     if (!seg) continue;
     const cutA = dist(seg[0], it.a) > 1, cutB = dist(seg[1], it.b) > 1;
-    if ((cutA && !atJoint(seg[0])) || (cutB && !atJoint(seg[1]))) { it.a = cutA && !atJoint(seg[0]) ? seg[0] : it.a; it.b = cutB && !atJoint(seg[1]) ? seg[1] : it.b; it.clipped = true; }
+    if ((cutA && !atJoint(seg[0])) || (cutB && !atJoint(seg[1]))) {
+      const oldL = dist(it.a, it.b);
+      it.a = cutA && !atJoint(seg[0]) ? seg[0] : it.a; it.b = cutB && !atJoint(seg[1]) ? seg[1] : it.b; it.clipped = true;
+      // the written length follows the drawn bar (an edge drop's bar stops at the slab edge with its leg)
+      const newL = dist(it.a, it.b);
+      if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(newL)}`;
+      if (it.length) it.length = Math.round(it.length - (oldL - newL));
+    }
     if (clipAtOpenings(level, it, uAllow) === null) continue;
     if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
     // the distribution never runs into an opening: it stops before it (the piece at the bar is kept)
@@ -950,8 +960,9 @@ export function designAdditions(level, spec, opts = {}) {
         const s0 = Math.max(-L / 2 + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700)); // clear of the crossing bar beside the column
         const dp = dir === 'x' ? { x: cc.x + s0, y: cc.y - W / 2 } : { x: cc.x - W / 2, y: cc.y + s0 };
         const dq = dir === 'x' ? { x: cc.x + s0, y: cc.y + W / 2 } : { x: cc.x + W / 2, y: cc.y + s0 };
-        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc });
-        addBar('B', { dia: sd.dia, shape: 'STR', length: L, qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
+        // the drop bar is drawn with its two 500 legs (the bend up out of the drop at each end)
+        items.push({ detail: 'D4', face: 'B', a, b: bb, l1: `T${sd.dia}-${sd.spacing} (B)`, l2: `L=${L}`, dist: { p: dp, q: dq }, posCands: barOffsets(spec, size[across], W), side: 1, zone, noTag: dir === 'y', keep: cc, crank: sd.leg || 500 });
+        addBar('B', { dia: sd.dia, shape: `CRANK ${sd.leg || 500}`, length: L + 2 * (sd.leg || 500), qty: Math.floor(W / sd.spacing) + 1, spacing: sd.spacing, zone: `${zone} ${dir.toUpperCase()}` });
       }
       continue;
     }
@@ -960,10 +971,10 @@ export function designAdditions(level, spec, opts = {}) {
     const runX = { a: { x: b.minX - ext, y: b.minY + b.h * 0.42 }, b: { x: b.maxX + ext, y: b.minY + b.h * 0.42 } };
     const runY = { a: { x: b.minX + b.w * 0.62, y: b.minY - ext }, b: { x: b.minX + b.w * 0.62, y: b.maxY + ext } };
     const Lx = Math.round(runX.b.x - runX.a.x), Ly = Math.round(runY.b.y - runY.a.y);
-    items.push({ detail: 'D4', face: 'B', a: runX.a, b: runX.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Lx}`, dist: { p: { x: b.minX + b.w * 0.35, y: b.minY }, q: { x: b.minX + b.w * 0.35, y: b.maxY } }, side: 1, zone: `${z.id} ${gridRef(level, b)}` });
-    items.push({ detail: 'D4', face: 'B', a: runY.a, b: runY.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Ly}`, dist: { p: { x: b.minX, y: b.minY + b.h * 0.72 }, q: { x: b.maxX, y: b.minY + b.h * 0.72 } }, side: -1, noTag: true });
-    addBar('B', { dia: sd.dia, shape: 'STR', length: Lx, qty: Math.floor(b.h / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
-    addBar('B', { dia: sd.dia, shape: 'STR', length: Ly, qty: Math.floor(b.w / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
+    items.push({ detail: 'D4', face: 'B', a: runX.a, b: runX.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Lx}`, dist: { p: { x: b.minX + b.w * 0.35, y: b.minY }, q: { x: b.minX + b.w * 0.35, y: b.maxY } }, side: 1, zone: `${z.id} ${gridRef(level, b)}`, crank: sd.leg || 500 });
+    items.push({ detail: 'D4', face: 'B', a: runY.a, b: runY.b, l1: `T${sd.dia}-${sd.spacing} (B) EXTRA`, l2: `L=${Ly}`, dist: { p: { x: b.minX, y: b.minY + b.h * 0.72 }, q: { x: b.maxX, y: b.minY + b.h * 0.72 } }, side: -1, noTag: true, crank: sd.leg || 500 });
+    addBar('B', { dia: sd.dia, shape: `CRANK ${sd.leg || 500}`, length: Lx + 2 * (sd.leg || 500), qty: Math.floor(b.h / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
+    addBar('B', { dia: sd.dia, shape: `CRANK ${sd.leg || 500}`, length: Ly + 2 * (sd.leg || 500), qty: Math.floor(b.w / sd.spacing) + 1, spacing: sd.spacing, zone: `D4 ${z.id}` });
   }
 
   // ---- D5 corners: convex wall corners inside the slab (3T16) and re-entrant slab corners (3T12)
@@ -1089,6 +1100,43 @@ export function designAdditions(level, spec, opts = {}) {
     }
     addBar('T', { dia: row.diag, shape: 'DIAG 45', length: 2000, qty: 4, zone: `${zone} G3 (45°)` });
     addBar('B', { dia: row.diag, shape: 'DIAG 45', length: 2000, qty: 4, zone: `${zone} G3 (45°)` });
+  }
+
+  // ---- D8 pour (infill) strips: the office's pour strip detail (PT details 3): ADD T16@200 straight bars 3 m long top
+  // and bottom across the strip, U-bars T12@200 (2400 total) from each face into the strip, T12@150 along the strip
+  // top and bottom (fixed before the infill pour)
+  const sp8 = spec.pourStrip || R.DEFAULT_SPEC.pourStrip;
+  for (const ps of level.pourStrips || []) {
+    const b = bbox(ps.polygon);
+    const along = b.w >= b.h ? { x: 1, y: 0 } : { x: 0, y: 1 }, acr = perp(along);
+    const Ls = Math.max(b.w, b.h), Ws = Math.min(b.w, b.h);
+    const c = { x: b.cx, y: b.cy };
+    const ref = gridRef(level, b);
+    const zone = `D8 ${ps.id} ${ref}`;
+    const nAcross = Math.floor(Ls / sp8.spacing) + 1;
+    // straight bars across the strip, top and bottom, one symbol each at 35 % along, distributed over the strip length
+    const at = add(c, along, -Ls * 0.15);
+    const half = sp8.length / 2;
+    const distP = add(c, along, -Ls / 2), distQ = add(c, along, Ls / 2);
+    const dOff = Ws / 2 + 400;
+    items.push({ detail: 'D8', face: 'T', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (T)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at });
+    items.push({ detail: 'D8', face: 'B', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (B)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at });
+    addBar('T', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+    addBar('B', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+    // U-bars from each face of the strip (2400 total), one symbol per face at 65 % along
+    const uLegS = ceilTo((sp8.uTotal - (h - 2 * cover)) / 2, 10);
+    const atU = add(c, along, Ls * 0.15);
+    for (const sg of [-1, 1]) {
+      const face = add(atU, acr, sg * Ws / 2);
+      const inward = { x: -sg * acr.x, y: -sg * acr.y };
+      items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, inward, uLegS), l1: `T${sp8.uDia}-${sp8.uSpacing} U-BAR`, l2: `L=${sp8.uTotal}`, hairpin: true, side: 1, zone, noTag: true });
+      addBar('T', { dia: sp8.uDia, shape: `U ${uLegS}/${h - 2 * cover}/${uLegS}`, length: sp8.uTotal, qty: Math.floor(Ls / sp8.uSpacing) + 1, spacing: sp8.uSpacing, zone: `${zone} U` });
+    }
+    // longitudinal bars along the strip, top and bottom, fixed before the infill pour
+    const nLong = Math.floor(Ws / sp8.longSpacing) + 1;
+    items.push({ detail: 'D8', face: 'TB', a: add(c, along, -Ls / 2), b: add(c, along, Ls / 2), l1: `T${sp8.longDia}-${sp8.longSpacing} (T&B) ALONG STRIP`, l2: `L=${Math.round(Ls)}`, dist: { p: add(add(c, along, Ls * 0.4), acr, -Ws / 2), q: add(add(c, along, Ls * 0.4), acr, Ws / 2) }, side: -1, zone, noTag: true });
+    addBar('TB', { dia: sp8.longDia, shape: 'STR', length: Math.round(Ls), qty: nLong, spacing: sp8.longSpacing, zone: `${zone} ALONG` });
+    assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG - ADD T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS IT, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sp8.uTotal} TOTAL) FROM EACH FACE, T${sp8.longDia}@${sp8.longSpacing} T&B ALONG IT FIXED BEFORE THE INFILL POUR; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
   }
 
   // ---- D9 blockwork support beam through the void between two openings: a strip of the slab between two openings
@@ -1294,6 +1342,7 @@ export function officeBar(pl, S, it, phase) {
     if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
     if (it.triple) { pl.line(add(it.a, n, 200), add(it.b, n, 200), { layer }); pl.line(add(it.a, n, -200), add(it.b, n, -200), { layer }); }
     if (it.pairOff) pl.line(add(it.a, n, -it.pairOff), add(it.b, n, -it.pairOff), { layer }); // the second bar of a pair (blockwork beam)
+    if (it.crank) { pl.line(it.a, add(it.a, n, it.crank), { layer }); pl.line(it.b, add(it.b, n, it.crank), { layer }); } // the drop bar's legs at both ends (up / left of the bar)
     if (it.distCands && !it.dist) {
       const boxOf = (d) => { const du = unit(d.p, d.q), dn = perp(du); return [textBox(d.textAt || add(mid(d.p, d.q), dn, DIM100.gap + DIM100.txt / 2), d.text || String(Math.round(dist(d.p, d.q))), DIM100.txt, readableRot(du).rot, 'C', 'M', 0.8)]; };
       it.dist = placer ? placer.pick(it.distCands, boxOf) : it.distCands[0];
@@ -1453,6 +1502,7 @@ function framingSheet(model, level, meta, adds) {
       ...level.walls.map((w) => ({ id: w.id, element: `WALL ${fmtMM(w.t)} THK`, size: `${fmtMM(w.w)} x ${fmtMM(w.h)}`, location: gridRef(level, bbox(w.polygon)) })),
       ...level.openings.map((o) => ({ id: o.id, element: 'OPENING', size: `${fmtMM(bbox(R.regionPolygon(o)).w)} x ${fmtMM(bbox(R.regionPolygon(o)).h)}`, location: gridRef(level, bbox(R.regionPolygon(o))) })),
       ...level.thickZones.map((z) => ({ id: z.id, element: `THICKENED ZONE ${z.thickness || ''} mm`, size: `${fmtMM(bbox(z.polygon).w)} x ${fmtMM(bbox(z.polygon).h)}`, location: gridRef(level, bbox(z.polygon)) })),
+      ...(level.pourStrips || []).map((z) => ({ id: z.id, element: 'POUR STRIP', size: `${fmtMM(z.width)} x ${fmtMM(z.length)}`, location: gridRef(level, bbox(z.polygon)) })),
     ];
     const cols = [{ key: 'id', title: 'ID', w: 20 }, { key: 'element', title: 'ELEMENT', w: 42 }, { key: 'size', title: 'SIZE (mm)', w: 45 }, { key: 'location', title: 'LOCATION / GRID', w: 78, align: 'L', max: 44 }];
     const d0 = sheet.detailBox(0, 'GENERAL DETAILS APPLIED ON THIS LEVEL', '');
@@ -1467,7 +1517,7 @@ function framingSheet(model, level, meta, adds) {
       rows, cols, scheduleTitle: 'ELEMENT SCHEDULE',
       general: [...designNotes(model, level).slice(0, 2), 'SLAB OUTLINE, COLUMNS, WALLS, OPENINGS, STAIRS, THICKNESS ZONES, LEVELS AND CAMBER NOTES ARE READ FROM THE OFFICE DESIGN PLAN. EDGE BEAMS ARE LABELLED WHERE THE PLAN DRAWS THEM; DETAIL 1 APPLIES ALONG THEM.', 'SEE SHEETS 02 (BOTTOM), 03 (TOP) AND 04 (PUNCHING) FOR REINFORCEMENT; THE GENERAL DETAILS SHEET IS PART OF THIS SET.'],
       assumptions: levelAssumptions(model, level),
-      legend: [['OUTLINE', 'SLAB EDGE', 'thick'], ['s-hatch', 'COLUMN (SOLID GREY)', 'solid'], ['WALL-HATCH', 'WALL (HATCHED)', 'hatch'], ['BEAM', 'EDGE BEAM', 'line'], ['OPENING', 'OPENING (CROSSED)', 'line'], ['SLAB-THK-HATCH', 'THICKENED ZONE', 'hatch']],
+      legend: [['OUTLINE', 'SLAB EDGE', 'thick'], ['s-hatch', 'COLUMN (SOLID GREY)', 'solid'], ['WALL-HATCH', 'WALL (HATCHED)', 'hatch'], ['BEAM', 'EDGE BEAM', 'line'], ['OPENING', 'OPENING (CROSSED)', 'line'], ['SLAB-THK-HATCH', 'THICKENED ZONE', 'hatch'], ['POUR-STRIP-HATCH', 'POUR STRIP', 'hatch']],
       detailsUsed: 3,
     };
   };
