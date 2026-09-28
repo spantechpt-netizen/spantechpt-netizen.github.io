@@ -77,6 +77,7 @@ function workflowCard() {
       el('ol', { style: { margin: 0, paddingInlineStart: '1.2rem' } }, ['dw_step1', 'dw_step2', 'dw_step3', 'dw_step4'].map((key) => el('li', { text: t(key).replace(/^[\d١-٩]+[-.]\s*/, '') }))),
       el('div.mt-1', {}, [
         el('a', { href: 'help/ram-drawings-workflow.html', target: '_blank', rel: 'noopener', text: t('dw_open_workflow') }),
+        el('a', { href: 'help/ram-file-workflow.html', target: '_blank', rel: 'noopener', text: t('dw_open_file_workflow') }),
       ]),
     ]),
   ]);
