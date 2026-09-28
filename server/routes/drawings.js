@@ -41,7 +41,7 @@ import { badRequest, notFound, conflict } from '../http.js';
 import { str, int, oneOf, jsonField, COUNTRIES } from '../validate.js';
 import {
   drawingSettings, nextProjectCode, normaliseCode, runDir, runFile, saveSource, saveUpload, runMeta, levelTitle,
-  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, MESH_FACES, PUNCHING_DECISIONS, BEAM_DESIGN, BEAM_DECISIONS, FILE_CATEGORIES,
+  runGeneration, writeRunZip, removeRunFiles, removeProjectFiles, MODES, RAM_BANDS, RUN_STATUS, MESH_FACES, PUNCHING_DECISIONS, BEAM_DESIGN, BEAM_DECISIONS, ROTATIONS, FILE_CATEGORIES,
   framePath, projectFile, projectDir, referencePath, SUBMITTAL_STATUS, SUBMITTAL_PURPOSES,
 } from '../drawings.js';
 import { submittalCode, submittalItems, submittalHtml } from '../submittals.js';
@@ -173,6 +173,7 @@ function projectFields(body, { partial = false } = {}) {
     ram_bands: oneOf(body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: partial ? undefined : 'all' }),
     mesh: oneOf(body.mesh, 'mesh', MESH_FACES, { fallback: partial ? undefined : 'bottom' }),
     beam_design: oneOf(body.beam_design, 'beam_design', BEAM_DESIGN, { fallback: partial ? undefined : 'ram' }),
+    rotate: oneOf(body.rotate == null ? body.rotate : String(body.rotate), 'rotate', ROTATIONS, { fallback: partial ? undefined : 'auto' }),
     spec_json: body.spec === undefined ? undefined : JSON.stringify(jsonField(body.spec, 'spec', {}) || {}),
     notes: str(body.notes, 'notes', { max: 4000, fallback: undefined }),
   };
@@ -451,6 +452,8 @@ export function register(router) {
     const ramBands = oneOf(query.ram_bands ?? body.ram_bands, 'ram_bands', RAM_BANDS, { fallback: sourceRun?.ram_bands || project.ram_bands || settings.ram_bands || 'all' });
     const mesh = oneOf(query.mesh ?? body.mesh, 'mesh', MESH_FACES, { fallback: sourceRun?.mesh || project.mesh || settings.mesh || 'bottom' });
     const beamDesign = oneOf(query.beam_design ?? body.beam_design, 'beam_design', BEAM_DESIGN, { fallback: sourceRun?.beam_design || project.beam_design || settings.beam_design || 'ram' });
+    const rotateRaw = query.rotate ?? body.rotate;
+    const rotate = oneOf(rotateRaw == null ? rotateRaw : String(rotateRaw), 'rotate', ROTATIONS, { fallback: sourceRun?.rotate || project.rotate || settings.rotate || 'auto' });
     let revision = str(query.revision ?? body.revision, 'revision', { max: 6, fallback: null });
     if (revision === null) {
       const previous = get("SELECT COUNT(*) AS n FROM drawing_runs WHERE level_id = ? AND mode = ? AND status <> 'failed' AND status <> 'running'", level.id, mode).n;
@@ -464,7 +467,7 @@ export function register(router) {
     const meta = runMeta({ settings, project, level, mode, revision, user });
     const serial = nextCounter(`drawing_runs:${project.id}`);
     const runId = insert('drawing_runs', {
-      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, mesh, beam_design: beamDesign, notes,
+      project_id: project.id, level_id: level.id, serial, mode, revision, ram_bands: ramBands, mesh, beam_design: beamDesign, rotate, notes,
       prefix: meta.prefix, source_name: str(query.name ?? body.name, 'name', { max: 200, fallback: sourceRun?.source_name || null }), status: 'running', created_by: user.id,
       edits_json: edits.length ? JSON.stringify(edits) : null,
     });
@@ -499,6 +502,7 @@ export function register(router) {
         ...projectSpec,
         ramBands,
         mesh,
+        rotate,
         punching: punchingSpec,
         beamTypes: projectBeamTypes(project), // the unified beam schedule of the project: reused, never changed
         beamDesign,

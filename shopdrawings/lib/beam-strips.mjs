@@ -35,6 +35,9 @@ function maxUid(db) {
 }
 
 /** The spans of a beam: its axis cut at the supports (columns and walls) it crosses; each span with the support size at its ends. */
+/** Beam sizes are written to the nearest 50 mm with no decimals (office convention): 350x600. */
+export const size50 = (v) => Math.round((Number(v) || 0) / 50) * 50;
+
 export function beamSpans(beam, columns, walls) {
   const L = dist(beam.a, beam.b);
   const u = { x: (beam.b.x - beam.a.x) / L, y: (beam.b.y - beam.a.y) / L }, n = { x: -u.y, y: u.x };
@@ -148,7 +151,7 @@ export function writeBeamStrips(src, out, ram, { designSystem = 'beam', splitter
           summary.splitters++;
         }
       }
-      summary.frames.push({ beam: beam.id, frame: frameLabel, spanSet, width: beam.t, depth: beam.depth, spans: spans.map((sp) => ({ length: Math.round(sp.length), support0: sp.support0?.kind || null, support1: sp.support1?.kind || null })), segments: spanUids });
+      summary.frames.push({ beam: beam.id, frame: frameLabel, spanSet, width: size50(beam.t), depth: size50(beam.depth), spans: spans.map((sp) => ({ length: Math.round(sp.length), support0: sp.support0?.kind || null, support1: sp.support1?.kind || null })), segments: spanUids });
     }
     // the sibling chains of every category written to
     for (const [parent, { table, uids }] of chains) {
@@ -230,7 +233,7 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
       : design === 'max' && offSets ? { top: heavier(ramSets.top, offSets.top), bottom: heavier(ramSets.bottom, offSets.bottom), stirrups: stiffer(ramSets.stirrups, offSets.stirrups) }
       : ramSets;
     return {
-      id: bm.id, a: bm.a, b: bm.b, width: bm.t, depth: bm.depth, length: Math.round(dist(bm.a, bm.b)),
+      id: bm.id, a: bm.a, b: bm.b, width: size50(bm.t), depth: size50(bm.depth), length: Math.round(dist(bm.a, bm.b)),
       ...chosen, ram: ramSets, office: offSets, design: design === 'ram' || !offSets ? 'ram' : design,
       bands: mine.length, designed: !!(chosen.top || chosen.bottom), ramDesigned: !!(ramSets.top || ramSets.bottom),
     };
@@ -254,7 +257,7 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
       && (!t.bottom || !r.bottom ? !t.bottom === !r.bottom : r.bottom.area >= 0.85 * t.bottom.area && r.bottom.area <= t.bottom.area)
       && (!t.stirrups || !r.stirrups ? true : Math.abs(t.stirrups.spacing - r.stirrups.spacing) <= 25 && t.stirrups.dia === r.stirrups.dia));
     if (fits) { fits.beams.push(r.id); r.mark = fits.mark; continue; }
-    const t = { mark: `B${next++}`, width: r.width, depth: r.depth, section: `${r.width}x${r.depth}`, top: r.top, bottom: r.bottom, stirrups: r.stirrups, beams: [r.id], isNew: true };
+    const t = { mark: `B${next++}`, width: size50(r.width), depth: size50(r.depth), section: `${size50(r.width)}x${size50(r.depth)}`, top: r.top, bottom: r.bottom, stirrups: r.stirrups, beams: [r.id], isNew: true };
     added.push(t);
     r.mark = t.mark;
   }

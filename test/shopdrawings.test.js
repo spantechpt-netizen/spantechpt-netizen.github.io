@@ -884,7 +884,19 @@ test('the pour strip against a retaining wall takes the office detail: a U-bar a
   assert.ok(adds.assumptions.some((a) => /CAST AGAINST A RETAINING WALL - OFFICE DETAIL/.test(a)));
   // a plain strip far from the wall keeps the standard detail, and its 8 m bars need no lap; a 27 m strip would
   const plain = adds.items.filter((it) => it.detail === 'D8' && it.zone.includes('PS2'));
-  assert.ok(plain.some((it) => it.l1 === 'T16-200 (T)' && it.l2 === 'L=3000') && plain.some((it) => it.l1 === 'T16-200 (B)'));
+  // the internal strip (office detail): on each side T12-200 TOP & BOTTOM L=2000 from the far face of the strip across it
+  // into the slab on that side, and a U-bar T12-200 L=2400 closed at the face with its legs out into the slab
+  const tbs = plain.filter((it) => it.l1 === 'T12-200 TOP & BOTTOM');
+  assert.equal(tbs.length, 2);
+  assert.ok(tbs.every((it) => it.l2 === 'L=2000' && it.face === 'TB' && it.pairOff && it.posCands && it.dist), 'a pair symbol per side, sliding along the strip, with its distribution');
+  const left = tbs.find((it) => it.b.x < it.a.x), right = tbs.find((it) => it.b.x > it.a.x);
+  assert.ok(left && Math.round(left.a.x) === 16000 && Math.round(left.b.x) === 14000 && left.dist.p.x < 15000, 'the left set: from the right face across the strip 1 m into the slab on the left, its dot on the left line');
+  assert.ok(right && Math.round(right.a.x) === 15000 && Math.round(right.b.x) === 17000 && right.dist.p.x > 16000, 'the right set: from the left face to 1 m past the right face');
+  const us = plain.filter((it) => it.l1 === 'T12-200 U-BAR');
+  assert.equal(us.length, 2);
+  assert.ok(us.every((it) => it.hairpin && it.l2 === 'L=2400' && it.dist), 'U-bars 2400 with their dots');
+  assert.ok(us.some((it) => Math.round(it.a.x) === 15000 && it.b.x < 14000) && us.some((it) => Math.round(it.a.x) === 16000 && it.b.x > 17000), 'closed at each face, legs (2400 - 200) / 2 = 1100 out into the slab');
+  assert.ok(adds.assumptions.some((a) => /PS2.*OFFICE DETAIL: T12@200 L=2000 TOP & BOTTOM LAPPING ACROSS EACH JOINT/.test(a)));
   level.pourStrips = [{ id: 'PS3', polygon: [{ x: 5000, y: 0 }, { x: 32000, y: 0 }, { x: 32000, y: 1000 }, { x: 5000, y: 1000 }], width: 1000, length: 27000 }];
   level.outline = [{ x: 0, y: 0 }, { x: 40000, y: 0 }, { x: 40000, y: 8000 }, { x: 0, y: 8000 }]; level.bbox = { minX: 0, minY: 0, maxX: 40000, maxY: 8000, w: 40000, h: 8000 };
   const long = designAdditions(level, spec).items.find((it) => it.detail === 'D8' && /ALONG STRIP/.test(it.l1));
@@ -957,7 +969,7 @@ test('office rule: a slab at another top-of-concrete level is a separate slab; t
   const ram = readRamConcept(await buildSyntheticCpt(dir, { step: true }));
   assert.deepEqual(ram.slab.tocs, [0, -300]);
   assert.equal(ram.slab.bodies.length, 2);
-  const model = prepareRamDesign(ramToModel(ram, { levelName: 'STEP TEST', spec: { ramBands: 'none' } }), { levelName: 'STEP TEST' });
+  const model = prepareRamDesign(ramToModel(ram, { levelName: 'STEP TEST', spec: { ramBands: 'none', rotate: '0' } }), { levelName: 'STEP TEST' }); // (no sheet turn: the test reads the site coordinates)
   assert.equal(model.levels.length, 2, 'two slabs');
   const [upper, lower] = model.levels;
   assert.equal(Math.round(lower.bbox.minX), 8000);
@@ -1016,4 +1028,146 @@ test('the app edits (delete / lengthen / re-spec / add) apply to bars by id, pla
   assert.ok(!texts.some((t) => t === 'KEY PLAN'), 'key plan switched off');
   assert.ok(!texts.some((t) => t === 'THE CLIENT'), 'the built-in title block gives way to the custom frame');
   assert.equal(sheet.sheet.L.title.w, 200, 'strip width from the frame options');
+});
+
+test('every drawn bar is one continuous polyline: a U-bar (hairpin), a bar with U / L ends, an L leg and a bent drop bar', async () => {
+  const { officeBar, drawExisting } = await import('../shopdrawings/lib/design.mjs');
+  const rec = () => { const plines = [], texts = []; return { plines, texts, pline: (pts, o) => plines.push({ pts, layer: o.layer }), text: (p, str) => texts.push(str), circle() {}, line() {}, dimension() {}, hatch() {} }; };
+  const S = 100;
+  // a hairpin (pour strip / wall U-bar): leg - closing bar - leg in ONE polyline of 4 vertices
+  let pl = rec();
+  officeBar(pl, S, { detail: 'D8', face: 'TB', a: { x: 0, y: 0 }, b: { x: 0, y: 1100 }, l1: 'T12-200 U-BAR', l2: 'L=2400', hairpin: true, side: 1, noTag: true }, 'bars');
+  assert.equal(pl.plines.length, 1, 'one line, not three');
+  assert.equal(pl.plines[0].pts.length, 4);
+  // a top bar ending in a U at one end and an L at the other: the legs join the run (5 + 1 + 1 = one polyline)
+  pl = rec();
+  officeBar(pl, S, { detail: null, face: 'T', a: { x: 0, y: 0 }, b: { x: 4000, y: 0 }, l1: 'T12-150 (T)', l2: 'L=4000', side: 1, noTag: true, uEnd: { start: 'U', end: 'L' } }, 'bars');
+  assert.equal(pl.plines.length, 1);
+  assert.equal(pl.plines[0].pts.length, 5, 'U leg (2 vertices) + run (2) + L leg (1)');
+  assert.ok(pl.texts.includes('U500') && pl.texts.includes('L400'), 'the end tags are still written');
+  // the L-bar at an edge beam: its leg is part of the run
+  pl = rec();
+  officeBar(pl, S, { detail: 'D1', face: 'T', a: { x: 0, y: 0 }, b: { x: 3600, y: 0 }, l1: 'T12-150 LBAR (T)', l2: 'L=4000', side: 1, legEnd: 'start', noTag: true }, 'bars');
+  assert.equal(pl.plines.length, 1);
+  assert.equal(pl.plines[0].pts.length, 3);
+  // a drop bar: rises and continuations in the same polyline; a side clipped at the slab edge draws no leg there
+  pl = rec();
+  officeBar(pl, S, { detail: 'D4', face: 'B', a: { x: 1050, y: 0 }, b: { x: 5950, y: 0 }, l1: 'T12-150 (B)', l2: 'L=7000', side: 1, noTag: true, bend: { rise: 50, beyondA: 1500, beyondB: 500 }, extra: 2100 }, 'bars');
+  assert.equal(pl.plines.length, 1);
+  assert.equal(pl.plines[0].pts.length, 6);
+  pl = rec();
+  officeBar(pl, S, { detail: 'D4', face: 'B', a: { x: 1050, y: 0 }, b: { x: 5950, y: 0 }, l1: 'T12-150 (B)', l2: 'L=5450', side: 1, noTag: true, bend: { rise: 50, beyondA: 0, beyondB: 500, noA: true }, extra: 550 }, 'bars');
+  assert.equal(pl.plines[0].pts.length, 4, 'no rise and no continuation on the clipped side');
+  // the designer's own bars re-emitted with their U ends: one polyline each
+  pl = rec();
+  drawExisting(pl, S, { lines: [{ face: 'T', a: { x: 0, y: 0 }, b: { x: 3000, y: 0 }, uEnd: { start: 'U', end: false } }], callouts: [], dims: [], dots: [], items: [] }, ['T']);
+  assert.equal(pl.plines.length, 1);
+  assert.equal(pl.plines[0].pts.length, 4);
+});
+
+test('two columns standing next to each other are one support for the top bars: one group of reinforcement over both', async () => {
+  const { supportColumns, topAtColumns, DEFAULT_SPEC: D } = await import('../shopdrawings/lib/rebar.mjs');
+  const outline = [{ x: 0, y: 0 }, { x: 20000, y: 0 }, { x: 20000, y: 12000 }, { x: 0, y: 12000 }];
+  const level = {
+    id: 'L01', name: 'T', thickness: 250, outline, bbox: { minX: 0, minY: 0, maxX: 20000, maxY: 12000, w: 20000, h: 12000 },
+    columns: [
+      { id: 'C1', shape: 'rect', cx: 6000, cy: 6000, w: 600, h: 600 },
+      { id: 'C2', shape: 'rect', cx: 6000, cy: 6900, w: 600, h: 600 }, // 300 clear below C1's face: the same support
+      { id: 'C3', shape: 'rect', cx: 14000, cy: 6000, w: 600, h: 600 },
+    ],
+    openings: [], walls: [], beams: [], thickZones: [], existing: { lines: [], callouts: [], dims: [], dots: [], items: [] },
+  };
+  const sup = supportColumns(level, 500);
+  assert.equal(sup.length, 2);
+  const m = sup.find((c) => c.merged);
+  assert.equal(m.id, 'C1+C2');
+  assert.ok(Math.round(m.w) === 600 && Math.round(m.h) === 1500 && Math.round(m.cy) === 6450, 'the rectangle around both columns');
+  const spec = { ...D, cover: 25 };
+  for (const k of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching', 'drops']) spec[k] = { ...D[k] };
+  const res = topAtColumns(level, spec);
+  assert.deepEqual(res.columns.map((c) => c.col.id), ['C1+C2', 'C3'], 'one group over the pair, not two overlapping groups');
+  const pair = res.columns[0];
+  assert.equal(pair.per.y.c1, 1500, 'the bars along Y span the two columns');
+  assert.ok(pair.per.y.straight >= 1500 + 2 * 1500, 'and reach 1.5 m past the outer faces');
+  // the neighbour search skips the merged pair's own members: the span to C3 is 8 m, not 0.9 m
+  assert.ok(res.columns[0].per.x.straight === 4000 || res.columns[0].per.x.straight > 3000);
+  // a wider gap keeps them apart
+  level.columns[1].cy = 7200; delete level._supports;
+  assert.equal(supportColumns(level, 500).length, 3);
+});
+
+test('a drop bar beside the slab edge or an opening draws no leg outside: the continuation is shortened to the slab or dropped', async () => {
+  const { designAdditions, markCoreWalls, clipToSlab } = await import('../shopdrawings/lib/design.mjs');
+  const outline = [{ x: 0, y: 0 }, { x: 20000, y: 0 }, { x: 20000, y: 12000 }, { x: 0, y: 12000 }];
+  const level = {
+    id: 'L01', name: 'T', thickness: 250, outline, bbox: { minX: 0, minY: 0, maxX: 20000, maxY: 12000, w: 20000, h: 12000 },
+    grid: { x: [{ x: 0, label: 'A' }, { x: 20000, label: 'B' }], y: [{ y: 0, label: '1' }, { y: 12000, label: '2' }] },
+    // an edge column whose drop panel touches the slab edge (x = 0) and an opening 400 past the drop's other face
+    columns: [{ id: 'C1', shape: 'rect', cx: 1300, cy: 6000, w: 600, h: 600 }],
+    thickZones: [{ id: 'Z1', kind: 'drop', thickness: 400, polygon: [{ x: 0, y: 4500 }, { x: 2600, y: 4500 }, { x: 2600, y: 7500 }, { x: 0, y: 7500 }] }],
+    openings: [{ id: 'O1', kind: 'polygon', polygon: [{ x: 3000, y: 5000 }, { x: 4500, y: 5000 }, { x: 4500, y: 7000 }, { x: 3000, y: 7000 }] }],
+    voids: [], sunken: [], stairs: [], beams: [], edges: [], walls: [],
+    existing: { lines: [], callouts: [], dims: [], dots: [], items: [] }, ram: { tendons: [], bands: [] },
+  };
+  const spec = { ...DEFAULT_SPEC, cover: 25 };
+  for (const k of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching', 'drops']) spec[k] = { ...DEFAULT_SPEC[k] };
+  markCoreWalls(level);
+  const adds = designAdditions(level, spec);
+  adds.items = clipToSlab(level, adds.items, spec); // as the package does before drawing
+  const d4x = adds.items.find((it) => it.detail === 'D4' && Math.abs(it.a.y - it.b.y) < 1);
+  assert.ok(d4x, 'the drop bar along X');
+  assert.ok(d4x.bend.noA && d4x.bend.beyondA === 0, 'at the slab edge: no rise, no continuation outside the slab');
+  assert.ok(d4x.bend.beyondB === 400 && !d4x.bend.noB, `towards the opening the continuation (run end 2550, opening at 3000) stops 50 before it (${d4x.bend.beyondB})`);
+  assert.equal(d4x.l2, `L=${Math.round(Math.hypot(d4x.a.x - d4x.b.x, d4x.a.y - d4x.b.y) + d4x.extra)}`, 'the written length follows the drawn bar');
+  assert.equal(d4x.extra, d4x.bend.rise + d4x.bend.beyondB, 'one rise (the 150 step) and the shortened continuation only');
+  const d4y = adds.items.find((it) => it.detail === 'D4' && Math.abs(it.a.x - it.b.x) < 1);
+  assert.ok(d4y && !d4y.bend.noA && !d4y.bend.noB && d4y.bend.beyondA === d4y.bend.beyondB, 'the Y bar keeps both legs inside the slab');
+});
+
+test('the plan is turned 90° on the sheet when it stands taller than wide (auto), or as forced; the north arrow follows', async () => {
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ram-turn-'));
+  const ram = readRamConcept(await buildSyntheticCpt(dir, { step: true }));
+  const tall = ram.slab.bodies.find((b) => { const bb = bboxOf(b.polygon); return bb.h > bb.w * 1.05; });
+  assert.ok(tall, 'the step file has a body taller than wide');
+  const auto = ramToModel(ram, { levelName: 'TURN', spec: {} });
+  const forced0 = ramToModel(ram, { levelName: 'TURN', spec: { rotate: '0' } });
+  const forced90 = ramToModel(ram, { levelName: 'TURN', spec: { rotate: 90 } });
+  const i = ram.slab.bodies.indexOf(tall);
+  assert.equal(auto.levels[i].sheetTurn, 90);
+  assert.equal(auto.levels[i].rotation, 90);
+  assert.ok(auto.levels[i].bbox.w > auto.levels[i].bbox.h, 'turned: the long side now lies along the sheet');
+  assert.ok(auto.assumptions.some((a) => /turned 90° on the sheet/.test(a.text)));
+  assert.equal(forced0.levels[i].sheetTurn, 0);
+  assert.ok(forced0.levels[i].bbox.h > forced0.levels[i].bbox.w);
+  assert.ok(forced90.levels.every((l) => l.sheetTurn === 90), 'forced: every body turned');
+  function bboxOf(pts) { let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; for (const p of pts) { minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y); } return { w: maxX - minX, h: maxY - minY }; }
+});
+
+test('a beam cut at a drawing joint (a part of a split slab) is never designed as a cantilever: the joint end is continuous', async () => {
+  const { designBeams } = await import('../shopdrawings/lib/beam-design.mjs');
+  // a 12 m beam on two columns at 1 m and 7 m; it runs on to 12 m where the part is cut (the joint) - on the whole
+  // slab the beam continues to the next column in the other part
+  const mk = (partCut) => ({
+    id: 'L01A', name: 'T - PART 1', thickness: 250, outline: [{ x: 0, y: 0 }, { x: 12000, y: 0 }, { x: 12000, y: 8000 }, { x: 0, y: 8000 }],
+    bbox: { minX: 0, minY: 0, maxX: 12000, maxY: 8000, w: 12000, h: 8000 },
+    columns: [{ id: 'C1', shape: 'rect', cx: 1000, cy: 4000, w: 400, h: 400 }, { id: 'C2', shape: 'rect', cx: 7000, cy: 4000, w: 400, h: 400 }],
+    walls: [], openings: [],
+    beams: [{ id: 'B1', a: { x: 800, y: 4000 }, b: { x: 12600, y: 4000 }, t: 300, depth: 600, along: 'x' }],
+    ram: { areaLoads: [] }, partCut,
+  });
+  const whole = designBeams(mk(undefined), { fc: 30, fy: 420 });
+  assert.ok(whole.beams[0].cantilevers.right > 5000, 'with no joint the 5.6 m end piece is a cantilever');
+  const part = designBeams(mk({ axis: 'x', lo: 0, hi: 12000, overlap: 600, joints: { lo: false, hi: true } }), { fc: 30, fy: 420 });
+  assert.equal(part.beams[0].cantilevers.right, null, 'at the joint the end is continuous, not a cantilever');
+  assert.ok(part.warnings.some((w) => /B1: continues into the neighbouring part at its end/.test(w)));
+  assert.ok(!(part.beams[0].deflection?.spans || []).some((d) => d.cantilever), 'no cantilever deflection check at the joint');
+});
+
+test('beam sizes are written to the nearest 50 mm with no decimals (350x600)', async () => {
+  const { size50 } = await import('../shopdrawings/lib/beam-strips.mjs');
+  assert.equal(size50(350.00000000000073), 350);
+  assert.equal(size50(337), 350);
+  assert.equal(size50(612.4), 600);
+  assert.equal(`${size50(349.999)}x${size50(600.0001)}`, '350x600');
 });

@@ -30,6 +30,8 @@ export const MESH_FACES = ['bottom', 'both'];
 export const PUNCHING_DECISIONS = ['thicken', 'bypass', 'ram_ok', 'clear'];
 /** Where the beam bars come from: RAM's design strips, the office design (continuous-beam analysis), or the heavier of the two set by set. */
 export const BEAM_DESIGN = ['ram', 'office', 'max'];
+/** The plan on the sheet: 'auto' turns a plan taller than wide by 90° so that it fits the landscape sheet; '0' / '90' force it. */
+export const ROTATIONS = ['auto', '0', '90'];
 /** The engineer's decision on a run blocked by the beam check (a beam failing deflection / flexure / shear). */
 export const BEAM_DECISIONS = ['deepen', 'bypass', 'ram_ok', 'clear'];
 /** Project document sections: the original design files, the RAM models, the PT design drawings, the PT shop drawings. */
@@ -70,6 +72,7 @@ export const DRAWING_DEFAULTS = {
   ram_bands: 'all',
   mesh: 'bottom',
   beam_design: 'ram',
+  rotate: 'auto',
   spec: {},
   frame: FRAME_DEFAULTS,
   frame_dxf: null,

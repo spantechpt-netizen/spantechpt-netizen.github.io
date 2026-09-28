@@ -449,10 +449,11 @@ test('beam design through RAM: the run\'s model comes back with one strip per be
   // the office beam design option and the beam alert: a beam reported failing deflection in RAM blocks the run, the bypass regenerates it
   const lvb = await api('PATCH', `/api/drawings/levels/${level.id}`, { ram_failed_beams: 'bm1' });
   assert.deepEqual(lvb.body.level.punching.beams_ram_failed, ['BM1']);
-  const office = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-beams.cpt&mode=design&beam_design=max`, cptBeam);
+  const office = await upload(`/api/drawings/levels/${level.id}/runs?name=basement-beams.cpt&mode=design&beam_design=max&rotate=90`, cptBeam);
   assert.equal(office.status, 201, JSON.stringify(office.body));
   const ob = office.body.run;
   assert.equal(ob.beam_design, 'max');
+  assert.equal(ob.rotate, '90', 'the plan orientation option is kept on the run');
   assert.equal(ob.status, 'blocked');
   assert.deepEqual(ob.beam_check.blocking, ['BM1', 'BM2'], 'BM1 reported failing in RAM, BM2 (12 m x 300 x 600 edge beam) failing deflection by the office check');
   assert.ok(ob.beam_check.levels[0].beams.find((b) => b.id === 'BM1').ram_failed && ob.beam_check.levels[0].beams.find((b) => b.id === 'BM2').reasons.includes('deflection') && ob.beam_check.levels[0].beams[0].loads.wu > 0);

@@ -976,6 +976,10 @@ function drawingsPanel(settings) {
         name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: current.beam_design || 'ram', disabled: readOnly(), hint: t('dw_bd_hint'),
         options: ['ram', 'office', 'max'].map((m) => ({ value: m, label: t(`dw_bd_${m}`) })),
       }),
+      field({
+        name: 'rotate', label: t('dw_rotate'), type: 'select', value: current.rotate || 'auto', disabled: readOnly(), hint: t('dw_rotate_hint'),
+        options: ['auto', '0', '90'].map((m) => ({ value: m, label: t(`dw_rotate_${m}`) })),
+      }),
       field({ name: 'company', label: t('dw_company'), value: current.company || '', dir: 'ltr', disabled: readOnly() }),
       field({ name: 'company_line', label: t('dw_company_line'), value: current.company_line || '', dir: 'ltr', disabled: readOnly() }),
       field({ name: 'prepared', label: t('dw_prepared'), value: current.prepared || '', dir: 'ltr', disabled: readOnly() }),
@@ -1039,7 +1043,9 @@ function drawingsPanel(settings) {
   const RATE_KEYS = ['steel_per_ton', 'rebar_labour_per_ton', 'concrete_per_m3', 'formwork_per_m2', 'strand_per_kg', 'anchor_live', 'anchor_dead', 'duct_per_m', 'pt_labour_per_m2', 'markup_pct', 'vat_pct'];
   // the office reinforcement defaults: diameter / spacing / length of the column top bars, the drop bars, the bottom and top mesh
   const sp = current.spec || {};
-  const rd = { tc: { dia: 16, spacing: 150, length: 4000, ...(sp.topColumns || {}) }, dr: { dia: 12, spacing: 150, leg: 500, ...(sp.drops || {}) }, bm: { dia: 12, spacing: 200, ...(sp.bottom || {}) }, tm: { dia: 12, spacing: 200, ...(sp.bottom || {}), ...(sp.topMesh || {}) } };
+  const rd = { tc: { dia: 16, spacing: 150, length: 4000, ...(sp.topColumns || {}) }, dr: { dia: 12, spacing: 150, leg: 500, ...(sp.drops || {}) }, bm: { dia: 12, spacing: 200, ...(sp.bottom || {}) }, tm: { dia: 12, spacing: 200, ...(sp.bottom || {}), ...(sp.topMesh || {}) },
+    // the U-bars: the perimeter (free edge) U-bar and the pour strip U-bars (internal strip; at a retaining wall: in the wall / from the slab side)
+    ue: { dia: 12, spacing: 150, total: 4000, ...(sp.uEdge || {}) }, ps: { uDia: 12, uSpacing: 200, uTotal: 2400, dia: 12, spacing: 200, length: 2000, ...(sp.pourStrip || {}) }, pw: { uTotal: 2500, uSlab: 2000, ...(sp.pourStrip?.wall || {}) } };
   const numField = (name, label, value, step = 1) => field({ name, label, type: 'number', value, min: 6, max: 12000, step, disabled: readOnly() });
   const rebarForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
     el('div.small.muted', { text: t('dw_rebar_defaults_hint') }),
@@ -1048,6 +1054,10 @@ function drawingsPanel(settings) {
       numField('dr_dia', `${t('dw_rd_drops')} — ${t('dw_rd_dia')}`, rd.dr.dia), numField('dr_spacing', `${t('dw_rd_drops')} — ${t('dw_rd_spacing')}`, rd.dr.spacing, 5), numField('dr_leg', `${t('dw_rd_drops')} — ${t('dw_rd_leg')}`, rd.dr.leg, 50),
       numField('bm_dia', `${t('dw_rd_bottom')} — ${t('dw_rd_dia')}`, rd.bm.dia), numField('bm_spacing', `${t('dw_rd_bottom')} — ${t('dw_rd_spacing')}`, rd.bm.spacing, 5), el('div'),
       numField('tm_dia', `${t('dw_rd_top')} — ${t('dw_rd_dia')}`, rd.tm.dia), numField('tm_spacing', `${t('dw_rd_top')} — ${t('dw_rd_spacing')}`, rd.tm.spacing, 5), el('div'),
+      numField('ue_dia', `${t('dw_rd_uedge')} — ${t('dw_rd_dia')}`, rd.ue.dia), numField('ue_spacing', `${t('dw_rd_uedge')} — ${t('dw_rd_spacing')}`, rd.ue.spacing, 5), numField('ue_total', `${t('dw_rd_uedge')} — ${t('dw_rd_utotal')}`, rd.ue.total, 50),
+      numField('ps_udia', `${t('dw_rd_pstrip')} — ${t('dw_rd_dia')}`, rd.ps.uDia), numField('ps_uspacing', `${t('dw_rd_pstrip')} — ${t('dw_rd_spacing')}`, rd.ps.uSpacing, 5), numField('ps_utotal', `${t('dw_rd_pstrip')} — ${t('dw_rd_utotal')}`, rd.ps.uTotal, 50),
+      numField('ps_dia', `${t('dw_rd_pstrip_tb')} — ${t('dw_rd_dia')}`, rd.ps.dia), numField('ps_spacing', `${t('dw_rd_pstrip_tb')} — ${t('dw_rd_spacing')}`, rd.ps.spacing, 5), numField('ps_length', `${t('dw_rd_pstrip_tb')} — ${t('dw_rd_length')}`, rd.ps.length, 50),
+      numField('pw_utotal', `${t('dw_rd_pstrip_wall')} — ${t('dw_rd_utotal')}`, rd.pw.uTotal, 50), numField('pw_uslab', `${t('dw_rd_pstrip_slab')} — ${t('dw_rd_utotal')}`, rd.pw.uSlab, 50), el('div'),
     ]),
   ]);
   const ratesForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
@@ -1099,6 +1109,8 @@ function drawingsPanel(settings) {
             parsed.drops = { ...(parsed.drops || {}), dia: n(rb.dr_dia, 12), spacing: n(rb.dr_spacing, 150), leg: n(rb.dr_leg, 500) };
             parsed.bottom = { ...(parsed.bottom || {}), dia: n(rb.bm_dia, 12), spacing: n(rb.bm_spacing, 200) };
             parsed.topMesh = { ...(parsed.topMesh || {}), dia: n(rb.tm_dia, 12), spacing: n(rb.tm_spacing, 200) };
+            parsed.uEdge = { ...(parsed.uEdge || {}), dia: n(rb.ue_dia, 12), spacing: n(rb.ue_spacing, 150), total: n(rb.ue_total, 4000) };
+            parsed.pourStrip = { ...(parsed.pourStrip || {}), uDia: n(rb.ps_udia, 12), uSpacing: n(rb.ps_uspacing, 200), uTotal: n(rb.ps_utotal, 2400), dia: n(rb.ps_dia, 12), spacing: n(rb.ps_spacing, 200), length: n(rb.ps_length, 2000), wall: { ...(parsed.pourStrip?.wall || {}), uTotal: n(rb.pw_utotal, 2500), uSlab: n(rb.pw_uslab, 2000) } };
             const frame = readForm(frameForm);
             for (const k of ['rightWidth', 'bottomStrip', 'titleH', 'refsH', 'keyH', 'schedH']) if (frame[k] == null) delete frame[k];
             const subData = readForm(subForm);

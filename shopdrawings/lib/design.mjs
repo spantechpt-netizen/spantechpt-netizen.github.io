@@ -321,7 +321,7 @@ function splitLevels(model, spec) {
       const ram = level.ram || {};
       out.push({
         ...level,
-        id: level.customId ? `${level.id}${'ABCDEFGHIJ'[k] || k + 1}` : `L${String(out.length + 1).padStart(2, '0')}`, name: `${level.name} - PART ${k + 1}`, partOf: level.id, partCut: { axis, lo, hi },
+        id: level.customId ? `${level.id}${'ABCDEFGHIJ'[k] || k + 1}` : `L${String(out.length + 1).padStart(2, '0')}`, name: `${level.name} - PART ${k + 1}`, partOf: level.id, partCut: { axis, lo, hi, overlap: ov, joints: { lo: k > 0, hi: k < n - 1 } },
         outline, bbox: bbox(outline),
         // the grid keeps the body's labels; only the lines that cross this part are drawn, trimmed to the part
         grid: level.grid ? {
@@ -386,6 +386,8 @@ export function prepareRamDesign(model, options = {}) {
   // the office reinforcement defaults from the settings: bottom mesh, top mesh (both-faces option), column bars, drop bars
   if (options.spec?.bottom) spec.bottom = { ...(spec.bottom || R.DEFAULT_SPEC.bottom), ...options.spec.bottom };
   if (options.spec?.topMesh) spec.topMesh = { ...(spec.bottom || R.DEFAULT_SPEC.bottom), ...options.spec.topMesh };
+  // the pour strip detail (internal and at a retaining wall) with the U-bar lengths from the settings
+  spec.pourStrip = { ...R.DEFAULT_SPEC.pourStrip, ...(options.spec?.pourStrip || {}), wall: { ...R.DEFAULT_SPEC.pourStrip.wall, ...(options.spec?.pourStrip?.wall || {}) } };
   const A = (level, text) => model.assumptions.push({ level: level.id, text });
   model.assumptions = model.assumptions.filter((a) => !/office standard reinforcement .* ADDITIONAL reinforcement/i.test(a.text));
   const baseName = options.levelName || (model.levels[0]?.name || 'SLAB').replace(/\s*-\s*PART.*$/i, '');
@@ -767,8 +769,42 @@ export function clipAtOpenings(level, it, uAllow) {
   return it;
 }
 
+/**
+ * A drop bar (D4) beside the slab edge or an opening: its rise and continuation past the drop are never drawn outside
+ * the slab or into the opening. The continuation is shortened to what lies in the slab; where nothing is left (the
+ * drop face is the slab edge / the opening edge) the bar simply ends at its run, with no leg, and the written length
+ * and the cutting length drop that rise and continuation.
+ */
+function clipBend(level, it, longest) {
+  const u = unit(it.a, it.b);
+  const step = Math.max(it.bend.rise || 50, 0);
+  let extra = it.extra ?? 0, changed = false;
+  for (const end of ['A', 'B']) {
+    const key = `beyond${end}`;
+    const beyond = it.bend[key] ?? it.bend.beyond ?? 500;
+    if (!(beyond > 0)) continue;
+    const e = end === 'A' ? it.a : it.b, d = end === 'A' ? { x: -u.x, y: -u.y } : u;
+    const far = add(e, d, beyond);
+    // what the continuation keeps: inside the slab outline and outside every opening, measured from the bar's end
+    const inSlab = longest(e, far);
+    let kept = inSlab && dist(inSlab[0], e) < 1 ? dist(inSlab[0], inSlab[1]) : 0;
+    if (kept > 0) { const os = outsideOpenings(level, e, add(e, d, kept), e); kept = os && dist(os[0], e) < 1 ? dist(os[0], os[1]) : 0; }
+    if (kept >= beyond - 1) continue;
+    if (kept < 300) { it.bend[`no${end}`] = true; it.bend[key] = 0; extra -= step + beyond; if (it.uEnd) it.uEnd[end === 'A' ? 'start' : 'end'] = false; }
+    else { it.bend[key] = Math.floor(kept - 50); extra -= beyond - it.bend[key]; }
+    changed = true;
+  }
+  if (!changed) return it;
+  const delta = (it.extra ?? 0) - extra;
+  it.extra = Math.max(0, extra);
+  if (/^L=\d+/.test(it.l2 || '')) it.l2 = `L=${Math.round(dist(it.a, it.b) + it.extra)}`;
+  if (it.length) it.length = Math.round(it.length - delta);
+  it.bendClipped = true;
+  return it;
+}
+
 /** Nothing is drawn outside the slab: bars and distribution lines are clipped to the outline (an item fully outside is dropped). */
-function clipToSlab(level, items, spec = {}) {
+export function clipToSlab(level, items, spec = {}) {
   const outline = level.outline;
   const uAllow = R.U_BOTTOM_LEG + (level.thickness - 2 * (spec.cover || 25)); // what a U end adds to the cutting length
   const longest = (a, b) => { const parts = clipSegmentToPolygon(a, b, outline).filter(([p, q]) => dist(p, q) > 50); return parts.sort((p, q) => dist(q[0], q[1]) - dist(p[0], p[1]))[0] || null; };
@@ -800,6 +836,7 @@ function clipToSlab(level, items, spec = {}) {
       if (it.length) it.length = Math.round(it.length - (oldL - newL));
     }
     if (clipAtOpenings(level, it, uAllow) === null) continue;
+    if (it.bend) clipBend(level, it, longest);
     if (it.column && dist(it.a, it.b) < 1000) continue; // a column bar cut to a stub between an opening and the edge is not worth drawing
     if (it.dist) { const ds = longest(it.dist.p, it.dist.q); if (!ds || dist(ds[0], ds[1]) < 200) delete it.dist; else { it.dist.p = ds[0]; it.dist.q = ds[1]; if (it.dist.textAt && !pointInPolygon(it.dist.textAt, outline)) delete it.dist.textAt; } }
     // the distribution never runs into an opening: it stops before it (the piece at the bar is kept)
@@ -937,7 +974,7 @@ export function designAdditions(level, spec, opts = {}) {
   const uLegTop = ceilTo((su.total - web) / 2, 10);
   // the column / wall bar groups along the edge decide where the perimeter bars stop (the U-bars run before and after them)
   const tcRes = R.topAtColumns(level, spec);
-  const bandOf = (c, dir) => { const r = tcRes.columns.find((x) => x.col.id === c.id); if (!r) return 0; const g = dir === 'across' ? Math.max(r.per.x.straight, r.per.y.straight) : r.per[dir].straight; return g; };
+  const bandOf = (c, dir) => { const r = tcRes.columns.find((x) => x.col.id === c.id || x.col.merged?.some((m) => m.id === c.id)); if (!r) return 0; const g = dir === 'across' ? Math.max(r.per.x.straight, r.per.y.straight) : r.per[dir].straight; return g; };
   // where a bar symbol goes along an opening side: the middle of the longest run free of the column / beam groups that
   // reach the side (so it never sits on the group of top bars across a beam alongside the opening)
   const sideSymbolAt = (a, bb) => {
@@ -1221,9 +1258,9 @@ export function designAdditions(level, spec, opts = {}) {
     addBar('B', { dia: row.diag, shape: 'DIAG 45', length: 2000, qty: 4, zone: `${zone} G3 (45°)` });
   }
 
-  // ---- D8 pour (infill) strips: the office's pour strip detail (PT details 3): ADD T16@200 straight bars 3 m long top
-  // and bottom across the strip, U-bars T12@200 (2400 total) from each face into the strip, T12@150 along the strip
-  // top and bottom (fixed before the infill pour)
+  // ---- D8 pour (infill) strips: the office's pour strip detail (PT details 3): T12@200 straight bars 2 m long top
+  // and bottom lapping across each joint, U-bars T12@200 (2400 total) closed at each face with the legs into the
+  // slab, T12@150 along the strip top and bottom (fixed before the infill pour)
   const sp8 = spec.pourStrip || R.DEFAULT_SPEC.pourStrip;
   for (const ps of level.pourStrips || []) {
     const b = bbox(ps.polygon);
@@ -1247,6 +1284,7 @@ export function designAdditions(level, spec, opts = {}) {
     const distP = add(c, along, -Ls / 2), distQ = add(c, along, Ls / 2);
     const dOff = (Ws / 2 + 400) * (wallSg ? -wallSg : 1); // the distribution on the slab side, never over the wall
     const nAcrossW = wallSg ? Math.floor(Ls / (sw.spacing || sp8.spacing)) + 1 : nAcross;
+    const web = h - 2 * cover;
     if (wallSg) {
       // against a retaining wall (office detail): T12 @ 200 top and bottom, L = 2000, from the wall face into the slab
       const wd = sw.dia || 12, wsp = sw.spacing || 200, wl = sw.length || 2000;
@@ -1256,32 +1294,48 @@ export function designAdditions(level, spec, opts = {}) {
       addBar('T', { dia: wd, shape: 'STR', length: wl, qty: nAcrossW, spacing: wsp, zone });
       addBar('B', { dia: wd, shape: 'STR', length: wl, qty: nAcrossW, spacing: wsp, zone });
     } else {
-      const half = sp8.length / 2;
-      items.push({ detail: 'D8', face: 'T', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (T)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at, posCands });
-      items.push({ detail: 'D8', face: 'B', a: add(at, acr, -half), b: add(at, acr, half), l1: `T${sp8.dia}-${sp8.spacing} (B)`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, dOff), q: add(distQ, acr, dOff) }, side: 1, zone, keep: at, posCands: posCands.slice().reverse() });
-      addBar('T', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
-      addBar('B', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+      // the office's internal pour strip detail: on each side of the strip one set of T12 @ 200 TOP & BOTTOM
+      // L = 2000 lapping across the joint (from the far face of the strip, across it and into the slab on this
+      // side), drawn as the pair at its own station, its dot on the distribution line of its side
+      const stations = { [-1]: -Ls * 0.3, [1]: -Ls * 0.1 };
+      for (const sg of [-1, 1]) {
+        const stAt = add(c, along, stations[sg]);
+        const far = add(stAt, acr, -sg * Ws / 2);
+        const out = { x: sg * acr.x, y: sg * acr.y };
+        // the symbol may slide along the strip (clear of a column bar): candidates about its station, within the strip
+        const rel = [0, -0.1, 0.1, -0.2, 0.2, -0.3, 0.3].map((f) => Math.max(-slide, Math.min(slide, stations[sg] + f * Ls)) - stations[sg]);
+        const cands = [...new Set(rel)].map((k) => (sg < 0 ? k : -k)); // the bar's normal points +along on the -1 side, -along on the +1 side
+        items.push({ detail: 'D8', face: 'TB', a: far, b: add(far, out, sp8.length), l1: `T${sp8.dia}-${sp8.spacing} TOP & BOTTOM`, l2: `L=${sp8.length}`, dist: { p: add(distP, acr, sg * (Ws / 2 + 400)), q: add(distQ, acr, sg * (Ws / 2 + 400)) }, pairOff: 60, side: 1, zone, keep: stAt, posCands: cands });
+        addBar('T', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+        addBar('B', { dia: sp8.dia, shape: 'STR', length: sp8.length, qty: nAcross, spacing: sp8.spacing, zone });
+      }
     }
-    // U-bars from each face of the strip, one symbol per face at 65 % along (from the wall face: `wall.uTotal`,
-    // 2400; from the slab side of a wall strip: `wall.uSlab`, 2 m; a plain strip: `uTotal` both sides)
-    const atU = add(c, along, Ls * 0.15);
+    // U-bars at each face of the strip, one symbol per face at 65 % along: an internal strip has the U closed at
+    // the joint face with its legs out into the slab (`uTotal`, 2400: the office detail); at a wall the U sits in
+    // the wall and comes out into the strip (`wall.uTotal`, 2500), the slab-side U straddles the joint (`wall.uSlab`, 2 m)
+    const atU = add(c, along, Ls * 0.2);
     for (const sg of [-1, 1]) {
       const total = wallSg ? (sg === wallSg ? sw.uTotal || sp8.uTotal : sw.uSlab || 2000) : sp8.uTotal;
-      const uLegS = ceilTo((total - (h - 2 * cover)) / 2, 10);
+      const uLegS = ceilTo((total - web) / 2, 10);
       let face = add(atU, acr, sg * Ws / 2);
-      const inward = { x: -sg * acr.x, y: -sg * acr.y };
+      let legDir = { x: -sg * acr.x, y: -sg * acr.y }; // into the strip
+      let uDist;
       if (wallSg && sg === wallSg) {
         // the U-bar at the wall sits inside the wall (anchored in it) and comes out into the strip; its closed end
         // one wall thickness behind the face (as deep as the leg allows)
         const wall = (level.walls || []).find((w) => w.polygon && w.polygon.some((pp) => distToSeg(pp, ...faceOf(sg)) < 300));
         const into = Math.min(wall?.t || 250, Math.max(0, uLegS - 400));
-        face = add(face, inward, -into);
+        face = add(face, legDir, -into);
       } else if (wallSg) {
         // the U-bar from the slab side straddles the joint: half its leg in the slab, half in the strip
-        face = add(face, inward, -uLegS / 2);
+        face = add(face, legDir, -uLegS / 2);
+      } else {
+        // internal strip: closed at the face, the legs out into the slab, the dot on this side's distribution line
+        legDir = { x: sg * acr.x, y: sg * acr.y };
+        uDist = { p: add(distP, acr, sg * (Ws / 2 + 400)), q: add(distQ, acr, sg * (Ws / 2 + 400)) };
       }
-      items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, inward, uLegS), l1: `T${sp8.uDia}-${sp8.uSpacing} U-BAR${wallSg && sg === wallSg ? ' (WALL)' : ''}`, l2: `L=${total}`, hairpin: true, side: 1, zone, noTag: true });
-      addBar('T', { dia: sp8.uDia, shape: `U ${uLegS}/${h - 2 * cover}/${uLegS}`, length: total, qty: Math.floor(Ls / sp8.uSpacing) + 1, spacing: sp8.uSpacing, zone: `${zone} U${wallSg && sg === wallSg ? ' WALL' : ''}` });
+      items.push({ detail: 'D8', face: 'TB', a: face, b: add(face, legDir, uLegS), l1: `T${sp8.uDia}-${sp8.uSpacing} U-BAR${wallSg && sg === wallSg ? ' (WALL)' : ''}`, l2: `L=${total}`, hairpin: true, side: 1, zone, noTag: true, dist: uDist });
+      addBar('T', { dia: sp8.uDia, shape: `U ${uLegS}/${web}/${uLegS}`, length: total, qty: Math.floor(Ls / sp8.uSpacing) + 1, spacing: sp8.uSpacing, zone: `${zone} U${wallSg && sg === wallSg ? ' WALL' : ''}` });
     }
     // longitudinal bars along the strip, top and bottom, fixed before the infill pour (7T16 each layer at a wall)
     const longDia = wallSg ? sw.longDia || sp8.longDia : sp8.longDia;
@@ -1295,7 +1349,7 @@ export function designAdditions(level, spec, opts = {}) {
     items.push({ detail: 'D8', face: 'TB', a: add(c, along, -Ls / 2), b: add(c, along, Ls / 2), l1: longLabel, l2: pieces.length > 1 ? `L=${Lw} (${pieces.length} PCS, LAP ${lapL})` : `L=${Lw}`, dist: { p: add(add(c, along, Ls * 0.4), acr, -Ws / 2), q: add(add(c, along, Ls * 0.4), acr, Ws / 2) }, side: -1, zone, noTag: true });
     for (const [len, qty] of [...pieces.reduce((m, len) => m.set(len, (m.get(len) || 0) + 1), new Map())]) addBar('TB', { dia: longDia, shape: 'STR', length: len, qty: nLong * qty, spacing: longSpacing || undefined, zone: `${zone} ALONG${pieces.length > 1 ? ` (LAP ${lapL})` : ''}` });
     if (wallSg) assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG, CAST AGAINST A RETAINING WALL - OFFICE DETAIL: U-BARS T${sp8.uDia}@${sp8.uSpacing} L=${sw.uTotal || sp8.uTotal} ANCHORED IN THE WALL AND OUT INTO THE STRIP, U-BARS T${sp8.uDia}@${sp8.uSpacing} L=${sw.uSlab || 2000} FROM THE SLAB SIDE, T${sw.dia || 12}@${sw.spacing || 200} L=${sw.length || 2000} TOP & BOTTOM FROM THE WALL FACE INTO THE SLAB, ${longLabel} (T&B); BONDING AGENT ON THE JOINT FACES; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
-    else assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG - ADD T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM ACROSS IT, U-BARS T${sp8.uDia}@${sp8.uSpacing} (${sp8.uTotal} TOTAL) FROM EACH FACE, T${sp8.longDia}@${sp8.longSpacing} T&B ALONG IT FIXED BEFORE THE INFILL POUR; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
+    else assumptions.push(`D8 AT ${ps.id} (${ref}): ${Math.round(Ws)} WIDE POUR STRIP, ${(Ls / 1000).toFixed(1)} m LONG - OFFICE DETAIL: T${sp8.dia}@${sp8.spacing} L=${sp8.length} TOP & BOTTOM LAPPING ACROSS EACH JOINT (FROM THE FAR FACE OF THE STRIP INTO THE SLAB), U-BARS T${sp8.uDia}@${sp8.uSpacing} L=${sp8.uTotal} CLOSED AT EACH FACE WITH THE LEGS INTO THE SLAB, T${sp8.longDia}@${sp8.longSpacing} T&B ALONG IT FIXED BEFORE THE INFILL POUR; PROPS AND THE POUR SEQUENCE PER THE PT DESIGNER.`);
   }
 
   // ---- D9 blockwork support beam through the void between two openings: a strip of the slab between two openings
@@ -1540,17 +1594,28 @@ export function officeBar(pl, S, it, phase) {
   if (phase !== 'labels') {
     // the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
     const ls = legSide(u, it.face); // the legs of this bar: up / right for a bottom bar, down / left for a top bar
+    // office rule: a bar is ONE continuous polyline - its run, its bends and its legs (a U-bar is one line, never
+    // three) - so the drawing reads as the bar it is and the CAD user picks it up in one click
+    let pts;
     if (it.bend) {
       // the drop bar: the bottom run, a 90° rise over the step at each end (drawn as a leg across the bar, on the
       // leg side) and the continuation at the slab bottom lapping with the slab bottom bars
+      // (no rise and no continuation on a side where they would leave the slab or enter an opening: `noA` / `noB`)
       const r = Math.max(it.bend.rise || 50, 150);
       const qa1 = add(it.a, ls, r), qa2 = add(qa1, u, -(it.bend.beyondA ?? it.bend.beyond ?? 500));
       const qb1 = add(it.b, ls, r), qb2 = add(qb1, u, it.bend.beyondB ?? it.bend.beyond ?? 500);
-      barLine(pl, [qa2, qa1, it.a, it.b, qb1, qb2], layer);
-    } else barLine(pl, [it.pairOff ? add(it.a, n, it.pairOff) : it.a, it.pairOff ? add(it.b, n, it.pairOff) : it.b], layer);
-    if (it.legEnd) { const e = it.legEnd === 'start' ? it.a : it.b; barLine(pl, [e, add(e, ls, 250)], layer); } // leg of an L at the edge
-    if (it.hairpin) { barLine(pl, [add(it.a, ls, 150), add(it.b, ls, 150)], layer); barLine(pl, [it.a, add(it.a, ls, 150)], layer); } // the U on the plan: two legs closed at the edge
-    if (it.uEnd) drawUEnds(pl, S, it.a, it.b, it.uEnd, layer);
+      pts = [...(it.bend.noA ? [] : [qa2, qa1]), it.a, it.b, ...(it.bend.noB ? [] : [qb1, qb2])];
+    } else if (it.hairpin) {
+      // the U on the plan: the two legs closed at the edge (a), one polyline leg - closing bar - leg
+      pts = [add(it.b, ls, 150), add(it.a, ls, 150), it.a, it.b];
+    } else pts = [it.pairOff ? add(it.a, n, it.pairOff) : it.a, it.pairOff ? add(it.b, n, it.pairOff) : it.b];
+    // the ends: the leg of an L at the edge (`legEnd`) and the U / L ends at the boundary (`uEnd`), joined to the run
+    const ends = it.uEnd ? uEndPoints(it.a, it.b, it.uEnd, layer) : { pre: [], post: [] };
+    if (it.legEnd === 'start' && !it.uEnd?.start) ends.pre = [add(it.a, ls, 250)];
+    if (it.legEnd === 'end' && !it.uEnd?.end) ends.post = [add(it.b, ls, 250)];
+    if (it.bend) { ends.pre = []; ends.post = []; } // a bent drop bar already ends in its own legs
+    barLine(pl, [...ends.pre, ...pts, ...ends.post], layer);
+    if (it.uEnd) uEndTags(pl, S, it.a, it.b, it.uEnd, layer);
     if (it.triple) { barLine(pl, [add(it.a, n, 200), add(it.b, n, 200)], layer); barLine(pl, [add(it.a, n, -200), add(it.b, n, -200)], layer); }
     if (it.pairOff) barLine(pl, [add(it.a, n, -it.pairOff), add(it.b, n, -it.pairOff)], layer); // the second bar of a pair (blockwork beam)
     if (it.distCands && !it.dist) {
@@ -1636,17 +1701,28 @@ export function officeBar(pl, S, it, phase) {
   }
 }
 
-/** The end of a top bar at the slab boundary: a U (500 bottom leg, "U500") at a free edge or an opening, an L ("L400", the leg down into the beam) at an edge beam: a short leg on the plan and the tag. */
-function drawUEnds(pl, S, a, b, uEnd, layer) {
-  const u = unit(a, b), n = perp(u);
-  const { rot } = readableRot(u);
+/**
+ * The end of a top bar at the slab boundary: a U (500 bottom leg, "U500") at a free edge or an opening, an L ("L400",
+ * the leg down into the beam) at an edge beam. `uEndPoints` gives the leg vertices to join to the bar's own polyline
+ * (`pre` before its start, `post` after its end: the bar stays ONE line), `uEndTags` writes the U500 / L400 tag.
+ */
+function uEndPoints(a, b, uEnd, layer) {
+  const u = unit(a, b);
   const ls = legSide(u, /BOT/.test(layer) ? 'B' : 'T'); // top bar: legs down / left; bottom bar: up / right
-  for (const [on, p] of [[uEnd.start, a], [uEnd.end, b]]) {
-    if (!on) continue;
+  const legs = (on, p, back) => {
+    if (!on) return [];
     const tick = add(p, ls, 250);
     // a U is drawn as a U: the leg and the 500 bottom leg coming back along the bar from the edge (an L keeps its single leg into the beam)
-    if (on === 'U') barLine(pl, [p, tick, add(tick, p === a ? u : { x: -u.x, y: -u.y }, R.U_BOTTOM_LEG)], layer);
-    else barLine(pl, [p, tick], layer);
+    return on === 'U' ? [tick, add(tick, back, R.U_BOTTOM_LEG)] : [tick];
+  };
+  return { pre: legs(uEnd.start, a, u).reverse(), post: legs(uEnd.end, b, { x: -u.x, y: -u.y }) };
+}
+function uEndTags(pl, S, a, b, uEnd, layer) {
+  const u = unit(a, b), n = perp(u);
+  const { rot } = readableRot(u);
+  const ls = legSide(u, /BOT/.test(layer) ? 'B' : 'T');
+  for (const [on, p] of [[uEnd.start, a], [uEnd.end, b]]) {
+    if (!on) continue;
     if (placer) { if (placer.uTags.some((q) => dist(q, p) < 400)) continue; placer.uTags.push(p); } // one tag where two bars end together
     const offs = [0, 300, -300, 600, -600].flatMap((k) => [add(add({ x: 0, y: 0 }, u, k), ls, 300 + 110), add(add({ x: 0, y: 0 }, u, k), ls, -300)]);
     const tag = on === 'L' ? `L${DEFAULT_U.beamLeg}` : `U${R.U_BOTTOM_LEG}`;
@@ -1659,8 +1735,9 @@ export function drawExisting(pl, S, ex, faces) {
   const keep = (f) => faces.includes(f);
   for (const l of ex.lines.filter((x) => keep(x.face))) {
     const layer = /BOT/i.test(l.layer) || l.face === 'B' ? 'REO-BOT' : 'REO-TOP';
-    barLine(pl, [l.a, l.b], layer);
-    if (l.uEnd && faces.includes('T')) drawUEnds(pl, S, l.a, l.b, l.uEnd, layer);
+    const ends = l.uEnd && faces.includes('T') ? uEndPoints(l.a, l.b, l.uEnd, layer) : { pre: [], post: [] };
+    barLine(pl, [...ends.pre, l.a, l.b, ...ends.post], layer); // one polyline: the bar with its U / L legs
+    if (l.uEnd && faces.includes('T')) uEndTags(pl, S, l.a, l.b, l.uEnd, layer);
   }
   for (const it of (ex.items || []).filter((x) => keep(x.face))) officeBar(pl, S, it);
   for (const c of ex.callouts.filter((x) => keep(x.face))) pl.text({ x: c.x, y: c.y }, c.text, { layer: 'REO-TXT', style: 'BW', widthFactor: c.widthFactor || 0.8, h: (c.h || CALL_H) / S, rot: c.rot, align: ['L', 'C', 'R'][c.halign] || 'L', valign: 'B' });

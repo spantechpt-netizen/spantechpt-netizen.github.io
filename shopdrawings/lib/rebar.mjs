@@ -37,7 +37,7 @@ export const DEFAULT_SPEC = {
   thicknessMesh: { dia: 10, spacing: 200 }, // office rule: the bottom mesh written at every change of slab thickness (per the design)
   drops: { dia: 12, spacing: 150, leg: 500 }, // office rule: the bottom mesh inside a column drop (detail 4 groups through the column, 500 legs at both ends)
   barOffset: 500, // design mode: the bar symbol sits beside the column (a vertical bar to its left, a horizontal one above it)
-  pourStrip: { dia: 16, spacing: 200, length: 3000, uDia: 12, uSpacing: 200, uTotal: 2400, longDia: 12, longSpacing: 150, wall: { uTotal: 2500, uSlab: 2000, dia: 12, spacing: 200, length: 2000, longDia: 12, longSpacing: 150 } }, // PT details 3: the office pour strip detail; against a retaining wall: U-bar T12@200 L=2500 anchored in the wall, U-bar T12@200 L=2000 from the slab side, T12@200 T&B L=2000 from the wall face into the slab, T12@150 T&B along
+  pourStrip: { dia: 12, spacing: 200, length: 2000, uDia: 12, uSpacing: 200, uTotal: 2400, longDia: 12, longSpacing: 150, wall: { uTotal: 2500, uSlab: 2000, dia: 12, spacing: 200, length: 2000, longDia: 12, longSpacing: 150 } }, // the office pour strip detail: T12@200 T&B L=2000 lapping across each joint, U-bars T12@200 L=2400 closed at each face with the legs into the slab, T12@150 T&B along; against a retaining wall: U-bar T12@200 L=2500 anchored in the wall, U-bar T12@200 L=2000 from the slab side, T12@200 T&B L=2000 from the wall face into the slab, T12@150 T&B along
   blockBeam: { dia: 16, count: 2, linkDia: 12, linkSpacing: 200, minWidth: 150, maxGap: 500 }, // detail 9 (office): a slab strip of 150..500 between two openings gets 2T16 T&B with T12@200 links
 };
 
@@ -271,8 +271,8 @@ function neighbour(level, col, dir, sign) {
   // a long support (wall) looks for the next support anywhere along its own length
   const halfPerp = (col.shape === 'circle' ? (col.d || 0) : (dir === 'x' ? col.h : col.w) || 0) / 2;
   let best = null;
-  for (const o of level.columns) {
-    if (o === col || o.id === col.id) continue;
+  for (const o of level._supports?.list || level.columns) {
+    if (o === col || o.id === col.id || col.merged?.some((m) => m.id === o.id) || o.merged?.some((m) => m.id === col.id)) continue;
     if (Math.abs(o[perp] - col[perp]) > halfPerp + 1500) continue;
     const d = (o[alongKey] - col[alongKey]) * sign;
     if (d <= 0) continue;
@@ -424,8 +424,38 @@ export function edgeRunsBetweenColumns(level, a, b, h, bandOf) {
 }
 
 /** Sheet: additional top bars over columns (PT two-way slab, §8.7.5.5). */
+/**
+ * Office rule: two columns standing next to each other (faces closer than `topColumns.mergeGap`, 500 mm, and
+ * overlapping along the other axis) are one support for the top bars - one group of reinforcement over both,
+ * never two overlapping groups. The merged support is the rectangle around them; its members are kept in `merged`
+ * (the punching check and the schedule still see the columns themselves).
+ */
+export function supportColumns(level, gap = 500) {
+  const cols = level.columns || [];
+  if (level._supports && level._supports.gap === gap && level._supports.n === cols.length) return level._supports.list;
+  const box = (c) => { const w = c.shape === 'circle' ? c.d : c.w, h = c.shape === 'circle' ? c.d : c.h; return { minX: c.cx - w / 2, maxX: c.cx + w / 2, minY: c.cy - h / 2, maxY: c.cy + h / 2 }; };
+  const touch = (A, B) => {
+    const gx = Math.max(A.minX - B.maxX, B.minX - A.maxX), gy = Math.max(A.minY - B.maxY, B.minY - A.maxY);
+    return (gx <= gap && gy <= 0) || (gy <= gap && gx <= 0); // close along one axis, overlapping along the other
+  };
+  const parent = cols.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const boxes = cols.map(box);
+  for (let i = 0; i < cols.length; i++) for (let j = i + 1; j < cols.length; j++) if (touch(boxes[i], boxes[j])) parent[find(i)] = find(j);
+  const groups = new Map();
+  cols.forEach((c, i) => { const k = find(i); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(c); });
+  const list = [...groups.values()].map((g) => {
+    if (g.length === 1) return g[0];
+    const b = { minX: Math.min(...g.map((c) => box(c).minX)), maxX: Math.max(...g.map((c) => box(c).maxX)), minY: Math.min(...g.map((c) => box(c).minY)), maxY: Math.max(...g.map((c) => box(c).maxY)) };
+    return { id: g.map((c) => c.id).join('+'), shape: 'rect', cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2, w: b.maxX - b.minX, h: b.maxY - b.minY, angle: g[0].angle, merged: g };
+  });
+  Object.defineProperty(level, '_supports', { value: { gap, n: cols.length, list }, enumerable: false, configurable: true, writable: true }); // a cache, never written to the model file
+  return list;
+}
+
 export function topAtColumns(level, spec) {
   const s = spec.topColumns;
+  const supports = supportColumns(level, s.mergeGap ?? 500);
   const h = level.thickness;
   const cover = spec.cover;
   const lists = { x: new BarList('T2'), y: new BarList('T1') };
@@ -441,10 +471,10 @@ export function topAtColumns(level, spec) {
   const beamSupports = (level.beams || []).filter((b) => b.polygon && b.interior).map((b) => ({ id: b.id, shape: 'rect', cx: b.cx, cy: b.cy, w: b.w, h: b.h, isWall: true, isBeam: true, core: false, skipAlong: b.along, beam: b }));
   if (!level.maxSpan) {
     let mx = 0;
-    for (const c of level.columns) for (const dir of ['x', 'y']) for (const sign of [-1, 1]) { const nb = neighbour(level, c, dir, sign); if (nb && nb.d > mx) mx = nb.d; }
+    for (const c of supports) for (const dir of ['x', 'y']) for (const sign of [-1, 1]) { const nb = neighbour(level, c, dir, sign); if (nb && nb.d > mx) mx = nb.d; }
     level.maxSpan = mx || 8000;
   }
-  for (const col of [...level.columns, ...wallSupports, ...beamSupports]) {
+  for (const col of [...supports, ...wallSupports, ...beamSupports]) {
     const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
     const per = {};
     // spans to the next support in each direction, found first so that the strip width

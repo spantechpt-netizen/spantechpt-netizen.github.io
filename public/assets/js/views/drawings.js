@@ -57,6 +57,8 @@ const MESHES = ['bottom', 'both'];
 const meshLabel = (mesh) => t(`dw_mesh_${mesh || 'bottom'}`);
 const BEAM_DESIGNS = ['ram', 'office', 'max'];
 const beamDesignLabel = (v) => t(`dw_bd_${v || 'ram'}`);
+const ROTATIONS = ['auto', '0', '90'];
+const rotateLabel = (v) => t(`dw_rotate_${v == null || v === '' ? 'auto' : v}`);
 const statusBadge = (status) => el('span', {
   class: `badge ${status === 'issued' ? 'green' : status === 'failed' || status === 'blocked' ? 'red' : status === 'superseded' ? 'grey' : status === 'running' ? 'amber' : 'blue'}`,
   text: t(`dw_status_${status || 'running'}`),
@@ -167,6 +169,10 @@ function openProjectForm(project, after) {
       field({
         name: 'mesh', label: t('dw_mesh'), type: 'select', value: project?.mesh || 'bottom', hint: t('dw_mesh_hint'),
         options: MESHES.map((m) => ({ value: m, label: meshLabel(m) })),
+      }),
+      field({
+        name: 'rotate', label: t('dw_rotate'), type: 'select', value: project?.rotate || 'auto', hint: t('dw_rotate_hint'),
+        options: ROTATIONS.map((m) => ({ value: m, label: rotateLabel(m) })),
       }),
       field({
         name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: project?.beam_design || 'ram', hint: t('dw_bd_hint'),
@@ -348,6 +354,10 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
         options: MESHES.map((m) => ({ value: m, label: meshLabel(m) })),
       }),
       field({
+        name: 'rotate', label: t('dw_rotate'), type: 'select', value: project.rotate || settings.rotate || 'auto',
+        options: ROTATIONS.map((m) => ({ value: m, label: rotateLabel(m) })),
+      }),
+      field({
         name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: project.beam_design || settings.beam_design || 'ram',
         options: BEAM_DESIGNS.map((m) => ({ value: m, label: beamDesignLabel(m) })),
       }),
@@ -378,7 +388,7 @@ function openGenerateForm(project, levels, settings, preselected, navigate) {
             const { file, levelId } = picked[i];
             status.textContent = fill('dw_batch_progress', { n: i + 1, total: picked.length }) + ` ${file.name}`;
             try {
-              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, mesh: data.mesh, beam_design: data.beam_design, revision: data.revision || undefined, notes: data.notes || undefined });
+              const { run } = await api.generateDrawings(levelId, file, { mode: data.mode, ram_bands: data.ram_bands, mesh: data.mesh, beam_design: data.beam_design, rotate: data.rotate, revision: data.revision || undefined, notes: data.notes || undefined });
               results.push({ ok: true, run, file });
             } catch (error) {
               results.push({ ok: false, error, file });
@@ -440,6 +450,7 @@ async function projectPage(projectId, navigate) {
           item(t('dw_ram_bands'), bandsLabel(project.ram_bands)),
           item(t('dw_mesh'), meshLabel(project.mesh)),
           item(t('dw_beam_design'), beamDesignLabel(project.beam_design)),
+          item(t('dw_rotate'), rotateLabel(project.rotate)),
           item(t('dw_numbering'), exampleNo(settings, project, levels[0]), 'ltr'),
         ]),
         project.notes ? el('div.small.muted.mt-1', { text: project.notes }) : null,
@@ -1248,6 +1259,7 @@ async function runPage(projectId, runId, navigate) {
     kpi(t('dw_ram_bands'), bandsLabel(run.ram_bands)),
     kpi(t('dw_mesh'), meshLabel(run.mesh)),
     kpi(t('dw_beam_design'), beamDesignLabel(run.beam_design)),
+    kpi(t('dw_rotate'), rotateLabel(run.rotate)),
     kpi(t('dw_designer'), run.created_by_name || '—'),
     kpi(t('dw_duration'), run.duration_ms ? `${(run.duration_ms / 1000).toFixed(1)} s` : '—'),
     kpi(t('dw_source'), run.source_name || run.source_file || '—'),

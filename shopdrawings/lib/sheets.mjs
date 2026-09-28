@@ -15,6 +15,7 @@ import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import * as RC from './ram-concept.mjs';
 import { bbox, expandBbox, edges, rectPolygon, circlePolygon, dist, pointInPolygon, centroid, polygonArea } from './geometry.mjs';
+import { size50 } from './beam-strips.mjs';
 
 /** Column outline as a polygon (rotated columns supported). */
 export function columnPolygon(c) {
@@ -145,7 +146,7 @@ export function drawBase(sheet, pl, level, o = {}) {
     pl.pline(poly, { layer: 'OPENING', closed: true });
     const b = bbox(poly);
     if (op.kind !== 'circle') { pl.line({ x: b.minX, y: b.minY }, { x: b.maxX, y: b.maxY }, { layer: 'OPENING' }); pl.line({ x: b.maxX, y: b.minY }, { x: b.minX, y: b.maxY }, { layer: 'OPENING' }); }
-    if (o.regionLabels) pl.text({ x: b.cx, y: b.maxY + 200 }, `${op.id} OPENING ${sizeOf(op)}`, { layer: 'OPENING', h: 1.5, align: 'C' });
+    // (office rule: an opening is not labelled on the plan - the crossed outline says what it is; its id and size stay in the element list)
   }
   // voids
   for (const v of level.voids) {
@@ -1049,7 +1050,9 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
       delete r._t;
     }
     // the anchor spacing at every face line, dimensioned perpendicular to the tendons, outside the slab
-    const axis = fam === 'A' ? 'y' : 'x', across = fam === 'A' ? 'x' : 'y';
+    // (the tendons' own direction on the sheet, not the family name: a plan turned 90° runs the latitude set vertically)
+    const runsAlongX = tendons.reduce((sum, t) => { const a = t.pts[0], b = t.pts[t.pts.length - 1]; return sum + (Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? 1 : -1); }, 0) >= 0;
+    const axis = runsAlongX ? 'y' : 'x', across = runsAlongX ? 'x' : 'y';
     const groups = new Map();
     for (const a of anchors) { const key = Math.round(a.p[across] / 2000); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(a.p); }
     for (const g of groups.values()) {
@@ -1059,11 +1062,13 @@ export function ramCablesSheet(model, level, meta, { set = 'latitude', variant =
         const p = g[i], q = g[i + 1];
         if (Math.abs(q[axis] - p[axis]) < 200) continue;
         const mid = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
-        const perp = fam === 'A' ? { x: 1, y: 0 } : { x: 0, y: 1 };
-        const d = TH * 4;
+        const perp = runsAlongX ? { x: 1, y: 0 } : { x: 0, y: 1 };
+        // the dimension line halfway between the anchors and the tag blocks (the tag starts `tagXs[0]` out of the
+        // anchor): it never sits over the tags
+        const d = (CAB.tagXs[0] * G) / 2;
         const plus = { x: mid.x + perp.x * d, y: mid.y + perp.y * d }, minus = { x: mid.x - perp.x * d, y: mid.y - perp.y * d };
         const dl = outsideSlab(plus) && !outsideSlab(minus) ? plus : minus;
-        pl.dimension(p, q, dl, { style: 'PT-DIM-SPACING', styleDef: dimSpacing, angle: fam === 'A' ? 90 : 0, layer: `Dimensions-Sec-${fam}` });
+        pl.dimension(p, q, dl, { style: 'PT-DIM-SPACING', styleDef: dimSpacing, angle: runsAlongX ? 90 : 0, layer: `Dimensions-Sec-${fam}` });
       }
     }
 
@@ -1368,7 +1373,7 @@ export function beamsSheet(model, level, meta) {
       const m = { x: (bm.a.x + bm.b.x) / 2, y: (bm.a.y + bm.b.y) / 2 };
       let rot = (Math.atan2(u.y, u.x) * 180) / Math.PI;
       const off = bm.width / 2 + 0.6 * S;
-      pl.text({ x: m.x + n.x * off, y: m.y + n.y * off }, `${bm.mark || '??'} ${bm.width}x${bm.depth}`, { layer: 'CALLOUT', h: 2.2, rot, align: 'C', valign: 'B', bold: true });
+      pl.text({ x: m.x + n.x * off, y: m.y + n.y * off }, `${bm.mark || '??'} ${size50(bm.width)}x${size50(bm.depth)}`, { layer: 'CALLOUT', h: 2.2, rot, align: 'C', valign: 'B', bold: true });
       const chk = (sch.office?.beams || []).find((x) => String(x.id).toUpperCase() === String(bm.id).toUpperCase());
       const bars = (bm.mark ? `${bm.top?.text || '-'} / ${bm.bottom?.text || '-'} / ${bm.stirrups?.text || '-'}` : `NOT DESIGNED${sch.design === 'ram' ? ' IN RAM' : ''}`) + (chk && chk.status === 'fail' ? ` - NOT PASSING (${(chk.reasons.length ? chk.reasons : ['RAM']).join(', ').toUpperCase()})` : '');
       pl.text({ x: m.x - n.x * off, y: m.y - n.y * off }, bars, { layer: 'TEXT', h: 1.6, rot, align: 'C', valign: 'T' });
@@ -1379,7 +1384,7 @@ export function beamsSheet(model, level, meta) {
     const failing = (office?.beams || []).filter((b) => b.status === 'fail');
     const bypass = model.spec.beams?.override && (model.spec.beams.override.by || model.spec.beams.override.beams) ? model.spec.beams.override : null;
     // the office design forces per beam (the first twelve; the rest in REPORT.md)
-    const forces = office ? office.beams.slice(0, 12).map((b) => `${b.id} ${b.width}x${b.depth}: SPANS ${b.spans.map((sp) => (sp.length / 1000).toFixed(1)).join('+')} m, TRIB ${(b.trib_mm.total / 1000).toFixed(1)} m, wu ${b.loads.wu} kN/m, Mu- ${b.Mneg_max} / Mu+ ${b.Mpos_max} kN.m, Vu ${b.Vu} kN -> ${b.top?.text || '-'} / ${b.bottom?.text || '-'} / ${b.stirrups?.text || '-'}; DEFL. ${b.deflection.table_ok ? 'OK BY SPAN/DEPTH' : `${b.deflection.ratio} OF LIMIT${b.deflection.ok ? '' : ' - NOT PASSING'}`}${b.ram_failed ? '; REPORTED FAILING IN RAM' : ''}`) : [];
+    const forces = office ? office.beams.slice(0, 12).map((b) => `${b.id} ${size50(b.width)}x${size50(b.depth)}: SPANS ${b.spans.map((sp) => (sp.length / 1000).toFixed(1)).join('+')} m, TRIB ${(b.trib_mm.total / 1000).toFixed(1)} m, wu ${b.loads.wu} kN/m, Mu- ${b.Mneg_max} / Mu+ ${b.Mpos_max} kN.m, Vu ${b.Vu} kN -> ${b.top?.text || '-'} / ${b.bottom?.text || '-'} / ${b.stirrups?.text || '-'}; DEFL. ${b.deflection.table_ok ? 'OK BY SPAN/DEPTH' : `${b.deflection.ratio} OF LIMIT${b.deflection.ok ? '' : ' - NOT PASSING'}`}${b.ram_failed ? '; REPORTED FAILING IN RAM' : ''}`) : [];
     if (office && office.beams.length > 12) forces.push(`${office.beams.length - 12} MORE BEAMS IN REPORT.md.`);
     const rows = sch.types.map((t) => ({ mark: t.isNew && sch.library ? `${t.mark} *` : t.mark, section: `${t.width} x ${t.depth}`, top: t.top?.text || '-', bottom: t.bottom?.text || '-', stirrups: t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs} LEGS @ ${t.stirrups.spacing}` : '-', count: t.count, beams: t.beams.join(', ') }));
     const cols = [
@@ -1405,7 +1410,7 @@ export function beamsSheet(model, level, meta) {
         pen.pline([{ x: x0 + cov, y: cov }, { x: x0 + b - cov, y: cov }, { x: x0 + b - cov, y: h - cov }, { x: x0 + cov, y: h - cov }], { layer: 'REBAR', closed: true });
         const rowOf = (set, y) => { if (!set) return; const nb = set.n, r = set.dia / 2; const x1 = x0 + cov + 12, x2 = x0 + b - cov - 12; for (let i = 0; i < nb; i++) { const xx = nb > 1 ? x1 + ((x2 - x1) * i) / (nb - 1) : (x1 + x2) / 2; pen.circle({ x: xx, y }, r, { layer: 'REBAR' }); pen.hatch([[{ x: xx - r, y: y - r }, { x: xx + r, y: y - r }, { x: xx + r, y: y + r }, { x: xx - r, y: y + r }]], { layer: 'REBAR', pattern: 'SOLID' }); } };
         rowOf(t.top, h - cov - 20); rowOf(t.bottom, cov + 20);
-        pen.text({ x: x0 + b / 2, y: -250 }, `${t.mark}  ${b}x${h}`, { layer: 'TEXT', h: 2.2, align: 'C', valign: 'T', bold: true });
+        pen.text({ x: x0 + b / 2, y: -250 }, `${t.mark}  ${size50(b)}x${size50(h)}`, { layer: 'TEXT', h: 2.2, align: 'C', valign: 'T', bold: true });
         pen.text({ x: x0 + b / 2, y: -620 }, `TOP ${t.top?.text || '-'}  BOT ${t.bottom?.text || '-'}`, { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
         pen.text({ x: x0 + b / 2, y: -950 }, t.stirrups ? `T${t.stirrups.dia}-${t.stirrups.legs}L @ ${t.stirrups.spacing}` : '-', { layer: 'TEXT', h: 1.6, align: 'C', valign: 'T' });
         pen.text({ x: x0 + b / 2, y: -1250 }, `${t.count} BEAM${t.count > 1 ? 'S' : ''}`, { layer: 'NOTES', h: 1.4, align: 'C', valign: 'T' });

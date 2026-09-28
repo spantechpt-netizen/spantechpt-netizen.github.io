@@ -234,6 +234,11 @@ export function designBeams(level, spec = {}) {
   const ramFailed = new Set((spec.beams?.ramFailed || []).map((v) => String(v).trim().toUpperCase()));
   const noLoads = !loads.length;
   if (noLoads) out.assumed.push(`no area loads in the model: SDL ${ASSUMED.dead} kN/m² and LL ${ASSUMED.live} kN/m² assumed`);
+  // a beam end on a drawing joint (a part of a split slab): the slab - and the beam - go on beyond it
+  const joints = level.jointEdges || [];
+  const pc = level.partCut;
+  const distToSeg = (p, a, b) => { const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2; const t = L2 ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / L2)) : 0; return Math.hypot(p.x - (a.x + t * (b.x - a.x)), p.y - (a.y + t * (b.y - a.y))); };
+  const atJoint = (p) => joints.some((e) => distToSeg(p, e.a, e.b) < 400) || Boolean(pc && ((pc.joints?.lo && Math.abs(p[pc.axis] - (pc.lo - (pc.overlap ?? 600))) < 400) || (pc.joints?.hi && Math.abs(p[pc.axis] - (pc.hi + (pc.overlap ?? 600))) < 400)));
   for (const bm of beams) {
     const sp = beamSpans(bm, level.columns || [], level.walls || []);
     const L = dist(bm.a, bm.b);
@@ -243,9 +248,15 @@ export function designBeams(level, spec = {}) {
       const here = loads.filter((l) => l.type === kind && pointInPolygon(mid, l.polygon)), any = loads.filter((l) => l.type === kind);
       q[kind] = here.length ? Math.max(...here.map((l) => l.q)) : any.length ? Math.max(...any.map((l) => l.q)) : ASSUMED[kind];
     }
-    // spans: the end pieces beyond the first / last support are cantilevers
+    // spans: the end pieces beyond the first / last support are cantilevers - unless the piece ends at a drawing
+    // joint (the slab was split into parts for the sheets): there the beam goes on into the neighbouring part and is
+    // continuous, so that end is taken as an interior support (hogging wu L² / 16), never as a free end
     let spans = sp.spans.slice();
     const cant = { left: null, right: null };
+    const jointEnds = [];
+    if (spans.length && !spans[0].support0 && atJoint(bm.a)) { spans[0] = { ...spans[0], support0: { kind: 'joint' } }; jointEnds.push('start'); }
+    if (spans.length && !spans[spans.length - 1].support1 && atJoint(bm.b)) { spans[spans.length - 1] = { ...spans[spans.length - 1], support1: { kind: 'joint' } }; jointEnds.push('end'); }
+    if (jointEnds.length) out.warnings.push(`${bm.id}: continues into the neighbouring part at its ${jointEnds.join(' and ')} (drawing joint) - designed as a continuous beam, not a cantilever; the whole beam is designed on the unsplit slab`);
     if (spans.length > 1 && !spans[0].support0) { cant.left = spans[0].length; spans = spans.slice(1); }
     if (spans.length > 1 && !spans[spans.length - 1].support1) { cant.right = spans[spans.length - 1].length; spans = spans.slice(0, -1); }
     const noSupports = !spans.some((s) => s.support0 || s.support1);

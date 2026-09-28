@@ -84,7 +84,9 @@ export function readRamConcept(path) {
   // beams: RAM beam objects (an axis, a width, a depth); an edge beam lies along the slab edge, an interior one has slab both sides
   const beams = rows('Beam').filter((r) => r.Point0 && r.Point1).map((r, i) => {
     const a = point(r.Point0), b = point(r.Point1);
-    const w = L(r.Width || 0) || 300, d = L(r.SlabThickness || 0);
+    // (office convention: beam sizes are written to the nearest 50 mm, never with decimals: 350x600)
+    const r50 = (v) => Math.round(v / 50) * 50;
+    const w = r50(L(r.Width || 0)) || 300, d = r50(L(r.SlabThickness || 0));
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
     return { id: `BM${i + 1}`, a, b, t: w, depth: d, toc: L(r.TOC || 0), meshedAsSlab: !!r.BeamIsMeshedAsSlab, polygon: [{ x: a.x + n.x * w / 2, y: a.y + n.y * w / 2 }, { x: b.x + n.x * w / 2, y: b.y + n.y * w / 2 }, { x: b.x - n.x * w / 2, y: b.y - n.y * w / 2 }, { x: a.x - n.x * w / 2, y: a.y - n.y * w / 2 }] };
@@ -377,9 +379,16 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
     // a column whose centre sits on the slab edge (corner / edge columns) belongs to the body too
     const near = (p, poly, tol) => inside(p, poly) || distToPolygon(p, poly) <= tol;
     const cols = ram.columns.filter((c) => near({ x: c.cx, y: c.cy }, body, Math.max(c.w, c.h) / 2) && !holesOf(body).some((h) => inside({ x: c.cx, y: c.cy }, h)));
-    const angleDeg = cols.length ? modeAngle(cols.map((c) => ((c.angle % 180) + 180) % 180)) : 0;
-    const theta = -(angleDeg * Math.PI) / 180;
+    const angleCols = cols.length ? modeAngle(cols.map((c) => ((c.angle % 180) + 180) % 180)) : 0;
     const c0 = centroid(body);
+    // the plan on the sheet (`spec.rotate`): 'auto' turns a plan that stands taller than wide by 90° so that its long
+    // side lies along the landscape sheet (a plan that would not fit fits, or fits at a larger scale); 0 / 90 force it
+    // (judged body by body: each body is its own plan on its own sheets)
+    const bb0 = bbox(body.map((p) => rot(p, c0, -(angleCols * Math.PI) / 180)));
+    const rotOpt = String(specOverrides.rotate ?? 'auto');
+    const turn = rotOpt === '90' ? 90 : rotOpt === '0' ? 0 : bb0.h > bb0.w * 1.05 ? 90 : 0;
+    const angleDeg = angleCols + turn;
+    const theta = -(angleDeg * Math.PI) / 180;
     const R = (p) => rot(p, c0, theta);
     const outline = body.map(R);
     const areasIn = ram.slab.areas.filter((a) => inside(centroid(a.polygon), body)).map((a) => ({ ...a, area: Math.abs(polygonArea(a.polygon)) })).sort((a, b) => b.area - a.area);
@@ -390,7 +399,7 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
     const level = {
       // the level code registered for the project (B1, GF, L03 ...) goes into the drawing numbers when given
       id: levelId ? (bodies.length > 1 ? `${levelId}-${i + 1}` : String(levelId)) : `L${String(i + 1).padStart(2, '0')}`, customId: Boolean(levelId),
-      name: bodies.length > 1 ? `${levelName} - BODY ${i + 1}` : levelName, rotation: angleDeg, frame: { cx: c0.x, cy: c0.y, angle: angleDeg },
+      name: bodies.length > 1 ? `${levelName} - BODY ${i + 1}` : levelName, rotation: angleDeg, frame: { cx: c0.x, cy: c0.y, angle: angleDeg }, sheetTurn: turn,
       thickness: bodyThickness, outline, bbox: bbox(outline),
       columns: cols.map((c, j) => { const p = R({ x: c.cx, y: c.cy }); return { ...c, id: `C${j + 1}`, cx: p.x, cy: p.y, angle: Math.round(((c.angle - angleDeg) % 180 + 180) % 180 * 10) / 10 }; }),
       // (a hole in the RAM mesh has a vertex at every element node: the collinear ones are dropped so that a long
@@ -438,7 +447,8 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
     });
     findings.push(`${level.id} ${level.name}: ${Math.round(Math.abs(polygonArea(outline)) / 1e6)} m², ${level.columns.length} columns, ${level.walls.length} wall segments, ${level.thickZones.length} thickened zones, ${level.pourStrips.length} pour strips, ${level.ram.bands.length} designed bar bands, ${level.ram.tendons.length} tendons, ${level.openings.length} openings${angleDeg ? `, rotated ${angleDeg}° to its local frame` : ''}.`);
     if (level.customZones.length) assumptions.push({ level: level.id, text: `${level.customZones.length} slab area(s) of "custom" behaviour wider than 1.5 m in ${level.name} (${level.customZones.map((z) => `${Math.round(bbox(z.polygon).w / 1000)} x ${Math.round(bbox(z.polygon).h / 1000)} m`).join(', ')}) are drawn as slab; if one is a pour strip or a ramp, set it on the plan.` });
-    if (angleDeg) assumptions.push({ level: level.id, text: `Body ${i + 1} is rotated ${angleDeg}° on the site; the plan is drawn in its local frame (north arrow rotated accordingly).` });
+    if (angleCols) assumptions.push({ level: level.id, text: `Body ${i + 1} is rotated ${angleCols}° on the site; the plan is drawn in its local frame (north arrow rotated accordingly).` });
+    if (turn) assumptions.push({ level: level.id, text: `${level.name} is turned ${turn}° on the sheet (${rotOpt === 'auto' ? `its ${Math.round(bb0.h / 1000)} m side is longer than its ${Math.round(bb0.w / 1000)} m side: the long side lies along the sheet` : 'as set for the project'}); the north arrow follows.` });
     assumptions.push({ level: level.id, text: 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.' });
     return level;
   });
