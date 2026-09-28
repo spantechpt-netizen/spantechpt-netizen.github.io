@@ -23,8 +23,8 @@ export const DEFAULT_SPEC = {
   // of the interior length on top. rule: 'office' | 'code' (ln/6 each side, SBC 304-18 §8.7.5.5)
   topColumns: { dia: 16, spacing: 150, rule: 'office', length: 4000, edgeFactor: 0.7, dropMargin: 200 },
   // perimeter bars between the column top bars (office rule): T12@150, a U of `total` length at a free edge
-  // (equal top and bottom legs), an L at an edge beam (`beamLeg` down into the beam + `beamTop` on top)
-  uEdge: { dia: 12, spacing: 150, total: 4000, beamLeg: 400, beamTop: 2000, leg: 1200 },
+  // (equal top and bottom legs), an L of the same 4 m total at an edge beam (`beamLeg` down into the beam + `beamTop` on top)
+  uEdge: { dia: 12, spacing: 150, total: 4000, beamLeg: 400, beamTop: 3600, leg: 1200 },
   uCircle: { dia: 12, spacing: 150, leg: 1200 }, // U-bars around circular regions
   edgeBars: { dia: 12, count: 2 }, // longitudinal bars inside edge U-bars, top and bottom
   ringBars: { dia: 12, count: 2 }, // ring bars around circular regions, top and bottom

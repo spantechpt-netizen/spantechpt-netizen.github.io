@@ -524,7 +524,7 @@ test('the General Details add bars in the office convention at the places they r
   const by = (d) => adds.items.filter((it) => it.detail === d);
   assert.ok(by('D1').length >= 1, 'L-bars along the edge beam, one per run between supports');
   assert.equal(Math.round(dist2(by('D1')[0].dist.p.x - by('D1')[0].dist.q.x ? { x: by('D1')[0].dist.p.x, y: 0 } : { x: 0, y: 0 }, { x: by('D1')[0].dist.q.x, y: 0 })), 16000, 'the distribution runs along the whole free edge');
-  assert.ok(by('D1').every((it) => it.face === 'T' && it.l1 === 'T12-150 LBAR (T)' && it.l2 === 'L=2400' && Math.round(dist2(it.a, it.b)) === 2000), 'L-bar: 400 into the beam + 2000 on top');
+  assert.ok(by('D1').every((it) => it.face === 'T' && it.l1 === 'T12-150 LBAR (T)' && it.l2 === 'L=4000' && Math.round(dist2(it.a, it.b)) === 3600), 'L-bar 4 m total: 400 into the beam + 3600 on top');
   assert.ok(by('D6').length >= 1 && by('D6').every((it) => it.l1 === 'T12-150 U-BAR' && it.l2 === 'L=4000'), 'U-bars of 4 m at the free edges');
   assert.ok(by('D2').some((it) => it.l1 === 'T12-200 U-BAR'), 'U-bars at the core wall faces');
   assert.ok(by('D2').some((it) => it.l1 === '10T12 (T&B)'), 'parallel bars along the wall');

@@ -415,7 +415,7 @@ export function designAdditions(level, spec, opts = {}) {
   };
 
   // ---- perimeter rule (office): T12@150 between the column top bars along every edge; a symmetric U of 4 m at
-  // a free edge, an L (400 down into the beam + 2000 on top) where the edge carries a beam (detail 1 / detail 6)
+  // a free edge, an L of the same 4 m (400 down into the beam + 3600 on top) where the edge carries a beam (detail 1 / detail 6)
   const su = spec.uEdge;
   const web = h - 2 * cover;
   const uLegTop = ceilTo((su.total - web) / 2, 10);

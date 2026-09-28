@@ -120,7 +120,7 @@ plus a cover / index. Output goes to `DESIGN_DRAWINGS_PACKAGE.dxf` and one DXF p
 
 | Detail | Rule applied | Where |
 |---|---|---|
-| Perimeter (office rule) | continuous T12@150 between the column top bars: D6 **U-bar** 4 m (equal top / bottom legs) at a free edge, D1 **L-bar** 400 into the beam + 2000 on top at an edge beam; curved edges are one run with the length along the edge | every slab edge |
+| Perimeter (office rule) | continuous T12@150 between the column top bars: D6 **U-bar** 4 m (equal top / bottom legs) at a free edge, D1 **L-bar** of the same 4 m total, 400 into the beam + 3600 on top, at an edge beam; curved edges are one run with the length along the edge | every slab edge |
 | U ends (office rule) | every top bar ending at the outer slab edge or at an opening ends in a U with a 500 mm bottom leg (`U500`) | designer's bars and additions |
 | D2 slab edge at core / retaining wall | T12@200 U-bar (LB 1200, LC = t − cover, LA from the designer's wall bar next to it) + 10T12 (T&B) parallel | every wall face that looks onto the slab |
 | D3 varying thickness | lap 500 at the step (note) | thickness zones |
@@ -226,8 +226,9 @@ the drawing names another reference.
   `h − 2·cover + 500`).
 - Perimeter (office rule): between the column top bars, along every slab
   edge, continuous `T12@150` — a symmetric **U-bar** of 4 m total at a free
-  edge, an **L-bar** where the edge carries a beam (400 mm leg into the beam
-  + 2 m on top in the slab; `uEdge.total / beamLeg / beamTop`).
+  edge, an **L-bar** of the same 4 m total where the edge carries a beam
+  (400 mm leg into the beam + 3.6 m on top in the slab;
+  `uEdge.total / beamLeg / beamTop`).
 - Openings enclosed by concrete walls or beams get **no** additional trimmer
   bars. Others get three groups: G1 parallel to the X sides, G2 parallel to
   the Y sides, G3 at 45° crossing both, with the crossing bars listed.
