@@ -116,7 +116,8 @@ export function drawBase(sheet, pl, level, o = {}) {
   if (o.thickZones !== false) for (const z of level.thickZones || []) {
     pl.pline(z.polygon, { layer: 'SLAB-THK', closed: true });
     pl.hatch([z.polygon], { layer: 'SLAB-THK-HATCH', pattern: 'ANSI31', spacing: 3 });
-    if (o.regionLabels) { const c = centroid(z.polygon); pl.text({ x: c.x, y: c.y }, z.thickness ? `${z.id} THK=${z.thickness}` : `${z.id} DROP`, { layer: 'SLAB-THK', h: 1.5, align: 'C', valign: 'M' }); }
+    // (the zone tag sits in the zone's lower-right corner, clear of the column at its centre)
+    if (o.regionLabels) { const zb = bbox(z.polygon); pl.text({ x: zb.maxX - 150, y: zb.minY + 150 }, z.thickness ? `${z.id} THK=${z.thickness}` : `${z.id} DROP`, { layer: 'SLAB-THK', h: 1.5, align: 'R', valign: 'B' }); }
   }
   // pour strips: dashed outline, light hatch, label on the framing plan only
   if (o.pourStrips !== false) for (const ps of level.pourStrips || []) {
