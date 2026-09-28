@@ -367,6 +367,21 @@ node shopdrawings/cli.mjs --mode design --input "BASEMENT.cpt" --out out/basemen
 
 ---
 
+### 8أ. نسخة البايثون المستقلة (`pydrawings/`)
+
+نفس المولّد موجود كباكدج بايثون خالص (Python 3.11، مكتبة قياسية بس، من غير CRM ومن غير Node) في مجلد `pydrawings/`: نفس اللوحات ونفس القواعد ونفس الملفات، ونفس الأوامر:
+
+```bash
+cd pydrawings
+python3 -m pydrawings --mode design --input "BASEMENT.cpt" --out out/basement \
+  --project "ROAYA SCHOOL 2" --prefix SPAN-DD-P26-001 --level "BASEMENT CEILING" --level-id B1 --rev 00
+python3 -m pydrawings --input STRUCTURAL.dxf --out out/shop --config project.json      # شوب درونج من الـ G.A.
+python3 -m pydrawings --sample --out out/sample                                           # المثال المرفق
+python3 -m unittest discover -s tests -t .                                                # الاختبارات (ومقارنة مع نسخة النود لو Node موجود)
+```
+
+نفس ملف الإعدادات (`meta` / `spec`) بنفس المفاتيح، ونفس المخرجات (`dxf/`، `preview/`، `schedules/`، الباكدج، `model.json`، `quantities.json`، `punching.json`، `beams.json`، `REPORT.md`). الاختبارات بتشغّل النسختين على نفس الملفات وبتقارن كل لوحة بلوحتها (نفس النصوص ونفس عدد العناصر ونفس الجداول والكميات). التفاصيل في `pydrawings/README.md`.
+
 ## 9. مشاكل شائعة
 
 | المشكلة | السبب الغالب | الحل |
