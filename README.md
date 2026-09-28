@@ -65,6 +65,13 @@ npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/outp
 
 See [shopdrawings/README.md](shopdrawings/README.md).
 
+Office rules for beams and level steps apply on every design sheet: an interior
+beam (slab on both sides, from the RAM beam objects or a long thickened band)
+carries top bars across it, 4 m or 1.5 m past each face whichever is larger,
+distributed along the beam and shortened at an adjacent beam, an opening or the
+slab edge; a slab at another top-of-concrete level is a separate slab whose step
+is a free edge of both.
+
 **Inside the app.** The same generator sits behind the **Drawings** screen
 (`لوحات التسليح`): a project is registered once with the data every title block
 carries (name, client, consultant, contractor, location, signatures), its levels

@@ -391,9 +391,13 @@ export function edgeHasBeam(level, a, b) {
   const parallel = (bm) => { const bl = dist(bm.a, bm.b) || 1; return Math.abs(ux * (bm.b.x - bm.a.x) / bl + uy * (bm.b.y - bm.a.y) / bl) >= 0.98; };
   const coverage = (bm) => { const t1 = along(bm.a), t2 = along(bm.b); const lo = Math.max(0, Math.min(t1, t2)), hi = Math.min(L, Math.max(t1, t2)); return hi - lo; };
   const beams = (level.beams || []).filter(parallel);
-  const onEdge = beams.filter((bm) => Math.abs(off(bm.a)) < 60 && Math.abs(off(bm.b)) < 60 && (coverage(bm) > 0.5 * L || coverage(bm) > 2000));
-  if (!onEdge.length) return false;
   const inSide = Math.sign(off(centroidOf(level.outline)) || 1);
+  // a beam body (RAM beam object, a band): its outer face lies on the edge and its axis sits inside it
+  const bodyOnEdge = (bm) => bm.polygon && bm.polygon.some((p, i) => { const q = bm.polygon[(i + 1) % bm.polygon.length]; return Math.abs(off(p)) < 60 && Math.abs(off(q)) < 60 && coverage({ a: p, b: q }) > Math.min(1000, 0.5 * L); }) && (off(bm.a) + off(bm.b)) / 2 * inSide > 50 && coverage(bm) > 1000;
+  if (beams.some(bodyOnEdge)) return true;
+  // a beam drawn as two face lines: one on the edge, the other 150 to 900 inside
+  const onEdge = beams.filter((bm) => !bm.polygon && Math.abs(off(bm.a)) < 60 && Math.abs(off(bm.b)) < 60 && (coverage(bm) > 0.5 * L || coverage(bm) > 2000));
+  if (!onEdge.length) return false;
   return beams.some((bm) => { const d = (off(bm.a) + off(bm.b)) / 2 * inSide; return d > 150 && d < 900 && coverage(bm) > 1000; });
 }
 function centroidOf(poly) { let x = 0, y = 0; for (const p of poly) { x += p.x; y += p.y; } return { x: x / (poly.length || 1), y: y / (poly.length || 1) }; }
@@ -402,7 +406,8 @@ export function edgeRunsBetweenColumns(level, a, b, h, bandOf) {
   const L = dist(a, b) || 1;
   const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L;
   const cuts = [];
-  const supports = [...level.columns, ...(level.walls || []).filter((w) => w.polygon && w.t && !w.core).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true }))];
+  // (an interior beam whose group of top bars reaches this edge stops the perimeter bars like a column's group)
+  const supports = [...level.columns, ...(level.walls || []).filter((w) => w.polygon && w.t && !w.core).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true })), ...(level.beams || []).filter((bm) => bm.polygon && bm.interior).map((bm) => ({ id: bm.id, shape: 'rect', cx: bm.cx, cy: bm.cy, w: bm.w, h: bm.h, isWall: true, isBeam: true, along: bm.along }))];
   for (const c of supports) {
     const t = (c.cx - a.x) * ux + (c.cy - a.y) * uy;
     const off = Math.abs((c.cx - a.x) * -uy + (c.cy - a.y) * ux);
@@ -410,6 +415,7 @@ export function edgeRunsBetweenColumns(level, a, b, h, bandOf) {
     const reach = Math.max(size, 1000, (bandOf && bandOf(c, 'across')) || 0) / 2 + 500;
     if (t < -size || t > L + size || off > reach) continue; // not a support on this edge
     const along = Math.abs(ux) > 0.7 ? 'x' : 'y';
+    if (c.isBeam && c.along !== along) continue; // a beam ending at this edge: its group sits along the beam, away from the edge
     // the perimeter bars stop where the support's bars along the edge are (their group width), else at c2 + 1.5h each side
     const band = (bandOf && bandOf(c, along)) || (c.shape === 'circle' ? c.d : (along === 'x' ? c.w : c.h)) + 3 * h;
     cuts.push([t - band / 2, t + band / 2]);
@@ -430,12 +436,15 @@ export function topAtColumns(level, spec) {
   // along its length, bars along it within t + 3h), without joining the grid or the punching sheet
   // (an isolated wall gets the two column groups over it; a core wall - three or more walls around an opening - keeps the wall U-bars)
   const wallSupports = (level.walls || []).filter((w) => w.polygon && w.t).map((w) => ({ id: w.id, shape: 'rect', cx: w.cx, cy: w.cy, w: w.w, h: w.h, isWall: true, core: !!w.core, skipAlong: Math.max(w.w, w.h) > (s.wallAlongMax || 6000) ? (w.w >= w.h ? 'x' : 'y') : null }));
+  // office rule: an interior beam (slab on both sides) carries a group of top bars across it, `length` (4 m) or
+  // `minBeyond` (1.5 m) past each face whichever is larger, distributed along the beam; nothing along it
+  const beamSupports = (level.beams || []).filter((b) => b.polygon && b.interior).map((b) => ({ id: b.id, shape: 'rect', cx: b.cx, cy: b.cy, w: b.w, h: b.h, isWall: true, isBeam: true, core: false, skipAlong: b.along, beam: b }));
   if (!level.maxSpan) {
     let mx = 0;
     for (const c of level.columns) for (const dir of ['x', 'y']) for (const sign of [-1, 1]) { const nb = neighbour(level, c, dir, sign); if (nb && nb.d > mx) mx = nb.d; }
     level.maxSpan = mx || 8000;
   }
-  for (const col of [...level.columns, ...wallSupports]) {
+  for (const col of [...level.columns, ...wallSupports, ...beamSupports]) {
     const size = { x: col.shape === 'circle' ? col.d : col.w, y: col.shape === 'circle' ? col.d : col.h };
     const per = {};
     // spans to the next support in each direction, found first so that the strip width
@@ -456,11 +465,14 @@ export function topAtColumns(level, spec) {
         nbs[sign] = nb; toEdges[sign] = toEdge;
         if (nb) spans.push(nb.d); else { const cap = ceilTo(Math.max(level.maxSpan || 0, 6 * 1.5 * h) / 6, 50); spans.push(2 * Math.min(toEdge, cap * 6)); }
       }
-      if ((s.rule || 'office') === 'office' && (!col.isWall || !col.core)) {
+      if (col.isBeam && col.skipAlong === dir) {
+        // along the beam: nothing is drawn; the group across it is distributed over the beam's own length
+        ext[-1] = 0; ext[1] = 0;
+      } else if ((s.rule || 'office') === 'office' && (!col.isWall || !col.core)) {
         // office rule: interior bar covers the drop panel or runs `length` in total; an edge column bar
         // ends in a U at the slab edge and continues `edgeFactor` x the interior length on top
         // a drop panel is a thickened zone of limited size around the column (`dropMax`, 6 m); a long thickened strip is not one
-        const drop = (level.thickZones || []).find((z) => pointInPolygon({ x: col.cx, y: col.cy }, z.polygon) && Math.max(bbox(z.polygon).w, bbox(z.polygon).h) <= (s.dropMax || 6000));
+        const drop = col.isBeam ? null : (level.thickZones || []).find((z) => pointInPolygon({ x: col.cx, y: col.cy }, z.polygon) && Math.max(bbox(z.polygon).w, bbox(z.polygon).h) <= (s.dropMax || 6000));
         // with a drop panel the bars are exactly as long as the drop (+ `dropMargin` each side, 0 by default);
         // without one they are `length` (4 m) in total
         let Lint = s.length || 4000;
@@ -480,6 +492,24 @@ export function topAtColumns(level, spec) {
           // the far side still reaches the drop panel edge (the interior half) and at least `minBeyond` past the face
           ext[other] = Math.max(ceilTo((s.edgeFactor ?? 0.7) * Lint, 50) - ext[edgeSign] - c1, beyond, drop ? half : 0);
           if (toEdges[other] - c1 / 2 < ext[other]) { ext[other] = Math.max(toEdges[other] - c1 / 2, 0); hooks[other] = true; } // corner column: U both ends
+        }
+        // office rule: a bar across a beam that reaches an adjacent parallel beam is shortened to end over it (its far face)
+        if (col.isBeam) {
+          const alongKey = col.skipAlong;
+          const myLo = alongKey === 'x' ? col.cx - col.w / 2 : col.cy - col.h / 2, myHi = alongKey === 'x' ? col.cx + col.w / 2 : col.cy + col.h / 2;
+          for (const sign of [-1, 1]) {
+            for (const nb of beamSupports) {
+              if (nb === col || nb.skipAlong !== alongKey) continue;
+              const nLo = alongKey === 'x' ? nb.cx - nb.w / 2 : nb.cy - nb.h / 2, nHi = alongKey === 'x' ? nb.cx + nb.w / 2 : nb.cy + nb.h / 2;
+              if (Math.min(myHi, nHi) - Math.max(myLo, nLo) < 500) continue; // not alongside this beam
+              const centre = (dir === 'x' ? nb.cx - col.cx : nb.cy - col.cy) * sign;
+              const nbHalf = (dir === 'x' ? nb.w : nb.h) / 2;
+              const dNear = centre - nbHalf, dFar = centre + nbHalf;
+              if (dNear <= c1 / 2 || c1 / 2 + ext[sign] <= dNear) continue; // behind, or not reached
+              ext[sign] = Math.min(ext[sign], Math.max(dFar - c1 / 2, 0));
+              hooks[sign] = false;
+            }
+          }
         }
       } else {
         for (const sign of [-1, 1]) {

@@ -4,9 +4,9 @@
 import { join } from 'node:path';
 
 /** A tiny RAM Concept model written with node:sqlite: 12 x 8 m slab meshed 3 x 2, five columns, one wall crossing the edge, two tendons, two bands. */
-export async function buildSyntheticCpt(dir) {
+export async function buildSyntheticCpt(dir, { beam = false, step = false } = {}) {
   const { DatabaseSync } = await import('node:sqlite');
-  const path = join(dir, 'synthetic.cpt');
+  const path = join(dir, `synthetic${beam ? '-beam' : ''}${step ? '-step' : ''}.cpt`);
   const db = new DatabaseSync(path);
   const P = (x, y) => `[${x * 10}][${y * 10}]`; // mm → 0.1 mm
   const create = (t, cols) => db.exec(`create table "${t}" (${cols.map((c) => `"${c}"`).join(',')})`);
@@ -20,12 +20,13 @@ export async function buildSyntheticCpt(dir) {
     { UID: 22, MultiPoint: `${P(4000, 0)}${P(8000, 0)}${P(8000, 4000)}${P(4000, 4000)}`, SlabThickness: 4000, Priority: 2, SlabBehavior: 0, TOC: 0 },
   ]);
   create('ElementCornerNode', ['UID', 'Point0']);
-  create('QuadSlabElement', ['UID', 'CornerNode0', 'CornerNode1', 'CornerNode2', 'CornerNode3', 'SlabThickness']);
+  create('QuadSlabElement', ['UID', 'CornerNode0', 'CornerNode1', 'CornerNode2', 'CornerNode3', 'SlabThickness', 'TOC']);
   const xs = [0, 4000, 8000, 12000], ys = [0, 4000, 8000];
   const nodes = []; for (const y of ys) for (const x of xs) nodes.push(P(x, y));
   insert('ElementCornerNode', nodes.map((p, i) => ({ UID: 100 + i, Point0: p })));
   const quads = [];
-  for (let j = 0; j < 2; j++) for (let i = 0; i < 3; i++) quads.push({ UID: 200 + quads.length, CornerNode0: P(xs[i], ys[j]), CornerNode1: P(xs[i + 1], ys[j]), CornerNode2: P(xs[i + 1], ys[j + 1]), CornerNode3: P(xs[i], ys[j + 1]), SlabThickness: i === 1 && j === 0 ? 4000 : 2500 });
+  // with `step`, the right-hand third of the slab (x 8..12 m) sits 300 mm lower (TOC -300): a separate slab for the office
+  for (let j = 0; j < 2; j++) for (let i = 0; i < 3; i++) quads.push({ UID: 200 + quads.length, CornerNode0: P(xs[i], ys[j]), CornerNode1: P(xs[i + 1], ys[j]), CornerNode2: P(xs[i + 1], ys[j + 1]), CornerNode3: P(xs[i], ys[j + 1]), SlabThickness: i === 1 && j === 0 ? 4000 : 2500, TOC: step && i === 2 ? -3000 : 0 });
   insert('QuadSlabElement', quads);
   create('Column', ['UID', 'Point0', 'B', 'D', 'Angle', 'SupportSet']);
   insert('Column', [
@@ -33,6 +34,14 @@ export async function buildSyntheticCpt(dir) {
     { UID: 33, Point0: P(0, 8000), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' }, { UID: 34, Point0: P(12000, 8000), B: 4000, D: 8000, Angle: 0, SupportSet: 'below' },
     { UID: 35, Point0: P(6000, 4000), B: 0, D: 6000, Angle: 0, SupportSet: 'below' },
   ]);
+  if (beam) {
+    // an interior beam 300 wide x 600 deep running across the slab at x = 9 m (slab on both sides), and an edge beam along y = 0
+    create('Beam', ['UID', 'Point0', 'Point1', 'LeftPt0', 'RightPt0', 'Width', 'SlabThickness', 'TOC', 'Priority', 'BeamBehavior', 'BeamIsMeshedAsSlab']);
+    insert('Beam', [
+      { UID: 45, Point0: P(9000, 0), Point1: P(9000, 8000), LeftPt0: P(8850, 0), RightPt0: P(9150, 0), Width: 3000, SlabThickness: 6000, TOC: 0, Priority: 10, BeamBehavior: 'no-torsion two-way slab', BeamIsMeshedAsSlab: 1 },
+      { UID: 46, Point0: P(0, 150), Point1: P(12000, 150), LeftPt0: P(0, 0), RightPt0: P(0, 300), Width: 3000, SlabThickness: 6000, TOC: 0, Priority: 10, BeamBehavior: 'no-torsion two-way slab', BeamIsMeshedAsSlab: 1 },
+    ]);
+  }
   create('LineSupport', ['UID', 'Point0', 'Point1']); insert('LineSupport', [{ UID: 41, Point0: P(-3000, 2000), Point1: P(5000, 2000) }]);
   create('TendonLayer', ['UID', 'SpanSet']); insert('TendonLayer', [{ UID: 51, SpanSet: 'latitude' }, { UID: 52, SpanSet: 'longitude' }]);
   create('TendonLevel', ['UID', 'ParentUID']); insert('TendonLevel', [{ UID: 61, ParentUID: 51 }, { UID: 62, ParentUID: 52 }]);

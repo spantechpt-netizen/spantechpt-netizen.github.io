@@ -101,7 +101,10 @@ export function drawBase(sheet, pl, level, o = {}) {
     else pl.line(w.a, w.b, { layer: 'WALL' });
   }
   pl.pline(level.outline, { layer: 'OUTLINE', closed: true, color: 3 });
-  for (const bm of level.beams || []) pl.line(bm.a, bm.b, { layer: 'BEAM' });
+  for (const bm of level.beams || []) {
+    if (bm.polygon && !bm.band) { pl.pline(bm.polygon, { layer: 'BEAM', closed: true }); if (o.regionLabels && bm.interior) { const c = centroid(bm.polygon); pl.text({ x: c.x, y: c.y }, `${bm.id} BEAM ${Math.round(bm.t)}${bm.depth ? 'x' + Math.round(bm.depth) : ''}`, { layer: 'BEAM', h: 1.5, align: 'C', valign: 'M', rot: Math.abs(bm.b.x - bm.a.x) >= Math.abs(bm.b.y - bm.a.y) ? 0 : 90 }); } }
+    else if (!bm.polygon) pl.line(bm.a, bm.b, { layer: 'BEAM' });
+  }
   if (o.thickZones !== false) for (const z of level.thickZones || []) {
     pl.pline(z.polygon, { layer: 'SLAB-THK', closed: true });
     pl.hatch([z.polygon], { layer: 'SLAB-THK-HATCH', pattern: 'ANSI31', spacing: 3 });

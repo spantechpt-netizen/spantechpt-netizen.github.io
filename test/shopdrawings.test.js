@@ -575,3 +575,50 @@ test('the design package is written in the office layers and text style, on the 
   assert.ok(bottomDxf.includes('\n1\nBOTTOM MESH T12@150 (D4)\n'), 'the drop mesh written in the drop');
   assert.ok(!bottomDxf.includes('\n1\nT12-150 U-BAR\n'), 'the bottom sheet carries no T&B bars (they are on the top sheet)');
 });
+
+test('office rule: an interior beam carries top bars across it (4 m / 1.5 m past each face), nothing along it; an edge beam does not', async () => {
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const { prepareRamDesign, applyColumnRule } = await import('../shopdrawings/lib/design.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ram-beam-'));
+  const ram = readRamConcept(await buildSyntheticCpt(dir, { beam: true }));
+  assert.equal(ram.beams.length, 2);
+  assert.equal(ram.beams[0].t, 300);
+  assert.equal(ram.beams[0].depth, 600);
+  const model = prepareRamDesign(ramToModel(ram, { levelName: 'BEAM TEST', spec: { ramBands: 'none' } }), { levelName: 'BEAM TEST' });
+  const L = model.levels[0];
+  const interior = L.beams.filter((b) => b.interior);
+  assert.equal(interior.length, 1, 'the beam along y = 0 is an edge beam, not an interior one');
+  assert.equal(interior[0].along, 'y');
+  const rule = applyColumnRule(L, model.spec, model.assumptions);
+  const beamBars = rule.added.filter((it) => it.beam === interior[0].id);
+  assert.equal(beamBars.length, 1, 'one group across the beam, none along it');
+  const bar = beamBars[0];
+  assert.equal(bar.dir, 'x', 'the bars run across a beam whose axis is along y');
+  assert.ok(Math.abs(bar.a.y - bar.b.y) < 1 && Math.abs(bar.b.x - bar.a.x) >= 4000, `at least 4 m long: ${Math.round(Math.abs(bar.b.x - bar.a.x))}`);
+  assert.ok(Math.min(bar.a.x, bar.b.x) <= 9000 - 150 - 1500 && Math.max(bar.a.x, bar.b.x) >= 9000 + 150 + 1500, 'at least 1.5 m past each face');
+  assert.ok(bar.dist && Math.abs(bar.dist.q.y - bar.dist.p.y) <= 8000 + 1 && Math.abs(bar.dist.q.y - bar.dist.p.y) >= 7000, 'distributed along the beam, not beyond it');
+  assert.ok(model.assumptions.some((a) => /beams cross the slab/.test(a.text)));
+  assert.ok(L.edges.some((e) => e.beam), 'the beam along y = 0 makes that edge an edge beam');
+});
+
+test('office rule: a slab at another top-of-concrete level is a separate slab; the step is a free edge of both', async () => {
+  const { readRamConcept, ramToModel } = await import('../shopdrawings/lib/ram-concept.mjs');
+  const { prepareRamDesign, designAdditions } = await import('../shopdrawings/lib/design.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ram-step-'));
+  const ram = readRamConcept(await buildSyntheticCpt(dir, { step: true }));
+  assert.deepEqual(ram.slab.tocs, [0, -300]);
+  assert.equal(ram.slab.bodies.length, 2);
+  const model = prepareRamDesign(ramToModel(ram, { levelName: 'STEP TEST', spec: { ramBands: 'none' } }), { levelName: 'STEP TEST' });
+  assert.equal(model.levels.length, 2, 'two slabs');
+  const [upper, lower] = model.levels;
+  assert.equal(Math.round(lower.bbox.minX), 8000);
+  assert.equal(Math.round(upper.bbox.maxX), 8000);
+  assert.equal(lower.toc, -300);
+  assert.ok(/T\.O\.C -300/.test(lower.name), lower.name);
+  assert.ok(upper.edges.some((e) => Math.abs(e.a.x - 8000) < 1 && Math.abs(e.b.x - 8000) < 1), 'the step is an edge of the upper slab');
+  assert.ok(lower.edges.some((e) => Math.abs(e.a.x - 8000) < 1 && Math.abs(e.b.x - 8000) < 1), 'and of the lower slab');
+  assert.ok(!upper.jointEdges?.some((e) => Math.abs(e.a.x - 8000) < 1), 'the step is not a drawing joint');
+  const adds = designAdditions(upper, model.spec);
+  assert.ok(adds.items.some((it) => it.detail === 'D6' && Math.abs(it.a.x - 8000) < 1), 'perimeter U-bars along the step');
+  assert.ok(model.assumptions.some((a) => /top-of-concrete levels/.test(a.text)));
+});

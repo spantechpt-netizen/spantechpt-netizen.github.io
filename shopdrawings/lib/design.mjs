@@ -217,6 +217,7 @@ export function extractDesign(dxf, options = {}) {
 
     // edge beams: a line on a beam layer running along the slab edge
     level.beams = raw.filter((e) => e.type === 'LINE' && /BEAM/i.test(e.layer) && (inPart({ x: e.x, y: e.y }) || inPart({ x: e.x2, y: e.y2 }))).map((e) => ({ a: { x: e.x, y: e.y }, b: { x: e.x2, y: e.y2 } }));
+    markBeams(level, spec0, A); // band beams (long thickened strips) take the beam rule
     level.edges = slabEdges(level);
 
     // the designer's own reinforcement, kept verbatim
@@ -327,6 +328,8 @@ function splitLevels(model, spec) {
         } : level.grid,
         columns: (level.columns || []).filter((c) => band({ x: c.cx, y: c.cy })),
         walls: (level.walls || []).flatMap((w) => (w.polygon ? [w].filter(() => band(centroid(w.polygon))) : clipSegmentToPolygon(w.a, w.b, outline).filter(([a, bb]) => dist(a, bb) > 50).map(([a, bb]) => ({ ...w, a, b: bb })))),
+        // beams are clipped to the part along their axis (new objects: each part decides for itself whether a beam is interior)
+        beams: (level.beams || []).flatMap((bm) => clipSegmentToPolygon(bm.a, bm.b, outline).filter(([a, bb]) => dist(a, bb) > 500).map(([a, bb]) => { const u = unit(a, bb), n = perp(u), t = bm.t || 300; return { ...bm, a, b: bb, interior: undefined, polygon: bm.polygon ? [add(a, n, t / 2), add(bb, n, t / 2), add(bb, n, -t / 2), add(a, n, -t / 2)] : undefined }; })),
         openings: clipPolys((level.openings || []).map((o) => ({ ...o, kind: 'polygon', polygon: R.regionPolygon(o) }))),
         thickZones: clipPolys(level.thickZones || []),
         pourStrips: clipPolys(level.pourStrips || []).map((ps) => { const b = bbox(ps.polygon); return { ...ps, width: Math.min(b.w, b.h), length: Math.max(b.w, b.h) }; }),
@@ -351,7 +354,8 @@ function splitLevels(model, spec) {
  */
 function markJoints(model, cover) {
   for (const level of model.levels) {
-    const others = model.levels.filter((o) => o !== level);
+    // (a slab at another top-of-concrete level is a separate slab: its shared boundary is a step, a free edge, not a joint)
+    const others = model.levels.filter((o) => o !== level && (o.toc ?? 0) === (level.toc ?? 0));
     let joints = 0;
     for (const e of level.edges || []) {
       const m = mid(e.a, e.b);
@@ -378,10 +382,12 @@ export function prepareRamDesign(model, options = {}) {
   const A = (level, text) => model.assumptions.push({ level: level.id, text });
   model.assumptions = model.assumptions.filter((a) => !/office standard reinforcement .* ADDITIONAL reinforcement/i.test(a.text));
   const baseName = options.levelName || (model.levels[0]?.name || 'SLAB').replace(/\s*-\s*PART.*$/i, '');
+  const tocs = [...new Set(model.levels.map((l) => l.toc ?? 0))];
+  if (tocs.length > 1) model.assumptions.push({ level: model.levels[0].id, text: `${baseName} has ${tocs.length} top-of-concrete levels (${tocs.map((t) => (t >= 0 ? '+' : '') + Math.round(t)).join(' / ')} mm): each is drawn as a separate slab (office rule); the step between them is a free edge of both slabs (perimeter U-bars, bars stopped with a U, no bar runs across the step).` });
   model.levels.forEach((level, li) => {
     const outline = level.outline;
     level.partIndex = li;
-    if (model.levels.length > 1) level.name = `${baseName} - PART ${String(li + 1).padStart(2, '0')}`;
+    if (model.levels.length > 1) level.name = `${baseName} - PART ${String(li + 1).padStart(2, '0')}${tocs.length > 1 && level.toc ? ` (T.O.C ${level.toc > 0 ? '+' : ''}${Math.round(level.toc)})` : ''}`;
     level.thicknessSource = 'RAM model';
     // walls: RAM line supports are axes; give them a body so the wall details (D2 / D5) and the lined-opening rule can see them
     level.walls = mergeWallSegments((level.walls || []).filter((w) => !w.polygon)).concat((level.walls || []).filter((w) => w.polygon)).map((w) => {
@@ -401,6 +407,7 @@ export function prepareRamDesign(model, options = {}) {
     for (const w of level.walls) { const b = bbox(w.polygon); w.cx = w.cx ?? b.cx; w.cy = w.cy ?? b.cy; w.w = w.w ?? b.w; w.h = w.h ?? b.h; }
     level.walls.forEach((w, i) => { if (!w.id) w.id = `W${i + 1}`; });
     level.beams = level.beams || [];
+    markBeams(level, spec, A);
     level.edges = slabEdges(level);
     // thickness tags: the slab thickness once, each thickened zone inside it
     const c0 = centroid(outline);
@@ -473,6 +480,45 @@ export function prepareRamDesign(model, options = {}) {
 }
 
 /**
+ * Office rule for beams: any beam crossing the slab with slab on both sides (a normal beam, a wide band beam, a
+ * reinforced beam) carries a group of top bars across it, as long as 4 m or 1.5 m past each face, whichever is
+ * larger, distributed along the beam; the bars stop at an adjacent beam, an opening or the slab edge. A beam
+ * lying along the slab edge is an edge beam (the L-bars of detail 1 instead). A long thickened strip of the slab
+ * (longer than `topColumns.dropMax`, up to `beams.bandMaxWidth` wide) is a band beam and takes the same rule.
+ */
+export function markBeams(level, spec, A = () => {}) {
+  const outline = level.outline;
+  const openings = (level.openings || []).map((o) => R.regionPolygon(o));
+  const walls = level.walls || [];
+  const inSlab = (p) => pointInPolygon(p, outline) && !openings.some((poly) => pointInPolygon(p, poly)) && !walls.some((w) => w.polygon && pointInPolygon(p, w.polygon));
+  const bandMax = spec.beams?.bandMaxWidth || 3000;
+  const dropMax = spec.topColumns?.dropMax || 6000;
+  // long thickened strips are band beams
+  for (const z of level.thickZones || []) {
+    const b = bbox(z.polygon);
+    const long = Math.max(b.w, b.h), short = Math.min(b.w, b.h);
+    if (long <= dropMax || short > bandMax || long < 3 * short) continue;
+    if (level.beams.some((bm) => bm.polygon && pointInPolygon({ x: b.cx, y: b.cy }, bm.polygon))) continue;
+    const along = b.w >= b.h ? { x: 1, y: 0 } : { x: 0, y: 1 };
+    level.beams.push({ id: `BB${z.id}`, a: add({ x: b.cx, y: b.cy }, along, -long / 2), b: add({ x: b.cx, y: b.cy }, along, long / 2), t: short, depth: z.thickness, polygon: z.polygon, band: true });
+  }
+  let interior = 0;
+  for (const bm of level.beams) {
+    if (!bm.polygon) continue;
+    const u = unit(bm.a, bm.b), n = perp(u), m = mid(bm.a, bm.b);
+    const off = bm.t / 2 + 400;
+    bm.interior = inSlab(add(m, n, off)) && inSlab(add(m, n, -off));
+    const b = bbox(bm.polygon);
+    bm.cx = b.cx; bm.cy = b.cy; bm.w = b.w; bm.h = b.h;
+    bm.along = Math.abs(u.x) >= Math.abs(u.y) ? 'x' : 'y';
+    if (bm.interior) interior++;
+  }
+  level.beams.forEach((bm, i) => { if (!bm.id) bm.id = `BM${i + 1}`; });
+  if (interior) A(level, `${interior} beams cross the slab of ${level.name} with slab on both sides (${level.beams.filter((b) => b.interior).map((b) => `${b.id} ${Math.round(b.t)}${b.depth ? 'x' + Math.round(b.depth) : ''}${b.band ? ' BAND' : ''}`).slice(0, 8).join(', ')}${interior > 8 ? ', ...' : ''}): each carries top bars across it, ${(spec.topColumns?.length || 4000) / 1000} m or ${(spec.topColumns?.minBeyond ?? 1500) / 1000} m past each face whichever is larger, distributed along the beam, stopped at an adjacent beam, an opening or the slab edge.`);
+  return interior;
+}
+
+/**
  * The slab edges for the perimeter rule: consecutive short facets of a curved edge (turning less
  * than `tol` degrees) are merged into one run so a curve gets one call-out, not one per facet.
  */
@@ -534,6 +580,8 @@ export function applyColumnRule(level, spec, assumptions = []) {
     const groups = {};
     for (const dir of ['x', 'y']) {
       const across = dir === 'x' ? 'y' : 'x';
+      // a beam gets its own group across it (the office beam rule) and leaves the designer's bars alone
+      if (col.isBeam) { groups[dir] = []; continue; }
       // the bars of this direction are spread over the crossing group's length: every parallel top bar within that
       // half-width of the column centre (and crossing the column along its length) belongs to the group
       const halfBand = Math.max(size[across] / 2 + 400, 800, per[across].straight / 2);
@@ -564,9 +612,9 @@ export function applyColumnRule(level, spec, assumptions = []) {
           if (olds.some((o) => distToSeg(c, o.a, o.b) < 600)) { c.text = `L=${p.straight}`; c.office = true; }
         }
       } else if (s.addMissing !== false && !(col.isWall && col.skipAlong === dir)) {
-        // (a long isolated wall gets the group across it only: its own reinforcement runs along it)
+        // (a long isolated wall gets the group across it only: its own reinforcement runs along it; a beam likewise)
         const cAcross = span(across);
-        const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: barOffsets(spec, size[across], cAcross.hi - cAcross.lo), keep: cc };
+        const item = { detail: null, face: 'T', a: pt(lo, 0), b: pt(hi, 0), l1: `T${s.dia}-${s.spacing} (T)`, l2: `L=${p.straight}`, side: 1, noTag: true, uEnd: { start: p.hookTypes[-1] || false, end: p.hookTypes[1] || false }, column: col.id, dir, n: p.n, length: p.length, shape: p.shape, posCands: barOffsets(spec, size[across], cAcross.hi - cAcross.lo), keep: cc, beam: col.isBeam ? col.id : undefined };
         added.push(item);
         groups[dir] = [{ a: pt(lo, 0), b: pt(hi, 0), added: true, item }];
         missing++;
@@ -576,7 +624,7 @@ export function applyColumnRule(level, spec, assumptions = []) {
     for (const dir of ['x', 'y']) {
       if (!groups[dir].length) continue;
       const across = dir === 'x' ? 'y' : 'x';
-      const c = span(across); // extent of the crossing bars, along `across`
+      const c = col.isBeam ? { lo: -size[across] / 2, hi: size[across] / 2 } : span(across); // the beam group is distributed along the beam itself
       const { lo, hi } = span(dir);
       const dims = ex.dims.filter((d) => {
         if (d.x3 == null || Math.abs(dot(dimDir(d), U[across])) < 0.9) return false;
@@ -595,7 +643,9 @@ export function applyColumnRule(level, spec, assumptions = []) {
         }
       } else if (groups[dir][0].added) {
         // an added group carries its own distribution (drawn with the bar, the dot where the bar finally sits)
-        const st = Math.max(lo + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700)); // clear of the crossing bar beside the column
+        // clear of the crossing bar beside the column; a beam's dimension goes on its other side, away from the
+        // dimensions of the columns that sit on the beam axis
+        const st = col.isBeam ? Math.min(hi - 200, size[dir] / 2 + (spec.barOffset ?? 500) + 700) : Math.max(lo + 200, -(size[dir] / 2 + (spec.barOffset ?? 500) + 700));
         const pA = dir === 'x' ? glob(st, c.lo) : glob(c.lo, st), pB = dir === 'x' ? glob(st, c.hi) : glob(c.hi, st);
         groups[dir][0].item.dist = { p: pA, q: pB };
         addedDims++;
@@ -608,6 +658,8 @@ export function applyColumnRule(level, spec, assumptions = []) {
       }
     }
   }
+  const beamAdds = added.filter((it) => it.beam).length;
+  if (beamAdds) assumptions.push({ level: level.id, text: `Top bars across ${beamAdds} interior beams of ${level.name}: T${s.dia}-${s.spacing}, ${Math.max(s.length || 4000, 0) / 1000} m or the beam width + 2 x ${(s.minBeyond ?? 1500) / 1000} m whichever is larger, distributed along the beam, shortened where the bar reaches an adjacent beam (to its far face), an opening or the slab edge (U).` });
   if (changed || added.length) assumptions.push({ level: level.id, text: `Top bars over columns set to the office rule in ${level.name}: ${s.length || 4000} mm both ways (exactly the drop panel${s.dropMargin ? ` + ${s.dropMargin} mm` : ''} where there is one), ${Math.round((s.edgeFactor ?? 0.7) * 100)} % on top with the U at an edge, the two groups perpendicular along the column axis / tendon direction (${rotated} rotated columns); ${changed} designer's bars re-lengthed, ${missing} bars added where none was drawn, each direction distributed over the crossing bars' length (${addedDims} dimensions added).` });
   return { changed, added, addedDims, missing };
 }
@@ -852,6 +904,17 @@ export function designAdditions(level, spec, opts = {}) {
   // the column / wall bar groups along the edge decide where the perimeter bars stop (the U-bars run before and after them)
   const tcRes = R.topAtColumns(level, spec);
   const bandOf = (c, dir) => { const r = tcRes.columns.find((x) => x.col.id === c.id); if (!r) return 0; const g = dir === 'across' ? Math.max(r.per.x.straight, r.per.y.straight) : r.per[dir].straight; return g; };
+  // where a bar symbol goes along an opening side: the middle of the longest run free of the column / beam groups that
+  // reach the side (so it never sits on the group of top bars across a beam alongside the opening)
+  const sideSymbolAt = (a, bb) => {
+    const u = unit(a, bb), Ls = dist(a, bb);
+    const runs = R.edgeRunsBetweenColumns(level, a, bb, h, bandOf);
+    if (runs.length) { const [t1, t2] = runs.reduce((best, r) => (!best || r[1] - r[0] > best[1] - best[0] ? r : best), null); return add(a, u, (t1 + t2) / 2); }
+    // the whole side lies within a group's band: the point farthest from the group's own bar symbols (the support centres)
+    const centres = [...level.columns.map((c) => ({ x: c.cx, y: c.cy })), ...(level.beams || []).filter((bm) => bm.interior).map((bm) => ({ x: bm.cx, y: bm.cy }))].map((c) => (c.x - a.x) * u.x + (c.y - a.y) * u.y);
+    const best = [0.25, 0.5, 0.75].map((f) => ({ t: f * Ls, d: Math.min(...centres.map((t) => Math.abs(t - f * Ls)), 1e9) })).sort((p, q) => q.d - p.d)[0];
+    return add(a, u, best.t);
+  };
   // consecutive slab edges of one kind (free / beam) form one chain: one long indication line and one bar symbol
   // every `perimSpan` along the whole chain, instead of a symbol per facet
   // (an edge with a retaining wall along it carries the wall U-bars of detail 2 instead)
@@ -1043,7 +1106,7 @@ export function designAdditions(level, spec, opts = {}) {
         if (dist(a, bb) < 600) continue;
         const lining = R.sideLining(level, a, bb);
         if (lining === 'wall' || lining === 'column') continue; // the wall U-bars of detail 2 cover this side
-        const u = unit(a, bb), n = perp(u), m = mid(a, bb);
+        const u = unit(a, bb), n = perp(u), m = sideSymbolAt(a, bb);
         const nOut = inSlab(add(m, n, 700)) ? n : inSlab(add(m, n, -700)) ? { x: -n.x, y: -n.y } : null;
         if (!nOut) continue;
         if (lining === 'beam') {
@@ -1067,7 +1130,7 @@ export function designAdditions(level, spec, opts = {}) {
         const a = outerSides[i], bb = outerSides[(i + 1) % outerSides.length];
         if (dist(a, bb) < 600 || R.sideLining(level, a, bb) !== 'beam') continue;
         const u = unit(a, bb), n = perp(u);
-        const m = mid(a, bb);
+        const m = sideSymbolAt(a, bb);
         const nOut = inSlab(add(m, n, 700)) ? n : inSlab(add(m, n, -700)) ? { x: -n.x, y: -n.y } : null;
         if (!nOut) continue;
         const su = spec.uEdge;
@@ -1538,6 +1601,7 @@ function framingSheet(model, level, meta, adds) {
       ...level.openings.map((o) => ({ id: o.id, element: 'OPENING', size: `${fmtMM(bbox(R.regionPolygon(o)).w)} x ${fmtMM(bbox(R.regionPolygon(o)).h)}`, location: gridRef(level, bbox(R.regionPolygon(o))) })),
       ...level.thickZones.map((z) => ({ id: z.id, element: `THICKENED ZONE ${z.thickness || ''} mm`, size: `${fmtMM(bbox(z.polygon).w)} x ${fmtMM(bbox(z.polygon).h)}`, location: gridRef(level, bbox(z.polygon)) })),
       ...(level.pourStrips || []).map((z) => ({ id: z.id, element: 'POUR STRIP', size: `${fmtMM(z.width)} x ${fmtMM(z.length)}`, location: gridRef(level, bbox(z.polygon)) })),
+      ...(level.beams || []).filter((bm) => bm.polygon).map((bm) => ({ id: bm.id, element: bm.band ? 'BAND BEAM (THICKENED STRIP)' : bm.interior ? 'INTERIOR BEAM' : 'EDGE BEAM', size: `${fmtMM(bm.t)}${bm.depth ? ' x ' + fmtMM(bm.depth) : ''} L=${fmtMM(dist(bm.a, bm.b))}`, location: gridRef(level, bbox(bm.polygon)) })),
     ];
     const cols = [{ key: 'id', title: 'ID', w: 20 }, { key: 'element', title: 'ELEMENT', w: 42 }, { key: 'size', title: 'SIZE (mm)', w: 45 }, { key: 'location', title: 'LOCATION / GRID', w: 78, align: 'L', max: 44 }];
     const d0 = sheet.detailBox(0, 'GENERAL DETAILS APPLIED ON THIS LEVEL', '');
@@ -1710,7 +1774,7 @@ export function composeDesignPackage(model, metaIn = {}) {
     for (const it of rule.added) adds.items.push(it);
     adds.items = clipToSlab(level, adds.items, model.spec);
     // the column groups are scheduled after the clipping (a bar stopped at an opening is shorter and ends in a U)
-    for (const it of rule.added) if (adds.items.includes(it)) adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.clippedOpening ? `${it.shape} (U AT OPENING)` : it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `COLUMN ${it.column} ${it.dir.toUpperCase()}` });
+    for (const it of rule.added) if (adds.items.includes(it)) adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.clippedOpening ? `${it.shape} (U AT OPENING)` : it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `${it.beam ? 'BEAM' : 'COLUMN'} ${it.column} ${it.dir.toUpperCase()}` });
     if (level.existing) {
       level.existing.lines = clipToSlab(level, level.existing.lines, model.spec);
       if (level.existing.items) level.existing.items = clipToSlab(level, level.existing.items, model.spec);

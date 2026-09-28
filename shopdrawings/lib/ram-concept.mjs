@@ -44,12 +44,28 @@ export function readRamConcept(path) {
   const edgeCount = new Map();
   const elemThk = [];
   const addEdge = (a, b) => { const k = a < b ? `${a}|${b}` : `${b}|${a}`; edgeCount.set(k, (edgeCount.get(k) || 0) + 1); };
-  for (const q of rows('QuadSlabElement')) { const n = [q.CornerNode0, q.CornerNode1, q.CornerNode2, q.CornerNode3]; for (let i = 0; i < 4; i++) addEdge(n[i], n[(i + 1) % 4]); elemThk.push({ thk: L(q.SlabThickness), n }); }
-  for (const q of rows('TriSlabElement')) { const n = [q.CornerNode0, q.CornerNode1, q.CornerNode2]; for (let i = 0; i < 3; i++) addEdge(n[i], n[(i + 1) % 3]); elemThk.push({ thk: L(q.SlabThickness), n }); }
-  const elements = elemThk.map((e) => { const poly = e.n.map((k) => nodes.get(k) || point(k)); return { thickness: e.thk, area: Math.abs(polygonArea(poly)), centroid: centroid(poly) }; });
-  const segs = [];
-  for (const [k, c] of edgeCount) if (c === 1) { const [a, b] = k.split('|'); const pa = nodes.get(a) || point(a), pb = nodes.get(b) || point(b); segs.push([pa, pb]); }
-  let loops = chainSegments(segs, 2).map((p) => simplifyPolygon(p, 1)).filter((p) => p.length >= 3).map((p) => ({ polygon: p, area: Math.abs(polygonArea(p)) })).sort((a, b) => b.area - a.area);
+  for (const q of rows('QuadSlabElement')) { const n = [q.CornerNode0, q.CornerNode1, q.CornerNode2, q.CornerNode3]; for (let i = 0; i < 4; i++) addEdge(n[i], n[(i + 1) % 4]); elemThk.push({ thk: L(q.SlabThickness), toc: L(q.TOC || 0), n }); }
+  for (const q of rows('TriSlabElement')) { const n = [q.CornerNode0, q.CornerNode1, q.CornerNode2]; for (let i = 0; i < 3; i++) addEdge(n[i], n[(i + 1) % 3]); elemThk.push({ thk: L(q.SlabThickness), toc: L(q.TOC || 0), n }); }
+  const elements = elemThk.map((e) => { const poly = e.n.map((k) => nodes.get(k) || point(k)); return { thickness: e.thk, toc: e.toc, area: Math.abs(polygonArea(poly)), centroid: centroid(poly) }; });
+  const loopsOf = (counts) => {
+    const segsOf = [];
+    for (const [k, c] of counts) if (c === 1) { const [a, b] = k.split('|'); const pa = nodes.get(a) || point(a), pb = nodes.get(b) || point(b); segsOf.push([pa, pb]); }
+    return chainSegments(segsOf, 2).map((p) => simplifyPolygon(p, 1)).filter((p) => p.length >= 3).map((p) => ({ polygon: p, area: Math.abs(polygonArea(p)) })).sort((a, b) => b.area - a.area);
+  };
+  let loops = loopsOf(edgeCount);
+  // office rule: a slab at another level (a step in the top of concrete) is a separate slab entirely; the mesh is
+  // taken apart by TOC and every level gets its own outline, so the step reads as a free edge of both slabs
+  const tocs = [...new Set(elemThk.map((e) => Math.round(e.toc)))].sort((a, b) => b - a);
+  const bodies = [];
+  for (const toc of tocs) {
+    const counts = new Map();
+    for (const e of elemThk) { if (Math.round(e.toc) !== toc) continue; for (let i = 0; i < e.n.length; i++) { const a = e.n[i], b = e.n[(i + 1) % e.n.length]; const k = a < b ? `${a}|${b}` : `${b}|${a}`; counts.set(k, (counts.get(k) || 0) + 1); } }
+    const lp = loopsOf(counts).map((l) => (polygonArea(l.polygon) < 0 ? [...l.polygon].reverse() : l.polygon));
+    for (const poly of lp) {
+      if (lp.some((q) => q !== poly && Math.abs(polygonArea(q)) > Math.abs(polygonArea(poly)) && pointInPolygon(poly[0], q))) continue; // a hole of a body of the same level
+      bodies.push({ polygon: poly, holes: lp.filter((q) => q !== poly && pointInPolygon(q[0], poly) && Math.abs(polygonArea(q)) < Math.abs(polygonArea(poly))), toc });
+    }
+  }
   let outline, holes = [];
   const allLoops = loops.map((l) => (polygonArea(l.polygon) < 0 ? [...l.polygon].reverse() : l.polygon));
   if (loops.length) {
@@ -65,6 +81,14 @@ export function readRamConcept(path) {
   const thicknesses = [...thkCount.entries()].sort((a, b) => b[1] - a[1]);
   const baseThickness = thicknesses.length ? thicknesses[0][0] : (slabAreas[0]?.thickness || 250);
   const thickZones = slabAreas.filter((a) => a.thickness > baseThickness + 1).map((a, i) => ({ id: `Z${i + 1}`, polygon: a.polygon, thickness: a.thickness }));
+  // beams: RAM beam objects (an axis, a width, a depth); an edge beam lies along the slab edge, an interior one has slab both sides
+  const beams = rows('Beam').filter((r) => r.Point0 && r.Point1).map((r, i) => {
+    const a = point(r.Point0), b = point(r.Point1);
+    const w = L(r.Width || 0) || 300, d = L(r.SlabThickness || 0);
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const n = { x: -(b.y - a.y) / len, y: (b.x - a.x) / len };
+    return { id: `BM${i + 1}`, a, b, t: w, depth: d, toc: L(r.TOC || 0), meshedAsSlab: !!r.BeamIsMeshedAsSlab, polygon: [{ x: a.x + n.x * w / 2, y: a.y + n.y * w / 2 }, { x: b.x + n.x * w / 2, y: b.y + n.y * w / 2 }, { x: b.x - n.x * w / 2, y: b.y - n.y * w / 2 }, { x: a.x - n.x * w / 2, y: a.y - n.y * w / 2 }] };
+  }).filter((bm) => Math.hypot(bm.b.x - bm.a.x, bm.b.y - bm.a.y) > 500);
 
   // ---------------------------------------------------------------- supports
   const columns = rows('Column').map((r, i) => {
@@ -211,8 +235,8 @@ export function readRamConcept(path) {
     project: { headings, company: headings[0] || '', name: headings[1] || '', part: headings[2] || '', revision: headings[3] || '' },
     materials: { fc, fcu: concrete.FcuFinal ? Math.round(MPa(concrete.FcuFinal)) : null, fy, coverTop, coverBot, concreteName: concrete.Name, rebarTypes: [...rebarTypes.values()].map((t) => ({ name: t.Name, dia: t.dia, area: t.area })) },
     pt: { system: ptSystem.Name, strandArea, fpu: strand.Fpu ? MPa(strand.Fpu) : null, jackStress: anchor.JackStress ? MPa(anchor.JackStress) : null, strandsPerDuct: duct.StrandsPerDuct, ductType: duct.PTSystemType, ductWidth: duct.DuctWidth ? L(duct.DuctWidth) : null, ductHeight: duct.DuctHeight ? L(duct.DuctHeight) : null, fse: ptSystem.Fse ? MPa(ptSystem.Fse) : null },
-    slab: { outline, holes, allLoops, baseThickness, thicknesses: thicknesses.map(([thk, n]) => ({ thickness: thk, elements: n })), thickZones, areas: slabAreas, elements },
-    columns, walls, tendons, bands, shear, punching, ssr, background,
+    slab: { outline, holes, allLoops, bodies, tocs, baseThickness, thicknesses: thicknesses.map(([thk, n]) => ({ thickness: thk, elements: n })), thickZones, areas: slabAreas, elements },
+    columns, walls, beams, tendons, bands, shear, punching, ssr, background,
   };
 }
 
@@ -234,8 +258,12 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
   // bodies: the outline plus every other outer loop
   const loops = [ram.slab.outline, ...ram.slab.holes].filter(Boolean);
   const outer = ram.slab.allLoops || loops;
-  const bodies = outer.filter((p) => !outer.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(p[0], q)));
-  const holesOf = (body) => outer.filter((q) => q !== body && pointInPolygon(q[0], body) && Math.abs(polygonArea(q)) < Math.abs(polygonArea(body)));
+  // one body per outer loop of each top-of-concrete level (a slab at another level is a separate slab: office rule)
+  const tocBodies = (ram.slab.bodies || []).length ? ram.slab.bodies : null;
+  const bodies = tocBodies ? tocBodies.map((b) => b.polygon) : outer.filter((p) => !outer.some((q) => q !== p && Math.abs(polygonArea(q)) > Math.abs(polygonArea(p)) && pointInPolygon(p[0], q)));
+  const tocOf = (body) => (tocBodies ? tocBodies.find((b) => b.polygon === body)?.toc ?? 0 : 0);
+  const holesOf = (body) => (tocBodies ? tocBodies.find((b) => b.polygon === body)?.holes || [] : outer.filter((q) => q !== body && pointInPolygon(q[0], body) && Math.abs(polygonArea(q)) < Math.abs(polygonArea(body))));
+  const stepped = tocBodies && new Set(tocBodies.map((b) => b.toc)).size > 1;
   const inside = (p, poly) => pointInPolygon(p, poly);
   const spec = {
     fc: ram.materials.fc || 30, fy: ram.materials.fy || 420, cover: Math.max(ram.materials.coverTop || 25, ram.materials.coverBot || 25), stock: 12000, lambda: 1,
@@ -265,7 +293,10 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
       // (a hole in the RAM mesh has a vertex at every element node: the collinear ones are dropped so that a long
       // void side is one side, with one U-bar symbol and one call-out)
       openings: holes.map((h, j) => ({ id: `O${j + 1}`, kind: 'polygon', polygon: simplifyPolygon(h.map(R), 30) })),
-      voids: [], sunken: [], stairs: [], beams: [],
+      voids: [], sunken: [], stairs: [],
+      // beams whose axis lies in this body (an edge beam along the slab edge, or an interior beam with slab both sides)
+      beams: (ram.beams || []).filter((bm) => inside(centroid(bm.polygon), body) || near(centroid(bm.polygon), body, bm.t)).map((bm) => ({ ...bm, a: R(bm.a), b: R(bm.b), polygon: bm.polygon.map(R) })),
+      tos: stepped ? tocOf(body) : undefined, toc: tocOf(body),
       walls: ram.walls.flatMap((w) => clipSegmentToPolygon(w.a, w.b, body).map((seg) => [...seg, w.t])).filter(([a, b]) => Math.hypot(b.x - a.x, b.y - a.y) > 50).map(([a, b, t]) => ({ a: R(a), b: R(b), t })),
       thickZones: areasIn.filter((a) => a.thickness > bodyThickness + 1 && a.behaviour !== 'custom').map((a, j) => ({ id: `Z${j + 1}`, thickness: a.thickness, polygon: a.polygon.map(R) })),
       // a slab area of "custom" behaviour no wider than 1.5 m is a pour (infill) strip: the office's pour strip detail applies
