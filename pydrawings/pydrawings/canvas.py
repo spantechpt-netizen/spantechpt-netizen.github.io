@@ -234,14 +234,14 @@ class Canvas:
     def text(self, x, y, s, o=None, **kw):
         """Single-line text. align: L|C|R, valign: B|M|T, h: height, rot: degrees."""
         o = opts(o, kw)
-        # no text is ever upside down, and a vertical text reads top to bottom (the office reads a plan standing at its
-        # bottom edge for horizontal writing and at its LEFT edge for vertical writing): a rotation in [89.5, 269.5) is
+        # no text is ever upside down, and a vertical text reads bottom to top (the office reads a plan standing at its
+        # bottom edge for horizontal writing and at its RIGHT edge for vertical writing): a rotation in (90.5, 270.5] is
         # turned by 180° with the anchor mirrored, so the text keeps its place
         rot = _number(o.get('rot')) or 0
         rot = (math.fmod(rot, 360) + 360) % 360
         align = o.get('align') or 'L'
         valign = o.get('valign') or 'B'
-        if rot >= 89.5 and rot < 269.5:
+        if rot > 90.5 and rot <= 270.5:
             rot -= 180
             align = 'R' if align == 'L' else 'L' if align == 'R' else align
             valign = 'T' if valign == 'B' else 'B' if valign == 'T' else valign
@@ -297,8 +297,8 @@ class Canvas:
         measure = abs(along(p2) - along(p1))
         text = o['text'].replace('<>', fmt_num(js_round(measure)), 1) if o.get('text') and o['text'] != '<>' else fmt_num(js_round(measure))
         rot = (math.fmod(angle, 360) + 360) % 360
-        if rot >= 89.5 and rot < 269.5:
-            rot -= 180  # vertical dimension text reads top to bottom
+        if rot > 90.5 and rot <= 270.5:
+            rot -= 180  # vertical dimension text reads bottom to top (the reader stands at the right edge)
         tm = o.get('textMid') or {'x': (a['x'] + b['x']) / 2 + n['x'] * (st['gap'] + st['txt'] / 2), 'y': (a['y'] + b['y']) / 2 + n['y'] * (st['gap'] + st['txt'] / 2)}
         # the dimension picture
         root.dim_count += 1
@@ -361,7 +361,7 @@ class Canvas:
             ux, uy = dx / L, dy / L
             self.line(p['x'] - (ux + nx) * tick * 0.7, p['y'] - (uy + ny) * tick * 0.7, p['x'] + (ux + nx) * tick * 0.7, p['y'] + (uy + ny) * tick * 0.7, {'layer': layer})
         rot = (math.atan2(dy, dx) * 180) / math.pi
-        if rot >= 89.5 or rot < -90.5:
+        if rot > 90.5 or rot <= -89.5:
             rot += 180
         m = {'x': (a['x'] + b['x']) / 2 + nx * (o.get('h') or 2.5) * 0.4, 'y': (a['y'] + b['y']) / 2 + ny * (o.get('h') or 2.5) * 0.4}
         self.text(m['x'], m['y'], o['text'] if o.get('text') is not None else fmt_num(js_round(L)), {'layer': layer, 'h': o.get('h') or 2.5, 'rot': rot, 'align': 'C', 'valign': 'B'})

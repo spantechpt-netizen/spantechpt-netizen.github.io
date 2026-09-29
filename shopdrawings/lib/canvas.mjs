@@ -168,11 +168,11 @@ export class Canvas {
   arc(cx, cy, r, a1, a2, o = {}) { return this.add({ t: 'arc', cx, cy, r, a1, a2, ...o }); }
   /** Single-line text. align: L|C|R, valign: B|M|T, h: height, rot: degrees. */
   text(x, y, str, o = {}) {
-    // no text is ever upside down, and a vertical text reads top to bottom (the office reads a plan standing at its
-    // bottom edge for horizontal writing and at its LEFT edge for vertical writing): a rotation in [89.5, 269.5) is
+    // no text is ever upside down, and a vertical text reads bottom to top (the office reads a plan standing at its
+    // bottom edge for horizontal writing and at its RIGHT edge for vertical writing): a rotation in (90.5, 270.5] is
     // turned by 180° with the anchor mirrored, so the text keeps its place
     let rot = ((Number(o.rot) || 0) % 360 + 360) % 360, align = o.align || 'L', valign = o.valign || 'B';
-    if (rot >= 89.5 && rot < 269.5) { rot -= 180; align = align === 'L' ? 'R' : align === 'R' ? 'L' : align; valign = valign === 'B' ? 'T' : valign === 'T' ? 'B' : valign; }
+    if (rot > 90.5 && rot <= 270.5) { rot -= 180; align = align === 'L' ? 'R' : align === 'R' ? 'L' : align; valign = valign === 'B' ? 'T' : valign === 'T' ? 'B' : valign; }
     return this.add({ t: 'text', x, y, str: String(str), h: o.h || 2.5, ...o, rot, align, valign });
   }
   /** Multi-line text, attached top-left, wrapped at width. */
@@ -208,7 +208,7 @@ export class Canvas {
     const b = { x: dl.x + u.x * along(p2), y: dl.y + u.y * along(p2) };
     const measure = Math.abs(along(p2) - along(p1));
     const text = o.text && o.text !== '<>' ? o.text.replace('<>', String(Math.round(measure))) : String(Math.round(measure));
-    let rot = ((angle % 360) + 360) % 360; if (rot >= 89.5 && rot < 269.5) rot -= 180; // vertical dimension text reads top to bottom
+    let rot = ((angle % 360) + 360) % 360; if (rot > 90.5 && rot <= 270.5) rot -= 180; // vertical dimension text reads bottom to top (the reader stands at the right edge)
     const tm = o.textMid || { x: (a.x + b.x) / 2 + n.x * (st.gap + st.txt / 2), y: (a.y + b.y) / 2 + n.y * (st.gap + st.txt / 2) };
     // the dimension picture
     const name = `*D${++root.dimCount}`;
@@ -265,7 +265,7 @@ export class Canvas {
       this.line(p.x - (ux + nx) * tick * 0.7, p.y - (uy + ny) * tick * 0.7, p.x + (ux + nx) * tick * 0.7, p.y + (uy + ny) * tick * 0.7, { layer });
     }
     let rot = (Math.atan2(dy, dx) * 180) / Math.PI;
-    if (rot >= 89.5 || rot < -90.5) rot += 180;
+    if (rot > 90.5 || rot <= -89.5) rot += 180;
     const mid = { x: (a.x + b.x) / 2 + nx * (o.h || 2.5) * 0.4, y: (a.y + b.y) / 2 + ny * (o.h || 2.5) * 0.4 };
     this.text(mid.x, mid.y, o.text ?? String(Math.round(L)), { layer, h: o.h || 2.5, rot, align: 'C', valign: 'B' });
   }

@@ -108,11 +108,11 @@ class TestNumberHelpers(unittest.TestCase):
 class TestCanvas(unittest.TestCase):
     def test_reading_rule(self):
         c, e = build_canvas()
-        # 90 is in [89.5, 269.5): turned by 180 with the anchor mirrored
-        self.assertEqual((e['t90']['rot'], e['t90']['align'], e['t90']['valign']), (-90, 'R', 'T'))
+        # 90 reads bottom to top (the reader stands at the right edge): kept; 180 is turned by 180 with the anchor mirrored
+        self.assertEqual((e['t90']['rot'], e['t90']['align'], e['t90']['valign']), (90, 'L', 'B'))
         self.assertEqual((e['t180']['rot'], e['t180']['align'], e['t180']['valign']), (0, 'L', 'B'))
         self.assertEqual((e['t45']['rot'], e['t45']['align'], e['t45']['valign']), (45, 'C', 'M'))
-        self.assertEqual(c.text(0, 0, 'x', rot=-90)['rot'], 270)
+        self.assertEqual(c.text(0, 0, 'x', rot=-90)['rot'], 90)  # 270 is turned to 90: reads bottom to top
         self.assertEqual(c.text(0, 0, 3.0)['str'], '3')
 
     def test_entities_keep_js_keys(self):
@@ -149,7 +149,7 @@ class TestCanvas(unittest.TestCase):
         v = e['vdim']
         self.assertEqual(v['text'], 'L=<> mm')
         self.assertEqual(c.blocks['*D2'].entities[-1]['str'], 'L=2000 mm')
-        self.assertEqual(c.blocks['*D2'].entities[-1]['rot'], 270)  # -90 (reads top to bottom), normalised by text()
+        self.assertEqual(c.blocks['*D2'].entities[-1]['rot'], 90)  # a vertical dimension reads bottom to top
         self.assertEqual(len(c.groups), 1)
         self.assertEqual(len(c.groups[0]['entities']), 3)  # the None is dropped
 
@@ -205,7 +205,7 @@ class TestDxfRoundTrip(unittest.TestCase):
         self.assertEqual(pl['pts'][1], {'x': 500, 'y': 0, 'bulge': 0.5})
         t = [e for e in p['entities'] if e['type'] == 'TEXT']
         self.assertEqual(t[0]['text'], 'ROTATED 90')
-        self.assertEqual((t[0]['rotation'], t[0]['halign']), (-90, 2))
+        self.assertEqual((t[0]['rotation'], t[0]['halign']), (90, 0))  # reads bottom to top, left-aligned as given
         self.assertEqual(t[0]['x'], 100)  # the alignment point (11/21) is the anchor
         h = next(e for e in p['entities'] if e['type'] == 'HATCH')
         self.assertEqual(h['pattern'], 'ANSI37')
@@ -289,7 +289,7 @@ class TestSheet(unittest.TestCase):
         self.assertAlmostEqual(e['pts'][0]['y'], (L['y'] + L['h'] / 2 + 7) * 100 - 500)
         t = pen.text(P(0, 0), 'PLAN', layer='TEXT', h=3, rot=90)
         self.assertEqual(t['h'], 300)
-        self.assertEqual((t['rot'], t['align'], t['valign']), (-90, 'R', 'T'))
+        self.assertEqual((t['rot'], t['align'], t['valign']), (90, 'L', 'B'))
         d = pen.dimension(P(0, 0), P(500, 0), P(0, 1200), style='ST100', style_def={'txt': 250})
         self.assertEqual(d['t'], 'dimension')
         self.assertEqual(pen.dim(P(0, 0), P(500, 0), -50), None)

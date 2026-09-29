@@ -112,7 +112,7 @@ def _ang(u):
 def _rot_of(uy, ux):
     """The text rotation of a bar / edge: reads left-to-right / bottom-to-top."""
     rot = (math.atan2(uy, ux) * 180) / math.pi
-    if rot >= 89.5 or rot < -90.5:
+    if rot > 90.5 or rot <= -89.5:
         rot += 180
     return rot
 
@@ -407,7 +407,7 @@ def _draw_run(pl, S, o=None, **kw):
         return {'x': a['x'] + ux * s + nx * off, 'y': a['y'] + uy * s + ny * off}
     rot0 = (math.atan2(uy, ux) * 180) / math.pi
     rot = rot0
-    if rot >= 89.5 or rot < -90.5:
+    if rot > 90.5 or rot <= -89.5:
         rot += 180
     flip = -1 if rot != rot0 else 1  # text reads left-to-right / bottom-to-top
     tn = text_side * flip

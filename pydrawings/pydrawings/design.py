@@ -129,12 +129,13 @@ def bar_line(pl, pts, layer):
 
 def leg_side(u, face):
     """
-    The side a bar's legs / hooks are drawn on, by the engineering convention: a bottom bar's legs point up (a
-    horizontal bar) / right (a vertical bar), a top bar's legs point down / left. Returns the unit normal.
+    The side a bar's legs / hooks are drawn on, by the engineering convention read from the bottom edge for a horizontal
+    bar and from the RIGHT edge for a vertical one: a bottom bar's legs point up (a horizontal bar) / left (a vertical
+    bar), a top bar's legs point down / right. Returns the unit normal.
     """
     n = {'x': -u['y'], 'y': u['x']}
-    if n['y'] < -1e-9 or (abs(n['y']) <= 1e-9 and n['x'] < 0):
-        n = {'x': -n['x'], 'y': -n['y']}  # "up / right"
+    if n['y'] < -1e-9 or (abs(n['y']) <= 1e-9 and n['x'] > 0):
+        n = {'x': -n['x'], 'y': -n['y']}  # "up / left"
     return n if face == 'B' else {'x': -n['x'], 'y': -n['y']}
 
 
@@ -2101,16 +2102,16 @@ inward = _inward
 
 
 # ------------------------------------------------------------------ office-convention drafting
-# (a bar within half a degree of vertical reads bottom to top, never top to bottom)
-# the reading direction of a text along a bar: left to right, or top to bottom when the bar is vertical (the office reads
-# vertical writing standing at the left edge of the sheet); `flip` is -1 when the reading direction is opposite to u
+# the reading direction of a text along a bar: left to right, or bottom to top when the bar is vertical (the office reads
+# vertical writing standing at the RIGHT edge of the sheet; a bar within half a degree of vertical reads bottom to top,
+# never top to bottom); `flip` is -1 when the reading direction is opposite to u
 def _readable_rot(u):
     r = (math.atan2(u['y'], u['x']) * 180) / math.pi
     flip = 1
-    if r >= 89.5:
+    if r > 90.5:
         r -= 180
         flip = -1
-    elif r < -90.5:
+    elif r <= -89.5:
         r += 180
         flip = -1
     return {'rot': r, 'flip': flip}
@@ -2322,7 +2323,7 @@ def office_bar(pl, S, it, phase=None):
     m0 = mid(it['a'], it['b'])
     if phase != 'labels':
         # the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
-        ls = leg_side(u, it.get('face'))  # the legs of this bar: up / right for a bottom bar, down / left for a top bar
+        ls = leg_side(u, it.get('face'))  # the legs of this bar: up / left for a bottom bar, down / right for a top bar
         # office rule: a bar is ONE continuous polyline - its run, its bends and its legs (a U-bar is one line, never
         # three) - so the drawing reads as the bar it is and the CAD user picks it up in one click
         if it.get('bend'):
@@ -2470,7 +2471,7 @@ def u_end_points(a, b, u_end, layer):
     (`pre` before its start, `post` after its end: the bar stays ONE line), `uEndTags` writes the U500 / L400 tag.
     """
     u = unit(a, b)
-    ls = leg_side(u, 'B' if re.search('BOT', layer) else 'T')  # top bar: legs down / left; bottom bar: up / right
+    ls = leg_side(u, 'B' if re.search('BOT', layer) else 'T')  # top bar: legs down / right; bottom bar: up / left
 
     def legs(on, p, back):
         if not _t(on):

@@ -60,12 +60,13 @@ const BAR_W = 20; // every reinforcement bar is a polyline of constant width 20 
 /** A bar on the plan: a polyline of width BAR_W. */
 const barLine = (pl, pts, layer) => pl.pline(pts, { layer, width: BAR_W });
 /**
- * The side a bar's legs / hooks are drawn on, by the engineering convention: a bottom bar's legs point up (a
- * horizontal bar) / right (a vertical bar), a top bar's legs point down / left. Returns the unit normal.
+ * The side a bar's legs / hooks are drawn on, by the engineering convention read from the bottom edge for a horizontal
+ * bar and from the RIGHT edge for a vertical one: a bottom bar's legs point up (a horizontal bar) / left (a vertical
+ * bar), a top bar's legs point down / right. Returns the unit normal.
  */
 function legSide(u, face) {
   let n = { x: -u.y, y: u.x };
-  if (n.y < -1e-9 || (Math.abs(n.y) <= 1e-9 && n.x < 0)) n = { x: -n.x, y: -n.y }; // "up / right"
+  if (n.y < -1e-9 || (Math.abs(n.y) <= 1e-9 && n.x > 0)) n = { x: -n.x, y: -n.y }; // "up / left"
   return face === 'B' ? n : { x: -n.x, y: -n.y };
 }
 
@@ -1513,10 +1514,10 @@ function inward(a, b, outline) {
 }
 
 // ------------------------------------------------------------------ office-convention drafting
-// (a bar within half a degree of vertical reads bottom to top, never top to bottom)
-// the reading direction of a text along a bar: left to right, or top to bottom when the bar is vertical (the office reads
-// vertical writing standing at the left edge of the sheet); `flip` is -1 when the reading direction is opposite to u
-const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r >= 89.5) { r -= 180; flip = -1; } else if (r < -90.5) { r += 180; flip = -1; } return { rot: r, flip }; };
+// the reading direction of a text along a bar: left to right, or bottom to top when the bar is vertical (the office reads
+// vertical writing standing at the RIGHT edge of the sheet; a bar within half a degree of vertical reads bottom to top,
+// never top to bottom); `flip` is -1 when the reading direction is opposite to u
+const readableRot = (u) => { let r = (Math.atan2(u.y, u.x) * 180) / Math.PI; let flip = 1; if (r > 90.5) { r -= 180; flip = -1; } else if (r <= -89.5) { r += 180; flip = -1; } return { rot: r, flip }; };
 
 // ---------------------------------------------------------------- label placement
 const TEXT_W = 0.85; // advance per character in text heights (isocp), before the width factor
@@ -1641,7 +1642,7 @@ export function officeBar(pl, S, it, phase) {
   const m0 = mid(it.a, it.b);
   if (phase !== 'labels') {
     // the bar itself, its legs and its distribution dimension (drawn for every bar before any label is placed)
-    const ls = legSide(u, it.face); // the legs of this bar: up / right for a bottom bar, down / left for a top bar
+    const ls = legSide(u, it.face); // the legs of this bar: up / left for a bottom bar, down / right for a top bar
     // office rule: a bar is ONE continuous polyline - its run, its bends and its legs (a U-bar is one line, never
     // three) - so the drawing reads as the bar it is and the CAD user picks it up in one click
     let pts;
@@ -1763,7 +1764,7 @@ export function officeBar(pl, S, it, phase) {
  */
 function uEndPoints(a, b, uEnd, layer) {
   const u = unit(a, b);
-  const ls = legSide(u, /BOT/.test(layer) ? 'B' : 'T'); // top bar: legs down / left; bottom bar: up / right
+  const ls = legSide(u, /BOT/.test(layer) ? 'B' : 'T'); // top bar: legs down / right; bottom bar: up / left
   const legs = (on, p, back) => {
     if (!on) return [];
     const tick = add(p, ls, 250);

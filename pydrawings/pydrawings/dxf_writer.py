@@ -346,11 +346,8 @@ def to_dxf(root, opts=None):
             tag(10, num(e['dl']['x'])); tag(20, num(e['dl']['y'])); tag(30, 0)
             tag(11, num(e['textMid']['x'])); tag(21, num(e['textMid']['y'])); tag(31, 0)
             tag(70, 32); tag(71, 5); tag(42, num(e['measure'])); tag(1, e.get('text') or '<>')
-            # AutoCAD regenerates the text along the dimension line reading from the bottom or the right; the office
-            # reads a vertical dimension from the left (top to bottom), so a near-vertical one carries a 180° text turn
-            ang = (math.fmod(e.get('angle') or 0, 360) + 360) % 360
-            if abs(ang - 90) < 0.5 or abs(ang - 270) < 0.5:
-                tag(53, 180)
+            # (AutoCAD regenerates the text along the dimension line reading from the bottom or the right, which is how the
+            # office reads: no text turn is written)
             tag(100, 'AcDbAlignedDimension')
             tag(13, num(e['p1']['x'])); tag(23, num(e['p1']['y'])); tag(33, 0)
             tag(14, num(e['p2']['x'])); tag(24, num(e['p2']['y'])); tag(34, 0)
