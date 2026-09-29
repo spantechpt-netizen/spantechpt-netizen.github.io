@@ -180,6 +180,7 @@ class PlanBeamsTest(unittest.TestCase):
         c.text(20600, 10000, 'CA2(400X1200)', {'layer': '0-beam', 'h': 200, 'rot': 90})
         rect(24000, 0, 300, 20000, '0-beam')
         c.text(23600, 12000, 'B7(300X600)', {'layer': '0-beam', 'h': 200, 'rot': 90})
+        rect(1000, 17000, 5000, 300, '0-walls')  # a tank / basement wall on the WALL layer (a zone file's PT-Clean-Walls)
         c.text(4000, 3000, 'T.O.C', {'layer': 'S-TEXT', 'h': 200})
         c.text(4000, 2700, '+0.10', {'layer': 'S-TEXT', 'h': 200})
         c.text(27000, 10300, 'T.O.C', {'layer': 'S-TEXT', 'h': 200})
@@ -207,6 +208,7 @@ class PlanBeamsTest(unittest.TestCase):
         self.assertEqual(len(L['sunken']), 1)
         self.assertEqual(L['sunken'][0]['step'], 300)
         self.assertEqual(L['tos'], '+0.10')
+        self.assertTrue(any(round(w['t']) == 300 and round(w['length']) == 5000 for w in L['walls']))  # the WALL-layer wall survives the design pass
         sch = L['beamSchedule']
         self.assertEqual(sch['design'], 'plan')
         self.assertEqual([[t['mark'], t['section'], t['top']['text'], t['bottom']['text'], t['stirrups']['text'], t['count']] for t in sch['types']],
@@ -224,6 +226,7 @@ class PlanBeamsTest(unittest.TestCase):
         self.assertRegex(dxf, r'NOT DESIGNED')
         self.assertRegex(dxf, r'MARKS B7 ARE NOT IN THE TABLE')
         self.assertIn("BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)", dxf)
+        self.assertRegex(dxf, r'WALL-HATCH')
         # the raised zone is a separate slab: no bar crosses the step at x = 20000, the step edge carries the perimeter
         # U-bars of the slab around it (D6 STEP EDGE) and the L-bars into the zone's edge beam (D1), no trimmers / diagonals
         bars = L['planData']['bars']

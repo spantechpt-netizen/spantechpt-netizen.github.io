@@ -227,8 +227,10 @@ def extract_design(dxf, options=None):
             level['thickness'] = tag['thickness']
             level['thicknessSource'] = 'RC tag on the plan'
 
-        # walls: long or non-rectangular closed shapes on the column layer, and blade-shaped "columns"
-        walls = []
+        # walls: the walls the extractor read from the WALL layer (tank / basement / perimeter walls of a zone file) stay,
+        # plus long or non-rectangular closed shapes on the column layer, and blade-shaped "columns"
+        # (HDB: 28 walls read, then this pass replaced the list with the 1 found on the column layer - the tanks vanished)
+        walls = [dict(w) for w in (level.get('walls') or []) if w.get('polygon') and in_part(centroid(w['polygon']))]
         for e in [x for x in raw if re.search('COL', f"{js_str(x.get('layer'))} {x.get('fromBlock') or ''}", re.I) and (x.get('type') == 'LWPOLYLINE' or x.get('type') == 'HATCH')]:
             for p0 in closed_polys(e):
                 p = clean_polygon(p0)

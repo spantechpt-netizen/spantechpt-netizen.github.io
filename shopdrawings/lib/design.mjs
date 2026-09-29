@@ -146,8 +146,10 @@ export function extractDesign(dxf, options = {}) {
     const tag = rcTags.find((t) => pointInPolygon(t, outline));
     if (tag) { level.thickness = tag.thickness; level.thicknessSource = 'RC tag on the plan'; }
 
-    // walls: long or non-rectangular closed shapes on the column layer, and blade-shaped "columns"
-    const walls = [];
+    // walls: the walls the extractor read from the WALL layer (tank / basement / perimeter walls of a zone file) stay,
+    // plus long or non-rectangular closed shapes on the column layer, and blade-shaped "columns"
+    // (HDB: 28 walls read, then this pass replaced the list with the 1 found on the column layer - the tanks vanished)
+    const walls = (level.walls || []).filter((w) => w.polygon && inPart(centroid(w.polygon))).map((w) => ({ ...w }));
     for (const e of raw.filter((x) => /COL/i.test(x.layer + ' ' + (x.fromBlock || '')) && (x.type === 'LWPOLYLINE' || x.type === 'HATCH'))) {
       for (const p0 of closedPolys(e)) {
         const p = cleanPolygon(p0);

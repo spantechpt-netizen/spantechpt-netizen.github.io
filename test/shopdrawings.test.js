@@ -1249,6 +1249,7 @@ test("design drawings from a G.A. with beam bodies: the project's beam marks and
   rect(0, 9850, 19800, 300, '0-beam'); c.text(9000, 10300, 'B9(300X900)', { layer: '0-beam', h: 200 });
   rect(20000, 0, 400, 20000, '0-beam'); c.text(20600, 10000, 'CA2(400X1200)', { layer: '0-beam', h: 200, rot: 90 }); // the raised zone's edge beam on the step, inside the zone
   rect(24000, 0, 300, 20000, '0-beam'); c.text(23600, 12000, 'B7(300X600)', { layer: '0-beam', h: 200, rot: 90 });
+  rect(1000, 17000, 5000, 300, '0-walls'); // a tank / basement wall on the WALL layer (a zone file's PT-Clean-Walls)
   c.text(4000, 3000, 'T.O.C', { layer: 'S-TEXT', h: 200 }); c.text(4000, 2700, '+0.10', { layer: 'S-TEXT', h: 200 });
   c.text(27000, 10300, 'T.O.C', { layer: 'S-TEXT', h: 200 }); c.text(27000, 10000, '+0.40', { layer: 'S-TEXT', h: 200 });
   c.text(0, -3000, 'GROUND FLOOR ZONE 2 - FRAMING PLAN', { layer: 'S-TEXT', h: 800 });
@@ -1274,6 +1275,7 @@ test("design drawings from a G.A. with beam bodies: the project's beam marks and
   assert.equal(L.sunken.length, 1);
   assert.equal(L.sunken[0].step, 300, 'the raised zone: T.O.C +0.40 over the main +0.10, tags read as plain text');
   assert.equal(L.tos, '+0.10');
+  assert.ok(L.walls.some((w) => Math.round(w.t) === 300 && Math.round(w.length) === 5000), 'the wall read from the WALL layer survives the design pass (HDB tanks)');
   // the schedule: the project's records by mark, nothing designed here
   const sch = L.beamSchedule;
   assert.equal(sch.design, 'plan');
@@ -1290,6 +1292,7 @@ test("design drawings from a G.A. with beam bodies: the project's beam marks and
   assert.ok(dxf.includes('[CA2] BEAM 400x1200'));
   assert.ok(/NOT DESIGNED/.test(dxf) && /MARKS B7 ARE NOT IN THE TABLE/.test(dxf), 'B7 says so');
   assert.ok(dxf.includes("BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)"));
+  assert.ok(/WALL-HATCH/.test(dxf), 'the wall is hatched on the framing plan');
   // the raised zone is a separate slab: no bar crosses the step at x = 20000, the step edge carries the perimeter
   // U-bars of the slab around it (D6 STEP EDGE) and the L-bars into the zone's edge beam (D1), no trimmers / diagonals
   const bars = L.planData.bars;
