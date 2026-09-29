@@ -54,9 +54,11 @@ detail strip is off by default), `frameDxf` (the office frame with `<TOKENS>`), 
 from this one file, with no server to install and no database: projects and their levels, generation runs (one file
 or several at once), the run page with previews, DXF / ZIP downloads and the run folder, the punching and beam
 alerts with the engineer's decisions and the regeneration, the beam strips model for RAM, the take-off updated from
-a sheet edited in AutoCAD, issuing and the revision history, the project files, the quantities and the cost study,
-the project's unified beam schedule, and the settings (designer's name, prefixes, defaults, reinforcement defaults
-and U-bar lengths, unit rates, the frame and the office frame DXF). Everything is kept in `data/` beside the file
+a sheet edited in AutoCAD, issuing and the revision history, the project files, the submittal request forms (the
+office template, sequential numbers, the drawing numbers / titles / revisions from the title blocks, the printable A4
+form, the consultant's response, re-issue and re-submission), the quantities and the cost study, the project's
+unified beam schedule, and the settings (designer's name, prefixes, defaults, reinforcement defaults and U-bar
+lengths, the submittal template, unit rates, the frame and the office frame DXF). Everything is kept in `data/` beside the file
 (`db.json` + `projects/`); `--data <folder>` puts it elsewhere, `--port` changes the port, `--no-browser` only serves.
 The end-to-end test of the app is `tests/test_app.py`.
 

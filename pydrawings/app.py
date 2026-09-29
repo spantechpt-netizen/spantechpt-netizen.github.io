@@ -51,19 +51,31 @@ BEAM_DESIGN = ['ram', 'office', 'max']
 ROTATIONS = ['auto', '0', '90']
 RUN_STATUS = ['draft', 'issued', 'superseded', 'blocked', 'failed', 'running']
 FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop']
+SUBMITTAL_STATUS = ['draft', 'submitted', 'approved', 'approved_as_noted', 'resubmit', 'rejected', 'withdrawn']
+SUBMITTAL_PURPOSES = ['approval', 'information', 'resubmission', 'as_built']
+PURPOSE_LABELS = {'approval': 'FOR APPROVAL', 'information': 'FOR INFORMATION', 'resubmission': 'RE-SUBMISSION', 'as_built': 'AS BUILT'}
+STATUS_LABELS = {'draft': 'DRAFT', 'submitted': 'SUBMITTED', 'approved': 'APPROVED', 'approved_as_noted': 'APPROVED AS NOTED', 'resubmit': 'REVISE AND RESUBMIT', 'rejected': 'REJECTED', 'withdrawn': 'WITHDRAWN'}
 PUNCHING_DECISIONS = ['thicken', 'ram_ok', 'bypass', 'clear']
 BEAM_DECISIONS = ['deepen', 'ram_ok', 'bypass', 'clear']
 
 FRAME_DEFAULTS = {'size': 'A1', 'rightWidth': 185, 'bottomStrip': 125, 'titleH': 150, 'refsH': 52, 'keyH': 46, 'schedH': 140, 'keyplan': True, 'refs': True, 'schedule': True, 'details': False}
 RATE_DEFAULTS = {'currency': 'SAR', 'steel_per_ton': 3200, 'rebar_labour_per_ton': 350, 'concrete_per_m3': 280, 'formwork_per_m2': 45, 'strand_per_kg': 9.5, 'anchor_live': 45, 'anchor_dead': 25, 'duct_per_m': 6, 'pt_labour_per_m2': 18, 'markup_pct': 15, 'vat_pct': 15}
 RATE_KEYS = [k for k in RATE_DEFAULTS if k != 'currency']
+# the submittal (transmittal) form: one template for the whole office, filled from the project and the runs
+SUBMITTAL_DEFAULTS = {
+    'prefix': 'SPAN-SUB', 'title': 'DRAWING SUBMITTAL / TRANSMITTAL', 'title_ar': 'طلب اعتماد مخططات',
+    'intro': 'We are pleased to submit the following drawings for your review and approval. Kindly return one signed copy of this form with your comments.',
+    'purposes': list(SUBMITTAL_PURPOSES), 'responses': ['APPROVED', 'APPROVED AS NOTED', 'REVISE AND RESUBMIT', 'REJECTED'], 'signatures': ['PREPARED BY', 'CHECKED BY', 'APPROVED BY'],
+    'footer': 'This submittal is issued under the office quality procedure; drawings are identified by their number and revision as printed in the title block. A revised drawing is re-submitted under a new submittal number that names the superseded revision.',
+    'contact': '',
+}
 DRAWING_DEFAULTS = {
     'project_prefix': 'P', 'design_prefix': 'SPAN-DD', 'shop_prefix': 'SPAN-SD',
     'company': 'SPAN TECH CONTRACTING', 'company_line': 'POST-TENSIONED SLABS · KSA · EGYPT · QATAR',
     'prepared': 'SPAN TECH DESIGN OFFICE', 'checked': '', 'approved': '', 'designer': '',
     'status_design': 'DESIGN DRAWING - FOR REVIEW', 'status_shop': 'SHOP DRAWING - FOR CONSULTANT APPROVAL',
     'default_mode': 'design', 'ram_bands': 'all', 'mesh': 'bottom', 'beam_design': 'ram', 'rotate': 'auto',
-    'spec': {}, 'frame': FRAME_DEFAULTS, 'frame_dxf': None, 'frame_dxf_name': None, 'frame_dxf_entities': None, 'rates': RATE_DEFAULTS,
+    'spec': {}, 'frame': FRAME_DEFAULTS, 'frame_dxf': None, 'frame_dxf_name': None, 'frame_dxf_entities': None, 'rates': RATE_DEFAULTS, 'submittal': SUBMITTAL_DEFAULTS,
 }
 
 
@@ -100,10 +112,11 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         self.path = self.root / 'db.json'
         self.lock = threading.RLock()
-        self.data = {'settings': {}, 'projects': [], 'levels': [], 'runs': [], 'files': [], 'counters': {}, 'next_id': 1}
+        self.data = {'settings': {}, 'projects': [], 'levels': [], 'runs': [], 'files': [], 'submittals': [], 'counters': {}, 'next_id': 1}
         if self.path.exists():
             try:
                 self.data.update(json.loads(self.path.read_text(encoding='utf8')))
+                self.data.setdefault('submittals', [])
             except Exception:
                 backup = self.path.with_suffix('.broken.json')
                 shutil.copyfile(self.path, backup)
@@ -167,6 +180,7 @@ def drawing_settings():
     out['spec'] = {**(DRAWING_DEFAULTS['spec']), **(stored.get('spec') or {})}
     out['frame'] = {**FRAME_DEFAULTS, **(stored.get('frame') or {})}
     out['rates'] = {**RATE_DEFAULTS, **(stored.get('rates') or {})}
+    out['submittal'] = {**SUBMITTAL_DEFAULTS, **(stored.get('submittal') or {})}
     return out
 
 
@@ -578,6 +592,8 @@ def api_settings_put(h, m):
         current = STORE.data.get('settings') or {}
         keep = {k: current.get(k) for k in ('frame_dxf', 'frame_dxf_name', 'frame_dxf_entities') if k in current}
         clean = {k: v for k, v in body.items() if k in DRAWING_DEFAULTS and k not in ('frame_dxf', 'frame_dxf_name', 'frame_dxf_entities')}
+        if 'submittal' in clean and not isinstance(clean['submittal'], dict):
+            raise bad_request('submittal must be an object', 'قالب طلب الاعتماد لازم يكون object')
         if 'spec' in clean and not isinstance(clean['spec'], dict):
             raise bad_request('spec must be a JSON object', 'المواصفات لازم تكون JSON object')
         STORE.data['settings'] = {**current, **clean, **keep}
@@ -663,6 +679,7 @@ def api_project(h, m):
     return {'project': public_project(p), 'levels': [public_level(l) for l in project_levels(p['id'])],
             'runs': [public_run(r) for r in project_runs(p['id']) if r['status'] != 'running'],
             'files': sorted([f for f in STORE.table('files') if f['project_id'] == p['id']], key=lambda f: f['created_at'], reverse=True),
+            'submittals': project_submittals(p['id']),
             'settings': drawing_settings(), 'projects': [{'id': x['id'], 'code': x['code'], 'name': x.get('name'), 'beam_types': len(x.get('beam_types') or [])} for x in STORE.table('projects') if x['id'] != p['id']]}
 
 
@@ -690,6 +707,7 @@ def api_project_delete(h, m):
         STORE.remove('runs', lambda r: r['project_id'] == p['id'])
         STORE.remove('levels', lambda l: l['project_id'] == p['id'])
         STORE.remove('files', lambda f: f['project_id'] == p['id'])
+        STORE.remove('submittals', lambda x: x['project_id'] == p['id'])
         STORE.remove('projects', lambda x: x['id'] == p['id'])
         STORE.save()
     shutil.rmtree(project_dir(p['id']), ignore_errors=True)
@@ -1112,6 +1130,197 @@ def api_file_delete(h, m):
     return {'ok': True}
 
 
+# --------------------------------------------------------------------------------------------- submittals
+def html_esc(v):
+    return str('' if v is None else v).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&#39;')
+
+
+def submittal_code(prefix, project_code, serial, revision=0):
+    """`SPAN-SUB-P26-001-003` (+ `-R1` when the same submittal is re-issued)."""
+    return f"{prefix}-{project_code}-{int(serial):03d}{('-R' + str(revision)) if revision else ''}"
+
+
+def project_submittals(pid):
+    return sorted([x for x in STORE.table('submittals') if x['project_id'] == pid], key=lambda x: -x['serial'])
+
+
+def load_submittal(sid):
+    x = STORE.get('submittals', int(sid))
+    if not x:
+        raise not_found('Submittal not found', 'طلب الاعتماد مش موجود')
+    return x
+
+
+def submittal_items(runs, only=None, previous=None):
+    """
+    The items of a submittal from the runs picked: every plan sheet of each run (the cover / index sheet is not a
+    drawing to approve), or only the sheet numbers listed in `only`. Each item names the earlier submittal and
+    revision of the same drawing number when there was one, so the form says what it supersedes.
+    """
+    items, seen = [], set()
+    for run in runs:
+        for sh in run.get('sheets') or []:
+            if sh.get('level') == 'ALL' and re.search(r'COVER|INDEX', sh.get('title') or '', re.I):
+                continue
+            if only and sh['no'] not in only:
+                continue
+            if sh['no'] in seen:
+                continue
+            seen.add(sh['no'])
+            item = {'run_id': run['id'], 'mode': run['mode'], 'level': sh.get('level'), 'level_name': sh.get('level_name') or run.get('level_name') or '', 'no': sh['no'], 'title': sh['title'], 'rev': run['revision'], 'file': sh.get('file'), 'scale': sh.get('scale') or None}
+            prior = sorted([{'code': p['code'], 'rev': it['rev'], 'status': p['status'], 'date': p['date']} for p in (previous or []) for it in (p.get('items') or []) if it['no'] == sh['no']], key=lambda x: x['date'] or '', reverse=True)
+            if prior:
+                item.update({'prev_rev': prior[0]['rev'], 'prev_submittal': prior[0]['code'], 'prev_status': prior[0]['status']})
+            items.append(item)
+    return items
+
+
+def submittal_html(submittal, project, settings, items):
+    """The printable form (A4, prints from the browser): office header, project block, the drawing list, the response boxes."""
+    tpl = settings.get('submittal') or {}
+    S = submittal
+    e = html_esc
+    purpose = PURPOSE_LABELS.get(S.get('purpose'), S.get('purpose'))
+    status = STATUS_LABELS.get(S.get('status'), S.get('status'))
+    def row_of(i, it):
+        level = 'ALL' if it.get('level') == 'ALL' else str(it.get('level')) + ((' - ' + it['level_name']) if it.get('level_name') else '')
+        prev = (e(it.get('prev_rev')) + ' <span class="tiny">(' + e(it.get('prev_submittal')) + ')</span>') if it.get('prev_rev') is not None else '-'
+        scale = ('1:' + e(it['scale'])) if it.get('scale') else 'NTS'
+        return ('<tr><td class="c">' + str(i + 1) + '</td><td class="mono">' + e(it.get('no')) + '</td><td>' + e(it.get('title')) + '</td><td class="mono">' + e(level) + '</td>'
+                '<td class="c mono">' + e(it.get('rev')) + '</td><td class="c mono">' + prev + '</td><td class="c">' + scale + '</td><td class="resp"></td></tr>')
+    rows = ''.join(row_of(i, it) for i, it in enumerate(items))
+    responses = ''.join(f'<label><span class="box"></span> {e(r)}</label>' for r in (tpl.get('responses') or []))
+    signatures = ''.join(f'<div class="sig"><div class="line"></div><div>{e(sg)}</div><div class="tiny">NAME / SIGN / DATE</div></div>' for sg in (tpl.get('signatures') or []))
+    kinds = {'shop': 'SHOP DRAWINGS', 'design': 'DESIGN DRAWINGS', 'mixed': 'DESIGN AND SHOP DRAWINGS'}
+    response = (f'<table class="meta"><tr><td class="k">RESPONSE</td><td>{e(S.get("response_notes"))}</td><td class="k">DATE / BY</td><td>{e(S.get("response_date"))} {e(S.get("response_by"))}</td></tr></table>'
+                if S.get('response_notes') or S.get('response_date') else '')
+    notes = f'<div class="intro"><b>NOTES:</b> {e(S.get("notes"))}</div>' if S.get('notes') else ''
+    designer = settings.get('designer') or ''
+    return ('<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><title>' + e(S.get('code')) + ' - ' + e(tpl.get('title') or 'SUBMITTAL') + '</title>\n'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">\n<style>\n'
+            '  @page { size: A4; margin: 12mm; }\n'
+            '  body { font: 11px/1.4 Arial, Helvetica, sans-serif; color: #111; margin: 0; padding: 12mm; max-width: 190mm; }\n'
+            '  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0b3d6b; padding-bottom: 6px; }\n'
+            '  .head .co { font-size: 18px; font-weight: 700; color: #0b3d6b; letter-spacing: .5px; }\n  .head .line { font-size: 10px; color: #555; }\n  .head .no { text-align: right; }\n'
+            '  .head .no .code { font-family: Consolas, Menlo, monospace; font-size: 16px; font-weight: 700; }\n'
+            '  h1 { font-size: 15px; margin: 10px 0 2px; color: #0b3d6b; }\n  h1 small { display: block; font-size: 11px; color: #555; font-weight: 400; }\n'
+            '  table.meta { width: 100%; border-collapse: collapse; margin: 8px 0; }\n  table.meta td { border: 1px solid #999; padding: 4px 6px; vertical-align: top; }\n'
+            '  table.meta td.k { width: 18%; background: #eef3f8; font-weight: 700; }\n  table.list { width: 100%; border-collapse: collapse; margin-top: 6px; }\n'
+            '  table.list th, table.list td { border: 1px solid #666; padding: 4px 5px; text-align: left; }\n  table.list th { background: #0b3d6b; color: #fff; font-weight: 700; font-size: 10px; }\n'
+            '  .c { text-align: center !important; }\n  .mono { font-family: Consolas, Menlo, monospace; }\n  .tiny { font-size: 9px; color: #555; }\n  .resp { width: 22mm; }\n  .intro { margin: 8px 0; }\n'
+            '  .responses { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 10px 0; padding: 8px; border: 1px solid #666; }\n'
+            '  .responses label { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }\n  .box { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #111; }\n'
+            '  .sigs { display: flex; gap: 14px; margin-top: 14px; }\n  .sig { flex: 1; text-align: center; font-weight: 700; }\n  .sig .line { height: 34px; border-bottom: 1px solid #111; margin-bottom: 4px; }\n'
+            '  .foot { margin-top: 12px; font-size: 9px; color: #555; border-top: 1px solid #999; padding-top: 6px; }\n'
+            '  .status { display: inline-block; padding: 2px 8px; border: 1.5px solid #0b3d6b; border-radius: 3px; font-weight: 700; color: #0b3d6b; }\n'
+            '  .print { position: fixed; top: 8px; right: 8px; padding: 6px 12px; font: 12px Arial; }\n  @media print { .print { display: none; } body { padding: 0; } }\n'
+            '</style></head>\n<body>\n<button class="print" onclick="window.print()">Print / PDF</button>\n'
+            '<div class="head">\n  <div><div class="co">' + e(settings.get('company')) + '</div><div class="line">' + e(settings.get('company_line')) + ((' · ' + e(tpl['contact'])) if tpl.get('contact') else '') + '</div></div>\n'
+            '  <div class="no"><div class="tiny">SUBMITTAL No.</div><div class="code">' + e(S.get('code')) + '</div><div class="tiny">DATE ' + e(S.get('date')) + '</div></div>\n</div>\n'
+            '<h1>' + e(tpl.get('title') or 'DRAWING SUBMITTAL') + '<small>' + e(tpl.get('title_ar')) + '</small></h1>\n<table class="meta">\n'
+            '  <tr><td class="k">PROJECT</td><td>' + e(project.get('name')) + ((' · ' + e(project['name_ar'])) if project.get('name_ar') else '') + ' <span class="mono">(' + e(project.get('code')) + ')</span></td><td class="k">STATUS</td><td><span class="status">' + e(status) + '</span></td></tr>\n'
+            '  <tr><td class="k">TO</td><td>' + e(S.get('to_name') or project.get('consultant')) + '</td><td class="k">ATTENTION</td><td>' + e(S.get('attention')) + '</td></tr>\n'
+            '  <tr><td class="k">CLIENT</td><td>' + e(project.get('client')) + '</td><td class="k">CONTRACTOR</td><td>' + e(project.get('contractor')) + '</td></tr>\n'
+            '  <tr><td class="k">LOCATION</td><td>' + e(project.get('location')) + '</td><td class="k">PURPOSE</td><td>' + e(purpose) + ' · ' + e(kinds.get(S.get('kind'), S.get('kind'))) + '</td></tr>\n'
+            '  <tr><td class="k">SUBJECT</td><td colspan="3">' + e(S.get('subject')) + '</td></tr>\n</table>\n'
+            '<div class="intro">' + e(tpl.get('intro')) + '</div>\n<table class="list">\n'
+            '  <thead><tr><th class="c">#</th><th>DRAWING No.</th><th>TITLE</th><th>LEVEL</th><th class="c">REV</th><th class="c">SUPERSEDES REV</th><th class="c">SCALE</th><th class="c">ACTION</th></tr></thead>\n'
+            '  <tbody>' + (rows or '<tr><td colspan="8" class="c">NO DRAWINGS</td></tr>') + '</tbody>\n</table>\n'
+            '<div class="tiny" style="margin-top:4px">' + str(len(items)) + ' DRAWING(S). ACTION CODES: A = APPROVED · B = APPROVED AS NOTED · C = REVISE AND RESUBMIT · D = REJECTED.</div>\n'
+            + notes + '<div class="responses">' + responses + '</div>\n' + response +
+            '<div class="sigs">' + signatures + '<div class="sig"><div class="line"></div><div>RECEIVED BY (CONSULTANT)</div><div class="tiny">NAME / SIGN / DATE</div></div></div>\n'
+            '<div class="foot">' + e(tpl.get('footer')) + ((' · Prepared in ' + e(settings.get('company')) + ' PT Suite by ' + e(designer)) if designer else '') + '</div>\n</body></html>')
+
+
+@route('GET', '/api/projects/:id/submittals')
+def api_submittals(h, m):
+    return {'submittals': project_submittals(load_project(m['id'])['id'])}
+
+
+@route('POST', '/api/projects/:id/submittals')
+def api_submittal_create(h, m):
+    p = load_project(m['id'])
+    body = h.json_body()
+    settings = drawing_settings()
+    run_ids = [int(v) for v in (body.get('run_ids') if isinstance(body.get('run_ids'), list) else []) if str(v).isdigit()]
+    if not run_ids:
+        raise bad_request('Pick at least one drawing run', 'اختار إصدار لوحات واحد على الأقل')
+    runs = [public_run(load_run(i)) for i in run_ids]
+    if any(r['project_id'] != p['id'] for r in runs):
+        raise bad_request('A run of another project was picked', 'فيه إصدار من مشروع تاني')
+    if any(r['status'] in ('failed', 'running') for r in runs):
+        raise bad_request('A run without drawings was picked', 'فيه إصدار مطلعش لوحات')
+    if any(r['status'] == 'blocked' for r in runs):
+        raise bad_request('A run blocked by the punching / beam check cannot be submitted', 'فيه إصدار متوقف بسبب البانشنج أو الكمرات: مينفعش يتقدم قبل قرار المهندس')
+    only = [str(v) for v in body['sheets']] if isinstance(body.get('sheets'), list) and body['sheets'] else None
+    previous = sorted([x for x in project_submittals(p['id']) if x['status'] != 'withdrawn'], key=lambda x: x['serial'])
+    items = submittal_items(runs, only, previous)
+    if not items:
+        raise bad_request('No drawings to submit', 'مفيش لوحات تتقدم')
+    modes = set(r['mode'] for r in runs)
+    kind = 'mixed' if len(modes) > 1 else runs[0]['mode']
+    resub = any(it.get('prev_rev') is not None for it in items)
+    levels = list(dict.fromkeys(str(it['level']) for it in items))
+    with STORE.lock:
+        serial = STORE.counter(f"drawing_submittals:{p['id']}")
+        sub = {
+            'id': STORE.new_id(), 'project_id': p['id'], 'serial': serial, 'code': submittal_code(settings['submittal'].get('prefix') or 'SPAN-SUB', p['code'], serial), 'revision': 0, 'kind': kind,
+            'subject': s(body.get('subject'), 300) or f"{'DESIGN' if kind == 'design' else 'SHOP' if kind == 'shop' else 'DESIGN AND SHOP'} DRAWINGS - {', '.join(levels)}{' (RE-SUBMISSION)' if resub else ''}",
+            'to_name': s(body.get('to_name')) or p.get('consultant') or None, 'attention': s(body.get('attention')),
+            'purpose': one_of(body.get('purpose'), SUBMITTAL_PURPOSES, fallback='resubmission' if resub else 'approval'),
+            'date': s(body.get('date'), 10) or today(), 'items': items, 'notes': s(body.get('notes'), 4000), 'status': 'draft',
+            'created_at': now_iso(), 'created_by_name': settings.get('designer') or None,
+        }
+        STORE.table('submittals').append(sub)
+        STORE.save()
+    return {'submittal': sub}
+
+
+@route('GET', '/api/submittals/:id')
+def api_submittal(h, m):
+    x = load_submittal(m['id'])
+    return {'submittal': x, 'project': public_project(load_project(x['project_id']))}
+
+
+@route('GET', '/api/submittals/:id/form')
+def api_submittal_form(h, m):
+    x = load_submittal(m['id'])
+    h.send_html(submittal_html(x, public_project(load_project(x['project_id'])), drawing_settings(), x.get('items') or []))
+    return None
+
+
+@route('PATCH', '/api/submittals/:id')
+def api_submittal_update(h, m):
+    x = load_submittal(m['id'])
+    body = h.json_body()
+    settings = drawing_settings()
+    p = load_project(x['project_id'])
+    with STORE.lock:
+        for k, mx in (('subject', 300), ('to_name', 200), ('attention', 200), ('notes', 4000), ('date', 10), ('response_date', 10), ('response_notes', 4000), ('response_by', 200)):
+            if k in body:
+                x[k] = s(body.get(k), mx)
+        if body.get('purpose') is not None:
+            x['purpose'] = one_of(body['purpose'], SUBMITTAL_PURPOSES)
+        if body.get('status') is not None:
+            x['status'] = one_of(body['status'], SUBMITTAL_STATUS)
+        # re-issuing the same submittal (a correction before the consultant answers) bumps its own revision: -R1, -R2 ...
+        if body.get('reissue'):
+            x['revision'] = (x.get('revision') or 0) + 1
+            x['code'] = submittal_code(settings['submittal'].get('prefix') or 'SPAN-SUB', p['code'], x['serial'], x['revision'])
+            x['status'] = 'draft'
+        STORE.save()
+    return {'submittal': x}
+
+
+@route('DELETE', '/api/submittals/:id')
+def api_submittal_delete(h, m):
+    x = load_submittal(m['id'])
+    with STORE.lock:
+        STORE.remove('submittals', lambda y: y['id'] == x['id'])
+        STORE.save()
+    return {'ok': True}
+
+
 # ----------------------------------------------------------------------------------------- the HTTP layer
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
@@ -1400,7 +1609,7 @@ const EXTRA = {
     help_cli: 'من سطر الأوامر (نفس المولّد بدون الشاشات)', help_files: 'اللي بيطلع في كل إصدار',
     help_files_text: 'ملف DXF لكل لوحة (dxf/)، الباكدج الكامل، معاينات SVG (preview/)، جداول CSV (schedules/)، model.json و quantities.json و punching.json و beams.json و REPORT.md، وملف ZIP بكل ده.',
     help_data: 'فولدر البيانات: كل المشاريع والإصدارات والإعدادات في db.json وفولدر projects/. انسخ الفولدر ده عشان تاخد نسخة احتياطية أو تنقله لجهاز تاني.',
-    dw_files_none: 'مفيش ملفات في القسم ده.', dw_history_none: 'لسه مفيش إصدارات.',
+    dw_files_none: 'مفيش ملفات في القسم ده.', dw_history_none: 'لسه مفيش إصدارات.', print: 'طباعة', create: 'إنشاء', optional: 'اختياري',
   },
   en: {
     app_name: 'Span Tech', app_sub: 'Drawings · Python', nav_projects: 'Projects', nav_settings: 'Settings', nav_help: 'Help',
@@ -1413,7 +1622,7 @@ const EXTRA = {
     help_cli: 'From the command line (the generator without the screens)', help_files: 'What every run writes',
     help_files_text: 'One DXF per sheet (dxf/), the package DXF, SVG previews (preview/), CSV schedules (schedules/), model.json, quantities.json, punching.json, beams.json, REPORT.md, and a ZIP of it all.',
     help_data: 'The data folder: every project, run and setting in db.json and the projects/ folder. Copy that folder for a backup or to move to another machine.',
-    dw_files_none: 'No files in this section.', dw_history_none: 'No runs yet.',
+    dw_files_none: 'No files in this section.', dw_history_none: 'No runs yet.', print: 'Print', create: 'Create', optional: 'optional',
   },
 };
 for (const l of ['ar', 'en']) Object.assign(DICT[l], EXTRA[l]);
@@ -1618,10 +1827,12 @@ const api = {
   quantities: (pid) => call('GET', `/api/projects/${pid}/quantities`), cost: (pid, rates) => call('GET', `/api/projects/${pid}/cost?${new URLSearchParams(Object.fromEntries(Object.entries(rates || {}).filter(([, v]) => v != null)))}`),
   beamTypes: (pid) => call('GET', `/api/projects/${pid}/beam-types`), importBeamTypes: (pid, d) => call('POST', `/api/projects/${pid}/beam-types/import`, d), deleteBeamType: (pid, mark) => call('DELETE', `/api/projects/${pid}/beam-types/${encodeURIComponent(mark)}`),
   uploadFile: (pid, f, q) => upload(`/api/projects/${pid}/files`, f, q), fileUrl: (id) => `/api/files/${id}`, deleteFile: (id) => call('DELETE', `/api/files/${id}`),
+  createSubmittal: (pid, d) => call('POST', `/api/projects/${pid}/submittals`, d), updateSubmittal: (id, d) => call('PATCH', `/api/submittals/${id}`, d), deleteSubmittal: (id) => call('DELETE', `/api/submittals/${id}`), submittalFormUrl: (id) => `/api/submittals/${id}/form`,
 };
 
 // --------------------------------------------------------------------------------------------- shell + router
 const MODES = ['design', 'shop'], BANDS = ['all', 'user', 'none'], MESHES = ['bottom', 'both'], BEAM_DESIGNS = ['ram', 'office', 'max'], ROTATIONS = ['auto', '0', '90'], FILE_CATEGORIES = ['design', 'ram', 'pt_design', 'pt_shop'];
+const SUBMITTAL_STATUS = ['draft', 'submitted', 'approved', 'approved_as_noted', 'resubmit', 'rejected', 'withdrawn'], PURPOSES = ['approval', 'information', 'resubmission', 'as_built'];
 const modeLabel = (mode) => t(mode === 'shop' ? 'dw_mode_shop' : 'dw_mode_design');
 const bandsLabel = (b) => t(`dw_bands_${b || 'all'}`);
 const meshLabel = (m) => t(`dw_mesh_${m || 'bottom'}`);
@@ -1889,7 +2100,7 @@ async function projectPage(projectId) {
     clear(body).append(el('div.loading-page', { text: t('loading') }));
     let data;
     try { data = await api.project(projectId); } catch (error) { clear(body).append(el('div.alert.danger', { text: error.localised || error.message })); return; }
-    const { project, levels, runs, settings, files, projects } = data;
+    const { project, levels, runs, settings, files, projects, submittals } = data;
     clear(body);
     body.append(pageHeader(`${project.code} · ${pick(project, 'name')}`, [
       el('button.btn-secondary.btn', { type: 'button', onclick: () => navigate('projects') }, [icon('back', 16), t('back')]),
@@ -1910,6 +2121,7 @@ async function projectPage(projectId) {
       { key: 'levels', label: t('dw_tab_levels'), build: () => levelsPanel() },
       { key: 'files', label: t('dw_tab_files'), build: () => filesPanel() },
       { key: 'history', label: t('dw_tab_history'), build: () => historyPanel() },
+      { key: 'submittals', label: t('dw_tab_submittals'), build: () => submittalsPanel(project, levels, runs, submittals || [], settings, load) },
       { key: 'quantities', label: t('dw_tab_quantities'), build: () => quantitiesPanel(project) },
       { key: 'beam_types', label: t('dw_tab_beam_types'), build: () => beamTypesPanel(project, projects, load) },
     ];
@@ -2300,6 +2512,101 @@ function beamCheckCard(run, project) {
   return el('div.card', {}, [el('div.card-header', {}, [el('h3', { text: blocking.length ? t('dw_beam_check_title') : t('dw_beam_check') }), el('div.spacer'), el('span.badge.grey', { text: beamDesignLabel(B.design) }), statusBadge(run.status)]), body]);
 }
 
+// ---------------------------------------------------------------------------------------------- submittals
+const submittalBadge = (status) => el('span', { class: `badge ${status === 'approved' ? 'green' : status === 'approved_as_noted' || status === 'submitted' ? 'blue' : status === 'resubmit' || status === 'rejected' ? 'red' : status === 'withdrawn' ? 'grey' : 'amber'}`, text: t(`dw_sstatus_${status}`) });
+function submittalsPanel(project, levels, runs, submittals, settings, reload) {
+  const host = el('div');
+  host.append(el('div.alert.info', { text: t('dw_submittals_hint') }));
+  const usable = runs.filter((r) => r.status !== 'failed' && r.status !== 'running');
+  host.append(el('div.card', {}, [
+    el('div.card-header', {}, [el('h3', { text: t('dw_tab_submittals') }), el('span.badge.grey', { text: String(submittals.length) }), el('div.spacer'), usable.length ? el('button.btn.btn-sm', { type: 'button', onclick: () => openSubmittalForm(project, levels, usable, settings, reload) }, [icon('plus', 14), t('dw_new_submittal')]) : null]),
+    el('div.card-body.flush', {}, [submittals.length ? dataTable({ rows: submittals, columns: [
+      { label: t('dw_submittal_no'), render: (row) => el('span.bold', { text: row.code, dir: 'ltr' }) }, { label: t('dw_submittal_date'), render: (row) => row.date },
+      { label: t('dw_submittal_subject'), render: (row) => el('span', { text: row.subject || '—', dir: 'ltr' }) },
+      { label: t('dw_submittal_to'), render: (row) => el('span', { text: [row.to_name, row.attention].filter(Boolean).join(' · ') || '—', dir: 'ltr' }) },
+      { label: t('dw_submittal_purpose'), render: (row) => t(`dw_purpose_${row.purpose}`) }, { label: t('dw_submittal_items'), className: 'num', render: (row) => row.items.length },
+      { label: t('status'), render: (row) => submittalBadge(row.status) },
+      { label: t('dw_submittal_response'), render: (row) => el('span.small', { text: [row.response_date, row.response_notes].filter(Boolean).join(' — ') || '—' }) },
+      { label: t('actions'), render: (row) => el('div.row', { style: { gap: '.3rem' } }, [
+        el('a.btn.btn-sm', { href: api.submittalFormUrl(row.id), target: '_blank', rel: 'noopener', title: t('dw_submittal_open_form') }, [icon('chevron', 14), t('print')]),
+        el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => openSubmittalStatus(row, reload) }, [icon('edit', 14), t('dw_submittal_mark')]),
+        el('button.btn-secondary.btn.btn-sm.btn-icon', { type: 'button', title: t('delete'), onclick: async () => { if (!(await confirmDialog(t('dw_delete_submittal_confirm')))) return; try { await api.deleteSubmittal(row.id); toast(t('deleted'), 'success'); reload(); } catch (error) { toastError(error); } } }, [icon('trash', 14)]),
+      ]) },
+    ] }) : el('div.empty', {}, [icon('empty', 32), el('div', { text: t('dw_no_submittals') })])]),
+  ]));
+  for (const sub of submittals) {
+    host.append(el('div.card', {}, [
+      el('div.card-header', {}, [el('h3', { text: `${sub.code} · ${sub.subject || ''}`, dir: 'ltr' }), el('div.spacer'), submittalBadge(sub.status)]),
+      el('div.card-body.flush', {}, [dataTable({ rows: sub.items, columns: [
+        { label: t('dw_sheet_no'), render: (row) => el('span.bold', { text: row.no, dir: 'ltr' }) }, { label: t('dw_sheet_title'), render: (row) => el('span', { text: row.title, dir: 'ltr' }) },
+        { label: t('dw_level'), render: (row) => el('span', { text: row.level === 'ALL' ? 'ALL' : `${row.level} - ${row.level_name || ''}`, dir: 'ltr' }) }, { label: t('dw_revision'), render: (row) => `REV ${row.rev}` },
+        { label: t('dw_submittal_supersedes'), render: (row) => (row.prev_rev != null ? el('span', { text: `REV ${row.prev_rev} (${row.prev_submittal})`, dir: 'ltr' }) : '—') },
+      ] })]),
+    ]));
+  }
+  return host;
+}
+function openSubmittalForm(project, levels, runs, settings, after) {
+  const levelOf = (r) => levelLabel({ code: r.level_code, name: r.level_name, zone: r.level_zone });
+  const picked = new Map();
+  const runsHost = el('div');
+  const sheetsHost = el('div');
+  const drawSheets = () => {
+    clear(sheetsHost);
+    for (const run of runs.filter((r) => picked.has(r.id))) {
+      const chosen = picked.get(run.id);
+      const sheets = run.sheets.filter((sh) => !(sh.level === 'ALL' && /COVER|INDEX/i.test(sh.title)));
+      sheetsHost.append(el('div.card', {}, [
+        el('div.card-header', {}, [el('h3', { text: `#${run.serial} · ${levelOf(run)} · REV ${run.revision}`, dir: 'ltr' }), el('div.spacer'), el('label.small', {}, [el('input', { type: 'checkbox', checked: chosen === null, onchange: (e) => { picked.set(run.id, e.target.checked ? null : new Set(sheets.map((x) => x.no))); drawSheets(); } }), ' ', t('dw_submittal_all_sheets')])]),
+        el('div.card-body', {}, [el('div.grid.grid-2', {}, sheets.map((sh) => el('label.small', {}, [el('input', { type: 'checkbox', checked: chosen === null || chosen.has(sh.no), disabled: chosen === null, onchange: (e) => { if (e.target.checked) chosen.add(sh.no); else chosen.delete(sh.no); } }), ' ', el('span', { text: `${sh.no} — ${sh.title}`, dir: 'ltr' })])))]),
+      ]));
+    }
+  };
+  runsHost.append(dataTable({ rows: runs, columns: [
+    { label: '', render: (row) => el('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked) picked.set(row.id, null); else picked.delete(row.id); drawSheets(); } }) },
+    { label: t('dw_serial'), className: 'num', render: (row) => `#${row.serial}` }, { label: t('dw_level'), render: (row) => el('span', { text: levelOf(row), dir: 'ltr' }) },
+    { label: t('dw_mode'), render: (row) => modeLabel(row.mode) }, { label: t('dw_revision'), render: (row) => `REV ${row.revision}` }, { label: t('status'), render: (row) => statusBadge(row.status) }, { label: t('dw_sheets'), className: 'num', render: (row) => row.sheet_count },
+  ] }));
+  const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'to_name', label: t('dw_submittal_to'), value: project.consultant || '', dir: 'ltr' }), field({ name: 'attention', label: t('dw_submittal_attention'), value: '', dir: 'ltr' }),
+      field({ name: 'purpose', label: t('dw_submittal_purpose'), type: 'select', value: 'approval', options: PURPOSES.map((p) => ({ value: p, label: t(`dw_purpose_${p}`) })) }),
+      field({ name: 'date', label: t('dw_submittal_date'), type: 'date', value: new Date().toISOString().slice(0, 10) }),
+    ]),
+    field({ name: 'subject', label: t('dw_submittal_subject'), value: '', dir: 'ltr', hint: t('optional') }), field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: '', rows: 2 }),
+    el('h4.mt-1', { text: t('dw_submittal_runs') }), runsHost, el('h4.mt-1', { text: t('dw_submittal_sheets') }), sheetsHost,
+    el('div.tiny.muted', { text: `${t('dw_submittal_no')}: ${settings.submittal?.prefix || 'SPAN-SUB'}-${project.code}-001`, dir: 'ltr' }),
+  ]);
+  const { close } = openModal({ title: t('dw_new_submittal'), size: 'wide', body: form, footer: el('div.row', {}, [
+    el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+    el('button.btn', { type: 'button', text: t('create'), onclick: async (event) => {
+      if (!picked.size) { toast(t('dw_submittal_runs'), 'error'); return; }
+      const data = readForm(form);
+      const sheets = [...picked.values()].some((v) => v !== null) ? runs.filter((r) => picked.has(r.id)).flatMap((r) => (picked.get(r.id) === null ? r.sheets.map((x) => x.no) : [...picked.get(r.id)])) : undefined;
+      event.currentTarget.disabled = true;
+      try { const { submittal } = await api.createSubmittal(project.id, { ...data, subject: data.subject || undefined, run_ids: [...picked.keys()], sheets }); toast(t('saved'), 'success'); close(); window.open(api.submittalFormUrl(submittal.id), '_blank', 'noopener'); after?.(); }
+      catch (error) { toastError(error); event.currentTarget.disabled = false; }
+    } }),
+  ]) });
+}
+function openSubmittalStatus(sub, after) {
+  const form = el('form', { onsubmit: (e) => e.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'status', label: t('status'), type: 'select', value: sub.status, options: SUBMITTAL_STATUS.map((v) => ({ value: v, label: t(`dw_sstatus_${v}`) })) }),
+      field({ name: 'date', label: t('dw_submittal_date'), type: 'date', value: sub.date || '' }), field({ name: 'to_name', label: t('dw_submittal_to'), value: sub.to_name || '', dir: 'ltr' }),
+      field({ name: 'attention', label: t('dw_submittal_attention'), value: sub.attention || '', dir: 'ltr' }), field({ name: 'response_date', label: t('dw_submittal_response_date'), type: 'date', value: sub.response_date || '' }),
+      field({ name: 'response_by', label: t('dw_submittal_response_by'), value: sub.response_by || '', dir: 'ltr' }),
+    ]),
+    field({ name: 'subject', label: t('dw_submittal_subject'), value: sub.subject || '', dir: 'ltr' }), field({ name: 'response_notes', label: t('dw_submittal_response'), type: 'textarea', value: sub.response_notes || '', rows: 2 }),
+    field({ name: 'notes', label: t('dw_notes'), type: 'textarea', value: sub.notes || '', rows: 2 }),
+  ]);
+  const { close } = openModal({ title: `${sub.code}`, size: 'wide', body: form, footer: el('div.row', {}, [
+    el('button.btn-secondary.btn', { type: 'button', text: t('cancel'), onclick: () => close() }),
+    el('button.btn-secondary.btn', { type: 'button', text: t('dw_submittal_reissue'), onclick: async () => { try { await api.updateSubmittal(sub.id, { ...readForm(form), reissue: true }); toast(t('saved'), 'success'); close(); after?.(); } catch (error) { toastError(error); } } }),
+    el('button.btn', { type: 'button', text: t('save'), onclick: async () => { try { await api.updateSubmittal(sub.id, readForm(form)); toast(t('saved'), 'success'); close(); after?.(); } catch (error) { toastError(error); } } }),
+  ]) });
+}
+
 // ------------------------------------------------------------------------------------------------ settings
 async function settingsPage() {
   const { settings: current } = await api.settings();
@@ -2356,11 +2663,19 @@ async function settingsPage() {
     ]),
   ]);
   const ratesForm = el('form', { onsubmit: (e) => e.preventDefault() }, [el('div.grid.grid-4', {}, [field({ name: 'currency', label: t('dw_rate_currency'), value: rates.currency, dir: 'ltr' }), ...RATE_KEYS.map((k) => field({ name: k, label: t(`dw_rate_${k}`), type: 'number', value: rates[k], min: 0, step: 0.01 }))])]);
+  const sub = { prefix: 'SPAN-SUB', title: '', title_ar: '', intro: '', responses: [], signatures: [], footer: '', contact: '', ...(current.submittal || {}) };
+  const subForm = el('form', { onsubmit: (e) => e.preventDefault() }, [
+    el('div.grid.grid-3', {}, [field({ name: 'prefix', label: t('dw_sub_prefix'), value: sub.prefix, dir: 'ltr' }), field({ name: 'title', label: t('dw_sub_title'), value: sub.title, dir: 'ltr' }), field({ name: 'title_ar', label: t('dw_sub_title_ar'), value: sub.title_ar, dir: 'rtl' })]),
+    field({ name: 'contact', label: t('dw_sub_contact'), value: sub.contact, dir: 'ltr' }), field({ name: 'intro', label: t('dw_sub_intro'), type: 'textarea', value: sub.intro, rows: 2, dir: 'ltr' }),
+    el('div.grid.grid-2', {}, [field({ name: 'responses', label: t('dw_sub_responses'), type: 'textarea', value: (sub.responses || []).join('\n'), rows: 4, dir: 'ltr' }), field({ name: 'signatures', label: t('dw_sub_signatures'), type: 'textarea', value: (sub.signatures || []).join('\n'), rows: 4, dir: 'ltr' })]),
+    field({ name: 'footer', label: t('dw_sub_footer'), type: 'textarea', value: sub.footer, rows: 2, dir: 'ltr' }),
+  ]);
   return el('div.card', {}, [
     el('div.card-header', {}, [el('h3', { text: t('dw_settings') }), el('div.spacer'), el('span.tiny.muted', { text: `${t('dw_data_folder')}: ${BOOT.data_dir}`, dir: 'ltr' })]),
     el('div.card-body', {}, [
       el('div.alert.info', { text: t('dw_numbering_hint'), dir: 'ltr' }), form,
       el('h4.mt-2', { text: t('dw_rebar_defaults') }), rebarForm,
+      el('h4.mt-2', { text: t('dw_submittal_template') }), el('div.small.muted', { text: t('dw_submittal_template_hint') }), subForm,
       el('h4.mt-2', { text: t('dw_rates') }), el('div.small.muted', { text: t('dw_rates_hint') }), ratesForm,
       el('h4.mt-2', { text: t('dw_frame') }), el('div.small.muted', { text: t('dw_frame_hint') }), frameForm,
       el('h4.mt-2', { text: t('dw_frame_dxf') }), el('div.small.muted', { text: t('dw_frame_dxf_hint'), dir: 'ltr' }), frameStatus,
@@ -2384,7 +2699,10 @@ async function settingsPage() {
           for (const k of ['rightWidth', 'bottomStrip', 'titleH', 'refsH', 'keyH', 'schedH']) if (frame[k] == null) delete frame[k];
           const rateData = readForm(ratesForm);
           for (const k of RATE_KEYS) if (rateData[k] == null) delete rateData[k];
-          try { const res = await api.saveSettings({ ...current, ...data, spec: parsed, frame: { ...fr, ...frame }, rates: { ...rates, ...rateData } }); BOOT.settings = res.settings; toast(t('saved'), 'success'); render(); } catch (error) { toastError(error); }
+          const subData = readForm(subForm);
+          const lines = (v) => String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
+          const submittal = { ...sub, ...subData, responses: lines(subData.responses), signatures: lines(subData.signatures) };
+          try { const res = await api.saveSettings({ ...current, ...data, spec: parsed, frame: { ...fr, ...frame }, rates: { ...rates, ...rateData }, submittal }); BOOT.settings = res.settings; toast(t('saved'), 'success'); render(); } catch (error) { toastError(error); }
         } }),
         el('button.btn-secondary.btn', { type: 'button', text: t('reset_defaults', isRTL() ? 'رجّع الافتراضي' : 'Reset defaults'), onclick: async () => { if (!(await confirmDialog(t('reset_defaults', isRTL() ? 'رجّع الافتراضي' : 'Reset defaults') + '?', { danger: true, confirmLabel: t('reset_defaults', 'Reset') }))) return; try { const res = await api.resetSettings(); BOOT.settings = res.settings; toast(t('saved'), 'success'); render(); } catch (error) { toastError(error); } } }),
       ]),

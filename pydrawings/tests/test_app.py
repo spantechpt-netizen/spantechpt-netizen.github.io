@@ -167,6 +167,44 @@ class AppApi(unittest.TestCase):
         self.assertEqual(c['cost']['rates']['steel_per_ton'], 4000)
         self.assertGreater(c['cost']['totals']['total'], 0)
 
+        # submittal forms: the template in the settings, a submittal from the runs (the blocked one refused), the printable
+        # form, the status and the consultant's response, a re-issue (-R1), a re-submission naming what it supersedes
+        st, _ = self.req('PUT', '/api/settings', {'submittal': {'prefix': 'ST-SUB', 'title': 'DRAWING SUBMITTAL', 'responses': ['APPROVED', 'REJECTED'], 'signatures': ['PREPARED BY']}})
+        self.assertEqual(st['settings']['submittal']['prefix'], 'ST-SUB')
+        self.assertEqual(st['settings']['submittal']['footer'], app.SUBMITTAL_DEFAULTS['footer'])  # the rest keeps the defaults
+        _, code = self.req('POST', f'/api/projects/{pid}/submittals', {'run_ids': [run['id']]}, ok=False)
+        self.assertEqual(code, 400)  # the blocked run cannot be submitted
+        sb, _ = self.req('POST', f'/api/projects/{pid}/submittals', {'run_ids': [r3['id'], r4['run']['id']], 'attention': 'ENG. X'})
+        sub = sb['submittal']
+        self.assertEqual(sub['code'], f"ST-SUB-{p['project']['code']}-001")
+        self.assertEqual(sub['kind'], 'mixed')
+        self.assertEqual(sub['purpose'], 'approval')
+        self.assertTrue(sub['subject'].startswith('DESIGN AND SHOP DRAWINGS - '))
+        self.assertFalse(any('COVER' in it['title'] for it in sub['items']))
+        self.assertEqual(len(sub['items']), r3['sheet_count'] - 1 + r4['run']['sheet_count'] - 1)
+        self.assertEqual(sub['to_name'], 'CLIENT' if False else p['project'].get('consultant'))
+        html, _ = self.req('GET', f"/api/submittals/{sub['id']}/form")
+        self.assertIn(b'DRAWING SUBMITTAL', html)
+        self.assertIn(sub['items'][0]['no'].encode(), html)
+        self.assertIn(b'ENG. X', html)
+        self.assertIn(b'PREPARED BY', html)
+        up, _ = self.req('PATCH', f"/api/submittals/{sub['id']}", {'status': 'resubmit', 'response_date': '2026-10-01', 'response_notes': 'revise the top bars', 'response_by': 'CONSULTANT'})
+        self.assertEqual((up['submittal']['status'], up['submittal']['response_by']), ('resubmit', 'CONSULTANT'))
+        re1, _ = self.req('PATCH', f"/api/submittals/{sub['id']}", {'reissue': True})
+        self.assertEqual((re1['submittal']['code'], re1['submittal']['revision'], re1['submittal']['status']), (f"ST-SUB-{p['project']['code']}-001-R1", 1, 'draft'))
+        # only some sheets of the design run, submitted again: the items name the earlier submittal and revision
+        pick = [sub['items'][0]['no']]
+        sb2, _ = self.req('POST', f'/api/projects/{pid}/submittals', {'run_ids': [r3['id']], 'sheets': pick})
+        self.assertEqual(len(sb2['submittal']['items']), 1)
+        self.assertEqual(sb2['submittal']['items'][0]['prev_submittal'], re1['submittal']['code'])
+        self.assertEqual(sb2['submittal']['purpose'], 'resubmission')
+        self.assertIn('(RE-SUBMISSION)', sb2['submittal']['subject'])
+        proj_s, _ = self.req('GET', f'/api/projects/{pid}')
+        self.assertEqual([x['serial'] for x in proj_s['submittals']], [2, 1])
+        self.req('DELETE', f"/api/submittals/{sb2['submittal']['id']}")
+        _, code = self.req('GET', f"/api/submittals/{sb2['submittal']['id']}", ok=False)
+        self.assertEqual(code, 404)
+
         # project files, beam types imported into another project, deletes
         f, _ = self.req('POST', f'/api/projects/{pid}/files?category=ram&name=model.cpt&level_id={lid}&revision=01', raw=b'abc')
         self.assertEqual(f['file']['level_code'], 'B1')
