@@ -412,7 +412,9 @@ export function edgeRunsBetweenColumns(level, a, b, h, bandOf) {
     const t = (c.cx - a.x) * ux + (c.cy - a.y) * uy;
     const off = Math.abs((c.cx - a.x) * -uy + (c.cy - a.y) * ux);
     const size = c.shape === 'circle' ? c.d : Math.max(c.w, c.h);
-    const reach = Math.max(size, 1000, (bandOf && bandOf(c, 'across')) || 0) / 2 + 500;
+    // (a beam parallel to the edge reaches it with its width, not its length: a long interior beam 4 m inside is no support)
+    const across = c.isBeam ? Math.min(c.w, c.h) : size;
+    const reach = (c.isBeam ? Math.max(across, 1000) : Math.max(size, 1000, (bandOf && bandOf(c, 'across')) || 0)) / 2 + 500;
     if (t < -size || t > L + size || off > reach) continue; // not a support on this edge
     const along = Math.abs(ux) > 0.7 ? 'x' : 'y';
     if (c.isBeam && c.along !== along) continue; // a beam ending at this edge: its group sits along the beam, away from the edge

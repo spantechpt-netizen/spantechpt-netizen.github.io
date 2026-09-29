@@ -1044,12 +1044,12 @@ export function designAdditions(level, spec, opts = {}) {
   // every `perimSpan` along the whole chain, instead of a symbol per facet
   // (an edge with a retaining wall along it carries the wall U-bars of detail 2 instead)
   for (const e of level.edges || []) if (e.wall == null) e.wall = (level.walls || []).some((w) => w.retaining) && R.sideLining(level, e.a, e.b) === 'wall';
-  const edgesIn = (level.edges || []).filter((x) => !x.joint && !x.wall);
+  const edgesIn = [...(level.edges || []).filter((x) => !x.joint && !x.wall), ...(level.stepEdges || [])];
   const chains = [];
   for (const e of edgesIn) {
     const last = chains[chains.length - 1];
-    if (last && last.beam === !!e.beam && dist(last.pts[last.pts.length - 1], e.a) < 1) { last.pts.push(...(e.pts || [e.a, e.b]).slice(1)); continue; }
-    chains.push({ beam: !!e.beam, pts: [...(e.pts || [e.a, e.b])] });
+    if (last && last.beam === !!e.beam && !!last.step === !!e.step && dist(last.pts[last.pts.length - 1], e.a) < 1) { last.pts.push(...(e.pts || [e.a, e.b]).slice(1)); continue; }
+    chains.push({ beam: !!e.beam, pts: [...(e.pts || [e.a, e.b])], step: !!e.step, zone: e.zone });
   }
   if (chains.length > 1) { const f = chains[0], l = chains[chains.length - 1]; if (f.beam === l.beam && dist(l.pts[l.pts.length - 1], f.pts[0]) < 1) { l.pts.push(...f.pts.slice(1)); chains.shift(); } }
   for (const e of chains) {
@@ -1071,7 +1071,7 @@ export function designAdditions(level, spec, opts = {}) {
       if (len < 2 * su.spacing) continue;
       const count = Math.floor(len / su.spacing) + 1;
       if (e.beam) addBar('T', { dia: su.dia, shape: `L ${su.beamLeg}+${su.beamTop}`, length: su.beamLeg + su.beamTop, qty: count, spacing: su.spacing, zone: `D1 EDGE BEAM ${zoneOf(t1, t2)}` });
-      else addBar('T', { dia: su.dia, shape: `U ${uLegTop}/${web}/${uLegTop}`, length: su.total, qty: count, spacing: su.spacing, zone: `D6 FREE EDGE ${zoneOf(t1, t2)}` });
+      else addBar('T', { dia: su.dia, shape: `U ${uLegTop}/${web}/${uLegTop}`, length: su.total, qty: count, spacing: su.spacing, zone: `D6 ${e.step ? 'STEP' : 'FREE'} EDGE ${zoneOf(t1, t2)}` });
     }
     // ... and the plan shows one bar symbol per run between supports, on each facet the run crosses: every symbol
     // carries its own distribution dimension (the run on that facet, 350 inside the edge) with the dot where the
@@ -1084,7 +1084,8 @@ export function designAdditions(level, spec, opts = {}) {
         if (s2 - s1 < Math.max(800, 2 * su.spacing)) continue;
         const sv = (s1 + s2) / 2;
         const mm = at(sv);
-        const nIn = inward(f.a, f.b, outline);
+        // (a step edge: into this body = away from the zone at the other level)
+        const nIn = e.step ? (() => { const n = inward(f.a, f.b, e.zone); return { x: -n.x, y: -n.y }; })() : inward(f.a, f.b, outline);
         const zone = zoneOf(s1, s2);
         const dd = { p: add(at(s1).p, nIn, PERIM_DIM_IN), q: add(at(s2).p, nIn, PERIM_DIM_IN) };
         if (e.beam) items.push({ detail: 'D1', face: 'T', a: mm.p, b: add(mm.p, nIn, su.beamTop), l1: `T${su.dia}-${su.spacing} LBAR (T)`, l2: `L=${su.beamLeg + su.beamTop}`, dist: dd, side: 1, zone, legEnd: 'start', noTag: k > 0 });
@@ -1222,6 +1223,7 @@ export function designAdditions(level, spec, opts = {}) {
 
   // ---- D7 MEP voids (openings not lined by walls)
   for (const o of level.openings || []) {
+    if (o.stepZone) continue; // a zone at another level cut out of this body: a free edge (perimeter rule), not an opening
     const poly = R.regionPolygon(o);
     const b = bbox(poly);
     // a RAM model without wall supports: an opening of shaft size (both sides >= `shaftMin`, 1.5 m) is a lift / stair
@@ -1411,7 +1413,7 @@ export function designAdditions(level, spec, opts = {}) {
   // 2T20 top and bottom along the strip, TA (tension anchorage) beyond each void end, T12@200 links along the strip
   const bb9 = spec.blockBeam || R.DEFAULT_SPEC.blockBeam;
   const TA = R.developmentLength(spec, bb9.dia, { top: true });
-  const ops = (level.openings || []).map((o) => ({ o, b: bbox(R.regionPolygon(o)) }));
+  const ops = (level.openings || []).filter((o) => !o.stepZone).map((o) => ({ o, b: bbox(R.regionPolygon(o)) }));
   for (let i = 0; i < ops.length; i++) for (let j = i + 1; j < ops.length; j++) {
     const A = ops[i].b, B = ops[j].b;
     for (const axis of ['x', 'y']) {
@@ -2220,6 +2222,77 @@ export function planData(level, adds) {
 }
 
 // ------------------------------------------------------------------ package
+/**
+ * The slab bodies of a level for the reinforcement rules: the slab around the zones at another top-of-concrete level
+ * (those zones cut out of it like openings, so the bars stop at the step and the step edge takes the perimeter / beam
+ * rule) and one body per such zone (its own outline, everything inside it). null when the level has no such zone.
+ */
+export function stepBodies(level, spec) {
+  const zones = (level.sunken || []).filter((z) => z.step && z.polygon && Math.abs(polygonArea(z.polygon)) > 1e6);
+  if (!zones.length) return null;
+  const zonePoly = (z) => (polygonArea(z.polygon) < 0 ? [...z.polygon].reverse() : z.polygon);
+  const centreOf = (o) => (o.cx != null && o.cy != null ? { x: o.cx, y: o.cy } : centroid(o.polygon || R.regionPolygon(o)));
+  const inZone = (p) => zones.some((z) => pointInPolygon(p, z.polygon));
+  const take = (list, keep) => (list || []).filter((o) => keep(centreOf(o))).map((o) => ({ ...o }));
+  const takeBeams = (keep) => (level.beams || []).filter((bm) => keep(mid(bm.a, bm.b))).map((bm) => ({ ...bm }));
+  const existingFor = (lines) => (level.existing ? { ...level.existing, lines, callouts: [], dims: [], dots: [] } : level.existing);
+  const main = {
+    ...level, body: 'MAIN', columns: take(level.columns, (p) => !inZone(p)), walls: take(level.walls, (p) => !inZone(p)), thickZones: take(level.thickZones, (p) => !inZone(p)), pourStrips: take(level.pourStrips, (p) => !inZone(p)),
+    beams: takeBeams((p) => !inZone(p)), openings: [...take(level.openings, (p) => !inZone(p)), ...zones.map((z) => ({ id: z.id, kind: 'polygon', polygon: zonePoly(z), step: z.step, tos: z.tos, stepZone: true }))], sunken: [],
+    existing: level.existing,
+  };
+  main.beams.forEach((bm) => { bm.interior = undefined; });
+  markBeams(main, spec);
+  // the outer edges of the body: the slab outline minus the parts that belong to a zone (a zone reaching the outline)
+  main.edges = [];
+  for (let i = 0; i < level.outline.length; i++) {
+    const a = level.outline[i], b = level.outline[(i + 1) % level.outline.length];
+    const L = dist(a, b);
+    if (L < 1) continue;
+    const u = unit(a, b), n = inward(a, b, level.outline);
+    // sampled 100 mm along the edge, 30 mm inside the slab: the stretches lying in a zone are the zone's, not this body's
+    const cuts = [];
+    let open = null;
+    for (let t = 0; t <= L + 50; t += 100) {
+      const tt = Math.min(t, L);
+      const p = add(add(a, u, tt), n, 30);
+      const inZ = zones.some((z) => pointInPolygon(p, z.polygon));
+      if (inZ && !open) open = [Math.max(0, tt - 100)];
+      if ((!inZ || tt >= L) && open) { open.push(Math.min(L, tt + (inZ ? 0 : 0))); cuts.push(open); open = null; }
+    }
+    for (const [t1, t2] of subtract([[0, L]], cuts)) {
+      if (t2 - t1 < 100) continue;
+      const pa = add(a, u, t1), pb = add(a, u, t2);
+      main.edges.push({ a: pa, b: pb, pts: [pa, pb], curved: false, beam: R.edgeHasBeam(main, pa, pb) });
+    }
+  }
+  // the step edges: the zone's sides that run inside the slab (not along its outer edge) are free edges of the body
+  main.stepEdges = [];
+  for (const z of zones) {
+    const poly = zonePoly(z);
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length];
+      if (dist(a, b) < 300 || distToPolygon(mid(a, b), level.outline) < 60) continue;
+      if (zones.some((o) => o !== z && pointInPolygon(add(mid(a, b), inward(a, b, poly), -200), o.polygon))) continue;
+      main.stepEdges.push({ a, b, pts: [a, b], beam: false, step: true, zone: poly });
+    }
+  }
+  const parts = zones.map((z) => {
+    const outline = zonePoly(z);
+    const inside = (p) => pointInPolygon(p, outline);
+    const b = {
+      ...level, body: z.id, tos: z.tos, name: `${level.name} - ${z.id} (T.O.C ${z.tos})`, outline, bbox: bbox(outline),
+      columns: take(level.columns, inside), walls: take(level.walls, inside), thickZones: take(level.thickZones, inside), pourStrips: take(level.pourStrips, inside),
+      beams: takeBeams(inside), openings: take(level.openings, inside), sunken: [], existing: existingFor([]), levelTags: [], rcTags: [],
+    };
+    b.beams.forEach((bm) => { bm.interior = undefined; });
+    markBeams(b, spec);
+    b.edges = slabEdges(b);
+    return b;
+  });
+  return [main, ...parts];
+}
+
 export function composeDesignPackage(model, metaIn = {}) {
   const meta = {
     company: 'SPAN TECH CONTRACTING', company_line: 'POST-TENSIONED SLABS · KSA · EGYPT · QATAR',
@@ -2228,15 +2301,36 @@ export function composeDesignPackage(model, metaIn = {}) {
     ...metaIn,
   };
   const jobs = [];
-  for (const level of model.levels) {
-    const cores = markCoreWalls(level);
-    if (cores.isolated || cores.core) model.assumptions.push({ level: level.id, text: `${cores.isolated} isolated walls in ${level.name} carry the column top bars (the group across the wall, 4 m / the drop panel and at least 1.5 m past the wall face each way; the group along it only on a wall up to ${(model.spec.topColumns?.wallAlongMax || 6000) / 1000} m); ${cores.core} core / retaining walls (${cores.retaining || 0} along the slab edge) carry the wall U-bars of detail 2.` });
-    const rule = applyColumnRule(level, model.spec, model.assumptions);
-    const adds = designAdditions(level, model.spec);
+  // the office rules on one slab body: core walls, the column rule, the General Details, everything clipped to the body
+  const rulesOn = (body) => {
+    const cores = markCoreWalls(body);
+    if (cores.isolated || cores.core) model.assumptions.push({ level: body.id, text: `${cores.isolated} isolated walls in ${body.name} carry the column top bars (the group across the wall, 4 m / the drop panel and at least 1.5 m past the wall face each way; the group along it only on a wall up to ${(model.spec.topColumns?.wallAlongMax || 6000) / 1000} m); ${cores.core} core / retaining walls (${cores.retaining || 0} along the slab edge) carry the wall U-bars of detail 2.` });
+    const rule = applyColumnRule(body, model.spec, model.assumptions);
+    const adds = designAdditions(body, model.spec);
     for (const it of rule.added) adds.items.push(it);
-    adds.items = clipToSlab(level, adds.items, model.spec);
+    adds.items = clipToSlab(body, adds.items, model.spec);
     // the column groups are scheduled after the clipping (a bar stopped at an opening is shorter and ends in a U)
     for (const it of rule.added) if (adds.items.includes(it)) adds.bars.T.add({ dia: model.spec.topColumns.dia, shape: it.clippedOpening ? `${it.shape} (U AT OPENING)` : it.shape, length: it.length, qty: it.n, spacing: model.spec.topColumns.spacing, zone: `${it.beam ? 'BEAM' : 'COLUMN'} ${it.column} ${it.dir.toUpperCase()}` });
+    return adds;
+  };
+  for (const level of model.levels) {
+    // office rule: a zone at another top-of-concrete level is a separate slab; the step between the zone and the slab
+    // around it is a free outer edge of both (perimeter bars along it, bars stopped with a U / L at it, nothing across)
+    const bodies = stepBodies(level, model.spec);
+    let adds;
+    if (bodies) {
+      model.assumptions.push({ level: level.id, text: `${bodies.length - 1} zones of ${level.name} lie at another top-of-concrete level (${bodies.slice(1).map((b) => `${b.body} T.O.C ${b.tos}`).join(', ')}): each is reinforced as a separate slab (office rule) - the step between a zone and the slab around it is a free outer edge of both: perimeter bars along it, bars stopped with a U (or an L into the step beam) at it, no bar runs across the step.` });
+      adds = { items: [], bars: { T: new R.BarList('DT'), B: new R.BarList('DB') }, notes: [], assumptions: [], punching: [], psTypes: null };
+      for (const body of bodies) {
+        const a = rulesOn(body);
+        adds.items.push(...a.items);
+        for (const f of ['T', 'B']) for (const e of a.bars[f].entries) { const sp = [...e.spacings], zs = [...e.zones]; adds.bars[f].add({ dia: e.dia, shape: e.shape, length: e.length, qty: e.qty, note: e.note, spacing: sp[0], zone: zs[0] }); for (const x of sp.slice(1)) adds.bars[f].add({ dia: e.dia, shape: e.shape, length: e.length, qty: 0, note: e.note, spacing: x }); for (const z of zs.slice(1)) adds.bars[f].add({ dia: e.dia, shape: e.shape, length: e.length, qty: 0, note: e.note, zone: z }); }
+        for (const n of a.notes) if (!adds.notes.includes(n)) adds.notes.push(n);
+        for (const n of a.assumptions) if (!adds.assumptions.includes(n)) adds.assumptions.push(n);
+        adds.punching.push(...(a.punching || []));
+        if (!adds.psTypes) adds.psTypes = a.psTypes;
+      }
+    } else adds = rulesOn(level);
     if (level.existing) {
       level.existing.lines = clipToSlab(level, level.existing.lines, model.spec);
       if (level.existing.items) level.existing.items = clipToSlab(level, level.existing.items, model.spec);

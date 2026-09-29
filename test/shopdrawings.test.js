@@ -1245,8 +1245,9 @@ test("design drawings from a G.A. with beam bodies: the project's beam marks and
   rect(0, 0, 30000, 20000, '0-slab');
   rect(20000, 0, 10000, 20000, '0-slab');
   for (const [x, y] of [[8000, 5000], [8000, 15000], [16000, 5000], [16000, 15000]]) { rect(x - 300, y - 300, 600, 600, '0-columns'); rect(x - 1500, y - 1500, 3000, 3000, '0-drops'); c.text(x - 200, y + 800, '550', { layer: 'S-TEXT', h: 200 }); }
+  rect(19000 - 300, 15000 - 300, 600, 600, '0-columns'); // a column 1 m from the step: its top bars must stop at the step
   rect(0, 9850, 19800, 300, '0-beam'); c.text(9000, 10300, 'B9(300X900)', { layer: '0-beam', h: 200 });
-  rect(19800, 0, 400, 20000, '0-beam'); c.text(19400, 10000, 'CA2(400X1200)', { layer: '0-beam', h: 200, rot: 90 });
+  rect(20000, 0, 400, 20000, '0-beam'); c.text(20600, 10000, 'CA2(400X1200)', { layer: '0-beam', h: 200, rot: 90 }); // the raised zone's edge beam on the step, inside the zone
   rect(24000, 0, 300, 20000, '0-beam'); c.text(23600, 12000, 'B7(300X600)', { layer: '0-beam', h: 200, rot: 90 });
   c.text(4000, 3000, 'T.O.C', { layer: 'S-TEXT', h: 200 }); c.text(4000, 2700, '+0.10', { layer: 'S-TEXT', h: 200 });
   c.text(27000, 10300, 'T.O.C', { layer: 'S-TEXT', h: 200 }); c.text(27000, 10000, '+0.40', { layer: 'S-TEXT', h: 200 });
@@ -1289,5 +1290,16 @@ test("design drawings from a G.A. with beam bodies: the project's beam marks and
   assert.ok(dxf.includes('[CA2] BEAM 400x1200'));
   assert.ok(/NOT DESIGNED/.test(dxf) && /MARKS B7 ARE NOT IN THE TABLE/.test(dxf), 'B7 says so');
   assert.ok(dxf.includes("BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)"));
+  // the raised zone is a separate slab: no bar crosses the step at x = 20000, the step edge carries the perimeter
+  // U-bars of the slab around it (D6 STEP EDGE) and the L-bars into the zone's edge beam (D1), no trimmers / diagonals
+  const bars = L.planData.bars;
+  const crossing = bars.filter((b) => Math.min(b.a.x, b.b.x) < 19950 && Math.max(b.a.x, b.b.x) > 20050 && Math.abs(b.a.y - b.b.y) < 50);
+  assert.deepEqual(crossing.map((b) => b.id), [], 'no bar runs across the step');
+  assert.ok(bars.some((b) => b.detail === 'D6' && Math.abs(b.a.x - 20000) < 100 && b.b.x < b.a.x), 'D6 U-bars along the step, into the lower slab');
+  assert.ok(bars.some((b) => b.detail === 'D1' && Math.abs(b.a.x - 20000) < 100 && b.b.x > b.a.x), 'D1 L-bars into the step beam, on the raised slab');
+  assert.ok(!bars.some((b) => /45/.test(b.l1 || '') && Math.abs(b.a.x - 20000) < 2500), 'no corner diagonals at the step');
+  const top = pack.sheets.find((s) => s.key === 'dtop');
+  assert.ok(top.rows.some((r) => /D6 STEP EDGE/.test(JSON.stringify(r))), 'the schedule names the step edge');
+  assert.ok(model.assumptions.some((a) => /reinforced as a separate slab/.test(a.text)));
   rmSync(dir, { recursive: true, force: true });
 });

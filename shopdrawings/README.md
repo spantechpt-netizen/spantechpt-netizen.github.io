@@ -105,6 +105,12 @@ table** for the marks used on the level; the plan reads `BMn [B10] BEAM 400x1200
 beside the beam, a mark not on record reads `NOT DESIGNED` and is listed in the notes. The cables are added later from
 the RAM model. (`planBeamSchedule`, `design: 'plan'`.)
 
+A zone at another top-of-concrete level (a raised tower slab over a corridor, `T.O.C +0.40` over `+0.10`) is reinforced
+as a **separate slab** (office rule): the rules run body by body - the slab around the zone with the zone cut out of it
+(every bar stops with a U at the step, the step edge takes the perimeter U-bars as a free edge) and the zone with its own
+outline (its edge beam on the step takes the D1 L-bars) - and the sheets stay one per level with the bars of all bodies
+(`stepBodies`). A step is never an opening: no trimmers, no corner diagonals.
+
 The same generator also produces the **office's own design drawings**: the input is the office's reinforcement
 design plan (the RFT drawing as the design team draws it) and the rules of the office's **General Details** sheet
 for PT / flat slabs. Everything the designer drew is kept exactly as drawn (bars, call-outs, distribution

@@ -173,10 +173,11 @@ class PlanBeamsTest(unittest.TestCase):
             rect(x - 300, y - 300, 600, 600, '0-columns')
             rect(x - 1500, y - 1500, 3000, 3000, '0-drops')
             c.text(x - 200, y + 800, '550', {'layer': 'S-TEXT', 'h': 200})
+        rect(19000 - 300, 15000 - 300, 600, 600, '0-columns')  # a column 1 m from the step: its top bars must stop at the step
         rect(0, 9850, 19800, 300, '0-beam')
         c.text(9000, 10300, 'B9(300X900)', {'layer': '0-beam', 'h': 200})
-        rect(19800, 0, 400, 20000, '0-beam')
-        c.text(19400, 10000, 'CA2(400X1200)', {'layer': '0-beam', 'h': 200, 'rot': 90})
+        rect(20000, 0, 400, 20000, '0-beam')  # the raised zone's edge beam on the step, inside the zone
+        c.text(20600, 10000, 'CA2(400X1200)', {'layer': '0-beam', 'h': 200, 'rot': 90})
         rect(24000, 0, 300, 20000, '0-beam')
         c.text(23600, 12000, 'B7(300X600)', {'layer': '0-beam', 'h': 200, 'rot': 90})
         c.text(4000, 3000, 'T.O.C', {'layer': 'S-TEXT', 'h': 200})
@@ -223,5 +224,16 @@ class PlanBeamsTest(unittest.TestCase):
         self.assertRegex(dxf, r'NOT DESIGNED')
         self.assertRegex(dxf, r'MARKS B7 ARE NOT IN THE TABLE')
         self.assertIn("BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)", dxf)
+        # the raised zone is a separate slab: no bar crosses the step at x = 20000, the step edge carries the perimeter
+        # U-bars of the slab around it (D6 STEP EDGE) and the L-bars into the zone's edge beam (D1), no trimmers / diagonals
+        bars = L['planData']['bars']
+        crossing = [b for b in bars if min(b['a']['x'], b['b']['x']) < 19950 and max(b['a']['x'], b['b']['x']) > 20050 and abs(b['a']['y'] - b['b']['y']) < 50]
+        self.assertEqual([b['id'] for b in crossing], [])
+        self.assertTrue(any(b.get('detail') == 'D6' and abs(b['a']['x'] - 20000) < 100 and b['b']['x'] < b['a']['x'] for b in bars))
+        self.assertTrue(any(b.get('detail') == 'D1' and abs(b['a']['x'] - 20000) < 100 and b['b']['x'] > b['a']['x'] for b in bars))
+        self.assertFalse(any('45' in (b.get('l1') or '') and abs(b['a']['x'] - 20000) < 2500 for b in bars))
+        top = next(s for s in r['pack']['sheets'] if s['key'] == 'dtop')
+        self.assertTrue(any('D6 STEP EDGE' in str(row) for row in top['rows']))
+        self.assertTrue(any('reinforced as a separate slab' in a['text'] for a in r['model']['assumptions']))
         import shutil
         shutil.rmtree(d, ignore_errors=True)
