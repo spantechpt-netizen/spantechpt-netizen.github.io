@@ -46,6 +46,27 @@ addColumn('study_drawings', 'updated_at', 'TEXT');
 addColumn('quotations', 'labour_scope', "TEXT NOT NULL DEFAULT 'spantech'");
 // The cost comparison study sent to the owner, and the drawings attached to it.
 addColumn('quotations', 'study_json', 'TEXT');
+// Drawing runs carry the engineer's revision notes and an issue status; a level keeps its reinforcement edits.
+addColumn('drawing_runs', 'notes', 'TEXT');
+addColumn('drawing_runs', 'status', "TEXT NOT NULL DEFAULT 'draft'");
+addColumn('drawing_runs', 'edits_json', 'TEXT');
+addColumn('drawing_levels', 'edits_json', 'TEXT');
+addColumn('drawing_runs', 'quantities_json', 'TEXT');
+addColumn('drawing_levels', 'ref_file', 'TEXT');
+addColumn('drawing_levels', 'ref_name', 'TEXT');
+addColumn('drawing_levels', 'ref_json', 'TEXT');
+addColumn('drawing_runs', 'beams_json', 'TEXT');
+addColumn('drawing_runs', 'beam_strips_json', 'TEXT');
+addColumn('drawing_projects', 'mesh', 'TEXT');
+addColumn('drawing_runs', 'mesh', 'TEXT');
+addColumn('drawing_runs', 'punching_json', 'TEXT');
+addColumn('drawing_levels', 'punching_json', 'TEXT');
+addColumn('drawing_projects', 'beam_types_json', 'TEXT');
+addColumn('drawing_projects', 'beam_design', 'TEXT');
+addColumn('drawing_runs', 'beam_design', 'TEXT');
+addColumn('drawing_projects', 'rotate', 'TEXT');
+addColumn('drawing_runs', 'rotate', 'TEXT');
+addColumn('drawing_runs', 'beam_check_json', 'TEXT');
 
 /** Runs a SELECT and returns every row. */
 export const all = (sql, ...params) => db.prepare(sql).all(...params);

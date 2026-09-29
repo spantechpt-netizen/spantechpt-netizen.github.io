@@ -94,6 +94,19 @@ const qs = (params = {}) => {
   return string ? `?${string}` : '';
 };
 
+/** Posts a file as the raw request body (the server reads the stream itself); options go in the query string. */
+async function rawUpload(url, file) {
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file });
+  } catch {
+    throw new ApiError(0, await networkFailure());
+  }
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, payload);
+  return payload;
+}
+
 export const api = {
   get: (path, params) => request('GET', `${path}${qs(params)}`),
   post: (path, body) => request('POST', path, body ?? {}),
@@ -211,6 +224,70 @@ export const api = {
 
   aiSettings: () => request('GET', '/api/mail/ai'),
   saveAiSettings: (data) => request('PUT', '/api/mail/ai', data),
+
+  // ------------------------------------------------- reinforcement drawings
+  drawingProjects: (params) => request('GET', `/api/drawings/projects${qs(params)}`),
+  drawingProject: (id) => request('GET', `/api/drawings/projects/${id}`),
+  createDrawingProject: (data) => request('POST', '/api/drawings/projects', data),
+  updateDrawingProject: (id, data) => request('PATCH', `/api/drawings/projects/${id}`, data),
+  deleteDrawingProject: (id) => request('DELETE', `/api/drawings/projects/${id}`),
+  createDrawingLevel: (projectId, data) => request('POST', `/api/drawings/projects/${projectId}/levels`, data),
+  updateDrawingLevel: (id, data) => request('PATCH', `/api/drawings/levels/${id}`, data),
+  deleteDrawingLevel: (id) => request('DELETE', `/api/drawings/levels/${id}`),
+  drawingRun: (id) => request('GET', `/api/drawings/runs/${id}`),
+  deleteDrawingRun: (id) => request('DELETE', `/api/drawings/runs/${id}`),
+  drawingRunZipUrl: (id) => `/api/drawings/runs/${id}/zip`,
+  drawingRunFileUrl: (id, kind, name, download = false) =>
+    `/api/drawings/runs/${id}/files/${kind}/${encodeURIComponent(name)}${download ? '?download=1' : ''}`,
+  updateDrawingRun: (id, data) => request('PATCH', `/api/drawings/runs/${id}`, data),
+  updateDrawingTakeoff: (id, file) => rawUpload(`/api/drawings/runs/${id}/takeoff${qs({ name: file.name })}`, file),
+  regenerateDrawingRun: (id, data) => request('POST', `/api/drawings/runs/${id}/regenerate`, data ?? {}),
+  drawingRunPlan: (id) => request('GET', `/api/drawings/runs/${id}/plan`),
+  saveDrawingEdits: (levelId, edits) => request('PUT', `/api/drawings/levels/${levelId}/edits`, { edits }),
+  drawingFileUrl: (id) => `/api/drawings/files/${id}`,
+  updateDrawingFile: (id, data) => request('PATCH', `/api/drawings/files/${id}`, data),
+  deleteDrawingFile: (id) => request('DELETE', `/api/drawings/files/${id}`),
+  uploadDrawingFile: (projectId, file, options = {}) => rawUpload(`/api/drawings/projects/${projectId}/files${qs({ name: file.name, ...options })}`, file),
+  uploadDrawingReference: (levelId, file) => rawUpload(`/api/drawings/levels/${levelId}/reference${qs({ name: file.name })}`, file),
+  updateDrawingReference: (levelId, data) => request('PATCH', `/api/drawings/levels/${levelId}/reference`, data),
+  deleteDrawingReference: (levelId) => request('DELETE', `/api/drawings/levels/${levelId}/reference`),
+  prepareBeamStrips: (runId) => request('POST', `/api/drawings/runs/${runId}/beam-strips`, {}),
+  punchingDecision: (runId, data) => request('POST', `/api/drawings/runs/${runId}/punching-decision`, data),
+  beamDecision: (runId, data) => request('POST', `/api/drawings/runs/${runId}/beam-decision`, data),
+  drawingBeamTypes: (projectId) => request('GET', `/api/drawings/projects/${projectId}/beam-types`),
+  importDrawingBeamTypes: (projectId, data) => request('POST', `/api/drawings/projects/${projectId}/beam-types/import`, data),
+  deleteDrawingBeamType: (projectId, mark) => request('DELETE', `/api/drawings/projects/${projectId}/beam-types/${encodeURIComponent(mark)}`),
+  beamStripsUrl: (runId) => `/api/drawings/runs/${runId}/beam-strips`,
+  drawingRunQuantities: (id) => request('GET', `/api/drawings/runs/${id}/quantities`),
+  drawingProjectQuantities: (projectId) => request('GET', `/api/drawings/projects/${projectId}/quantities`),
+  drawingProjectCost: (projectId, rates) => request('GET', `/api/drawings/projects/${projectId}/cost${qs(rates || {})}`),
+  drawingSubmittals: (projectId) => request('GET', `/api/drawings/projects/${projectId}/submittals`),
+  createDrawingSubmittal: (projectId, data) => request('POST', `/api/drawings/projects/${projectId}/submittals`, data),
+  drawingSubmittal: (id) => request('GET', `/api/drawings/submittals/${id}`),
+  updateDrawingSubmittal: (id, data) => request('PATCH', `/api/drawings/submittals/${id}`, data),
+  deleteDrawingSubmittal: (id) => request('DELETE', `/api/drawings/submittals/${id}`),
+  drawingSubmittalFormUrl: (id) => `/api/drawings/submittals/${id}/form`,
+  drawingFrameUrl: () => '/api/drawings/frame',
+  uploadDrawingFrame: (file) => rawUpload(`/api/drawings/frame${qs({ name: file.name })}`, file),
+  deleteDrawingFrame: () => request('DELETE', '/api/drawings/frame'),
+  /** The model file is the request body (see server/drawings.js); options travel in the query string. */
+  generateDrawings: async (levelId, file, options = {}) => {
+    const url = `/api/drawings/levels/${levelId}/runs${qs({ name: file.name, ...options })}`;
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+      });
+    } catch {
+      throw new ApiError(0, await networkFailure());
+    }
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw new ApiError(res.status, payload);
+    return payload;
+  },
 
   // ------------------------------------------------------- users & settings
   users: () => request('GET', '/api/users'),

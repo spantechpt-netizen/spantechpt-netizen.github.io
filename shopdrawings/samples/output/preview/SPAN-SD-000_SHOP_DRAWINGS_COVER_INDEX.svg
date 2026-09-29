@@ -1,0 +1,513 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1690" viewBox="-850.88 -60250.880000000005 86789.76 61101.76"><defs><pattern id="hp0" patternUnits="userSpaceOnUse" width="120" height="120" patternTransform="rotate(-45)"><line x1="0" y1="0" x2="0" y2="120" stroke="#8a8a8a" stroke-width="32.546"/></pattern></defs><rect x="-850.88" y="-60250.880000000005" width="86789.76" height="61101.76" fill="#ffffff"/><path d="M0 0 L84100 0 L84100 -59400 L0 -59400 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2000 -1000 L83100 -1000 L83100 -58400 L2000 -58400 Z" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="42050" y1="0" x2="42050" y2="-600" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="42050" y1="-59400" x2="42050" y2="-58800" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="-29700" x2="600" y2="-29700" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="84100" y1="-29700" x2="83500" y2="-29700" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="2000" y1="-58400" x2="2000" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="2000" y1="0" x2="2000" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="7068.75" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7068.75 -58900)">1</text>
+<text x="7068.75" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7068.75 -500)">1</text>
+<line x1="12137.5" y1="-58400" x2="12137.5" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="12137.5" y1="0" x2="12137.5" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="17206.25" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 17206.25 -58900)">2</text>
+<text x="17206.25" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 17206.25 -500)">2</text>
+<line x1="22275" y1="-58400" x2="22275" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="22275" y1="0" x2="22275" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="27343.75" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27343.75 -58900)">3</text>
+<text x="27343.75" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27343.75 -500)">3</text>
+<line x1="32412.5" y1="-58400" x2="32412.5" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="32412.5" y1="0" x2="32412.5" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="37481.25" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 37481.25 -58900)">4</text>
+<text x="37481.25" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 37481.25 -500)">4</text>
+<line x1="42550" y1="-58400" x2="42550" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="42550" y1="0" x2="42550" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="47618.75" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 47618.75 -58900)">5</text>
+<text x="47618.75" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 47618.75 -500)">5</text>
+<line x1="52687.5" y1="-58400" x2="52687.5" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="52687.5" y1="0" x2="52687.5" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="57756.25" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 57756.25 -58900)">6</text>
+<text x="57756.25" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 57756.25 -500)">6</text>
+<line x1="62825" y1="-58400" x2="62825" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="62825" y1="0" x2="62825" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="67893.75" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 67893.75 -58900)">7</text>
+<text x="67893.75" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 67893.75 -500)">7</text>
+<line x1="72962.5" y1="-58400" x2="72962.5" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="72962.5" y1="0" x2="72962.5" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="78031.25" y="-58900" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 78031.25 -58900)">8</text>
+<text x="78031.25" y="-500" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 78031.25 -500)">8</text>
+<line x1="83100" y1="-58400" x2="83100" y2="-59400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="0" x2="83100" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="0" y1="-1000" x2="2000" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-1000" x2="84100" y2="-1000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1000" y="-5783.333333333334" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 1000 -5783.333333333334)">F</text>
+<text x="83600" y="-5783.333333333334" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 83600 -5783.333333333334)">F</text>
+<line x1="0" y1="-10566.666666666668" x2="2000" y2="-10566.666666666668" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-10566.666666666668" x2="84100" y2="-10566.666666666668" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1000" y="-15350" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 1000 -15350)">E</text>
+<text x="83600" y="-15350" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 83600 -15350)">E</text>
+<line x1="0" y1="-20133.333333333336" x2="2000" y2="-20133.333333333336" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-20133.333333333336" x2="84100" y2="-20133.333333333336" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1000" y="-24916.666666666668" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 1000 -24916.666666666668)">D</text>
+<text x="83600" y="-24916.666666666668" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 83600 -24916.666666666668)">D</text>
+<line x1="0" y1="-29700" x2="2000" y2="-29700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-29700" x2="84100" y2="-29700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1000" y="-34483.33333333333" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 1000 -34483.33333333333)">C</text>
+<text x="83600" y="-34483.33333333333" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 83600 -34483.33333333333)">C</text>
+<line x1="0" y1="-39266.66666666667" x2="2000" y2="-39266.66666666667" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-39266.66666666667" x2="84100" y2="-39266.66666666667" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1000" y="-44050" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 1000 -44050)">B</text>
+<text x="83600" y="-44050" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 83600 -44050)">B</text>
+<line x1="0" y1="-48833.33333333333" x2="2000" y2="-48833.33333333333" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-48833.33333333333" x2="84100" y2="-48833.33333333333" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1000" y="-53616.666666666664" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 1000 -53616.666666666664)">A</text>
+<text x="83600" y="-53616.666666666664" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 83600 -53616.666666666664)">A</text>
+<line x1="0" y1="-58400" x2="2000" y2="-58400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="83100" y1="-58400" x2="84100" y2="-58400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-1000" x2="64600" y2="-58400" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="2000" y1="-13500" x2="64600" y2="-13500" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-16000" x2="83100" y2="-16000" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-21200" x2="83100" y2="-21200" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-39800" x2="83100" y2="-39800" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-53800" x2="83100" y2="-53800" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="3000" y="-56800" font-size="828.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 3000 -56800)" font-weight="bold">PROPOSED MIXED-USE BUILDING</text>
+<text x="3000" y="-55800" font-size="552.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 3000 -55800)">REINFORCEMENT AND PT CABLES SHOP DRAWINGS - DRAWING INDEX</text>
+<text x="3000" y="-55000" font-size="358.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 3000 -55000)">SPAN TECH CONTRACTING  ·  CLIENT: DEMO CLIENT  ·  RIYADH, KSA  ·  REV 00  ·  2026-09-26</text>
+<path d="M3000 -53500 L63100 -53500 L63100 -54200 L3000 -54200 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="33050" y="-53850" font-size="358.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#e6c700" transform="rotate(0 33050 -53850)" font-weight="bold">DRAWING INDEX / LIST OF SHEETS</text>
+<path d="M3000 -52900 L63100 -52900 L63100 -53500 L3000 -53500 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -53200)" font-weight="bold">DRAWING No.</text>
+<text x="17250" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 17250 -53200)" font-weight="bold">DRAWING TITLE</text>
+<text x="33000" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 33000 -53200)" font-weight="bold">LEVEL</text>
+<text x="46000" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 46000 -53200)" font-weight="bold">BLOCK / XREF NAME</text>
+<text x="55300" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -53200)" font-weight="bold">SCALE</text>
+<text x="59100" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -53200)" font-weight="bold">REBAR (kg)</text>
+<text x="62100" y="-53200" font-size="262.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -53200)" font-weight="bold">REV</text>
+<text x="5000" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -52650)">SPAN-SD-L01-01</text>
+<text x="7100" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -52650)">FRAMING / FORMWORK NOTATION PLAN</text>
+<text x="27600" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -52650)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -52650)">FRAMING_FORMWORK_NOTATION_L01</text>
+<text x="55300" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -52650)">1:100</text>
+<text x="59100" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -52650)">-</text>
+<text x="62100" y="-52650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -52650)">00</text>
+<line x1="3000" y1="-52400" x2="63100" y2="-52400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -52150)">SPAN-SD-L01-02</text>
+<text x="7100" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -52150)">BOTTOM REINFORCEMENT PLAN (B1 / B2)</text>
+<text x="27600" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -52150)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -52150)">FRAMING_REBAR_SLAB_PT_BOTTOM_L01</text>
+<text x="55300" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -52150)">1:150</text>
+<text x="59100" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -52150)">7,335</text>
+<text x="62100" y="-52150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -52150)">00</text>
+<line x1="3000" y1="-51900" x2="63100" y2="-51900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -51650)">SPAN-SD-L01-03</text>
+<text x="7100" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -51650)">ADDITIONAL TOP REINFORCEMENT OVER COLUMNS (T1 / T2)</text>
+<text x="27600" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -51650)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -51650)">FRAMING_REBAR_ADDITIONAL_AT_COLUMNS_L01</text>
+<text x="55300" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -51650)">1:150</text>
+<text x="59100" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -51650)">5,615</text>
+<text x="62100" y="-51650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -51650)">00</text>
+<line x1="3000" y1="-51400" x2="63100" y2="-51400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -51150)">SPAN-SD-L01-04</text>
+<text x="7100" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -51150)">U-BARS AT SLAB EDGES AND AROUND CIRCULAR REGIONS</text>
+<text x="27600" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -51150)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -51150)">FRAMING_REBAR_U_BARS_AROUND_REGIONS_L01</text>
+<text x="55300" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -51150)">1:100</text>
+<text x="59100" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -51150)">2,989</text>
+<text x="62100" y="-51150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -51150)">00</text>
+<line x1="3000" y1="-50900" x2="63100" y2="-50900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -50650)">SPAN-SD-L01-05</text>
+<text x="7100" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -50650)">REINFORCEMENT AROUND VOIDS / ACUARS AND SUNKEN SLABS</text>
+<text x="27600" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -50650)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -50650)">FRAMING_REBAR_AROUND_VOIDS_ACUARS_L01</text>
+<text x="55300" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -50650)">1:100</text>
+<text x="59100" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -50650)">140</text>
+<text x="62100" y="-50650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -50650)">00</text>
+<line x1="3000" y1="-50400" x2="63100" y2="-50400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -50150)">SPAN-SD-L01-06</text>
+<text x="7100" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -50150)">REINFORCEMENT AROUND OPENINGS</text>
+<text x="27600" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -50150)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -50150)">FRAMING_REBAR_AROUND_OPENINGS_L01</text>
+<text x="55300" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -50150)">1:100</text>
+<text x="59100" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -50150)">387</text>
+<text x="62100" y="-50150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -50150)">00</text>
+<line x1="3000" y1="-49900" x2="63100" y2="-49900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -49650)">SPAN-SD-L01-07</text>
+<text x="7100" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -49650)">PT CABLES LAYOUT AND SCHEDULE - EMPTY TEMPLATE</text>
+<text x="27600" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -49650)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -49650)">CABLES_SCHEDULE_EMPTY_TEMPLATE_L01</text>
+<text x="55300" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -49650)">1:100</text>
+<text x="59100" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -49650)">-</text>
+<text x="62100" y="-49650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -49650)">00</text>
+<line x1="3000" y1="-49400" x2="63100" y2="-49400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -49150)">SPAN-SD-L01-08</text>
+<text x="7100" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -49150)">PUNCHING SHEAR REINFORCEMENT PLAN (PRELIMINARY)</text>
+<text x="27600" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -49150)">L01 - FIRST FLOOR SLAB PLAN</text>
+<text x="38600" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -49150)">FRAMING_REBAR_PUNCHING_LINKS_L01</text>
+<text x="55300" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -49150)">1:100</text>
+<text x="59100" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -49150)">935</text>
+<text x="62100" y="-49150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -49150)">00</text>
+<line x1="3000" y1="-48900" x2="63100" y2="-48900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -48650)">SPAN-SD-L02-01</text>
+<text x="7100" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -48650)">FRAMING / FORMWORK NOTATION PLAN</text>
+<text x="27600" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -48650)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -48650)">FRAMING_FORMWORK_NOTATION_L02</text>
+<text x="55300" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -48650)">1:100</text>
+<text x="59100" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -48650)">-</text>
+<text x="62100" y="-48650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -48650)">00</text>
+<line x1="3000" y1="-48400" x2="63100" y2="-48400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -48150)">SPAN-SD-L02-02</text>
+<text x="7100" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -48150)">BOTTOM REINFORCEMENT PLAN (B1 / B2)</text>
+<text x="27600" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -48150)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -48150)">FRAMING_REBAR_SLAB_PT_BOTTOM_L02</text>
+<text x="55300" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -48150)">1:150</text>
+<text x="59100" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -48150)">7,532</text>
+<text x="62100" y="-48150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -48150)">00</text>
+<line x1="3000" y1="-47900" x2="63100" y2="-47900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -47650)">SPAN-SD-L02-03</text>
+<text x="7100" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -47650)">ADDITIONAL TOP REINFORCEMENT OVER COLUMNS (T1 / T2)</text>
+<text x="27600" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -47650)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -47650)">FRAMING_REBAR_ADDITIONAL_AT_COLUMNS_L02</text>
+<text x="55300" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -47650)">1:150</text>
+<text x="59100" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -47650)">5,696</text>
+<text x="62100" y="-47650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -47650)">00</text>
+<line x1="3000" y1="-47400" x2="63100" y2="-47400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -47150)">SPAN-SD-L02-04</text>
+<text x="7100" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -47150)">U-BARS AT SLAB EDGES AND AROUND CIRCULAR REGIONS</text>
+<text x="27600" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -47150)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -47150)">FRAMING_REBAR_U_BARS_AROUND_REGIONS_L02</text>
+<text x="55300" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -47150)">1:100</text>
+<text x="59100" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -47150)">3,072</text>
+<text x="62100" y="-47150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -47150)">00</text>
+<line x1="3000" y1="-46900" x2="63100" y2="-46900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -46650)">SPAN-SD-L02-05</text>
+<text x="7100" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -46650)">REINFORCEMENT AROUND VOIDS / ACUARS AND SUNKEN SLABS</text>
+<text x="27600" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -46650)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -46650)">FRAMING_REBAR_AROUND_VOIDS_ACUARS_L02</text>
+<text x="55300" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -46650)">1:100</text>
+<text x="59100" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -46650)">65</text>
+<text x="62100" y="-46650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -46650)">00</text>
+<line x1="3000" y1="-46400" x2="63100" y2="-46400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -46150)">SPAN-SD-L02-06</text>
+<text x="7100" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -46150)">REINFORCEMENT AROUND OPENINGS</text>
+<text x="27600" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -46150)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -46150)">FRAMING_REBAR_AROUND_OPENINGS_L02</text>
+<text x="55300" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -46150)">1:100</text>
+<text x="59100" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -46150)">426</text>
+<text x="62100" y="-46150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -46150)">00</text>
+<line x1="3000" y1="-45900" x2="63100" y2="-45900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -45650)">SPAN-SD-L02-07</text>
+<text x="7100" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -45650)">PT CABLES LAYOUT AND SCHEDULE - EMPTY TEMPLATE</text>
+<text x="27600" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -45650)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -45650)">CABLES_SCHEDULE_EMPTY_TEMPLATE_L02</text>
+<text x="55300" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -45650)">1:100</text>
+<text x="59100" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -45650)">-</text>
+<text x="62100" y="-45650" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -45650)">00</text>
+<line x1="3000" y1="-45400" x2="63100" y2="-45400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="5000" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 5000 -45150)">SPAN-SD-L02-08</text>
+<text x="7100" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7100 -45150)">PUNCHING SHEAR REINFORCEMENT PLAN (PRELIMINARY)</text>
+<text x="27600" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 27600 -45150)">L02 - ROOF SLAB PLAN</text>
+<text x="38600" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 38600 -45150)">FRAMING_REBAR_PUNCHING_LINKS_L02</text>
+<text x="55300" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 55300 -45150)">1:100</text>
+<text x="59100" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 59100 -45150)">1,119</text>
+<text x="62100" y="-45150" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 62100 -45150)">00</text>
+<line x1="3000" y1="-44900" x2="63100" y2="-44900" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M3000 -44350 L63100 -44350 L63100 -44900 L3000 -44900 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="3200" y="-44625" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 3200 -44625)" font-weight="bold">TOTAL SCHEDULED REINFORCEMENT (ALL LEVELS) 35,309 kg</text>
+<line x1="3000" y1="-53500" x2="3000" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="7000" y1="-53500" x2="7000" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="27500" y1="-53500" x2="27500" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="38500" y1="-53500" x2="38500" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="53500" y1="-53500" x2="53500" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="57100" y1="-53500" x2="57100" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="61100" y1="-53500" x2="61100" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="63100" y1="-53500" x2="63100" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="3000" y1="-44350" x2="63100" y2="-44350" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M2000 -1000 L22866.666666666664 -1000 L22866.666666666664 -13500 L2000 -13500 Z" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="2000" y1="-12700" x2="22866.666666666664" y2="-12700" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="2700" cy="-13100" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="2700" y="-13100" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 2700 -13100)">1</text>
+<text x="3200" y="-13100" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#e6c700" transform="rotate(0 3200 -13100)" font-weight="bold">LEVELS READ FROM THE STRUCTURAL DRAWINGS</text>
+<text x="22666.666666666664" y="-13100" font-size="248.400" font-family="Arial, Helvetica, sans-serif" text-anchor="end" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 22666.666666666664 -13100)"></text>
+<path d="M2300 -12000 L22566.666666666664 -12000 L22566.666666666664 -12500 L2300 -12500 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="3000" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 3000 -12250)" font-weight="bold">ID</text>
+<text x="7200" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 7200 -12250)" font-weight="bold">LEVEL</text>
+<text x="11500" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 11500 -12250)" font-weight="bold">THK</text>
+<text x="13100" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 13100 -12250)" font-weight="bold">COLS</text>
+<text x="14700" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 14700 -12250)" font-weight="bold">OPEN.</text>
+<text x="16300" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 16300 -12250)" font-weight="bold">SUNK.</text>
+<text x="17900" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 17900 -12250)" font-weight="bold">VOIDS</text>
+<text x="20633.333333333332" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 20633.333333333332 -12250)" font-weight="bold">AREA m²</text>
+<text x="3000" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 3000 -11800)">L01</text>
+<text x="3800" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 3800 -11800)">FIRST FLOOR SLAB PLAN</text>
+<text x="11500" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 11500 -11800)">250</text>
+<text x="13100" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 13100 -11800)">19</text>
+<text x="14700" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 14700 -11800)">2</text>
+<text x="16300" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 16300 -11800)">0</text>
+<text x="17900" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 17900 -11800)">2</text>
+<text x="20633.333333333332" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 20633.333333333332 -11800)">820</text>
+<line x1="2300" y1="-11600" x2="22566.666666666664" y2="-11600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="3000" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 3000 -11400)">L02</text>
+<text x="3800" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 3800 -11400)">ROOF SLAB PLAN</text>
+<text x="11500" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 11500 -11400)">220</text>
+<text x="13100" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 13100 -11400)">20</text>
+<text x="14700" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 14700 -11400)">2</text>
+<text x="16300" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 16300 -11400)">0</text>
+<text x="17900" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 17900 -11400)">1</text>
+<text x="20633.333333333332" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 20633.333333333332 -11400)">845</text>
+<line x1="2300" y1="-11200" x2="22566.666666666664" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="2300" y1="-12500" x2="2300" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="3700" y1="-12500" x2="3700" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="10700" y1="-12500" x2="10700" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="12300" y1="-12500" x2="12300" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="13900" y1="-12500" x2="13900" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="15500" y1="-12500" x2="15500" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="17100" y1="-12500" x2="17100" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="18700" y1="-12500" x2="18700" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="22566.666666666664" y1="-12500" x2="22566.666666666664" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="2300" y1="-11200" x2="22566.666666666664" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M22866.666666666664 -1000 L43733.33333333333 -1000 L43733.33333333333 -13500 L22866.666666666664 -13500 Z" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="22866.666666666664" y1="-12700" x2="43733.33333333333" y2="-12700" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="23566.666666666664" cy="-13100" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23566.666666666664" y="-13100" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 23566.666666666664 -13100)">2</text>
+<text x="24066.666666666664" y="-13100" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#e6c700" transform="rotate(0 24066.666666666664 -13100)" font-weight="bold">DEVELOPMENT / LAP LENGTHS APPLIED (mm)</text>
+<text x="43533.33333333333" y="-13100" font-size="248.400" font-family="Arial, Helvetica, sans-serif" text-anchor="end" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 43533.33333333333 -13100)"></text>
+<path d="M23166.666666666664 -12000 L43433.33333333333 -12000 L43433.33333333333 -12500 L23166.666666666664 -12500 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -12250)" font-weight="bold">Ø</text>
+<text x="26266.666666666664" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -12250)" font-weight="bold">ld BOT</text>
+<text x="29266.666666666664" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -12250)" font-weight="bold">ld TOP</text>
+<text x="32366.666666666664" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -12250)" font-weight="bold">LAP BOT</text>
+<text x="35566.666666666664" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -12250)" font-weight="bold">LAP TOP</text>
+<text x="40299.99999999999" y="-12250" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -12250)" font-weight="bold">ldh HOOK</text>
+<text x="23966.666666666664" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -11800)">10</text>
+<text x="26266.666666666664" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -11800)">340</text>
+<text x="29266.666666666664" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -11800)">440</text>
+<text x="32366.666666666664" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -11800)">450</text>
+<text x="35566.666666666664" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -11800)">600</text>
+<text x="40299.99999999999" y="-11800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -11800)">180</text>
+<line x1="23166.666666666664" y1="-11600" x2="43433.33333333333" y2="-11600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -11400)">12</text>
+<text x="26266.666666666664" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -11400)">410</text>
+<text x="29266.666666666664" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -11400)">530</text>
+<text x="32366.666666666664" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -11400)">550</text>
+<text x="35566.666666666664" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -11400)">700</text>
+<text x="40299.99999999999" y="-11400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -11400)">210</text>
+<line x1="23166.666666666664" y1="-11200" x2="43433.33333333333" y2="-11200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-11000" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -11000)">14</text>
+<text x="26266.666666666664" y="-11000" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -11000)">480</text>
+<text x="29266.666666666664" y="-11000" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -11000)">620</text>
+<text x="32366.666666666664" y="-11000" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -11000)">650</text>
+<text x="35566.666666666664" y="-11000" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -11000)">850</text>
+<text x="40299.99999999999" y="-11000" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -11000)">240</text>
+<line x1="23166.666666666664" y1="-10800" x2="43433.33333333333" y2="-10800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-10600" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -10600)">16</text>
+<text x="26266.666666666664" y="-10600" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -10600)">550</text>
+<text x="29266.666666666664" y="-10600" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -10600)">710</text>
+<text x="32366.666666666664" y="-10600" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -10600)">750</text>
+<text x="35566.666666666664" y="-10600" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -10600)">950</text>
+<text x="40299.99999999999" y="-10600" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -10600)">280</text>
+<line x1="23166.666666666664" y1="-10400" x2="43433.33333333333" y2="-10400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-10200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -10200)">18</text>
+<text x="26266.666666666664" y="-10200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -10200)">610</text>
+<text x="29266.666666666664" y="-10200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -10200)">800</text>
+<text x="32366.666666666664" y="-10200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -10200)">800</text>
+<text x="35566.666666666664" y="-10200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -10200)">1050</text>
+<text x="40299.99999999999" y="-10200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -10200)">310</text>
+<line x1="23166.666666666664" y1="-10000" x2="43433.33333333333" y2="-10000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-9800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -9800)">20</text>
+<text x="26266.666666666664" y="-9800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -9800)">680</text>
+<text x="29266.666666666664" y="-9800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -9800)">880</text>
+<text x="32366.666666666664" y="-9800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -9800)">900</text>
+<text x="35566.666666666664" y="-9800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -9800)">1150</text>
+<text x="40299.99999999999" y="-9800" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -9800)">350</text>
+<line x1="23166.666666666664" y1="-9600" x2="43433.33333333333" y2="-9600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="23966.666666666664" y="-9400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 23966.666666666664 -9400)">25</text>
+<text x="26266.666666666664" y="-9400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 26266.666666666664 -9400)">1050</text>
+<text x="29266.666666666664" y="-9400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 29266.666666666664 -9400)">1360</text>
+<text x="32366.666666666664" y="-9400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 32366.666666666664 -9400)">1400</text>
+<text x="35566.666666666664" y="-9400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 35566.666666666664 -9400)">1800</text>
+<text x="40299.99999999999" y="-9400" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 40299.99999999999 -9400)">430</text>
+<line x1="23166.666666666664" y1="-9200" x2="43433.33333333333" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="23166.666666666664" y1="-12500" x2="23166.666666666664" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="24766.666666666664" y1="-12500" x2="24766.666666666664" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="27766.666666666664" y1="-12500" x2="27766.666666666664" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="30766.666666666664" y1="-12500" x2="30766.666666666664" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="33966.666666666664" y1="-12500" x2="33966.666666666664" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="37166.666666666664" y1="-12500" x2="37166.666666666664" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="43433.33333333333" y1="-12500" x2="43433.33333333333" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="23166.666666666664" y1="-9200" x2="43433.33333333333" y2="-9200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M43733.33333333333 -1000 L64599.99999999999 -1000 L64599.99999999999 -13500 L43733.33333333333 -13500 Z" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="43733.33333333333" y1="-12700" x2="64600" y2="-12700" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<circle cx="44433.33333333333" cy="-13100" r="300" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="44433.33333333333" y="-13100" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#22b14c" transform="rotate(0 44433.33333333333 -13100)">3</text>
+<text x="44933.33333333333" y="-13100" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="central" fill="#e6c700" transform="rotate(0 44933.33333333333 -13100)" font-weight="bold">HOW TO USE THE BLOCKS / XREFS</text>
+<text x="64400" y="-13100" font-size="248.400" font-family="Arial, Helvetica, sans-serif" text-anchor="end" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 64400 -13100)"></text>
+<text x="44133.33333333333" y="-12120" font-size="248.400" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">EACH SHEET IS A BLOCK NAMED AS LISTED; THE SAME NAME IS ALSO A STAND-ALONE DXF FOR XREF ATTACH. INSERT OR XREF AT 0,0, SCALE 1, UNITS mm; PLAN</text>
+<text x="44133.33333333333" y="-11841" font-size="248.400" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">GEOMETRY IS 1:1 AND THE FRAME IS SCALED BY THE SHEET SCALE.</text>
+<text x="44133.33333333333" y="-10720" font-size="248.400" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">LAYERS PER THE SPAN TECH STANDARD (SPAN-): SPAN-RB-B1 / B2 / T1 / T2 (BARS), SPAN-RB-UBAR, SPAN-RB-TRIM, SPAN-RB-PUNCH, SPAN-RB-TEXT</text>
+<text x="44133.33333333333" y="-10441" font-size="248.400" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">(CALL-OUTS), SPAN-RB-MESH, SPAN-RB-TYPE, SPAN-GRID, SPAN-SLAB-EDGE, SPAN-COL, SPAN-BEAM, SPAN-OPENING, SPAN-SUNKEN, SPAN-VOID, SPAN-PT-*,</text>
+<text x="44133.33333333333" y="-10162" font-size="248.400" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">SPAN-SHEET-*, SPAN-DIM, SPAN-CALLOUT.</text>
+<text x="44133.33333333333" y="-9320" font-size="248.400" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">EXPLODE A BLOCK TO EDIT; RE-RUN THE GENERATOR AFTER THE CONSULTANT REVISES THE G.A. AND RE-ATTACH.</text>
+<text x="64800" y="-57950" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64800 -57950)">KEY PLAN</text>
+<path d="M68600 -54100 L79100 -54100 L79100 -57800 L68600 -57800 Z" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M71912.5 -54400 L75787.5 -54400 L75787.5 -56903.846153846156 L75191.34615384616 -56903.846153846156 L75191.34615384616 -57500 L71912.5 -57500 Z" stroke="#22b14c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M71912.5 -54400 L75787.5 -54400 L75787.5 -56903.846153846156 L75191.34615384616 -56903.846153846156 L75191.34615384616 -57500 L71912.5 -57500 Z" fill="url(#hp0)" fill-rule="evenodd" stroke="none" opacity="0.9"/>
+<circle cx="81100" cy="-55800" r="600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="81100,-56300 80850,-55450 81100,-55679.99999999999 81350,-55450" fill="#1c1c1c" stroke="none"/>
+<text x="81100" y="-56550" font-size="345.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 81100 -56550)">N</text>
+<text x="64900" y="-39180" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64900 -39180)" font-weight="bold">GENERAL NOTES</text>
+<text x="82800" y="-39180" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="end" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 82800 -39180)">ملاحظات عامة</text>
+<line x1="64900" y1="-39070" x2="82800" y2="-39070" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64900" y="-38765" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">1. PACKAGE GENERATED FROM THE CONSULTANT'S STRUCTURAL DRAWINGS: 2 SLAB LEVEL(S) READ.</text>
+<text x="64900" y="-38460" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">2. Drawing units: mm ($INSUNITS); 215 entities read.</text>
+<text x="64900" y="-38154.99999999999" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">3. L01 FIRST FLOOR SLAB PLAN: 19 columns, grid A-B-C-D-E / 1-2-3-4, 2 openings, 2 voids, 0 sunken slabs, 0 beam lines, 1 circular</text>
+<text x="64900" y="-37883.74999999999" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">U-bar regions, 1 PT zones, 0 tendon lines, slab 250 mm.</text>
+<text x="64900" y="-37578.75" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">4. L02 ROOF SLAB PLAN: 20 columns, grid A-B-C-D-E / 1-2-3-4, 2 openings, 1 voids, 0 sunken slabs, 0 beam lines, 2 circular U-bar</text>
+<text x="64900" y="-37307.5" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">regions, 1 PT zones, 0 tendon lines, slab 220 mm.</text>
+<text x="64900" y="-37002.5" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">5. DESIGN DATA READ FROM THE DRAWINGS: topColumns: T16@150 from note &quot;5. TOP BARS OVER COLUMNS: T16@150 B.W. UNLESS NOTED.&quot;.</text>
+<text x="64900" y="-36552.5" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64900 -36552.5)" font-weight="bold">ASSUMPTIONS</text>
+<text x="82800" y="-36552.5" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="end" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 82800 -36552.5)">افتراضات</text>
+<line x1="64900" y1="-36442.49999999999" x2="82800" y2="-36442.49999999999" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64900" y="-36147.49999999999" font-size="227.700" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">A1. Bottom mesh not specified: T12@200 both ways assumed as bonded reinforcement in PT zones.</text>
+<text x="64900" y="-35852.49999999999" font-size="227.700" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">A2. Edge U-bars not specified: T12@150 with 1200 mm legs assumed at PT anchorage edges.</text>
+<text x="64900" y="-35557.5" font-size="227.700" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">A3. Opening trimmers not specified: 2T16 T&amp;B each side + 2T12 diagonals at corners assumed.</text>
+<text x="64900" y="-35262.5" font-size="227.700" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">A4. Void trimmers not specified: 2T12 T&amp;B each side assumed.</text>
+<text x="64900" y="-34967.5" font-size="227.700" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">A5. Stock bar length 12 m; laps staggered so that not more than 50 % of bars lap at one section.</text>
+<text x="64900" y="-34517.5" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64900 -34517.5)" font-weight="bold">CODE REFERENCE</text>
+<text x="82800" y="-34517.5" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="end" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 82800 -34517.5)">المرجع الكودي</text>
+<line x1="64900" y1="-34407.5" x2="82800" y2="-34407.5" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64900" y="-34102.5" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">SBC 304-18 AS STATED ON THE STRUCTURAL DRAWINGS. DEVELOPMENT, ANCHORAGE AND LAP LENGTHS PER SBC 304-18 CHAPTER 25 (ACI 318-14</text>
+<text x="64900" y="-33831.25" font-size="241.500" font-family="Arial, Helvetica, sans-serif" fill="#1c1c1c">BASIS).</text>
+<line x1="64600" y1="-20700" x2="83100" y2="-20700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="73850" y="-20950" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 73850 -20950)">COORDINATED WITH THE FOLLOWING DISCIPLINES</text>
+<line x1="64600" y1="-20100" x2="83100" y2="-20100" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-20480" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -20480)">ARCH.</text>
+<text x="66912.5" y="-20200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 66912.5 -20200)"></text>
+<line x1="69225" y1="-20100" x2="69225" y2="-20700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="69375" y="-20480" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 69375 -20480)">STRUCT.</text>
+<text x="71537.5" y="-20200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 71537.5 -20200)"></text>
+<line x1="73850" y1="-20100" x2="73850" y2="-20700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="74000" y="-20480" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 74000 -20480)">MEP</text>
+<text x="76162.5" y="-20200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 76162.5 -20200)"></text>
+<line x1="78475" y1="-20100" x2="78475" y2="-20700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="78625" y="-20480" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 78625 -20480)">EL.</text>
+<text x="80787.5" y="-20200" font-size="220.800" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 80787.5 -20200)"></text>
+<line x1="64600" y1="-19600" x2="83100" y2="-19600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="73850" y="-19850" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 73850 -19850)">CONTRACT DRAWING REFERENCES</text>
+<line x1="64600" y1="-19200" x2="83100" y2="-19200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="67683.33333333334" y="-19400" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 67683.33333333334 -19400)">ARCHITECTURAL</text>
+<line x1="70766.66666666666" y1="-19200" x2="70766.66666666666" y2="-19600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="73850" y="-19400" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 73850 -19400)">STRUCTURAL</text>
+<line x1="76933.33333333334" y1="-19200" x2="76933.33333333334" y2="-19600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="80016.66666666667" y="-19400" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 80016.66666666667 -19400)">MEP</text>
+<line x1="64600" y1="-18800" x2="83100" y2="-18800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="69566.66666666666" y1="-18800" x2="69566.66666666666" y2="-19200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-18930" font-size="179.400" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -18930)">DRAWING No.</text>
+<text x="70166.66666666666" y="-18930" font-size="179.400" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 70166.66666666666 -18930)">REV.</text>
+<line x1="70766.66666666666" y1="-18800" x2="70766.66666666666" y2="-19200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="75733.33333333333" y1="-18800" x2="75733.33333333333" y2="-19200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="70916.66666666666" y="-18930" font-size="179.400" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 70916.66666666666 -18930)">DRAWING No.</text>
+<text x="76333.33333333333" y="-18930" font-size="179.400" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 76333.33333333333 -18930)">REV.</text>
+<line x1="76933.33333333334" y1="-18800" x2="76933.33333333334" y2="-19200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="81900" y1="-18800" x2="81900" y2="-19200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="77083.33333333334" y="-18930" font-size="179.400" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 77083.33333333334 -18930)">DRAWING No.</text>
+<text x="82500" y="-18930" font-size="179.400" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 82500 -18930)">REV.</text>
+<line x1="64600" y1="-18400" x2="83100" y2="-18400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="69566.66666666666" y1="-18400" x2="69566.66666666666" y2="-18800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="70766.66666666666" y1="-18400" x2="70766.66666666666" y2="-18800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="75733.33333333333" y1="-18400" x2="75733.33333333333" y2="-18800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="76933.33333333334" y1="-18400" x2="76933.33333333334" y2="-18800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="81900" y1="-18400" x2="81900" y2="-18800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-18000" x2="83100" y2="-18000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="69566.66666666666" y1="-18000" x2="69566.66666666666" y2="-18400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="70766.66666666666" y1="-18000" x2="70766.66666666666" y2="-18400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="75733.33333333333" y1="-18000" x2="75733.33333333333" y2="-18400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="76933.33333333334" y1="-18000" x2="76933.33333333334" y2="-18400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="81900" y1="-18000" x2="81900" y2="-18400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-17600" x2="83100" y2="-17600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="65200" y="-17800" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 65200 -17800)">REV.</text>
+<line x1="65800" y1="-17600" x2="65800" y2="-18000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="71700" y="-17800" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 71700 -17800)">DESCRIPTION</text>
+<line x1="77600" y1="-17600" x2="77600" y2="-18000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="79100" y="-17800" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 79100 -17800)">DATE</text>
+<line x1="80600" y1="-17600" x2="80600" y2="-18000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="81850" y="-17800" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 81850 -17800)">BY</text>
+<line x1="64600" y1="-17200" x2="83100" y2="-17200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="65200" y="-17300" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 65200 -17300)">00</text>
+<line x1="65800" y1="-17200" x2="65800" y2="-17600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="65950" y="-17300" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 65950 -17300)">ISSUED FOR APPROVAL</text>
+<line x1="77600" y1="-17200" x2="77600" y2="-17600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="79100" y="-17300" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 79100 -17300)">2026-09-26</text>
+<line x1="80600" y1="-17200" x2="80600" y2="-17600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="81850" y="-17300" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 81850 -17300)"></text>
+<line x1="64600" y1="-16800" x2="83100" y2="-16800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="65800" y1="-16800" x2="65800" y2="-17200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="77600" y1="-16800" x2="77600" y2="-17200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="80600" y1="-16800" x2="80600" y2="-17200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-16400" x2="83100" y2="-16400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="65800" y1="-16400" x2="65800" y2="-16800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="77600" y1="-16400" x2="77600" y2="-16800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="80600" y1="-16400" x2="80600" y2="-16800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-16000" x2="83100" y2="-16000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="65800" y1="-16000" x2="65800" y2="-16400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="77600" y1="-16000" x2="77600" y2="-16400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="80600" y1="-16000" x2="80600" y2="-16400" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="64600" y1="-14500" x2="83100" y2="-14500" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-15700" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -15700)">PROJECT</text>
+<text x="64750" y="-15380.000000000002" font-size="289.800" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -15380.000000000002)">PROPOSED MIXED-USE BUILDING</text>
+<text x="64750" y="-14630.000000000002" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -14630.000000000002)">RIYADH, KSA</text>
+<line x1="64600" y1="-13600" x2="83100" y2="-13600" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-14200" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -14200)">THE CLIENT</text>
+<text x="64750" y="-13880.000000000002" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -13880.000000000002)">DEMO CLIENT</text>
+<line x1="64600" y1="-12700" x2="83100" y2="-12700" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-13300" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -13300)">THE ENGINEER (CONSULTANT)</text>
+<line x1="64600" y1="-11800" x2="83100" y2="-11800" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-12400" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -12400)">MAIN CONTRACTOR</text>
+<line x1="64600" y1="-10200" x2="83100" y2="-10200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-11500" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -11500)">POST-TENSION SUB-CONTRACTOR / SHOP DRAWINGS BY</text>
+<text x="73850" y="-10950" font-size="552.000" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#e6c700" transform="rotate(0 73850 -10950)" font-weight="bold">SPAN TECH CONTRACTING</text>
+<text x="73850" y="-10450" font-size="234.600" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#1c1c1c" transform="rotate(0 73850 -10450)">POST-TENSIONED SLABS · KSA · EGYPT · QATAR</text>
+<line x1="64600" y1="-8200" x2="83100" y2="-8200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-9900" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -9900)">DRAWING TITLE</text>
+<text x="64750" y="-9450" font-size="400.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -9450)" font-weight="bold">COVER SHEET / DRAWING INDEX</text>
+<text x="64750" y="-8330" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -8330)">ALL LEVELS</text>
+<line x1="64600" y1="-7100" x2="83100" y2="-7100" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="73850" y1="-7100" x2="73850" y2="-8200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="77920" y1="-7100" x2="77920" y2="-8200" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-7900" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -7900)">DRAWING No.</text>
+<text x="64750" y="-7480" font-size="441.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -7480)">SPAN-SD-000</text>
+<text x="74000" y="-7900" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 74000 -7900)">REV.</text>
+<text x="74000" y="-7480" font-size="441.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 74000 -7480)">00</text>
+<text x="78070" y="-7900" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 78070 -7900)">DATE</text>
+<text x="78070" y="-7559.999999999999" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 78070 -7559.999999999999)">2026-09-26</text>
+<line x1="64600" y1="-6000" x2="83100" y2="-6000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="72000" y1="-6000" x2="72000" y2="-7100" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="76810" y1="-6000" x2="76810" y2="-7100" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-6800" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -6800)">SCALE (A1)</text>
+<text x="64750" y="-6459.999999999999" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -6459.999999999999)">N.T.S.</text>
+<text x="72150" y="-6800" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 72150 -6800)">SHEET</text>
+<text x="72150" y="-6459.999999999999" font-size="331.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 72150 -6459.999999999999)">1 OF 17</text>
+<text x="76960" y="-6800" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 76960 -6800)">GRID REFERENCE</text>
+<text x="76960" y="-6480" font-size="303.600" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 76960 -6480)">ALL</text>
+<line x1="64600" y1="-4500" x2="83100" y2="-4500" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="70766.66666666666" y1="-4500" x2="70766.66666666666" y2="-6000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="76933.33333333334" y1="-4500" x2="76933.33333333334" y2="-6000" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-5700" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -5700)">PREPARED</text>
+<text x="64750" y="-5250" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -5250)">SPAN TECH DESIGN OFFICE</text>
+<text x="64750" y="-4630" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -4630)">SIGN / DATE: ..........</text>
+<text x="70916.66666666666" y="-5700" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 70916.66666666666 -5700)">CHECKED</text>
+<text x="70916.66666666666" y="-5250" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 70916.66666666666 -5250)"></text>
+<text x="70916.66666666666" y="-4630" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 70916.66666666666 -4630)">SIGN / DATE: ..........</text>
+<text x="77083.33333333334" y="-5700" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 77083.33333333334 -5700)">APPROVED</text>
+<text x="77083.33333333334" y="-5250" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 77083.33333333334 -5250)"></text>
+<text x="77083.33333333334" y="-4630" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 77083.33333333334 -4630)">SIGN / DATE: ..........</text>
+<line x1="64600" y1="-3500" x2="83100" y2="-3500" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="70150" y1="-3500" x2="70150" y2="-4500" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<line x1="76070" y1="-3500" x2="76070" y2="-4500" stroke="#1c1c1c" stroke-width="32.546" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="64750" y="-4200" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 64750 -4200)">DRAWING INDEX</text>
+<text x="64750" y="-3900" font-size="276.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 64750 -3900)">SPAN-SD-000</text>
+<text x="70300" y="-4200" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 70300 -4200)">CODE REFERENCE</text>
+<text x="70300" y="-3920.0000000000005" font-size="248.400" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 70300 -3920.0000000000005)">SBC 304-18 (ON DRAWINGS)</text>
+<text x="76220" y="-4200" font-size="207.000" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#1c1c1c" transform="rotate(0 76220 -4200)">BLOCK / XREF</text>
+<text x="76220" y="-3960" font-size="193.200" font-family="Arial, Helvetica, sans-serif" text-anchor="start" dominant-baseline="auto" fill="#e6c700" transform="rotate(0 76220 -3960)">SHOP_DRAWINGS_COVER_INDEX</text>
+<text x="73850" y="-2250" font-size="317.400" font-family="Arial, Helvetica, sans-serif" text-anchor="middle" dominant-baseline="central" fill="#e6c700" transform="rotate(0 73850 -2250)" font-weight="bold">SHOP DRAWING - FOR CONSULTANT APPROVAL</text>
+<path d="M64600 -1000 L83100 -1000 L83100 -16000 L64600 -16000 Z" stroke="#1c1c1c" stroke-width="39.779" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>

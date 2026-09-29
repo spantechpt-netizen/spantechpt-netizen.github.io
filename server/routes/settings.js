@@ -2,6 +2,7 @@ import { allSettings, getSetting, setSetting, audit } from '../db.js';
 import { requirePermission } from '../auth.js';
 import { badRequest } from '../http.js';
 import { COMPANY, SCOPE, PAYMENT_TERMS, CONDITIONS, COUNTRY_DEFAULTS, INTRO, PRICE_ADJUSTMENT_CLAUSE } from '../templates.js';
+import { DRAWING_DEFAULTS } from '../drawings.js';
 
 const DEFAULTS = {
   company: COMPANY,
@@ -12,6 +13,7 @@ const DEFAULTS = {
   intro: INTRO,
   price_clause: PRICE_ADJUSTMENT_CLAUSE,
   quote_prefix: 'SPAN TECH P.T',
+  drawings: DRAWING_DEFAULTS,
 };
 
 const EDITABLE = Object.keys(DEFAULTS);

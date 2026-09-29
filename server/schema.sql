@@ -384,3 +384,116 @@ CREATE TABLE IF NOT EXISTS study_drawings (
   updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_study_drawings_quote ON study_drawings(quotation_id, kind, sort_order);
+
+-- ============================================================ drawings module
+-- A project registered once (name, client, consultant, contractor, location,
+-- signatures) so that every reinforcement drawing generated for it carries the
+-- same title-block data. Levels / zones are registered under the project; a
+-- run is one generation from one RAM Concept (.cpt) or plan (.dxf) file.
+CREATE TABLE IF NOT EXISTS drawing_projects (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  code          TEXT NOT NULL UNIQUE,
+  name          TEXT NOT NULL,
+  name_ar       TEXT,
+  client        TEXT,
+  consultant    TEXT,
+  contractor    TEXT,
+  location      TEXT,
+  country       TEXT,
+  customer_id   INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+  prepared      TEXT,
+  checked       TEXT,
+  approved      TEXT,
+  default_mode  TEXT NOT NULL DEFAULT 'design',
+  ram_bands     TEXT NOT NULL DEFAULT 'all',
+  spec_json     TEXT,
+  notes         TEXT,
+  owner_id      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS drawing_levels (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id     INTEGER NOT NULL REFERENCES drawing_projects(id) ON DELETE CASCADE,
+  code           TEXT NOT NULL,
+  name           TEXT NOT NULL,
+  zone           TEXT,
+  sort_order     INTEGER NOT NULL DEFAULT 0,
+  wall_thickness INTEGER,
+  notes          TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(project_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_levels_project ON drawing_levels(project_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS drawing_runs (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id       INTEGER NOT NULL REFERENCES drawing_projects(id) ON DELETE CASCADE,
+  level_id         INTEGER NOT NULL REFERENCES drawing_levels(id) ON DELETE CASCADE,
+  serial           INTEGER NOT NULL,
+  mode             TEXT NOT NULL DEFAULT 'design',
+  revision         TEXT NOT NULL DEFAULT '00',
+  ram_bands        TEXT,
+  prefix           TEXT NOT NULL,
+  source_name      TEXT,
+  source_bytes     INTEGER,
+  source_file      TEXT,
+  status           TEXT NOT NULL DEFAULT 'running',
+  sheet_count      INTEGER NOT NULL DEFAULT 0,
+  sheets_json      TEXT,
+  assumptions_json TEXT,
+  findings_json    TEXT,
+  report_md        TEXT,
+  error            TEXT,
+  duration_ms      INTEGER,
+  created_by       INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_runs_project ON drawing_runs(project_id, serial);
+CREATE INDEX IF NOT EXISTS idx_drawing_runs_level   ON drawing_runs(level_id, created_at);
+
+-- project documents: the original design files, the RAM models, and the PT drawings (design / shop) kept per project
+CREATE TABLE IF NOT EXISTS drawing_files (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  INTEGER NOT NULL REFERENCES drawing_projects(id) ON DELETE CASCADE,
+  level_id    INTEGER REFERENCES drawing_levels(id) ON DELETE SET NULL,
+  category    TEXT NOT NULL DEFAULT 'design',
+  name        TEXT NOT NULL,
+  ext         TEXT,
+  bytes       INTEGER NOT NULL DEFAULT 0,
+  stored      TEXT NOT NULL,
+  revision    TEXT,
+  note        TEXT,
+  uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_files_project ON drawing_files(project_id, category, created_at);
+
+-- submittal request forms (transmittals) to the consultant: which drawings, at which revision, and the answer
+CREATE TABLE IF NOT EXISTS drawing_submittals (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id     INTEGER NOT NULL REFERENCES drawing_projects(id) ON DELETE CASCADE,
+  serial         INTEGER NOT NULL,
+  code           TEXT NOT NULL,
+  revision       INTEGER NOT NULL DEFAULT 0,
+  kind           TEXT NOT NULL DEFAULT 'shop',
+  subject        TEXT,
+  to_name        TEXT,
+  attention      TEXT,
+  purpose        TEXT NOT NULL DEFAULT 'approval',
+  date           TEXT NOT NULL,
+  items_json     TEXT NOT NULL,
+  notes          TEXT,
+  status         TEXT NOT NULL DEFAULT 'draft',
+  response_date  TEXT,
+  response_notes TEXT,
+  response_by    TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_drawing_submittals_project ON drawing_submittals(project_id, serial);

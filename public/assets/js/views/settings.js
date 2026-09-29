@@ -27,6 +27,7 @@ export async function render() {
     { key: 'company', label: t('company_profile'), build: () => companyPanel(settings) },
     { key: 'prices', label: t('price_book'), build: () => pricePanel(settings) },
     { key: 'templates', label: t('templates'), build: () => templatePanel(settings) },
+    { key: 'drawings', label: t('dw_settings'), build: () => drawingsPanel(settings), need: 'drawings.view' },
     { key: 'mail', label: t('mailboxes'), build: () => mailPanel(), need: 'mail.manage' },
     { key: 'users', label: t('users'), build: () => usersPanel(), need: 'users.manage' },
   ].filter((tab) => !tab.need || can(tab.need));
@@ -948,4 +949,185 @@ function branchEditor(initial) {
       return out;
     },
   };
+}
+
+// ----------------------------------------------------- reinforcement drawings
+function drawingsPanel(settings) {
+  const current = JSON.parse(JSON.stringify(settings.drawings || {}));
+  const spec = current.spec && Object.keys(current.spec).length ? JSON.stringify(current.spec, null, 2) : '';
+  const form = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-2', {}, [
+      field({ name: 'project_prefix', label: t('dw_project_prefix'), value: current.project_prefix || 'P', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'design_prefix', label: t('dw_design_prefix'), value: current.design_prefix || 'SPAN-DD', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'shop_prefix', label: t('dw_shop_prefix'), value: current.shop_prefix || 'SPAN-SD', dir: 'ltr', disabled: readOnly() }),
+      field({
+        name: 'default_mode', label: t('dw_default_mode'), type: 'select', value: current.default_mode || 'design', disabled: readOnly(),
+        options: [{ value: 'design', label: t('dw_mode_design') }, { value: 'shop', label: t('dw_mode_shop') }],
+      }),
+      field({
+        name: 'ram_bands', label: t('dw_ram_bands'), type: 'select', value: current.ram_bands || 'all', disabled: readOnly(),
+        options: ['all', 'user', 'none'].map((b) => ({ value: b, label: t(`dw_bands_${b}`) })),
+      }),
+      field({
+        name: 'mesh', label: t('dw_mesh'), type: 'select', value: current.mesh || 'bottom', disabled: readOnly(), hint: t('dw_mesh_hint'),
+        options: ['bottom', 'both'].map((m) => ({ value: m, label: t(`dw_mesh_${m}`) })),
+      }),
+      field({
+        name: 'beam_design', label: t('dw_beam_design'), type: 'select', value: current.beam_design || 'ram', disabled: readOnly(), hint: t('dw_bd_hint'),
+        options: ['ram', 'office', 'max'].map((m) => ({ value: m, label: t(`dw_bd_${m}`) })),
+      }),
+      field({
+        name: 'rotate', label: t('dw_rotate'), type: 'select', value: current.rotate || 'auto', disabled: readOnly(), hint: t('dw_rotate_hint'),
+        options: ['auto', '0', '90'].map((m) => ({ value: m, label: t(`dw_rotate_${m}`) })),
+      }),
+      field({ name: 'company', label: t('dw_company'), value: current.company || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'company_line', label: t('dw_company_line'), value: current.company_line || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'prepared', label: t('dw_prepared'), value: current.prepared || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'checked', label: t('dw_checked'), value: current.checked || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'approved', label: t('dw_approved'), value: current.approved || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'status_design', label: t('dw_status_design'), value: current.status_design || '', dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'status_shop', label: t('dw_status_shop'), value: current.status_shop || '', dir: 'ltr', disabled: readOnly() }),
+    ]),
+    field({ name: 'spec', label: t('dw_spec'), type: 'textarea', value: spec, rows: 4, dir: 'ltr', disabled: readOnly() }),
+  ]);
+
+  // the sheet frame: strip sizes and boxes, and the office's own frame DXF
+  const fr = { size: 'A1', rightWidth: 185, bottomStrip: 125, titleH: 150, refsH: 52, keyH: 46, schedH: 140, keyplan: true, refs: true, schedule: true, details: false, ...(current.frame || {}) };
+  const frameForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-3', {}, [
+      field({ name: 'size', label: t('dw_frame_size'), type: 'select', value: fr.size, disabled: readOnly(), options: ['A0', 'A1', 'A2'].map((v) => ({ value: v, label: v })) }),
+      field({ name: 'rightWidth', label: t('dw_frame_right'), type: 'number', value: fr.rightWidth, min: 120, max: 400, step: 5, disabled: readOnly() }),
+      field({ name: 'bottomStrip', label: t('dw_frame_bottom'), type: 'number', value: fr.bottomStrip, min: 0, max: 300, step: 5, disabled: readOnly() }),
+      field({ name: 'titleH', label: t('dw_frame_title'), type: 'number', value: fr.titleH, min: 60, max: 300, step: 5, disabled: readOnly() }),
+      field({ name: 'refsH', label: t('dw_frame_refs'), type: 'number', value: fr.refsH, min: 0, max: 200, step: 2, disabled: readOnly() }),
+      field({ name: 'keyH', label: t('dw_frame_key'), type: 'number', value: fr.keyH, min: 0, max: 200, step: 2, disabled: readOnly() }),
+      field({ name: 'schedH', label: t('dw_frame_sched'), type: 'number', value: fr.schedH, min: 0, max: 400, step: 5, disabled: readOnly() }),
+    ]),
+    el('div.grid.grid-4', {}, [
+      field({ name: 'keyplan', label: t('dw_frame_keyplan'), type: 'checkbox', value: fr.keyplan !== false, disabled: readOnly() }),
+      field({ name: 'refs', label: t('dw_frame_refsbox'), type: 'checkbox', value: fr.refs !== false, disabled: readOnly() }),
+      field({ name: 'schedule', label: t('dw_frame_schedule'), type: 'checkbox', value: fr.schedule !== false, disabled: readOnly() }),
+      field({ name: 'details', label: t('dw_frame_details'), type: 'checkbox', value: fr.details !== false, disabled: readOnly() }),
+    ]),
+  ]);
+  const frameInput = el('input', { type: 'file', accept: '.dxf', style: { display: 'none' } });
+  const frameStatus = el('div.small', { text: current.frame_dxf ? `${t('dw_frame_current')}: ${current.frame_dxf_name || 'frame.dxf'} (${current.frame_dxf_entities || '?'} entities)` : t('dw_frame_none') });
+  frameInput.addEventListener('change', async () => {
+    const file = frameInput.files?.[0];
+    if (!file) return;
+    try {
+      const res = await api.uploadDrawingFrame(file);
+      current.frame_dxf = res.frame_dxf; current.frame_dxf_name = res.name; current.frame_dxf_entities = res.entities;
+      frameStatus.textContent = `${t('dw_frame_current')}: ${res.name} (${res.entities} entities)`;
+      toast(t('saved'), 'success');
+    } catch (error) { toastError(error); }
+  });
+
+  // the submittal form template (one for the office) and the unit rates of the cost study
+  const sub = { prefix: 'SPAN-SUB', title: '', title_ar: '', intro: '', responses: [], signatures: [], footer: '', contact: '', ...(current.submittal || {}) };
+  const subForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-3', {}, [
+      field({ name: 'prefix', label: t('dw_sub_prefix'), value: sub.prefix, dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'title', label: t('dw_sub_title'), value: sub.title, dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'title_ar', label: t('dw_sub_title_ar'), value: sub.title_ar, dir: 'rtl', disabled: readOnly() }),
+    ]),
+    field({ name: 'contact', label: t('dw_sub_contact'), value: sub.contact, dir: 'ltr', disabled: readOnly() }),
+    field({ name: 'intro', label: t('dw_sub_intro'), type: 'textarea', value: sub.intro, rows: 2, dir: 'ltr', disabled: readOnly() }),
+    el('div.grid.grid-2', {}, [
+      field({ name: 'responses', label: t('dw_sub_responses'), type: 'textarea', value: (sub.responses || []).join('\n'), rows: 4, dir: 'ltr', disabled: readOnly() }),
+      field({ name: 'signatures', label: t('dw_sub_signatures'), type: 'textarea', value: (sub.signatures || []).join('\n'), rows: 4, dir: 'ltr', disabled: readOnly() }),
+    ]),
+    field({ name: 'footer', label: t('dw_sub_footer'), type: 'textarea', value: sub.footer, rows: 2, dir: 'ltr', disabled: readOnly() }),
+  ]);
+  const rates = { currency: 'SAR', steel_per_ton: 3200, rebar_labour_per_ton: 350, concrete_per_m3: 280, formwork_per_m2: 45, strand_per_kg: 9.5, anchor_live: 45, anchor_dead: 25, duct_per_m: 6, pt_labour_per_m2: 18, markup_pct: 15, vat_pct: 15, ...(current.rates || {}) };
+  const RATE_KEYS = ['steel_per_ton', 'rebar_labour_per_ton', 'concrete_per_m3', 'formwork_per_m2', 'strand_per_kg', 'anchor_live', 'anchor_dead', 'duct_per_m', 'pt_labour_per_m2', 'markup_pct', 'vat_pct'];
+  // the office reinforcement defaults: diameter / spacing / length of the column top bars, the drop bars, the bottom and top mesh
+  const sp = current.spec || {};
+  const rd = { tc: { dia: 16, spacing: 150, length: 4000, ...(sp.topColumns || {}) }, dr: { dia: 12, spacing: 150, leg: 500, ...(sp.drops || {}) }, bm: { dia: 12, spacing: 200, ...(sp.bottom || {}) }, tm: { dia: 12, spacing: 200, ...(sp.bottom || {}), ...(sp.topMesh || {}) },
+    // the U-bars: the perimeter (free edge) U-bar and the pour strip U-bars (internal strip; at a retaining wall: in the wall / from the slab side)
+    ue: { dia: 12, spacing: 150, total: 4000, ...(sp.uEdge || {}) }, ps: { uDia: 12, uSpacing: 200, uTotal: 2400, dia: 12, spacing: 200, length: 2000, ...(sp.pourStrip || {}) }, pw: { uTotal: 2500, uSlab: 2000, ...(sp.pourStrip?.wall || {}) } };
+  const numField = (name, label, value, step = 1) => field({ name, label, type: 'number', value, min: 6, max: 12000, step, disabled: readOnly() });
+  const rebarForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.small.muted', { text: t('dw_rebar_defaults_hint') }),
+    el('div.grid.grid-3', {}, [
+      numField('tc_dia', `${t('dw_rd_columns')} — ${t('dw_rd_dia')}`, rd.tc.dia), numField('tc_spacing', `${t('dw_rd_columns')} — ${t('dw_rd_spacing')}`, rd.tc.spacing, 5), numField('tc_length', `${t('dw_rd_columns')} — ${t('dw_rd_length')}`, rd.tc.length, 50),
+      numField('dr_dia', `${t('dw_rd_drops')} — ${t('dw_rd_dia')}`, rd.dr.dia), numField('dr_spacing', `${t('dw_rd_drops')} — ${t('dw_rd_spacing')}`, rd.dr.spacing, 5), numField('dr_leg', `${t('dw_rd_drops')} — ${t('dw_rd_leg')}`, rd.dr.leg, 50),
+      numField('bm_dia', `${t('dw_rd_bottom')} — ${t('dw_rd_dia')}`, rd.bm.dia), numField('bm_spacing', `${t('dw_rd_bottom')} — ${t('dw_rd_spacing')}`, rd.bm.spacing, 5), el('div'),
+      numField('tm_dia', `${t('dw_rd_top')} — ${t('dw_rd_dia')}`, rd.tm.dia), numField('tm_spacing', `${t('dw_rd_top')} — ${t('dw_rd_spacing')}`, rd.tm.spacing, 5), el('div'),
+      numField('ue_dia', `${t('dw_rd_uedge')} — ${t('dw_rd_dia')}`, rd.ue.dia), numField('ue_spacing', `${t('dw_rd_uedge')} — ${t('dw_rd_spacing')}`, rd.ue.spacing, 5), numField('ue_total', `${t('dw_rd_uedge')} — ${t('dw_rd_utotal')}`, rd.ue.total, 50),
+      numField('ps_udia', `${t('dw_rd_pstrip')} — ${t('dw_rd_dia')}`, rd.ps.uDia), numField('ps_uspacing', `${t('dw_rd_pstrip')} — ${t('dw_rd_spacing')}`, rd.ps.uSpacing, 5), numField('ps_utotal', `${t('dw_rd_pstrip')} — ${t('dw_rd_utotal')}`, rd.ps.uTotal, 50),
+      numField('ps_dia', `${t('dw_rd_pstrip_tb')} — ${t('dw_rd_dia')}`, rd.ps.dia), numField('ps_spacing', `${t('dw_rd_pstrip_tb')} — ${t('dw_rd_spacing')}`, rd.ps.spacing, 5), numField('ps_length', `${t('dw_rd_pstrip_tb')} — ${t('dw_rd_length')}`, rd.ps.length, 50),
+      numField('pw_utotal', `${t('dw_rd_pstrip_wall')} — ${t('dw_rd_utotal')}`, rd.pw.uTotal, 50), numField('pw_uslab', `${t('dw_rd_pstrip_slab')} — ${t('dw_rd_utotal')}`, rd.pw.uSlab, 50), el('div'),
+    ]),
+  ]);
+  const ratesForm = el('form', { onsubmit: (event) => event.preventDefault() }, [
+    el('div.grid.grid-4', {}, [
+      field({ name: 'currency', label: t('dw_rate_currency'), value: rates.currency, dir: 'ltr', disabled: readOnly() }),
+      ...RATE_KEYS.map((k) => field({ name: k, label: t(`dw_rate_${k}`), type: 'number', value: rates[k], min: 0, step: 0.01, disabled: readOnly() })),
+    ]),
+  ]);
+
+  return el('div.card', {}, [
+    el('div.card-header', {}, [el('h3', { text: t('dw_settings') })]),
+    el('div.card-body', {}, [
+      el('div.alert.info', { text: t('dw_numbering_hint'), dir: 'ltr' }),
+      form,
+      el('h4.mt-2', { text: t('dw_rebar_defaults') }),
+      rebarForm,
+      el('h4.mt-2', { text: t('dw_submittal_template') }),
+      el('div.small.muted', { text: t('dw_submittal_template_hint') }),
+      subForm,
+      el('h4.mt-2', { text: t('dw_rates') }),
+      el('div.small.muted', { text: t('dw_rates_hint') }),
+      ratesForm,
+      el('h4.mt-2', { text: t('dw_frame') }),
+      el('div.small.muted', { text: t('dw_frame_hint') }),
+      frameForm,
+      el('h4.mt-2', { text: t('dw_frame_dxf') }),
+      el('div.small.muted', { text: t('dw_frame_dxf_hint'), dir: 'ltr' }),
+      frameStatus,
+      readOnly() ? null : el('div.row.wrap.mt-1', {}, [
+        frameInput,
+        el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: () => frameInput.click() }, [icon('upload', 14), t('dw_frame_upload')]),
+        current.frame_dxf ? el('a.btn-secondary.btn.btn-sm', { href: api.drawingFrameUrl() }, [icon('download', 14), 'DXF']) : null,
+        el('button.btn-secondary.btn.btn-sm', { type: 'button', onclick: async () => { try { await api.deleteDrawingFrame(); current.frame_dxf = null; frameStatus.textContent = t('dw_frame_none'); toast(t('saved'), 'success'); } catch (error) { toastError(error); } } }, [icon('trash', 14), t('dw_frame_remove')]),
+      ]),
+      readOnly() ? null : el('div.row.mt-2', {}, [
+        el('button.btn', {
+          type: 'button', text: t('save'),
+          onclick: () => {
+            const data = readForm(form);
+            let parsed = {};
+            if (data.spec) {
+              try { parsed = JSON.parse(data.spec); } catch { toast(`${t('dw_spec')}: JSON`, 'error'); return; }
+            }
+            delete data.spec;
+            // the reinforcement defaults live inside the spec the generator reads
+            const rb = readForm(rebarForm);
+            const n = (v, d) => (v == null || v === '' || Number.isNaN(Number(v)) ? d : Number(v));
+            parsed.topColumns = { ...(parsed.topColumns || {}), dia: n(rb.tc_dia, 16), spacing: n(rb.tc_spacing, 150), length: n(rb.tc_length, 4000) };
+            parsed.drops = { ...(parsed.drops || {}), dia: n(rb.dr_dia, 12), spacing: n(rb.dr_spacing, 150), leg: n(rb.dr_leg, 500) };
+            parsed.bottom = { ...(parsed.bottom || {}), dia: n(rb.bm_dia, 12), spacing: n(rb.bm_spacing, 200) };
+            parsed.topMesh = { ...(parsed.topMesh || {}), dia: n(rb.tm_dia, 12), spacing: n(rb.tm_spacing, 200) };
+            parsed.uEdge = { ...(parsed.uEdge || {}), dia: n(rb.ue_dia, 12), spacing: n(rb.ue_spacing, 150), total: n(rb.ue_total, 4000) };
+            parsed.pourStrip = { ...(parsed.pourStrip || {}), uDia: n(rb.ps_udia, 12), uSpacing: n(rb.ps_uspacing, 200), uTotal: n(rb.ps_utotal, 2400), dia: n(rb.ps_dia, 12), spacing: n(rb.ps_spacing, 200), length: n(rb.ps_length, 2000), wall: { ...(parsed.pourStrip?.wall || {}), uTotal: n(rb.pw_utotal, 2500), uSlab: n(rb.pw_uslab, 2000) } };
+            const frame = readForm(frameForm);
+            for (const k of ['rightWidth', 'bottomStrip', 'titleH', 'refsH', 'keyH', 'schedH']) if (frame[k] == null) delete frame[k];
+            const subData = readForm(subForm);
+            const lines = (v) => String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
+            const submittal = { ...sub, ...subData, responses: lines(subData.responses), signatures: lines(subData.signatures) };
+            const rateData = readForm(ratesForm);
+            for (const k of RATE_KEYS) if (rateData[k] == null) delete rateData[k];
+            save('drawings', { ...current, ...data, spec: parsed, frame: { ...fr, ...frame }, submittal, rates: { ...rates, ...rateData } });
+          },
+        }),
+        el('button.btn-secondary.btn', {
+          type: 'button', text: t('reset_defaults'),
+          onclick: async () => {
+            try { await api.resetSetting('drawings'); toast(t('saved'), 'success'); location.reload(); } catch (error) { toastError(error); }
+          },
+        }),
+      ]),
+    ].filter(Boolean)),
+  ]);
 }

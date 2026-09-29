@@ -43,6 +43,64 @@ default rates automatically.
 
 ---
 
+## Shop drawings · لوحات التسليح والكابلات
+
+`shopdrawings/` turns the consultant's structural G.A. (DXF, DWG via
+LibreDWG, or LibreDWG JSON) or a **RAM Concept** model (`.cpt`) into a submission package in the office's own
+drafting convention: framing plan, bottom PT mesh (B1/B2), top bars over
+columns (T1/T2), U-bars, reinforcement around voids / sunken slabs and
+openings, a preliminary punching-links sheet, and an empty PT cables
+template, each an A1 sheet block / Xref with key plan, title band, notes,
+assumptions, references, revisions, schedules and details, per slab level.
+Saudi practice (SBC 304-18) is applied for laps and anchorage where the
+drawing is silent, and every assumption is printed on the sheet.
+
+```bash
+node shopdrawings/cli.mjs --input STRUCTURAL.dxf --out ./package --project "…"
+node shopdrawings/cli.mjs --input SLAB.cpt --out ./package --level "1ST FLOOR"   # from RAM Concept
+node shopdrawings/cli.mjs --input RFT.dxf --out ./design --mode design            # design drawings from the office's own RFT plan + General Details
+node shopdrawings/cli.mjs --input SLAB.cpt --out ./design --mode design           # design drawings straight from the RAM Concept model
+python3 -m pydrawings --input SLAB.cpt --out ./design --mode design                # the same, standalone Python version (pydrawings/, no CRM, no Node)
+python3 pydrawings/app.py                                                        # the Python version with the CRM drawings screens, in one file (local page, no server, no database)
+npm run shopdrawings:sample     # the bundled demo → shopdrawings/samples/output
+```
+
+See [shopdrawings/README.md](shopdrawings/README.md).
+
+Office rules for beams and level steps apply on every design sheet: an interior
+beam (slab on both sides, from the RAM beam objects or a long thickened band)
+carries top bars across it, 4 m or 1.5 m past each face whichever is larger,
+distributed along the beam and shortened at an adjacent beam, an opening or the
+slab edge; a slab at another top-of-concrete level is a separate slab whose step
+is a free edge of both.
+
+**Inside the app.** The same generator sits behind the **Drawings** screen
+(`لوحات التسليح`): a project is registered once with the data every title block
+carries (name, client, consultant, contractor, location, signatures), its levels
+/ zones are registered under it with the codes that go into the drawing
+numbers, and each RAM Concept `.cpt` uploaded for a level comes back as a
+numbered package — `SPAN-DD-P26-001-B1-02` is prefix, project code, level code,
+sheet — with previews, per-sheet DXF, the schedules and one ZIP. Revisions and
+serials are counted automatically per level; the office prefixes, company line,
+signatures, status texts and the **sheet frame** (strip sizes, boxes, or the
+office's own frame as a DXF with `<TOKENS>`) live under **Settings → Drawings**.
+Several RAM files can be generated in one go (each matched to its level from
+its file name), every run carries a change description and a status (draft →
+issued, the earlier issued run of the level becoming superseded), the project
+page keeps a **revision history** per level with the reinforcement weight
+change between runs, and a **documents** tab holds the original design files,
+the RAM models and the PT design / shop drawings (generated packages appear
+there automatically). An interactive **reinforcement editor** lets the
+engineer select bars on the plan, delete, lengthen / shorten or re-specify
+them, or add bars; the edits are kept on the level and a regeneration produces
+the next revision with them applied. The step-by-step
+office procedure (preparing the RAM model, registering, generating, reviewing,
+AutoCAD, revision cycle) is in
+[docs/RAM-DRAWINGS-WORKFLOW.md](docs/RAM-DRAWINGS-WORKFLOW.md) and opens from
+the screen itself (`/help/ram-drawings-workflow.html`), and `docs/RAM-FILE-WORKFLOW.md` walks one RAM file from receipt to the delivered package (`/help/ram-file-workflow.html`). A level can carry the **architect's reference plan** (DXF): its grid, columns and slab edges are fitted on the RAM model (by the columns, or on a common point) and used on the sheets instead of RAM's. **Beam design through RAM**: the run's model is rewritten with one design strip per beam span and splitters on the beam edges, calculated in RAM and uploaded back, and the beams come out typed (B1, B2 …), labelled with type and section and scheduled against the **project's unified beam schedule**: the types on record are reused as they are (the lightest one that carries the beam), a beam no type carries gets a new type appended, and an earlier project's schedule can be called up into a new one. The beam bars come from RAM, from the **office design** (every beam analysed as a continuous beam on the model loads and designed for flexure, shear and deflection) or the heavier of the two, and a beam failing deflection raises the same alert and engineer's decision as punching. The same module issues the **submittal request forms** (office-wide template, numbered per project, the drawing numbers / titles / revisions filled in from the title blocks, superseded revisions named on re-submission, status and the consultant's response tracked), the **quantity take-off** (steel, concrete, cables per level from the same model the drawings came from) and the **cost study** (take-off × the office unit rates, with a what-if on the screen). A run carries the **slab mesh option** (bottom only / both faces), the **punching alert** (an indicative two-way shear check per column plus the columns the engineer reports failing in RAM; a failing column blocks the run until the engineer thickens the slab, declares it passing in RAM, or bypasses at their own responsibility, which draws the PS detail at the column with their name and the date on the sheets), and the **engineer's name**: whoever generates the run signs PREPARED / DESIGNED BY on every sheet.
+
+---
+
 ## Email intake
 
 Point the CRM at the company mailbox and quotation requests stop living in
@@ -448,6 +506,8 @@ server/
   templates.js    Default quotation content and per-country price book
   seed.js         First admin, default settings, optional demo data
   routes/         REST API, one module per resource
+  drawings.js     Reinforcement-drawings service: numbering, storage, generation in a worker thread
+  zip.js          Store-only ZIP writer for the drawing packages
 public/
   index.html      Single-page app shell
   assets/js/      Vanilla ES modules — no framework, no build
@@ -456,6 +516,10 @@ public/
     views/        One module per screen
 test/
   api.test.js     End-to-end API tests against a throwaway database
+  drawings.test.js  The drawings module end to end (project → level → RAM upload → numbered package → revisions, edits, documents, frame)
+  shopdrawings.test.js  The generator itself
+docs/
+  RAM-DRAWINGS-WORKFLOW.md  Office procedure for reinforcement drawings from RAM Concept (Arabic)
 ```
 
 ## Tests

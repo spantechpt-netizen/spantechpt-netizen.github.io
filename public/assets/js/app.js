@@ -18,6 +18,7 @@ import * as notificationsView from './views/notifications.js';
 import * as inbox from './views/inbox.js';
 import * as calendarView from './views/calendar.js';
 import * as requestsView from './views/requests.js';
+import * as drawingsView from './views/drawings.js';
 import * as bellModule from './notify.js';
 
 export const state = {
@@ -36,6 +37,7 @@ const ROUTES = [
   { path: 'requests', icon: 'inbox', label: 'nav_requests', view: requestsView, badge: 'requests', need: 'mail.view' },
   { path: 'inbox', icon: 'mail', label: 'nav_inbox', view: inbox, badge: 'inbox', need: 'messages.send' },
   { path: 'quotations', icon: 'quotations', label: 'nav_quotations', view: quotations, need: 'quotations.view' },
+  { path: 'drawings', icon: 'drawings', label: 'nav_drawings', view: drawingsView, need: 'drawings.view' },
   { path: 'analytics', icon: 'analytics', label: 'nav_analytics', view: analytics, need: 'analytics.view' },
   { path: 'settings', icon: 'settings', label: 'nav_settings', view: settings, need: 'settings.view' },
 ];
