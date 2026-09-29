@@ -1983,6 +1983,13 @@ def beam_schedule_notes(model, level, sch):
     ov = (model['spec'].get('beams') or {}).get('override')
     bypass = ov if ov and (ov.get('by') or ov.get('beams')) else None
     design = sch.get('design')
+    if design == 'plan':
+        unknown = sch.get('unknownMarks') or []
+        return [n for n in [
+            "EVERY BEAM CARRIES ITS TYPE (THE PROJECT'S BEAM MARK, IN BRACKETS) AND ITS SECTION b x h ON THE PLAN; THE BARS OF EVERY TYPE ARE THE PROJECT'S BEAMS REINFORCEMENT TABLE (THE STRUCTURAL DESIGN DRAWINGS), TAKEN AS THEY ARE - NO BEAM IS DESIGNED ON THIS SHEET. BESIDE THE BEAM: TOP AT MID-SPAN / BOTTOM / STIRRUPS.",
+            "T1/T3 (TOP AT THE SUPPORTS) AND T4 (TOP AT MID-SPAN) ARE INDICATED ON THE PROJECT'S PLAN WHERE THEY APPLY; CONTINUING TOP BARS, LAPS AND ANCHORAGES PER THE OFFICE BEAM DETAILS; STIRRUP SPACING TO BE HALVED OVER 2h FROM EVERY SUPPORT FACE.",
+            (f"{_s(len(sch['undesigned']))} BEAM(S) CARRY NO MARK ON RECORD ({', '.join(_s(u) for u in sch['undesigned'][:10])}{('; MARKS ' + ', '.join(unknown) + ' ARE NOT IN THE TABLE') if unknown else ''}): TO BE CONFIRMED.") if len(sch['undesigned']) else None,
+        ] if n]
     assumed = (office or {}).get('assumed') if office else None
     added = sch.get('added')
     notes = [

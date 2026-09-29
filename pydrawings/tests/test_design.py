@@ -153,3 +153,75 @@ class TestDesign(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PlanBeamsTest(unittest.TestCase):
+    def test_design_from_ga_with_beam_bodies_and_project_table(self):
+        """Design drawings from a G.A. with beam bodies: the project's beam marks and table, drop depths and level tags read as text."""
+        import os
+        import tempfile
+        from pydrawings.canvas import Canvas
+        from pydrawings.dxf_writer import to_dxf
+        from pydrawings.cli import generate
+        c = Canvas()
+
+        def rect(x, y, w, h, layer):
+            c.pline([{'x': x, 'y': y}, {'x': x + w, 'y': y}, {'x': x + w, 'y': y + h}, {'x': x, 'y': y + h}], {'layer': layer, 'closed': True})
+        rect(0, 0, 30000, 20000, '0-slab')
+        rect(20000, 0, 10000, 20000, '0-slab')
+        for x, y in [[8000, 5000], [8000, 15000], [16000, 5000], [16000, 15000]]:
+            rect(x - 300, y - 300, 600, 600, '0-columns')
+            rect(x - 1500, y - 1500, 3000, 3000, '0-drops')
+            c.text(x - 200, y + 800, '550', {'layer': 'S-TEXT', 'h': 200})
+        rect(0, 9850, 19800, 300, '0-beam')
+        c.text(9000, 10300, 'B9(300X900)', {'layer': '0-beam', 'h': 200})
+        rect(19800, 0, 400, 20000, '0-beam')
+        c.text(19400, 10000, 'CA2(400X1200)', {'layer': '0-beam', 'h': 200, 'rot': 90})
+        rect(24000, 0, 300, 20000, '0-beam')
+        c.text(23600, 12000, 'B7(300X600)', {'layer': '0-beam', 'h': 200, 'rot': 90})
+        c.text(4000, 3000, 'T.O.C', {'layer': 'S-TEXT', 'h': 200})
+        c.text(4000, 2700, '+0.10', {'layer': 'S-TEXT', 'h': 200})
+        c.text(27000, 10300, 'T.O.C', {'layer': 'S-TEXT', 'h': 200})
+        c.text(27000, 10000, '+0.40', {'layer': 'S-TEXT', 'h': 200})
+        c.text(0, -3000, 'GROUND FLOOR ZONE 2 - FRAMING PLAN', {'layer': 'S-TEXT', 'h': 800})
+        d = tempfile.mkdtemp(prefix='plan-beams-')
+        src = os.path.join(d, 'ga.dxf')
+        with open(src, 'w', encoding='utf8') as f:
+            f.write(to_dxf(c))
+        table = {
+            'title': "BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)", 'note': 'N = NUMBER OF STIRRUP BRANCHES.',
+            'cols': [{'key': 'mark', 'title': 'TYPE', 'w': 20}, {'key': 'b1', 'title': 'BOTTOM B1', 'w': 30}, {'key': 'b2', 'title': 'BOTTOM B2', 'w': 30}, {'key': 't2', 'title': 'TOP T2', 'w': 30}, {'key': 'n', 'title': 'N', 'w': 15}, {'key': 's1', 'title': 'STIRRUPS', 'w': 30}],
+            'rows': [{'mark': 'B9', 'b1': '5T20', 'b2': '5T20', 't2': '5T20', 'n': '4', 's1': 'T12-125'}, {'mark': 'B10', 'b1': '7T25', 'b2': '5T25', 't2': '6T20', 'n': '4', 's1': 'T12-125'}, {'mark': 'CA2', 'b1': '6T20', 'b2': '', 't2': '6T20', 'n': '4', 's1': 'T10-100'}],
+        }
+        beam_types = [{'mark': 'B9', 'top': '5T20', 'bottom': '5T20+5T20', 'stirrups': 'T12-125', 'legs': 4}, {'mark': 'B10', 'top': '6T20', 'bottom': '7T25+5T25', 'stirrups': 'T12-125', 'legs': 4}, {'mark': 'CA2', 'top': '6T20', 'bottom': '6T20', 'stirrups': 'T10-100', 'legs': 4}]
+        r = generate(input_dxf=src, out=os.path.join(d, 'out'), meta={'project': 'PLAN', 'prefix': 'T', 'levelId': 'Z2'}, spec={'beamTypes': beam_types, 'beamTable': table}, svg=False, level_names=['GROUND FLOOR ZONE 2'], mode='design')
+        L = r['model']['levels'][0]
+        bodies = [b for b in L['beams'] if b.get('polygon') and not b.get('band')]
+        self.assertEqual(len(bodies), 3)
+        b9 = next(b for b in bodies if b.get('mark') == 'B9')
+        self.assertTrue(b9['depth'] == 900 and round(b9['t']) == 300 and b9.get('interior'))
+        self.assertEqual(next(b for b in bodies if b.get('mark') == 'CA2')['depth'], 1200)
+        self.assertEqual(len(L['thickZones']), 4)
+        self.assertTrue(all(z['thickness'] == 550 for z in L['thickZones']))
+        self.assertEqual(len(L['sunken']), 1)
+        self.assertEqual(L['sunken'][0]['step'], 300)
+        self.assertEqual(L['tos'], '+0.10')
+        sch = L['beamSchedule']
+        self.assertEqual(sch['design'], 'plan')
+        self.assertEqual([[t['mark'], t['section'], t['top']['text'], t['bottom']['text'], t['stirrups']['text'], t['count']] for t in sch['types']],
+                         [['B9', '300x900', '5T20', '5T20+5T20', 'T12-4L@125', 1], ['CA2', '400x1200', '6T20', '6T20', 'T10-4L@100', 1]])
+        self.assertEqual(len(sch['undesigned']), 1)
+        self.assertEqual(sch['unknownMarks'], ['B7'])
+        self.assertEqual(next(t for t in sch['types'] if t['mark'] == 'B9')['bottom']['area'], 3142)
+        sheet = next(s for s in r['pack']['sheets'] if s['key'] == 'dframing')
+        self.assertEqual([row['mark'] for row in sheet['rows']], ['B9', 'CA2'])
+        self.assertIs(sheet['csvCols'], table['cols'])
+        dxf = to_dxf(sheet['root'])
+        self.assertIn('[B9] BEAM 300x900', dxf)
+        self.assertIn('5T20 / 5T20+5T20 / T12-4L@125', dxf)
+        self.assertIn('[CA2] BEAM 400x1200', dxf)
+        self.assertRegex(dxf, r'NOT DESIGNED')
+        self.assertRegex(dxf, r'MARKS B7 ARE NOT IN THE TABLE')
+        self.assertIn("BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)", dxf)
+        import shutil
+        shutil.rmtree(d, ignore_errors=True)

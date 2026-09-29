@@ -95,6 +95,16 @@ punching report.
 
 ### Design drawings · لوحات التصميم
 
+**From the consultant's G.A. or a zone DXF, before the RAM model exists** (`--mode design` on a DXF): a closed outline on a
+beam layer is a beam body and its label `B10(400X1200)` beside it gives the project's beam **mark** and depth (width as
+drawn); a drop's depth is the `550` written inside it; a level tag written as text (`T.O.C` / `+0.40`) makes a nested
+outline a raised zone. With `spec.beamTypes` (one record per mark: `{ "mark": "B10", "top": "6T20", "bottom": "7T25+5T25",
+"stirrups": "T12-125", "legs": 4 }`, the texts of the project's table) every marked beam takes its record - nothing is
+designed - and with `spec.beamTable` (`cols`, `rows`, `title`, `note`) the framing sheet prints the **project's own beam
+table** for the marks used on the level; the plan reads `BMn [B10] BEAM 400x1200` with `6T20 / 7T25+5T25 / T12-4L@125`
+beside the beam, a mark not on record reads `NOT DESIGNED` and is listed in the notes. The cables are added later from
+the RAM model. (`planBeamSchedule`, `design: 'plan'`.)
+
 The same generator also produces the **office's own design drawings**: the input is the office's reinforcement
 design plan (the RFT drawing as the design team draws it) and the rules of the office's **General Details** sheet
 for PT / flat slabs. Everything the designer drew is kept exactly as drawn (bars, call-outs, distribution

@@ -182,7 +182,8 @@ export function extractDesign(dxf, options = {}) {
     const thickZones = [...(level.thickZones || [])];
     level.sunken = (level.sunken || []).filter((z) => {
       if (!z.fromOutline) return true;
-      const inside = texts.filter((t) => /^\d{3}$/.test(textOf(t)) && pointInPolygon(t, z.polygon));
+      // (a "550" written in a drop panel inside the zone belongs to the drop, not to the zone)
+      const inside = texts.filter((t) => /^\d{3}$/.test(textOf(t)) && pointInPolygon(t, z.polygon) && !thickZones.some((d) => pointInPolygon(t, d.polygon)) && !(level.sunken || []).some((o) => o !== z && o.polygon && Math.abs(polygonArea(o.polygon)) < Math.abs(polygonArea(z.polygon)) && pointInPolygon(t, o.polygon)));
       if (!inside.length) return true;
       thickZones.push({ polygon: z.polygon, thickness: parseInt(textOf(inside[0]), 10), kind: 'thick' });
       return false;
@@ -200,7 +201,7 @@ export function extractDesign(dxf, options = {}) {
     level.levelTags = level.levelTags || [];
     for (const t of texts.filter((x) => /^T\.?O\.?[SC]\.?$/i.test(textOf(x)) && inPart(x))) {
       const v = texts.filter((u) => /^[+-]?\d+(\.\d+)?$/.test(textOf(u)) && near(u, t, 1200)).sort((p, q) => dist(p, t) - dist(q, t))[0];
-      if (v) level.levelTags.push({ x: v.x, y: v.y, label: textOf(t).toUpperCase(), value: textOf(v) });
+      if (v && !level.levelTags.some((g) => dist(g, v) < 10)) level.levelTags.push({ x: v.x, y: v.y, label: textOf(t).toUpperCase(), value: textOf(v) });
     }
     if (level.levelTags.length && !level.tos) level.tos = level.levelTags[0].value;
 
@@ -221,6 +222,30 @@ export function extractDesign(dxf, options = {}) {
 
     // edge beams: a line on a beam layer running along the slab edge
     level.beams = raw.filter((e) => e.type === 'LINE' && /BEAM/i.test(e.layer) && (inPart({ x: e.x, y: e.y }) || inPart({ x: e.x2, y: e.y2 }))).map((e) => ({ a: { x: e.x, y: e.y }, b: { x: e.x2, y: e.y2 } }));
+    // beam bodies: a closed outline on a beam layer (the consultant's G.A. / the zone file) with its label `MARK(bXh)`
+    // inside or beside it; the mark is the project's beam type, the depth is read from the label, the width is as drawn
+    const labelRx = /^([A-Z]{1,3}\d{0,2})\s*\(\s*(\d{3,4})\s*[Xx×]\s*(\d{3,4})\s*\)/;
+    const beamLabels = texts.filter((t) => /BEAM/i.test(t.layer) && labelRx.test(textOf(t))).map((t) => { const m = labelRx.exec(textOf(t)); return { x: t.x, y: t.y, mark: m[1], w: Number(m[2]), d: Number(m[3]) }; });
+    const bodies = [];
+    for (const e of raw.filter((x) => x.type === 'LWPOLYLINE' && x.closed && /BEAM/i.test(x.layer))) {
+      for (const p0 of closedPolys(e)) {
+        const p = cleanPolygon(p0);
+        if (p.length < 4) continue;
+        const b = bbox(p);
+        if (Math.min(b.w, b.h) < 100 || Math.abs(polygonArea(p)) < 0.1e6 || !inPart({ x: b.cx, y: b.cy })) continue;
+        const alongX = b.w >= b.h;
+        const a = alongX ? { x: b.minX, y: b.cy } : { x: b.cx, y: b.minY }, bb = alongX ? { x: b.maxX, y: b.cy } : { x: b.cx, y: b.maxY };
+        const lab = beamLabels.filter((l) => pointInPolygon(l, p) || distToPolygon(l, p) < 600).sort((l1, l2) => dist(l1, { x: b.cx, y: b.cy }) - dist(l2, { x: b.cx, y: b.cy }))[0];
+        bodies.push({ a, b: bb, t: alongX ? b.h : b.w, depth: lab ? lab.d : undefined, mark: lab ? lab.mark : undefined, polygon: polygonArea(p) < 0 ? [...p].reverse() : p });
+      }
+    }
+    if (bodies.length) {
+      // a centre / face line inside a body is the same beam
+      level.beams = level.beams.filter((l) => !bodies.some((bd) => pointInPolygon(segMid(l), bd.polygon) || distToPolygon(segMid(l), bd.polygon) < 60));
+      level.beams.push(...bodies);
+      const marked = bodies.filter((bd) => bd.mark).length;
+      model.findings.push(`${level.id} ${level.name}: ${bodies.length} beam bodies read from the plan, ${marked} with the project's beam mark${marked ? ` (${[...new Set(bodies.filter((bd) => bd.mark).map((bd) => bd.mark))].sort().join(', ')})` : ''}.`);
+    }
     markBeams(level, spec0, A); // band beams (long thickened strips) take the beam rule
     level.edges = slabEdges(level);
 
@@ -1910,7 +1935,7 @@ function framingSheet(model, level, meta, adds) {
     // the beams live on the framing plan (office rule: no separate beam sheet): every typed beam carries its type,
     // section and bars beside it (drawBase), the beam schedule takes the table and the sections the detail boxes
     const sch = level.beamSchedule && (level.beamSchedule.types || []).length ? level.beamSchedule : null;
-    const designLabel = sch ? (sch.design === 'office' ? 'OFFICE DESIGN' : sch.design === 'max' ? 'HEAVIER OF RAM AND OFFICE DESIGN' : 'RAM DESIGN') : '';
+    const designLabel = sch ? (sch.design === 'office' ? 'OFFICE DESIGN' : sch.design === 'max' ? 'HEAVIER OF RAM AND OFFICE DESIGN' : sch.design === 'plan' ? "PROJECT'S BEAM TABLE" : 'RAM DESIGN') : '';
     let next = 0;
     if (sch) next = drawBeamSections(sheet, sch, 0);
     if (next < 3) {
@@ -1931,8 +1956,13 @@ function framingSheet(model, level, meta, adds) {
     const forces = sch?.office ? sch.office.beams.slice(0, 8).map((b) => `${b.id} ${Math.round(b.width / 50) * 50}x${Math.round(b.depth / 50) * 50}: SPANS ${b.spans.map((sp) => (sp.length / 1000).toFixed(1)).join('+')} m, wu ${b.loads.wu} kN/m, Mu- ${b.forces?.mNeg ?? b.mu_neg ?? ''} Mu+ ${b.forces?.mPos ?? b.mu_pos ?? ''} kN.m`) : [];
     if (sch) {
       const kg = beamSteelKg(sch);
+      // the project's own beam reinforcement table (consultant's drawings) is printed as it is, the types used on this level
+      const tbl = sch.table && sch.table.cols && sch.table.rows ? sch.table : null;
+      const usedMarks = new Set(sch.types.map((t) => String(t.mark).toUpperCase()));
+      const tblRows = tbl ? tbl.rows.filter((r) => usedMarks.has(String(r.mark ?? r.TYPE ?? '').toUpperCase())) : null;
       return {
-        rows: beamScheduleRows(sch), cols: BEAM_SCHEDULE_COLS, scheduleTitle: `BEAM SCHEDULE (${designLabel})`, totals: beamScheduleTotals(sch, kg), weight: Math.round(kg),
+        rows: tblRows && tblRows.length ? tblRows : beamScheduleRows(sch), cols: tblRows && tblRows.length ? tbl.cols : BEAM_SCHEDULE_COLS,
+        scheduleTitle: tblRows && tblRows.length ? (tbl.title || 'BEAMS REINFORCEMENT TABLE (PROJECT)') : `BEAM SCHEDULE (${designLabel})`, totals: tblRows && tblRows.length ? (tbl.note || beamScheduleTotals(sch, kg)) : beamScheduleTotals(sch, kg), weight: Math.round(kg),
         elementRows: rows, elementCols: cols,
         planTitles: [`FRAMING PLAN WITH BEAM MARKS AND SECTIONS - ${designLabel}`],
         general: [...designNotes(model, level).slice(0, 2), 'SLAB OUTLINE, COLUMNS, WALLS, OPENINGS, THICKNESS ZONES AND BEAMS ARE READ FROM THE MODEL. EVERY BEAM CARRIES ITS TYPE (IN BRACKETS), ITS SECTION b x h AND THE BARS OF ITS TYPE BESIDE IT; A COLUMN, A WALL OR A DEEPER BEAM CROSSING A BEAM DIVIDES IT. THE TYPES ARE SCHEDULED HERE WITH THEIR SECTIONS.', ...beamScheduleNotes(model, level, sch)],

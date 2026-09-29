@@ -387,6 +387,11 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings, op
     const v = attribs.filter((a) => a !== t && /^[+-]?\d+(\.\d+)?$/.test(a.text.trim())).sort((a, b) => dist(a, t) - dist(b, t))[0];
     if (v && dist(v, t) < 1500 && near({ x: v.x, y: v.y })) levelTags.push({ x: v.x, y: v.y, label: t.text.trim().toUpperCase(), value: v.text.trim() });
   }
+  // the same tag written as plain text ("T.O.C" over "+0.40", the office plans and the zone files)
+  for (const t of levelTexts.filter((x) => /^T\.?O\.?[SC]\.?$/i.test(textOf(x)))) {
+    const v = levelTexts.filter((u) => u !== t && /^[+-]?\d+(\.\d+)?$/.test(textOf(u)) && dist(u, t) < 1200).sort((a, b) => dist(a, t) - dist(b, t))[0];
+    if (v && near({ x: v.x, y: v.y }) && !levelTags.some((g) => dist(g, v) < 10)) levelTags.push({ x: v.x, y: v.y, label: textOf(t).toUpperCase(), value: textOf(v) });
+  }
   for (const e of ents) {
     if (e.kind === 'wall') {
       for (const p of closedPolys(e)) {
@@ -399,7 +404,13 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings, op
       continue;
     }
     if (e.kind === 'drop') {
-      for (const p of closedPolys(e)) { const b = bbox(p); if (!near({ x: b.cx, y: b.cy }) || Math.abs(polygonArea(p)) < 0.5e6) continue; if (!thickZones.some((z) => dist(centroid(z.polygon), { x: b.cx, y: b.cy }) < 100)) thickZones.push({ polygon: polygonArea(p) < 0 ? [...p].reverse() : p, thickness: null, kind: 'drop' }); }
+      for (const p of closedPolys(e)) {
+        const b = bbox(p); if (!near({ x: b.cx, y: b.cy }) || Math.abs(polygonArea(p)) < 0.5e6) continue;
+        if (thickZones.some((z) => dist(centroid(z.polygon), { x: b.cx, y: b.cy }) < 100)) continue;
+        // the drop's depth written inside it ("550"), when the plan gives it
+        const tin = texts.find((t) => /^\d{3}$/.test(textOf(t)) && pointInPolygon(t, p));
+        thickZones.push({ polygon: polygonArea(p) < 0 ? [...p].reverse() : p, thickness: tin ? parseInt(textOf(tin), 10) : null, kind: 'drop' });
+      }
       continue;
     }
     if (e.kind === 'pourstrip') {
@@ -523,7 +534,7 @@ function buildLevel(outline, index, ents, texts, spec, assumptions, findings, op
   walls.forEach((w, i) => { w.id = `W${i + 1}`; });
   thickZones.forEach((z, i) => { z.id = `D${i + 1}`; });
   pourStrips.forEach((z, i) => { z.id = `PS${i + 1}`; });
-  if (thickZones.length) assumptions.push({ ...A, text: `${thickZones.length} drop panels read from the drawing; their depth is not stated: to be taken from the structural drawings (top bars over the columns are detailed for the slab thickness).` });
+  if (thickZones.some((z) => z.thickness == null)) assumptions.push({ ...A, text: `${thickZones.filter((z) => z.thickness == null).length} drop panels read from the drawing; their depth is not stated: to be taken from the structural drawings (top bars over the columns are detailed for the slab thickness).` });
   if (pourStrips.length) assumptions.push({ ...A, text: `${pourStrips.length} pour strips read from the drawing: the mesh runs through the strip and laps inside it (Class B); the strip is cast after stressing per the PT designer's sequence.` });
   if (walls.length) findings.push(`${id} ${name}: ${walls.length} walls below (${Math.round(walls.reduce((s, w) => s + w.length, 0) / 1000)} m), ${thickZones.length} drop panels, ${pourStrips.length} pour strips, ${levelTags.length} level tags${mainTag ? ` (main T.O.S ${mainTag})` : ''}.`);
 

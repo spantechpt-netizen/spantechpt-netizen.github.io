@@ -623,6 +623,13 @@ def _build_level(outline, index, ents, texts, spec, assumptions, findings, optio
         v = vs[0] if vs else None
         if v and dist(v, t) < 1500 and near({'x': v['x'], 'y': v['y']}):
             level_tags.append({'x': v['x'], 'y': v['y'], 'label': t['text'].strip().upper(), 'value': v['text'].strip()})
+    # the same tag written as plain text ("T.O.C" over "+0.40", the office plans and the zone files)
+    for t in [x for x in level_texts if re.fullmatch(r'T\.?O\.?[SC]\.?', _text_of(x), re.I | re.A)]:
+        vs = [u for u in level_texts if u is not t and re.fullmatch(r'[+-]?[0-9]+(\.[0-9]+)?', _text_of(u), re.A) and dist(u, t) < 1200]
+        vs.sort(key=lambda u: dist(u, t))
+        v = vs[0] if vs else None
+        if v and near({'x': v['x'], 'y': v['y']}) and not any(dist(g, v) < 10 for g in level_tags):
+            level_tags.append({'x': v['x'], 'y': v['y'], 'label': _text_of(t).upper(), 'value': _text_of(v)})
     for e in ents:
         if e['kind'] == 'wall':
             for p in closed_polys(e):
@@ -639,8 +646,11 @@ def _build_level(outline, index, ents, texts, spec, assumptions, findings, optio
                 b = bbox(p)
                 if not near({'x': b['cx'], 'y': b['cy']}) or abs(polygon_area(p)) < 0.5e6:
                     continue
-                if not any(dist(_centroid(z['polygon']), {'x': b['cx'], 'y': b['cy']}) < 100 for z in thick_zones):
-                    thick_zones.append({'polygon': list(reversed(p)) if polygon_area(p) < 0 else p, 'thickness': None, 'kind': 'drop'})
+                if any(dist(_centroid(z['polygon']), {'x': b['cx'], 'y': b['cy']}) < 100 for z in thick_zones):
+                    continue
+                # the drop's depth written inside it ("550"), when the plan gives it
+                tin = next((t for t in texts if re.fullmatch(r'[0-9]{3}', _text_of(t), re.A) and point_in_polygon(t, p)), None)
+                thick_zones.append({'polygon': list(reversed(p)) if polygon_area(p) < 0 else p, 'thickness': int(_text_of(tin)) if tin else None, 'kind': 'drop'})
             continue
         if e['kind'] == 'pourstrip':
             for p in closed_polys(e):
@@ -838,8 +848,8 @@ def _build_level(outline, index, ents, texts, spec, assumptions, findings, optio
         z['id'] = f'D{i + 1}'
     for i, z in enumerate(pour_strips):
         z['id'] = f'PS{i + 1}'
-    if thick_zones:
-        assumptions.append({**A, 'text': f'{len(thick_zones)} drop panels read from the drawing; their depth is not stated: to be taken from the structural drawings (top bars over the columns are detailed for the slab thickness).'})
+    if any(z.get('thickness') is None for z in thick_zones):
+        assumptions.append({**A, 'text': f"{len([z for z in thick_zones if z.get('thickness') is None])} drop panels read from the drawing; their depth is not stated: to be taken from the structural drawings (top bars over the columns are detailed for the slab thickness)."})
     if pour_strips:
         assumptions.append({**A, 'text': f"{len(pour_strips)} pour strips read from the drawing: the mesh runs through the strip and laps inside it (Class B); the strip is cast after stressing per the PT designer's sequence."})
     if walls:

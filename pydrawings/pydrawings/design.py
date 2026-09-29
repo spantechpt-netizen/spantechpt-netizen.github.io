@@ -281,7 +281,10 @@ def extract_design(dxf, options=None):
         def keep_sunken(z):
             if not z.get('fromOutline'):
                 return True
-            inside = [t for t in texts if re.search(r'^\d{3}$', _text_of(t), re.A) and point_in_polygon(t, z['polygon'])]
+            # (a "550" written in a drop panel inside the zone belongs to the drop, not to the zone)
+            inside = [t for t in texts if re.search(r'^\d{3}$', _text_of(t), re.A) and point_in_polygon(t, z['polygon'])
+                      and not any(point_in_polygon(t, d['polygon']) for d in thick_zones)
+                      and not any(o is not z and o.get('polygon') and abs(polygon_area(o['polygon'])) < abs(polygon_area(z['polygon'])) and point_in_polygon(t, o['polygon']) for o in (level.get('sunken') or []))]
             if not inside:
                 return True
             thick_zones.append({'polygon': z['polygon'], 'thickness': int(_text_of(inside[0])), 'kind': 'thick'})
@@ -303,7 +306,7 @@ def extract_design(dxf, options=None):
         for t in [x for x in texts if re.search(r'^T\.?O\.?[SC]\.?$', _text_of(x), re.I) and in_part(x)]:
             vs = sorted([u for u in texts if re.search(r'^[+-]?\d+(\.\d+)?$', _text_of(u), re.A) and _near(u, t, 1200)], key=lambda p: dist(p, t))
             v = vs[0] if vs else None
-            if v:
+            if v and not any(dist(g, v) < 10 for g in level['levelTags']):
                 level['levelTags'].append({'x': v['x'], 'y': v['y'], 'label': _text_of(t).upper(), 'value': _text_of(v)})
         if level['levelTags'] and not _t(level.get('tos')):
             level['tos'] = level['levelTags'][0]['value']
@@ -336,6 +339,41 @@ def extract_design(dxf, options=None):
         # edge beams: a line on a beam layer running along the slab edge
         level['beams'] = [{'a': {'x': e['x'], 'y': e['y']}, 'b': {'x': e['x2'], 'y': e['y2']}} for e in raw
                           if e.get('type') == 'LINE' and re.search('BEAM', js_str(e.get('layer')), re.I) and (in_part({'x': e['x'], 'y': e['y']}) or in_part({'x': e['x2'], 'y': e['y2']}))]
+        # beam bodies: a closed outline on a beam layer (the consultant's G.A. / the zone file) with its label `MARK(bXh)`
+        # inside or beside it; the mark is the project's beam type, the depth is read from the label, the width is as drawn
+        label_rx = re.compile(r'^([A-Z]{1,3}[0-9]{0,2})\s*\(\s*([0-9]{3,4})\s*[Xx×]\s*([0-9]{3,4})\s*\)', re.A)
+        beam_labels = []
+        for t in texts:
+            if not re.search('BEAM', js_str(t.get('layer')), re.I):
+                continue
+            m = label_rx.match(_text_of(t))
+            if m:
+                beam_labels.append({'x': t['x'], 'y': t['y'], 'mark': m.group(1), 'w': int(m.group(2)), 'd': int(m.group(3))})
+        bodies = []
+        for e in raw:
+            if not (e.get('type') == 'LWPOLYLINE' and e.get('closed') and re.search('BEAM', js_str(e.get('layer')), re.I)):
+                continue
+            for p0 in closed_polys(e):
+                p = clean_polygon(p0)
+                if len(p) < 4:
+                    continue
+                b = bbox(p)
+                if min(b['w'], b['h']) < 100 or abs(polygon_area(p)) < 0.1e6 or not in_part({'x': b['cx'], 'y': b['cy']}):
+                    continue
+                along_x = b['w'] >= b['h']
+                a = {'x': b['minX'], 'y': b['cy']} if along_x else {'x': b['cx'], 'y': b['minY']}
+                bb = {'x': b['maxX'], 'y': b['cy']} if along_x else {'x': b['cx'], 'y': b['maxY']}
+                cands = [l for l in beam_labels if point_in_polygon(l, p) or dist_to_polygon(l, p) < 600]
+                cands.sort(key=lambda l: dist(l, {'x': b['cx'], 'y': b['cy']}))
+                lab = cands[0] if cands else None
+                bodies.append({'a': a, 'b': bb, 't': b['h'] if along_x else b['w'], 'depth': lab['d'] if lab else None, 'mark': lab['mark'] if lab else None, 'polygon': list(reversed(p)) if polygon_area(p) < 0 else p})
+        if bodies:
+            # a centre / face line inside a body is the same beam
+            level['beams'] = [l for l in level['beams'] if not any(point_in_polygon(_seg_mid(l), bd['polygon']) or dist_to_polygon(_seg_mid(l), bd['polygon']) < 60 for bd in bodies)]
+            level['beams'].extend(bodies)
+            marked = len([bd for bd in bodies if bd['mark']])
+            marks = ', '.join(sorted(set(bd['mark'] for bd in bodies if bd['mark'])))
+            model['findings'].append(f"{level['id']} {level['name']}: {len(bodies)} beam bodies read from the plan, {marked} with the project's beam mark{(' (' + marks + ')') if marked else ''}.")
         mark_beams(level, spec0, A)  # band beams (long thickened strips) take the beam rule
         level['edges'] = slab_edges(level)
 
@@ -2676,7 +2714,7 @@ def framing_sheet(model, level, meta, adds):
         # the beams live on the framing plan (office rule: no separate beam sheet): every typed beam carries its type,
         # section and bars beside it (drawBase), the beam schedule takes the table and the sections the detail boxes
         sch = level['beamSchedule'] if level.get('beamSchedule') and (level['beamSchedule'].get('types') or []) else None
-        design_label = ('OFFICE DESIGN' if sch.get('design') == 'office' else 'HEAVIER OF RAM AND OFFICE DESIGN' if sch.get('design') == 'max' else 'RAM DESIGN') if sch else ''
+        design_label = ('OFFICE DESIGN' if sch.get('design') == 'office' else 'HEAVIER OF RAM AND OFFICE DESIGN' if sch.get('design') == 'max' else "PROJECT'S BEAM TABLE" if sch.get('design') == 'plan' else 'RAM DESIGN') if sch else ''
         nxt = 0
         if sch:
             nxt = draw_beam_sections(sheet, sch, 0)
@@ -2704,8 +2742,14 @@ def framing_sheet(model, level, meta, adds):
                 forces.append(f"{js_str(b.get('id'))} {js_round(b['width'] / 50) * 50}x{js_round(b['depth'] / 50) * 50}: SPANS {'+'.join(to_fixed(sp['length'] / 1000, 1) for sp in b['spans'])} m, wu {js_str(b['loads']['wu'])} kN/m, Mu- {js_str(m_neg)} Mu+ {js_str(m_pos)} kN.m")
         if sch:
             kg = beam_steel_kg(sch)
+            # the project's own beam reinforcement table (consultant's drawings) is printed as it is, the types used on this level
+            tbl = sch.get('table') if sch.get('table') and sch['table'].get('cols') and sch['table'].get('rows') else None
+            used_marks = set(js_str(t['mark']).upper() for t in sch['types'])
+            tbl_rows = [r for r in tbl['rows'] if js_str(r.get('mark') if r.get('mark') is not None else r.get('TYPE', '')).upper() in used_marks] if tbl else None
+            has_tbl = bool(tbl_rows)
             return {
-                'rows': beam_schedule_rows(sch), 'cols': BEAM_SCHEDULE_COLS, 'scheduleTitle': f"BEAM SCHEDULE ({design_label})", 'totals': beam_schedule_totals(sch, kg), 'weight': js_round(kg),
+                'rows': tbl_rows if has_tbl else beam_schedule_rows(sch), 'cols': tbl['cols'] if has_tbl else BEAM_SCHEDULE_COLS,
+                'scheduleTitle': (tbl.get('title') or 'BEAMS REINFORCEMENT TABLE (PROJECT)') if has_tbl else f"BEAM SCHEDULE ({design_label})", 'totals': (tbl.get('note') or beam_schedule_totals(sch, kg)) if has_tbl else beam_schedule_totals(sch, kg), 'weight': js_round(kg),
                 'elementRows': rows, 'elementCols': cols,
                 'planTitles': [f"FRAMING PLAN WITH BEAM MARKS AND SECTIONS - {design_label}"],
                 'general': design_notes(model, level)[:2] + ['SLAB OUTLINE, COLUMNS, WALLS, OPENINGS, THICKNESS ZONES AND BEAMS ARE READ FROM THE MODEL. EVERY BEAM CARRIES ITS TYPE (IN BRACKETS), ITS SECTION b x h AND THE BARS OF ITS TYPE BESIDE IT; A COLUMN, A WALL OR A DEEPER BEAM CROSSING A BEAM DIVIDES IT. THE TYPES ARE SCHEDULED HERE WITH THEIR SECTIONS.'] + list(beam_schedule_notes(model, level, sch)),

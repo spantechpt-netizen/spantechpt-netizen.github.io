@@ -1234,3 +1234,60 @@ test('every entity of a bar carries the bar tag (XDATA): the sheet reads back ba
   assert.equal(q.levels[0].steel.kg, 1000, 'the original is left alone');
   void barFigures;
 });
+
+test("design drawings from a G.A. with beam bodies: the project's beam marks and table, drop depths and level tags read as text", async () => {
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const { writeFileSync } = await import('node:fs');
+  // a 30 x 20 m slab: a raised zone on the right (T.O.C +0.40 over the main +0.10), four columns with 550 drops,
+  // an interior beam B9(300X900) across the slab, the edge beam CA2(400X1200) along the step, a beam B7 not on record
+  const c = new Canvas();
+  const rect = (x, y, w, h, layer) => c.pline([{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }], { layer, closed: true });
+  rect(0, 0, 30000, 20000, '0-slab');
+  rect(20000, 0, 10000, 20000, '0-slab');
+  for (const [x, y] of [[8000, 5000], [8000, 15000], [16000, 5000], [16000, 15000]]) { rect(x - 300, y - 300, 600, 600, '0-columns'); rect(x - 1500, y - 1500, 3000, 3000, '0-drops'); c.text(x - 200, y + 800, '550', { layer: 'S-TEXT', h: 200 }); }
+  rect(0, 9850, 19800, 300, '0-beam'); c.text(9000, 10300, 'B9(300X900)', { layer: '0-beam', h: 200 });
+  rect(19800, 0, 400, 20000, '0-beam'); c.text(19400, 10000, 'CA2(400X1200)', { layer: '0-beam', h: 200, rot: 90 });
+  rect(24000, 0, 300, 20000, '0-beam'); c.text(23600, 12000, 'B7(300X600)', { layer: '0-beam', h: 200, rot: 90 });
+  c.text(4000, 3000, 'T.O.C', { layer: 'S-TEXT', h: 200 }); c.text(4000, 2700, '+0.10', { layer: 'S-TEXT', h: 200 });
+  c.text(27000, 10300, 'T.O.C', { layer: 'S-TEXT', h: 200 }); c.text(27000, 10000, '+0.40', { layer: 'S-TEXT', h: 200 });
+  c.text(0, -3000, 'GROUND FLOOR ZONE 2 - FRAMING PLAN', { layer: 'S-TEXT', h: 800 });
+  const dir = mkdtempSync(join(tmpdir(), 'plan-beams-'));
+  const src = join(dir, 'ga.dxf');
+  writeFileSync(src, toDxf(c));
+  const table = {
+    title: "BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)", note: 'N = NUMBER OF STIRRUP BRANCHES.',
+    cols: [{ key: 'mark', title: 'TYPE', w: 20 }, { key: 'b1', title: 'BOTTOM B1', w: 30 }, { key: 'b2', title: 'BOTTOM B2', w: 30 }, { key: 't2', title: 'TOP T2', w: 30 }, { key: 'n', title: 'N', w: 15 }, { key: 's1', title: 'STIRRUPS', w: 30 }],
+    rows: [{ mark: 'B9', b1: '5T20', b2: '5T20', t2: '5T20', n: '4', s1: 'T12-125' }, { mark: 'B10', b1: '7T25', b2: '5T25', t2: '6T20', n: '4', s1: 'T12-125' }, { mark: 'CA2', b1: '6T20', b2: '', t2: '6T20', n: '4', s1: 'T10-100' }],
+  };
+  const beamTypes = [{ mark: 'B9', top: '5T20', bottom: '5T20+5T20', stirrups: 'T12-125', legs: 4 }, { mark: 'B10', top: '6T20', bottom: '7T25+5T25', stirrups: 'T12-125', legs: 4 }, { mark: 'CA2', top: '6T20', bottom: '6T20', stirrups: 'T10-100', legs: 4 }];
+  const { model, pack } = generate({ inputDxf: src, out: join(dir, 'out'), meta: { project: 'PLAN', prefix: 'T', levelId: 'Z2' }, spec: { beamTypes, beamTable: table }, svg: false, levelNames: ['GROUND FLOOR ZONE 2'], mode: 'design' });
+  const L = model.levels[0];
+  // what was read
+  const bodies = L.beams.filter((b) => b.polygon && !b.band);
+  assert.equal(bodies.length, 3, 'three beam bodies');
+  const b9 = bodies.find((b) => b.mark === 'B9');
+  assert.ok(b9 && b9.depth === 900 && Math.round(b9.t) === 300 && b9.interior, 'B9: width as drawn, depth from the label, an interior beam');
+  assert.ok(bodies.find((b) => b.mark === 'CA2')?.depth === 1200);
+  assert.equal(L.thickZones.length, 4);
+  assert.ok(L.thickZones.every((z) => z.thickness === 550), 'the drop depth is read from the "550" written in it');
+  assert.equal(L.sunken.length, 1);
+  assert.equal(L.sunken[0].step, 300, 'the raised zone: T.O.C +0.40 over the main +0.10, tags read as plain text');
+  assert.equal(L.tos, '+0.10');
+  // the schedule: the project's records by mark, nothing designed here
+  const sch = L.beamSchedule;
+  assert.equal(sch.design, 'plan');
+  assert.deepEqual(sch.types.map((t) => [t.mark, t.section, t.top.text, t.bottom.text, t.stirrups.text, t.count]), [['B9', '300x900', '5T20', '5T20+5T20', 'T12-4L@125', 1], ['CA2', '400x1200', '6T20', '6T20', 'T10-4L@100', 1]]);
+  assert.equal(sch.undesigned.length, 1, 'B7 is not on record');
+  assert.deepEqual(sch.unknownMarks, ['B7']);
+  assert.equal(sch.types.find((t) => t.mark === 'B9').bottom.area, 3142, 'the area of both bottom rows (10T20)');
+  // the framing sheet: the beam labelled with its mark, section and bars; the project's table printed for the marks used
+  const sheet = pack.sheets.find((s) => s.key === 'dframing');
+  assert.deepEqual(sheet.rows.map((r) => r.mark), ['B9', 'CA2'], 'the table rows of the marks on this level, B10 left out');
+  assert.equal(sheet.csvCols, table.cols, 'the project\'s columns');
+  const dxf = toDxf(sheet.root);
+  assert.ok(dxf.includes('[B9] BEAM 300x900') && dxf.includes('5T20 / 5T20+5T20 / T12-4L@125'), 'B9 labelled with the table bars');
+  assert.ok(dxf.includes('[CA2] BEAM 400x1200'));
+  assert.ok(/NOT DESIGNED/.test(dxf) && /MARKS B7 ARE NOT IN THE TABLE/.test(dxf), 'B7 says so');
+  assert.ok(dxf.includes("BEAMS REINFORCEMENT TABLE (PROJECT'S STRUCTURAL DRAWINGS)"));
+  rmSync(dir, { recursive: true, force: true });
+});
