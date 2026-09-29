@@ -584,7 +584,9 @@ def edge_runs_between_columns(level, a, b, h, band_of=None):
         t = (c['cx'] - a['x']) * ux + (c['cy'] - a['y']) * uy
         off = abs((c['cx'] - a['x']) * -uy + (c['cy'] - a['y']) * ux)
         size = c['d'] if c.get('shape') == 'circle' else max(c['w'], c['h'])
-        reach = max(size, 1000, (band_of and band_of(c, 'across')) or 0) / 2 + 500
+        # (a beam parallel to the edge reaches it with its width, not its length: a long interior beam 4 m inside is no support)
+        across = min(c['w'], c['h']) if c.get('isBeam') else size
+        reach = (max(across, 1000) if c.get('isBeam') else max(size, 1000, (band_of and band_of(c, 'across')) or 0)) / 2 + 500
         if t < -size or t > L + size or off > reach:
             continue  # not a support on this edge
         along = 'x' if abs(ux) > 0.7 else 'y'

@@ -39,7 +39,7 @@ from .extract import extract_model, flatten
 from .sheets import compose_package
 from .quantities import quantities
 from .reference import read_reference_plan, apply_reference
-from .beam_strips import beam_schedule
+from .beam_strips import beam_schedule, plan_beam_schedule
 from .punching import punching_check
 from .beam_design import design_beams
 from .design import extract_design, prepare_ram_design, compose_design_package
@@ -136,6 +136,16 @@ def generate(input_dxf=None, input_text=None, out=None, meta=None, spec=None, sv
         # design drawings: the office's own design plan + the General Details rules
         dxf = load_drawing(input_dxf, input_text)
         model = extract_design(dxf, {'spec': spec, 'levelNames': level_names or ([level_name_from_file(input_dxf)] if input_dxf else [])})
+        # the level code of the drawing numbers (--level-id), as on a RAM run
+        if meta.get('levelId'):
+            for i, l in enumerate(model['levels']):
+                l['id'] = f"{meta['levelId']}-{i + 1}" if len(model['levels']) > 1 else str(meta['levelId'])
+                l['customId'] = True
+        # beams marked on the plan with the project's types take the project's beam table (no design here)
+        for l in model['levels']:
+            ps = plan_beam_schedule(l, spec.get('beamTypes') or [], spec.get('beamTable') or None)
+            if ps:
+                l['beamSchedule'] = ps
     elif is_cpt:
         ram = read_ram_concept(input_dxf)
         model = ram_to_model(ram, level_name=(level_names and level_names[0]) or level_name_from_file(input_dxf) or '1ST FLOOR', level_id=meta.get('levelId'), spec=spec)

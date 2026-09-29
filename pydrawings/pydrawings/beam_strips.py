@@ -447,6 +447,76 @@ def beam_schedule(ram, level=None, library=None, design='ram', office=None):
     }
 
 
+def parse_bars(text):
+    """"7T25+5T25" -> the bar sets it names (n, dia)."""
+    return [{'n': int(m.group(1)), 'dia': int(m.group(2))} for m in re.finditer(r'([0-9]+)\s*[TØY]\s*([0-9]+)', _S(text).upper() if text is not None else '', re.A)]
+
+
+def _set_from_text(t):
+    if not t:
+        return None
+    if isinstance(t, dict) and t.get('n') and t.get('dia'):
+        return {'n': t['n'], 'dia': t['dia'], 'area': t.get('area') or _round(t['n'] * BAR_AREA(t['dia'])), 'text': t.get('text') or _bars_text(t['n'], t['dia'])}
+    text = t.get('text') if isinstance(t, dict) else _S(t)
+    sets = parse_bars(text)
+    if not sets:
+        return None
+    return {'n': sets[0]['n'], 'dia': sets[0]['dia'], 'area': _round(sum(x['n'] * BAR_AREA(x['dia']) for x in sets)), 'text': _S(text).strip()}
+
+
+def _stirrups_from_text(t, legs):
+    if not t:
+        return None
+    if isinstance(t, dict) and t.get('dia') and t.get('spacing'):
+        lg = t.get('legs') or legs or 2
+        return {'dia': t['dia'], 'legs': lg, 'spacing': t['spacing'], 'text': t.get('text') or f"T{_S(t['dia'])}-{_S(lg)}L@{_S(t['spacing'])}"}
+    text = t.get('text') if isinstance(t, dict) else _S(t)
+    m = re.search(r'[TØY]\s*([0-9]+)\s*[-@/]\s*([0-9]+)', _S(text) if text is not None else '', re.I | re.A)
+    if not m:
+        return None
+    lg = legs or 2
+    return {'dia': int(m.group(1)), 'legs': lg, 'spacing': int(m.group(2)), 'text': f"T{m.group(1)}-{_S(lg)}L@{m.group(2)}"}
+
+
+def plan_beam_schedule(level, library=None, table=None):
+    """The schedule of a plan whose beams carry the project's marks (`B10(400X1200)` beside the beam, the consultant's
+    G.A. read as an office design plan): every beam takes the record of its mark from the project's beam table
+    (`spec.beamTypes`: { mark, top, bottom, stirrups, legs }, each set as { n, dia } or as the table's text
+    "7T25+5T25"), nothing is designed here; one schedule type per mark and section. Beams whose mark is not on
+    record (or with no mark) are listed as not designed. `table` (the project's own table: { cols, rows, title, note })
+    is carried for the framing sheet to print as it is. Returns None when no beam carries a mark."""
+    beams = [b for b in ((level or {}).get('beams') or []) if b.get('polygon') and not b.get('band')]
+    if not any(b.get('mark') for b in beams):
+        return None
+    lib = {}
+    for t in (library or []):
+        if t and t.get('mark'):
+            lib[_S(t['mark']).upper()] = t
+    rows = []
+    for bm in beams:
+        t = lib.get(_S(bm['mark']).upper()) if bm.get('mark') else None
+        sets = {'top': _set_from_text(t.get('top')), 'bottom': _set_from_text(t.get('bottom')), 'stirrups': _stirrups_from_text(t.get('stirrups'), t.get('legs'))} if t else {'top': None, 'bottom': None, 'stirrups': None}
+        rows.append({'id': bm['id'], 'a': bm['a'], 'b': bm['b'], 'width': size50(bm['t']), 'depth': size50(bm.get('depth') or 0), 'length': _round(dist(bm['a'], bm['b'])), **sets, 'ram': None, 'office': None, 'design': 'plan', 'bands': 0, 'designed': bool(t), 'ramDesigned': False, 'mark': t['mark'] if t else None, 'planMark': bm.get('mark') or None})
+    types = []
+    for r in rows:
+        if not r['designed']:
+            continue
+        t = next((x for x in types if x['mark'] == r['mark'] and x['width'] == r['width'] and x['depth'] == r['depth']), None)
+        if not t:
+            t = {'mark': r['mark'], 'width': r['width'], 'depth': r['depth'], 'section': f"{_S(r['width'])}x{_S(r['depth'])}", 'top': r['top'], 'bottom': r['bottom'], 'stirrups': r['stirrups'], 'beams': [], 'existing': True}
+            types.append(t)
+        t['beams'].append(r['id'])
+    types.sort(key=lambda t: (re.sub(r'[0-9]+\s*$', '', _S(t['mark'])), _mark_number(t['mark']), -(t['width'] * t['depth'])))
+    unknown = []
+    for r in rows:
+        if r['planMark'] and not r['designed'] and r['planMark'] not in unknown:
+            unknown.append(r['planMark'])
+    return {
+        'beams': rows, 'types': [{**t, 'count': len(t['beams'])} for t in types], 'undesigned': [r['id'] for r in rows if not r['designed']], 'ramUndesigned': [r['id'] for r in rows],
+        'unknownMarks': unknown, 'added': [], 'library': len(lib), 'design': 'plan', 'office': None, 'table': table or None,
+    }
+
+
 def bar_set_area(n, dia):
     """The bar area of `nTdia` text, for the schedule totals."""
     return _round(n * BAR_AREA(dia))

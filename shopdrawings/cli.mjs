@@ -34,7 +34,7 @@ import { extractModel, flatten } from './lib/extract.mjs';
 import { composePackage } from './lib/sheets.mjs';
 import { quantities } from './lib/quantities.mjs';
 import { readReferencePlan, applyReference } from './lib/reference.mjs';
-import { beamSchedule } from './lib/beam-strips.mjs';
+import { beamSchedule, planBeamSchedule } from './lib/beam-strips.mjs';
 import { punchingCheck } from './lib/punching.mjs';
 import { designBeams } from './lib/beam-design.mjs';
 import { extractDesign, prepareRamDesign, composeDesignPackage } from './lib/design.mjs';
@@ -104,6 +104,10 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     // design drawings: the office's own design plan + the General Details rules
     const dxf = loadDrawing(inputDxf, inputText);
     model = extractDesign(dxf, { spec, levelNames: levelNames || (inputDxf ? [levelNameFromFile(inputDxf)] : []) });
+    // the level code of the drawing numbers (--level-id), as on a RAM run
+    if (meta.levelId) model.levels.forEach((l, i) => { l.id = model.levels.length > 1 ? `${meta.levelId}-${i + 1}` : String(meta.levelId); l.customId = true; });
+    // beams marked on the plan with the project's types take the project's beam table (no design here)
+    for (const l of model.levels) { const ps = planBeamSchedule(l, spec.beamTypes || [], spec.beamTable || null); if (ps) l.beamSchedule = ps; }
   } else if (inputDxf && /\.cpt$/i.test(inputDxf)) {
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
@@ -248,6 +252,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const meta = { ...cfg.meta };
   for (const k of ['project', 'client', 'location', 'company', 'prefix', 'prepared', 'checked', 'approved', 'date']) if (a[k]) meta[k] = a[k];
   if (a.rev) meta.revision = a.rev;
+  if (a['level-id']) meta.levelId = a['level-id'];
   const t0 = Date.now();
   const layerStandard = loadLayerStandard(a.layers || cfg.layers || DEFAULT_LAYER_STANDARD);
   const { model, pack, files } = generate({ inputDxf: input, out, meta, spec: cfg.spec, svg: a.svg, layerStandard, levelNames: a.level ? [a.level] : undefined, mode: a.mode || cfg.mode || 'shop' });

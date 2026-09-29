@@ -227,8 +227,10 @@ def extract_design(dxf, options=None):
             level['thickness'] = tag['thickness']
             level['thicknessSource'] = 'RC tag on the plan'
 
-        # walls: long or non-rectangular closed shapes on the column layer, and blade-shaped "columns"
-        walls = []
+        # walls: the walls the extractor read from the WALL layer (tank / basement / perimeter walls of a zone file) stay,
+        # plus long or non-rectangular closed shapes on the column layer, and blade-shaped "columns"
+        # (HDB: 28 walls read, then this pass replaced the list with the 1 found on the column layer - the tanks vanished)
+        walls = [dict(w) for w in (level.get('walls') or []) if w.get('polygon') and in_part(centroid(w['polygon']))]
         for e in [x for x in raw if re.search('COL', f"{js_str(x.get('layer'))} {x.get('fromBlock') or ''}", re.I) and (x.get('type') == 'LWPOLYLINE' or x.get('type') == 'HATCH')]:
             for p0 in closed_polys(e):
                 p = clean_polygon(p0)
@@ -281,7 +283,10 @@ def extract_design(dxf, options=None):
         def keep_sunken(z):
             if not z.get('fromOutline'):
                 return True
-            inside = [t for t in texts if re.search(r'^\d{3}$', _text_of(t), re.A) and point_in_polygon(t, z['polygon'])]
+            # (a "550" written in a drop panel inside the zone belongs to the drop, not to the zone)
+            inside = [t for t in texts if re.search(r'^\d{3}$', _text_of(t), re.A) and point_in_polygon(t, z['polygon'])
+                      and not any(point_in_polygon(t, d['polygon']) for d in thick_zones)
+                      and not any(o is not z and o.get('polygon') and abs(polygon_area(o['polygon'])) < abs(polygon_area(z['polygon'])) and point_in_polygon(t, o['polygon']) for o in (level.get('sunken') or []))]
             if not inside:
                 return True
             thick_zones.append({'polygon': z['polygon'], 'thickness': int(_text_of(inside[0])), 'kind': 'thick'})
@@ -303,7 +308,7 @@ def extract_design(dxf, options=None):
         for t in [x for x in texts if re.search(r'^T\.?O\.?[SC]\.?$', _text_of(x), re.I) and in_part(x)]:
             vs = sorted([u for u in texts if re.search(r'^[+-]?\d+(\.\d+)?$', _text_of(u), re.A) and _near(u, t, 1200)], key=lambda p: dist(p, t))
             v = vs[0] if vs else None
-            if v:
+            if v and not any(dist(g, v) < 10 for g in level['levelTags']):
                 level['levelTags'].append({'x': v['x'], 'y': v['y'], 'label': _text_of(t).upper(), 'value': _text_of(v)})
         if level['levelTags'] and not _t(level.get('tos')):
             level['tos'] = level['levelTags'][0]['value']
@@ -336,6 +341,41 @@ def extract_design(dxf, options=None):
         # edge beams: a line on a beam layer running along the slab edge
         level['beams'] = [{'a': {'x': e['x'], 'y': e['y']}, 'b': {'x': e['x2'], 'y': e['y2']}} for e in raw
                           if e.get('type') == 'LINE' and re.search('BEAM', js_str(e.get('layer')), re.I) and (in_part({'x': e['x'], 'y': e['y']}) or in_part({'x': e['x2'], 'y': e['y2']}))]
+        # beam bodies: a closed outline on a beam layer (the consultant's G.A. / the zone file) with its label `MARK(bXh)`
+        # inside or beside it; the mark is the project's beam type, the depth is read from the label, the width is as drawn
+        label_rx = re.compile(r'^([A-Z]{1,3}[0-9]{0,2})\s*\(\s*([0-9]{3,4})\s*[Xx×]\s*([0-9]{3,4})\s*\)', re.A)
+        beam_labels = []
+        for t in texts:
+            if not re.search('BEAM', js_str(t.get('layer')), re.I):
+                continue
+            m = label_rx.match(_text_of(t))
+            if m:
+                beam_labels.append({'x': t['x'], 'y': t['y'], 'mark': m.group(1), 'w': int(m.group(2)), 'd': int(m.group(3))})
+        bodies = []
+        for e in raw:
+            if not (e.get('type') == 'LWPOLYLINE' and e.get('closed') and re.search('BEAM', js_str(e.get('layer')), re.I)):
+                continue
+            for p0 in closed_polys(e):
+                p = clean_polygon(p0)
+                if len(p) < 4:
+                    continue
+                b = bbox(p)
+                if min(b['w'], b['h']) < 100 or abs(polygon_area(p)) < 0.1e6 or not in_part({'x': b['cx'], 'y': b['cy']}):
+                    continue
+                along_x = b['w'] >= b['h']
+                a = {'x': b['minX'], 'y': b['cy']} if along_x else {'x': b['cx'], 'y': b['minY']}
+                bb = {'x': b['maxX'], 'y': b['cy']} if along_x else {'x': b['cx'], 'y': b['maxY']}
+                cands = [l for l in beam_labels if point_in_polygon(l, p) or dist_to_polygon(l, p) < 600]
+                cands.sort(key=lambda l: dist(l, {'x': b['cx'], 'y': b['cy']}))
+                lab = cands[0] if cands else None
+                bodies.append({'a': a, 'b': bb, 't': b['h'] if along_x else b['w'], 'depth': lab['d'] if lab else None, 'mark': lab['mark'] if lab else None, 'polygon': list(reversed(p)) if polygon_area(p) < 0 else p})
+        if bodies:
+            # a centre / face line inside a body is the same beam
+            level['beams'] = [l for l in level['beams'] if not any(point_in_polygon(_seg_mid(l), bd['polygon']) or dist_to_polygon(_seg_mid(l), bd['polygon']) < 60 for bd in bodies)]
+            level['beams'].extend(bodies)
+            marked = len([bd for bd in bodies if bd['mark']])
+            marks = ', '.join(sorted(set(bd['mark'] for bd in bodies if bd['mark'])))
+            model['findings'].append(f"{level['id']} {level['name']}: {len(bodies)} beam bodies read from the plan, {marked} with the project's beam mark{(' (' + marks + ')') if marked else ''}.")
         mark_beams(level, spec0, A)  # band beams (long thickened strips) take the beam rule
         level['edges'] = slab_edges(level)
 
@@ -1527,14 +1567,14 @@ def design_additions(level, spec, opts=None):
     for e in level.get('edges') or []:
         if e.get('wall') is None:
             e['wall'] = any(w.get('retaining') for w in (level.get('walls') or [])) and R.side_lining(level, e['a'], e['b']) == 'wall'
-    edges_in = [x for x in (level.get('edges') or []) if not x.get('joint') and not x['wall']]
+    edges_in = [x for x in (level.get('edges') or []) if not x.get('joint') and not x['wall']] + list(level.get('stepEdges') or [])
     chains = []
     for e in edges_in:
         last = chains[-1] if chains else None
-        if last and last['beam'] == bool(e.get('beam')) and dist(last['pts'][-1], e['a']) < 1:
+        if last and last['beam'] == bool(e.get('beam')) and bool(last.get('step')) == bool(e.get('step')) and dist(last['pts'][-1], e['a']) < 1:
             last['pts'].extend((e.get('pts') or [e['a'], e['b']])[1:])
             continue
-        chains.append({'beam': bool(e.get('beam')), 'pts': list(e.get('pts') or [e['a'], e['b']])})
+        chains.append({'beam': bool(e.get('beam')), 'pts': list(e.get('pts') or [e['a'], e['b']]), 'step': bool(e.get('step')), 'zone': e.get('zone')})
     if len(chains) > 1:
         f, l = chains[0], chains[-1]
         if f['beam'] == l['beam'] and dist(l['pts'][-1], f['pts'][0]) < 1:
@@ -1577,7 +1617,7 @@ def design_additions(level, spec, opts=None):
             if e['beam']:
                 add_bar('T', {'dia': su['dia'], 'shape': f"L {fmt_num(su['beamLeg'])}+{fmt_num(su['beamTop'])}", 'length': su['beamLeg'] + su['beamTop'], 'qty': count, 'spacing': su['spacing'], 'zone': f"D1 EDGE BEAM {zone_of(t1, t2)}"})
             else:
-                add_bar('T', {'dia': su['dia'], 'shape': f"U {fmt_num(u_leg_top)}/{fmt_num(web)}/{fmt_num(u_leg_top)}", 'length': su['total'], 'qty': count, 'spacing': su['spacing'], 'zone': f"D6 FREE EDGE {zone_of(t1, t2)}"})
+                add_bar('T', {'dia': su['dia'], 'shape': f"U {fmt_num(u_leg_top)}/{fmt_num(web)}/{fmt_num(u_leg_top)}", 'length': su['total'], 'qty': count, 'spacing': su['spacing'], 'zone': f"D6 {'STEP' if e.get('step') else 'FREE'} EDGE {zone_of(t1, t2)}"})
         # ... and the plan shows one bar symbol per run between supports, on each facet the run crosses: every symbol
         # carries its own distribution dimension (the run on that facet, 350 inside the edge) with the dot where the
         # bar crosses it - the office rule that no bar is drawn without its distribution dimension
@@ -1591,7 +1631,12 @@ def design_additions(level, spec, opts=None):
                     continue
                 sv = (s1 + s2) / 2
                 mm = at(sv)
-                n_in = _inward(f['a'], f['b'], outline)
+                # (a step edge: into this body = away from the zone at the other level)
+                if e.get('step'):
+                    n0 = _inward(f['a'], f['b'], e['zone'])
+                    n_in = {'x': -n0['x'], 'y': -n0['y']}
+                else:
+                    n_in = _inward(f['a'], f['b'], outline)
                 zone = zone_of(s1, s2)
                 dd = {'p': add(at(s1)['p'], n_in, PERIM_DIM_IN), 'q': add(at(s2)['p'], n_in, PERIM_DIM_IN)}
                 if e['beam']:
@@ -1743,6 +1788,8 @@ def design_additions(level, spec, opts=None):
 
     # ---- D7 MEP voids (openings not lined by walls)
     for o in level.get('openings') or []:
+        if o.get('stepZone'):
+            continue  # a zone at another level cut out of this body: a free edge (perimeter rule), not an opening
         poly = R.region_polygon(o)
         b = bbox(poly)
         # a RAM model without wall supports: an opening of shaft size (both sides >= `shaftMin`, 1.5 m) is a lift / stair
@@ -1941,7 +1988,7 @@ def design_additions(level, spec, opts=None):
     # 2T20 top and bottom along the strip, TA (tension anchorage) beyond each void end, T12@200 links along the strip
     bb9 = spec.get('blockBeam') or R.DEFAULT_SPEC['blockBeam']
     TA = R.development_length(spec, bb9['dia'], {'top': True})
-    ops = [{'o': o, 'b': bbox(R.region_polygon(o))} for o in (level.get('openings') or [])]
+    ops = [{'o': o, 'b': bbox(R.region_polygon(o))} for o in (level.get('openings') or []) if not o.get('stepZone')]
     for i in range(len(ops)):
         for j in range(i + 1, len(ops)):
             A_, B_ = ops[i]['b'], ops[j]['b']
@@ -2676,7 +2723,7 @@ def framing_sheet(model, level, meta, adds):
         # the beams live on the framing plan (office rule: no separate beam sheet): every typed beam carries its type,
         # section and bars beside it (drawBase), the beam schedule takes the table and the sections the detail boxes
         sch = level['beamSchedule'] if level.get('beamSchedule') and (level['beamSchedule'].get('types') or []) else None
-        design_label = ('OFFICE DESIGN' if sch.get('design') == 'office' else 'HEAVIER OF RAM AND OFFICE DESIGN' if sch.get('design') == 'max' else 'RAM DESIGN') if sch else ''
+        design_label = ('OFFICE DESIGN' if sch.get('design') == 'office' else 'HEAVIER OF RAM AND OFFICE DESIGN' if sch.get('design') == 'max' else "PROJECT'S BEAM TABLE" if sch.get('design') == 'plan' else 'RAM DESIGN') if sch else ''
         nxt = 0
         if sch:
             nxt = draw_beam_sections(sheet, sch, 0)
@@ -2704,8 +2751,14 @@ def framing_sheet(model, level, meta, adds):
                 forces.append(f"{js_str(b.get('id'))} {js_round(b['width'] / 50) * 50}x{js_round(b['depth'] / 50) * 50}: SPANS {'+'.join(to_fixed(sp['length'] / 1000, 1) for sp in b['spans'])} m, wu {js_str(b['loads']['wu'])} kN/m, Mu- {js_str(m_neg)} Mu+ {js_str(m_pos)} kN.m")
         if sch:
             kg = beam_steel_kg(sch)
+            # the project's own beam reinforcement table (consultant's drawings) is printed as it is, the types used on this level
+            tbl = sch.get('table') if sch.get('table') and sch['table'].get('cols') and sch['table'].get('rows') else None
+            used_marks = set(js_str(t['mark']).upper() for t in sch['types'])
+            tbl_rows = [r for r in tbl['rows'] if js_str(r.get('mark') if r.get('mark') is not None else r.get('TYPE', '')).upper() in used_marks] if tbl else None
+            has_tbl = bool(tbl_rows)
             return {
-                'rows': beam_schedule_rows(sch), 'cols': BEAM_SCHEDULE_COLS, 'scheduleTitle': f"BEAM SCHEDULE ({design_label})", 'totals': beam_schedule_totals(sch, kg), 'weight': js_round(kg),
+                'rows': tbl_rows if has_tbl else beam_schedule_rows(sch), 'cols': tbl['cols'] if has_tbl else BEAM_SCHEDULE_COLS,
+                'scheduleTitle': (tbl.get('title') or 'BEAMS REINFORCEMENT TABLE (PROJECT)') if has_tbl else f"BEAM SCHEDULE ({design_label})", 'totals': (tbl.get('note') or beam_schedule_totals(sch, kg)) if has_tbl else beam_schedule_totals(sch, kg), 'weight': js_round(kg),
                 'elementRows': rows, 'elementCols': cols,
                 'planTitles': [f"FRAMING PLAN WITH BEAM MARKS AND SECTIONS - {design_label}"],
                 'general': design_notes(model, level)[:2] + ['SLAB OUTLINE, COLUMNS, WALLS, OPENINGS, THICKNESS ZONES AND BEAMS ARE READ FROM THE MODEL. EVERY BEAM CARRIES ITS TYPE (IN BRACKETS), ITS SECTION b x h AND THE BARS OF ITS TYPE BESIDE IT; A COLUMN, A WALL OR A DEEPER BEAM CROSSING A BEAM DIVIDES IT. THE TYPES ARE SCHEDULED HERE WITH THEIR SECTIONS.'] + list(beam_schedule_notes(model, level, sch)),
@@ -3054,6 +3107,98 @@ def plan_data(level, adds):
 
 
 # ------------------------------------------------------------------ package
+def step_bodies(level, spec):
+    """The slab bodies of a level for the reinforcement rules: the slab around the zones at another top-of-concrete level
+    (those zones cut out of it like openings, so the bars stop at the step and the step edge takes the perimeter rule)
+    and one body per such zone (its own outline, everything inside it). None when the level has no such zone."""
+    zones = [z for z in (level.get('sunken') or []) if z.get('step') and z.get('polygon') and abs(polygon_area(z['polygon'])) > 1e6]
+    if not zones:
+        return None
+
+    def zone_poly(z):
+        return list(reversed(z['polygon'])) if polygon_area(z['polygon']) < 0 else z['polygon']
+
+    def centre_of(o):
+        return {'x': o['cx'], 'y': o['cy']} if o.get('cx') is not None and o.get('cy') is not None else centroid(o.get('polygon') or R.region_polygon(o))
+
+    def in_zone(p):
+        return any(point_in_polygon(p, z['polygon']) for z in zones)
+
+    def take(lst, keep):
+        return [dict(o) for o in (lst or []) if keep(centre_of(o))]
+
+    def take_beams(keep):
+        return [dict(bm) for bm in (level.get('beams') or []) if keep(mid(bm['a'], bm['b']))]
+
+    def existing_for(lines):
+        return {**level['existing'], 'lines': lines, 'callouts': [], 'dims': [], 'dots': []} if level.get('existing') else level.get('existing')
+    main = {
+        **level, 'body': 'MAIN', 'columns': take(level.get('columns'), lambda p: not in_zone(p)), 'walls': take(level.get('walls'), lambda p: not in_zone(p)), 'thickZones': take(level.get('thickZones'), lambda p: not in_zone(p)), 'pourStrips': take(level.get('pourStrips'), lambda p: not in_zone(p)),
+        'beams': take_beams(lambda p: not in_zone(p)), 'openings': take(level.get('openings'), lambda p: not in_zone(p)) + [{'id': z.get('id'), 'kind': 'polygon', 'polygon': zone_poly(z), 'step': z['step'], 'tos': z.get('tos'), 'stepZone': True} for z in zones], 'sunken': [],
+        'existing': level.get('existing'),
+    }
+    for bm in main['beams']:
+        bm['interior'] = None
+    mark_beams(main, spec)
+    # the outer edges of the body: the slab outline minus the parts that belong to a zone (a zone reaching the outline)
+    main['edges'] = []
+    outline = level['outline']
+    for i in range(len(outline)):
+        a, b = outline[i], outline[(i + 1) % len(outline)]
+        L = dist(a, b)
+        if L < 1:
+            continue
+        u, n = unit(a, b), _inward(a, b, level['outline'])
+        # sampled 100 mm along the edge, 30 mm inside the slab: the stretches lying in a zone are the zone's, not this body's
+        cuts = []
+        opn = None
+        t = 0.0
+        while t <= L + 50:
+            tt = min(t, L)
+            p = add(add(a, u, tt), n, 30)
+            in_z = any(point_in_polygon(p, z['polygon']) for z in zones)
+            if in_z and not opn:
+                opn = [max(0, tt - 100)]
+            if (not in_z or tt >= L) and opn:
+                opn.append(min(L, tt))
+                cuts.append(opn)
+                opn = None
+            t += 100
+        for t1, t2 in _subtract([[0, L]], cuts):
+            if t2 - t1 < 100:
+                continue
+            pa, pb = add(a, u, t1), add(a, u, t2)
+            main['edges'].append({'a': pa, 'b': pb, 'pts': [pa, pb], 'curved': False, 'beam': R.edge_has_beam(main, pa, pb)})
+    # the step edges: the zone's sides that run inside the slab (not along its outer edge) are free edges of the body
+    main['stepEdges'] = []
+    for z in zones:
+        poly = zone_poly(z)
+        for i in range(len(poly)):
+            a, b = poly[i], poly[(i + 1) % len(poly)]
+            if dist(a, b) < 300 or dist_to_polygon(mid(a, b), level['outline']) < 60:
+                continue
+            if any(o is not z and point_in_polygon(add(mid(a, b), _inward(a, b, poly), -200), o['polygon']) for o in zones):
+                continue
+            main['stepEdges'].append({'a': a, 'b': b, 'pts': [a, b], 'beam': False, 'step': True, 'zone': poly})
+    parts = []
+    for z in zones:
+        outline = zone_poly(z)
+
+        def inside(p, outline=outline):
+            return point_in_polygon(p, outline)
+        b = {
+            **level, 'body': z.get('id'), 'tos': z.get('tos'), 'name': f"{level['name']} - {js_str(z.get('id'))} (T.O.C {js_str(z.get('tos'))})", 'outline': outline, 'bbox': bbox(outline),
+            'columns': take(level.get('columns'), inside), 'walls': take(level.get('walls'), inside), 'thickZones': take(level.get('thickZones'), inside), 'pourStrips': take(level.get('pourStrips'), inside),
+            'beams': take_beams(inside), 'openings': take(level.get('openings'), inside), 'sunken': [], 'existing': existing_for([]), 'levelTags': [], 'rcTags': [],
+        }
+        for bm in b['beams']:
+            bm['interior'] = None
+        mark_beams(b, spec)
+        b['edges'] = slab_edges(b)
+        parts.append(b)
+    return [main] + parts
+
+
 def compose_design_package(model, meta_in=None):
     meta = {
         'company': 'SPAN TECH CONTRACTING', 'company_line': 'POST-TENSIONED SLABS · KSA · EGYPT · QATAR',
@@ -3063,19 +3208,52 @@ def compose_design_package(model, meta_in=None):
     }
     spec = model['spec']
     jobs = []
-    for level in model['levels']:
-        cores = mark_core_walls(level)
+
+    # the office rules on one slab body: core walls, the column rule, the General Details, everything clipped to the body
+    def rules_on(body):
+        cores = mark_core_walls(body)
         if cores['isolated'] or cores['core']:
-            model['assumptions'].append({'level': level['id'], 'text': f"{cores['isolated']} isolated walls in {level['name']} carry the column top bars (the group across the wall, 4 m / the drop panel and at least 1.5 m past the wall face each way; the group along it only on a wall up to {fmt_num(((spec.get('topColumns') or {}).get('wallAlongMax') or 6000) / 1000)} m); {cores['core']} core / retaining walls ({cores.get('retaining') or 0} along the slab edge) carry the wall U-bars of detail 2."})
-        rule = apply_column_rule(level, spec, model['assumptions'])
-        adds = design_additions(level, spec)
+            model['assumptions'].append({'level': body['id'], 'text': f"{cores['isolated']} isolated walls in {body['name']} carry the column top bars (the group across the wall, 4 m / the drop panel and at least 1.5 m past the wall face each way; the group along it only on a wall up to {fmt_num(((spec.get('topColumns') or {}).get('wallAlongMax') or 6000) / 1000)} m); {cores['core']} core / retaining walls ({cores.get('retaining') or 0} along the slab edge) carry the wall U-bars of detail 2."})
+        rule = apply_column_rule(body, spec, model['assumptions'])
+        adds = design_additions(body, spec)
         for it in rule['added']:
             adds['items'].append(it)
-        adds['items'] = clip_to_slab(level, adds['items'], spec)
+        adds['items'] = clip_to_slab(body, adds['items'], spec)
         # the column groups are scheduled after the clipping (a bar stopped at an opening is shorter and ends in a U)
         for it in rule['added']:
             if any(it is x for x in adds['items']):
                 adds['bars']['T'].add({'dia': spec['topColumns']['dia'], 'shape': f"{it['shape']} (U AT OPENING)" if it.get('clippedOpening') else it['shape'], 'length': it['length'], 'qty': it['n'], 'spacing': spec['topColumns']['spacing'], 'zone': f"{'BEAM' if it.get('beam') else 'COLUMN'} {js_str(it.get('column'))} {it['dir'].upper()}"})
+        return adds
+
+    for level in model['levels']:
+        # office rule: a zone at another top-of-concrete level is a separate slab; the step between the zone and the slab
+        # around it is a free outer edge of both (perimeter bars along it, bars stopped with a U / L at it, nothing across)
+        bodies = step_bodies(level, spec)
+        if bodies:
+            model['assumptions'].append({'level': level['id'], 'text': f"{len(bodies) - 1} zones of {level['name']} lie at another top-of-concrete level ({', '.join(b['body'] + ' T.O.C ' + js_str(b.get('tos')) for b in bodies[1:])}): each is reinforced as a separate slab (office rule) - the step between a zone and the slab around it is a free outer edge of both: perimeter bars along it, bars stopped with a U (or an L into the step beam) at it, no bar runs across the step."})
+            adds = {'items': [], 'bars': {'T': R.BarList('DT'), 'B': R.BarList('DB')}, 'notes': [], 'assumptions': [], 'punching': [], 'psTypes': None}
+            for body in bodies:
+                a = rules_on(body)
+                adds['items'].extend(a['items'])
+                for f in ['T', 'B']:
+                    for e in a['bars'][f].entries:
+                        sp, zs = list(e['spacings']), list(e['zones'])
+                        adds['bars'][f].add({'dia': e['dia'], 'shape': e['shape'], 'length': e['length'], 'qty': e['qty'], 'note': e.get('note'), 'spacing': sp[0] if sp else None, 'zone': zs[0] if zs else None})
+                        for x in sp[1:]:
+                            adds['bars'][f].add({'dia': e['dia'], 'shape': e['shape'], 'length': e['length'], 'qty': 0, 'note': e.get('note'), 'spacing': x})
+                        for z in zs[1:]:
+                            adds['bars'][f].add({'dia': e['dia'], 'shape': e['shape'], 'length': e['length'], 'qty': 0, 'note': e.get('note'), 'zone': z})
+                for n in a['notes']:
+                    if n not in adds['notes']:
+                        adds['notes'].append(n)
+                for n in a['assumptions']:
+                    if n not in adds['assumptions']:
+                        adds['assumptions'].append(n)
+                adds['punching'].extend(a.get('punching') or [])
+                if not adds['psTypes']:
+                    adds['psTypes'] = a.get('psTypes')
+        else:
+            adds = rules_on(level)
         if level.get('existing'):
             ex = level['existing']
             ex['lines'] = clip_to_slab(level, ex['lines'], spec)

@@ -280,6 +280,61 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
   };
 }
 
+/** "7T25+5T25" -> the bar sets it names (n, dia) and their area. */
+export function parseBars(text) {
+  const sets = [];
+  for (const m of String(text || '').toUpperCase().matchAll(/(\d+)\s*[TØY]\s*(\d+)/g)) sets.push({ n: Number(m[1]), dia: Number(m[2]) });
+  return sets;
+}
+const setFromText = (t) => {
+  if (!t) return null;
+  if (typeof t === 'object' && t.n && t.dia) return { n: t.n, dia: t.dia, area: t.area || Math.round(t.n * BAR_AREA(t.dia)), text: t.text || barsText(t.n, t.dia) };
+  const text = typeof t === 'object' ? t.text : String(t);
+  const sets = parseBars(text);
+  if (!sets.length) return null;
+  return { n: sets[0].n, dia: sets[0].dia, area: Math.round(sets.reduce((a, x) => a + x.n * BAR_AREA(x.dia), 0)), text: String(text).trim() };
+};
+const stirrupsFromText = (t, legs) => {
+  if (!t) return null;
+  if (typeof t === 'object' && t.dia && t.spacing) return { dia: t.dia, legs: t.legs || legs || 2, spacing: t.spacing, text: t.text || `T${t.dia}-${t.legs || legs || 2}L@${t.spacing}` };
+  const text = typeof t === 'object' ? t.text : String(t);
+  const m = /[TØY]\s*(\d+)\s*[-@\/]\s*(\d+)/i.exec(String(text || ''));
+  if (!m) return null;
+  return { dia: Number(m[1]), legs: legs || 2, spacing: Number(m[2]), text: `T${m[1]}-${legs || 2}L@${m[2]}` };
+};
+
+/**
+ * The schedule of a plan whose beams carry the project's marks (`B10(400X1200)` beside the beam, the consultant's
+ * G.A. read as an office design plan): every beam takes the record of its mark from the project's beam table
+ * (`spec.beamTypes`: { mark, top, bottom, stirrups, legs }, each set as { n, dia } or as the table's text
+ * "7T25+5T25"), nothing is designed here; one schedule type per mark and section. Beams whose mark is not on
+ * record (or with no mark) are listed as not designed. `table` (the project's own table: { cols, rows, title, note })
+ * is carried for the framing sheet to print as it is. Returns null when no beam carries a mark.
+ */
+export function planBeamSchedule(level, library = [], table = null) {
+  const beams = (level?.beams || []).filter((b) => b.polygon && !b.band);
+  if (!beams.some((b) => b.mark)) return null;
+  const lib = new Map((library || []).filter((t) => t && t.mark).map((t) => [String(t.mark).toUpperCase(), t]));
+  const rows = beams.map((bm) => {
+    const t = bm.mark ? lib.get(String(bm.mark).toUpperCase()) : null;
+    const sets = t ? { top: setFromText(t.top), bottom: setFromText(t.bottom), stirrups: stirrupsFromText(t.stirrups, t.legs) } : { top: null, bottom: null, stirrups: null };
+    return { id: bm.id, a: bm.a, b: bm.b, width: size50(bm.t), depth: size50(bm.depth || 0), length: Math.round(dist(bm.a, bm.b)), ...sets, ram: null, office: null, design: 'plan', bands: 0, designed: !!t, ramDesigned: false, mark: t ? t.mark : null, planMark: bm.mark || null };
+  });
+  const types = [];
+  for (const r of rows.filter((x) => x.designed)) {
+    let t = types.find((x) => x.mark === r.mark && x.width === r.width && x.depth === r.depth);
+    if (!t) { t = { mark: r.mark, width: r.width, depth: r.depth, section: `${r.width}x${r.depth}`, top: r.top, bottom: r.bottom, stirrups: r.stirrups, beams: [], existing: true }; types.push(t); }
+    t.beams.push(r.id);
+  }
+  const prefix = (m) => String(m).replace(/\d+\s*$/, '');
+  types.sort((p, q) => prefix(p.mark).localeCompare(prefix(q.mark)) || markNumber(p.mark) - markNumber(q.mark) || q.width * q.depth - p.width * p.depth);
+  return {
+    beams: rows, types: types.map((t) => ({ ...t, count: t.beams.length })), undesigned: rows.filter((r) => !r.designed).map((r) => r.id), ramUndesigned: rows.map((r) => r.id),
+    unknownMarks: [...new Set(rows.filter((r) => r.planMark && !r.designed).map((r) => r.planMark))],
+    added: [], library: lib.size, design: 'plan', office: null, table: table || null,
+  };
+}
+
 /** The bar area of `nTdia` text, for the schedule totals. */
 export const barSetArea = (n, dia) => Math.round(n * BAR_AREA(dia));
 export { pt as cptPoint, point as cptPointOf, bbox as _bbox };

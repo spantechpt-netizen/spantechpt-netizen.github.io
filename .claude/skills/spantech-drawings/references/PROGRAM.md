@@ -61,7 +61,7 @@ ramFailed [], override {columns, by, date, note}, ramOk}`, `walls {parallelBars,
 `drops {dia 12, spacing 150, leg 500, bendCover 50}`, `barOffset 500`, `pourStrip {dia, spacing, length, uDia, uSpacing, uTotal,
 longDia, longSpacing, wall {...}}`, `blockBeam`, `topMesh`, `mesh 'bottom'|'both'`, `rotate 'auto'|0|90`, `partMax 60000`,
 `partOverlap 600`, `ramBands 'all'|'user'|'none'`, `wallThickness 250`, `beams {bandMaxWidth 3000, ramFailed [], override}`,
-`beamDesign 'ram'|'office'|'max'`, `beamTypes [...]` (the project's records), `cables {figures 'ram'|'chair'}`,
+`beamDesign 'ram'|'office'|'max'`, `beamTypes [...]` (the project's records; on a G.A. / zone-file design run each record is `{mark, top, bottom, stirrups, legs}` with the table's texts, matched by the mark on the plan), `beamTable {title, note, cols [{key,title,w}], rows [{mark, ...}]}` (the project's own table printed as the framing sheet schedule); a level whose `sunken` zones carry a `step` is reinforced body by body (`stepBodies` in `design.mjs`: the slab around the zones with them as `stepZone` openings + `stepEdges`, and one body per zone) and drawn on one set of sheets, `cables {figures 'ram'|'chair'}`,
 `reference {file, use {grid, columns, outline}, align {mode 'auto'|'point', ...}}`, `edits [...]` (by bar id from `plan.json`).
 
 `meta`: `project`, `projectAr`, `code`, `client`, `consultant`, `contractor`, `location`, `country`, `company`, `prefix`

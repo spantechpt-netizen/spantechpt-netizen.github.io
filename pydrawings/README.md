@@ -41,7 +41,7 @@ Options (the same as the Node CLI):
 
 The `spec` of the config takes every key the Node version takes: `cover`, `fc`, `fy`, `uEdge`, `topColumns`,
 `drops`, `bottom`, `topMesh`, `pourStrip` (with `wall`), `openings`, `punching` (`ramFailed`, `override`, `ramOk`),
-`beams` (`ramFailed`, `override`), `beamDesign` (`ram` / `office` / `max`), `beamTypes` (the project's unified beam
+`beams` (`ramFailed`, `override`), `beamDesign` (`ram` / `office` / `max`), `beamTable` (the project's own beam table printed on the framing sheet of a G.A. / zone-file design run, whose marked beams take `beamTypes` records by mark - `plan_beam_schedule`), `beamTypes` (the project's unified beam
 schedule), `mesh` (`bottom` / `both`), `rotate` (`auto` / `0` / `90`), `cables` (`figures`: `ram` = the profile values as entered in RAM at the high / low points, the default; `chair` = chair heights CGS − 10), `ramBands` (`all` / `user` / `none`),
 `partMax`, `reference` (the architect's plan: `file`, `use`, `align`), `edits` (the bar edits by id), ...; `meta`
 takes `project`, `client`, `consultant`, `contractor`, `location`, `company`, `prefix`, `revision`, `date`,
