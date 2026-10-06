@@ -263,23 +263,35 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.text(str(sec_no), x, Y_ELEV - hmax - 900, 300, 'S-SEC', align=TA.MIDDLE_CENTER)
             bx, by = sx, Y_SEC
             W_, H_ = p['b'] * f, p['h'] * f
-            sh.pline([(bx, by), (bx + W_, by), (bx + W_, by + H_), (bx, by + H_)], 'S-GB-CONC', 0, True)
-            c = 30 if p['b'] <= 300 else 40
-            sh.pline([(bx + c * f, by + 40 * f), (bx + W_ - c * f, by + 40 * f), (bx + W_ - c * f, by + H_ - 40 * f), (bx + c * f, by + H_ - 40 * f)], 'S-RFT-STIR', 30, True)
-            sh.pline([(bx + c * f + 10 * f, by + H_ - 40 * f), (bx + c * f + 80 * f, by + H_ - 110 * f)], 'S-RFT-STIR', 30)
+            c = 30 if p['b'] <= 300 else 40          # side cover (Roya: 200 wide -> stirrup 140)
+            ct = COVER                                # top / bottom cover
+            ds = p['ds']
+            Q = lambda x, y: (bx + x * f, by + y * f)
+            sh.pline([Q(0, 0), Q(p['b'], 0), Q(p['b'], p['h']), Q(0, p['h'])], 'S-GB-CONC', 0, True)
+            # stirrup: outer face at the cover, drawn on its centre line
+            x0s, x1s, y0s, y1s = c + ds / 2, p['b'] - c - ds / 2, ct + ds / 2, p['h'] - ct - ds / 2
+            sh.pline([Q(x0s, y0s), Q(x1s, y0s), Q(x1s, y1s), Q(x0s, y1s)], 'S-RFT-STIR', ds * f, True)
+            # two 135-degree hook tails at the top-left corner, 100 mm long
+            t = 100 / math.sqrt(2)
+            sh.pline([Q(x0s + 2 * ds, y1s), Q(x0s + 2 * ds + t, y1s - t)], 'S-RFT-STIR', ds * f)
+            sh.pline([Q(x0s, y1s - 2 * ds), Q(x0s + t, y1s - 2 * ds - t)], 'S-RFT-STIR', ds * f)
             for row, n, d in (('T', p['nt'], p['dt']), ('B', p['nb'], p['db'])):
-                yy = by + H_ - (40 + 10 + d / 2) * f if row == 'T' else by + (40 + 10 + d / 2) * f
+                yy = p['h'] - ct - ds - d / 2 if row == 'T' else ct + ds + d / 2
+                xa, xb = c + ds + d / 2, p['b'] - c - ds - d / 2
                 for j in range(n):
-                    xx = bx + (c + 10 + d / 2 + j * (p['b'] - 2 * c - 20 - d) / (n - 1)) * f
+                    xx = xa + j * (xb - xa) / (n - 1)
                     h = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP' if row == 'T' else 'S-RFT-BOT'})
-                    h.paths.add_edge_path().add_arc(sh.P(xx, yy), d / 2 * f, 0, 360)
-            sh.text(f"{p['b']}", bx + W_ / 2, by - 150, 200, 'S-DIM', align=TA.TOP_CENTER)
-            sh.text(f"{p['h']}", bx - 150, by + H_ / 2, 200, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-            tm = mk(('L', p['dt']))  # label only
-            sh.text(f"{p['nt']}T{p['dt']} (T)", bx + W_ + 250, by + H_ - 250, 200)
-            sh.text(f"{p['nb']}T{p['db']} (B)", bx + W_ + 250, by + 150, 200)
+                    h.paths.add_edge_path().add_arc(sh.P(*Q(xx, yy)), d / 2 * f, 0, 360)
+                # leader + call-out
+                sh.line(Q(xb, yy), (bx + W_ + 200, Q(0, yy)[1]), 'S-RFT-TXT')
+                sh.text(f"{n}T {d} mm ({row})", bx + W_ + 250, Q(0, yy)[1] - 90, 200)
+            sh.dim(Q(0, 0), Q(p['b'], 0), (bx, by - 350), text=str(p['b']))
+            sh.dim(Q(0, 0), Q(0, p['h']), (bx - 350, by), angle=90, text=str(p['h']))
+            sh.text(str(ct), Q(p['b'] / 2, ct / 2)[0], Q(0, ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
+            sh.text(str(ct), Q(p['b'] / 2, 0)[0], Q(0, p['h'] - ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
+            sh.text(str(c), Q(c / 2, 0)[0], Q(0, p['h'] / 2)[1], 120, 'S-DIM', rot=90, align=TA.MIDDLE_CENTER)
             sm = mk(('S', p['ds'], 2 * (p['b'] - 2 * c + p['h'] - 80) + 200))
-            sh.text(f"T{p['ds']}@{p['s']}", bx + W_ + 250, by + H_ / 2, 200)
+            sh.text(f"T{p['ds']} @{p['s']} mm", bx + W_ + 250, by + H_ / 2, 200)
             # stirrup shape with dims (Roya style)
             sx2 = bx + W_ + 1700
             a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6

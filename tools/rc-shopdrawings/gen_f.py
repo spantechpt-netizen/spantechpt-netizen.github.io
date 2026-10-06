@@ -125,21 +125,73 @@ def draw_sheet(doc, idx, f, meta):
             m2 = mk(dict(d=16, L=sb['chair_L'], tag='CH'))
             sh.text(str(m2), tx - 120, ty + 60, 180, 'S-AXIS-TXT', align=TA.BOTTOM_RIGHT)
             sh.text(f"{sb['chairs']}{PHI}16  L={sb['chair_L'] / 1000:.2f}m  S=100*100CM  - CHAIRS", tx, ty, 260, 'S-RFT-TXT')
-    # section through the footing (1:25)
-    sx, sy = 18200, R2 + 1500
-    if True:
-        L_, h_ = f['L'] * k, f['h'] * k
-        pc = 100 * k
-        sh.pline([(sx - 100 * k, sy - pc), (sx + L_ + 100 * k, sy - pc), (sx + L_ + 100 * k, sy), (sx - 100 * k, sy)], 'S-GB-CONC', 0, True)
-        sh.pline([(sx, sy), (sx + L_, sy), (sx + L_, sy + h_), (sx, sy + h_)], 'S-GB-CONC', 0, True)
-        c = COVER * k
-        for b in bars:
-            if b['along'] != 'X': continue
-            if b['layer'] == 'B':
-                sh.pline([(sx + c, sy + c + b['leg'] * k), (sx + c, sy + c), (sx + L_ - c, sy + c), (sx + L_ - c, sy + c + b['leg'] * k)], 'S-RFT-BOT', 30)
-            else:
-                sh.pline([(sx + c, sy + h_ - c - b['leg'] * k), (sx + c, sy + h_ - c), (sx + L_ - c, sy + h_ - c), (sx + L_ - c, sy + h_ - c - b['leg'] * k)], 'S-RFT-TOP', 30)
-        sh.text(f"SECTION  ({f['h']} mm, PC 100 mm)", sx + L_ / 2, sy - pc - 500, 260, 'S-SEC', align=TA.TOP_CENTER)
+    # ---- SECTION along X (bars along X = lines, bars along Y = dots) ----
+    ks = min(k, 13000 / (f['L'] + 200), 7500 / (f['h'] + 900))
+    sx, sy = 18200 + 100 * ks, R2 + 1700
+    Q = lambda x, y: (sx + x * ks, sy + y * ks)
+    L, h, c = f['L'], f['h'], COVER
+    sh.pline([Q(-100, -100), Q(L + 100, -100), Q(L + 100, 0), Q(-100, 0)], 'S-GB-CONC', 0, True)          # PC
+    sh.pline([Q(0, 0), Q(L, 0), Q(L, h), Q(0, h)], 'S-GB-CONC', 0, True)
+    cx0, cx1 = f['col'][0], f['col'][2]
+    sh.hatch_rect(*Q(cx0, h), *Q(cx1, h + 700))                                                         # column / neck
+    def dots(y, d, s_, layer):
+        n = count(f['W'] if True else f['L'], s_)
+        x = c + d / 2 + 20
+        step = (L - 2 * c - d - 40) / max(1, round((L - 2 * c) / s_))
+        while x <= L - c - d / 2 - 19:
+            hh = sh.m.add_hatch(color=7, dxfattribs={'layer': layer}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(d / 2 * ks, 18), 0, 360)
+            x += step
+    bx_ = [b for b in bars if b['layer'] == 'B']; tx_ = [b for b in bars if b['layer'] == 'T']
+    lines = []
+    def by_dir(lst, along): return next((b for b in lst if b['along'] == along), None)
+    # bottom: outer layer (B1) sits on the cover
+    if bx_:
+        BX, BY = by_dir(bx_, 'X'), by_dir(bx_, 'Y')
+        outer_is_x = BX['tag'] == 'B1'
+        yX = c + BX['d'] / 2 if outer_is_x else c + BY['d'] + BX['d'] / 2
+        yY = c + BX['d'] + BY['d'] / 2 if outer_is_x else c + BY['d'] / 2
+        dB = BX['d'] + BY['d']
+    if tx_:
+        TX, TY = by_dir(tx_, 'X'), by_dir(tx_, 'Y')
+        outer_is_x_t = TX['tag'] == 'T2'
+        tX = h - c - TX['d'] / 2 if outer_is_x_t else h - c - TY['d'] - TX['d'] / 2
+        tY = h - c - TX['d'] - TY['d'] / 2 if outer_is_x_t else h - c - TY['d'] / 2
+        dT = TX['d'] + TY['d']
+    side = side_bars(f)
+    xs_ = c + 6                                     # side bars just inside the cover
+    if bx_:
+        top_of_leg = (h - c - dT - 15) if tx_ else (h - c)
+        xl, xr = c + 12 + BX['d'] / 2, L - c - 12 - BX['d'] / 2
+        sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20))
+        dots(yY, BY['d'], BY['s'], 'S-RFT-BOT')
+        lines.append((yX, f"({mk(BX)}) {BX['n']}{PHI}{BX['d']} @{BX['s']} - {BX['tag']}"))
+        lines.append((yY, f"({mk(BY)}) {BY['n']}{PHI}{BY['d']} @{BY['s']} - {BY['tag']}"))
+    if tx_:
+        bot_of_leg = c + (dB if bx_ else 0) + 15
+        ins = (BX['d'] + 6) if bx_ else 0           # top U sits inside the bottom U legs
+        xl, xr = c + 12 + ins + TX['d'] / 2, L - c - 12 - ins - TX['d'] / 2
+        sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20))
+        dots(tY, TY['d'], TY['s'], 'S-RFT-TOP')
+        lines.append((tX, f"({mk(TX)}) {TX['n']}{PHI}{TX['d']} @{TX['s']} - {TX['tag']}"))
+        lines.append((tY, f"({mk(TY)}) {TY['n']}{PHI}{TY['d']} @{TY['s']} - {TY['tag']}"))
+    # side bars (rows) on both faces
+    y0, y1 = (yY + 60) if bx_ else c + 60, (tY - 60) if tx_ else h - c - 60
+    for i in range(side['rows']):
+        y = y0 + (i + 1) * (y1 - y0) / (side['rows'] + 1)
+        for x in (xs_, L - xs_):
+            hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(6 * ks, 18), 0, 360)
+        if i == 0: lines.append((y, f"{side['rows']}{PHI}12 - SB (EACH FACE)"))
+    # call-outs with leaders to the right
+    yt = sorted(lines)
+    for i, (y, t) in enumerate(yt):
+        ty_ = Q(0, 0)[1] + i * 420 - 100
+        sh.line(Q(L - c, y), (Q(L + 100, 0)[0] + 350, ty_ + 90), 'S-RFT-TXT')
+        sh.text(t, Q(L + 100, 0)[0] + 450, ty_, 200)
+    sh.dim(Q(0, -100), Q(L, -100), (Q(0, 0)[0], Q(0, -100)[1] - 400), text=str(L))
+    sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
+    sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')
+    sh.text(f'COVER {c}', Q(L / 2, 0)[0], Q(0, c / 2)[1], 150, 'S-DIM', align=TA.MIDDLE_CENTER)
+    sh.text(f"SECTION 1-1  ({f['name']}, {f['h']} mm, PC 100 mm)", Q(L / 2, 0)[0], Q(0, -100)[1] - 900, 260, 'S-SEC', align=TA.TOP_CENTER)
     return marks
 
 
