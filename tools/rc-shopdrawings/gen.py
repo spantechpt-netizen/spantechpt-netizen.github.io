@@ -42,8 +42,10 @@ class Sheet:
     def pline(self, pts, layer, width=0, closed=False):
         e = self.m.add_lwpolyline([self.P(*p) for p in pts], dxfattribs={'layer': layer, 'const_width': width})
         e.closed = closed; return e
-    def text(self, s, x, y, h=250, layer='S-RFT-TXT', rot=0, align=TA.BOTTOM_LEFT):
+    def text(self, s, x, y, h=250, layer='S-RFT-TXT', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
         t = self.m.add_text(s, height=h, rotation=rot, dxfattribs={'layer': layer, 'style': 'ROMANS'})
+        est = len(s) * h * 0.9                                   # rough text width; squeeze to fit a box
+        if maxw and est > maxw: t.dxf.width = round(maxw / est, 2)
         t.set_placement(self.P(x, y), align=align); return t
     def circle(self, x, y, r, layer):
         self.m.add_circle(self.P(x, y), r, dxfattribs={'layer': layer})
@@ -75,7 +77,7 @@ class Sheet:
         for k, v in rows:
             self.text(k, tx + 200, y, 200, 'S-TITLE')
             for i, part in enumerate(v.split('\n')):
-                self.text(part, tx + 400, y - 450 - i * 380, 280, 'S-TITLE')
+                self.text(part, tx + 400, y - 450 - i * 380, 280, 'S-TITLE', maxw=7500)
             y -= 1250 + 380 * (v.count('\n'))
             self.line((tx, y + 300), (W - 500, y + 300), 'S-FRAME')
         self.text('SHOP DRAWING', tx + 4100, 6700, 450, 'S-TITLE', align=TA.MIDDLE_CENTER)
@@ -85,10 +87,10 @@ class Sheet:
                                'LAP SPLICE = 60 BAR DIAMETER (SBC).',
                                'MAX. BAR LENGTH = 12.0 M.',
                                'STIRRUP HOOKS 135 DEG. - 100 MM.']):
-            self.text(f'{i+1}. {n}', tx + 300, 5550 - i * 330, 170, 'S-TITLE')
+            self.text(f'{i+1}. {n}', tx + 300, 5550 - i * 330, 170, 'S-TITLE', maxw=7600)
         self.text('Drawing Number:', tx + 200, 3700, 200, 'S-TITLE')
         self.text(m['dwg'], tx + 300, 3200, 260, 'S-TITLE')
-        self.text(f"Scale: {m.get('scale','AS SHOWN')}   Size: A3   Rev: {m['rev']}", tx + 300, 2600, 220, 'S-TITLE')
+        self.text(f"Scale: {m.get('scale','AS SHOWN')}   Size: A3   Rev: {m['rev']}", tx + 300, 2600, 220, 'S-TITLE', maxw=7600)
         self.text(f"Rev {m['rev']}  {m['rev_desc']}  {m['date']}", tx + 300, 2100, 200, 'S-TITLE')
 
 

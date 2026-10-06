@@ -108,18 +108,26 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - **BBS** after each set (`draw_bbs`): Position | Steel grade | Diameter | Number (in the element, of elements, total) |
   Symbol (sketch with segment lengths) | Length (m) | Mass (kg) = n x L x d^2/162 | Total mass (kg) = Mass x elements.
   Marks are package-wide; for footings "of elements" is the number of footings of the type (`NO=`).
-- **Side bars of footings are placed inside the main bars**: the 70 mm cover stays on the main U-bars, the side loop
-  is reduced by the main bar diameter and its own; loops longer than 12 m are equal pieces lapped 60 d.
+- **Side bars of footings are placed inside the main bars** (inside BOTH the bottom and the top U legs; the top U sits
+  inside the bottom U legs, and its corner bar sits in its bend): the 70 mm cover stays on the main U-bars, the side loop
+  is reduced by the main bar diameters and its own; loops longer than 12 m are equal pieces lapped 60 d.
 - **GB stirrups stop at the column face** (column ties continue through the joint); clear spans between support faces.
 - **Levels** (`project.json` -> `levels`): founding level (bottom of PC) and top of grade beams; written on the footing
   section (F.L, T.O.PC, T.O.F, neck height up to T.O.GB) and on the GB longitudinal section (T.O.GB / B.O.GB).
+
+- No text on lines: panel names above the outlines, leg lengths inside the bends, Y-bar call-outs along the bar, title
+  block values squeezed to the box (`Sheet.text(maxw=)`).
 
 ## Column necks (`gen_n.py`, sample Oct 2026)
 
 - Arrangement of the vertical bars and the tie set are read from the consultant's `COLUMN SCH` block (to-scale
   section); sizes from the plan labels (`C1 30X80`) given in `project.json -> column_sizes`.
 - Vertical bars: 90-degree foot (max(12d, 300)) standing on the bottom mesh, up to T.O.GB plus the column lap 60 d.
-- Ties keep the designer's exact shape (hexagons stay hexagons): the drawn tie set is placed so the outer tie sits on the 40 mm cover, every side is dimensioned, L = perimeter of the real shape + two 135-deg hooks; mirrored ties share one mark; n sets x 8/m -> @125 from T.O.F + 50 to
+- Bars INSIDE the ties: corner bars centred at cover 40 + tie dia + d/2 from the faces, the other bars spaced as the
+  designer drew them. Each tie wraps exactly the bars it holds in the designer's section (same shape: rectangle,
+  hexagon ...), cut flat at the outer tie; L = out-to-out perimeter + two 135-deg hooks x 100; mirrored ties share one mark.
+  On the section each tie is open at a square top corner and both ends wrap 135 deg around the corner bar, then run into
+  the core. Bending sketches: only one or two sides dimensioned (+ one slanted side), the hook drawn with its 100 mm; n sets x 8/m -> @125 from T.O.F + 50 to
   T.O.GB (the ties continue through the GB joint) + 2 ties inside the footing. Identical ties share one mark.
 - Usage: `python3 gen_n.py C1:F6:11 C3:F2:15 ...` (column type : footing type : number of necks).
 - Necks (engineer's notes on the sample): the 135-degree hooks drawn on every tie in the section at its top-left

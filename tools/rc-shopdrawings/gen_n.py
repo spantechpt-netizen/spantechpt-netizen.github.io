@@ -86,6 +86,42 @@ def tie_length(pts, closed):
     return int(round((L + 2 * 100) / 10) * 10)                 # + two 135-degree hooks of 100 mm
 
 
+def hooked_tie(pts, bars, tail=75):
+    """Tie centre line as drawn on the section: open at its top-left corner, where both ends wrap 135 deg around
+    the corner bar and run into the core (engineer's note). -> list of polylines."""
+    ytop = max(p[1] for p in pts)
+    def ang(j):
+        a, v, b = pts[j - 1], pts[j], pts[(j + 1) % len(pts)]
+        x1, y1, x2, y2 = a[0] - v[0], a[1] - v[1], b[0] - v[0], b[1] - v[1]
+        return abs(math.degrees(math.atan2(x1 * y2 - y1 * x2, x1 * x2 + y1 * y2)))
+    top = [j for j in range(len(pts)) if abs(pts[j][1] - ytop) < 15]
+    sq = [j for j in top if abs(ang(j) - 90) < 10] or top            # a square corner on the top side, leftmost
+    i = min(sq, key=lambda j: pts[j][0])
+    V = pts[i]; Pa, Pb = pts[i - 1], pts[(i + 1) % len(pts)]
+    c = min(bars, key=lambda b: math.dist(b, V))
+    ua = ((Pa[0] - V[0]) / math.dist(Pa, V), (Pa[1] - V[1]) / math.dist(Pa, V))
+    ub = ((Pb[0] - V[0]) / math.dist(Pb, V), (Pb[1] - V[1]) / math.dist(Pb, V))
+    u = (ua[0] + ub[0], ua[1] + ub[1]); u = (u[0] / math.hypot(*u), u[1] / math.hypot(*u))   # into the core (bisector)
+    def foot(A):                                                                   # tangent point on edge A-V
+        ex, ey = V[0] - A[0], V[1] - A[1]; L = math.hypot(ex, ey)
+        tt = ((c[0] - A[0]) * ex + (c[1] - A[1]) * ey) / L ** 2
+        return (A[0] + tt * ex, A[1] + tt * ey), (ex / L, ey / L)
+    def hook(A):
+        T, dv = foot(A)
+        rr = math.dist(T, c)
+        th = math.atan2(T[1] - c[1], T[0] - c[0])
+        sg = 1 if (T[0] - c[0]) * dv[1] - (T[1] - c[1]) * dv[0] > 0 else -1      # +1 = counter-clockwise
+        th_end = math.atan2(-u[0], u[1]) if sg > 0 else math.atan2(u[0], -u[1])
+        sweep = (th_end - th) * sg % (2 * math.pi)
+        arc = [(c[0] + rr * math.cos(th + sg * sweep * k / 16), c[1] + rr * math.sin(th + sg * sweep * k / 16)) for k in range(17)]
+        e = arc[-1]
+        return T, arc + [(e[0] + u[0] * tail, e[1] + u[1] * tail)]
+    Ta, ha = hook(Pa); Tb, hb = hook(Pb)
+    n = len(pts)
+    body = [Tb] + [pts[(i + k) % n] for k in range(1, n)] + [Ta]
+    return [body, ha, hb]
+
+
 def draw_neck(doc, idx, col, f, meta, bl, no):
     """col: schedule entry; f: footing entry from footings.json."""
     sh = Sheet(doc, 0, -idx * 32000, meta)
@@ -99,31 +135,44 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     vert = (f['h'] - yb) + Hn + lp                               # up to T.O.GB + column lap
     Lv = int(round((vert + foot) / 10) * 10)
     mv = bl.add(d, ('L', foot, vert, 0), Lv, col['n'], no, 'V')
-    # every tie keeps the designer's exact shape: the drawn tie set is placed so the outer tie sits on the 40 mm cover
-    allp = [p for t in col['tieset'] for p in t['poly']]
-    ox0, oy0 = min(p[0] for p in allp), min(p[1] for p in allp)
-    ox1, oy1 = max(p[0] for p in allp), max(p[1] for p in allp)
+    # bars: corner bars centred at cover + tie dia + d/2 from the faces, the others spaced as the designer drew them;
+    # every tie wraps exactly the bars it holds in the designer's section, keeping its shape (rectangle, hexagon ...)
+    from shapely.geometry import Polygon, MultiPoint, Point
+    ds = 10
     W, H = col['dw'], col['dh']
-    sx_, sy_ = (W - 2 * COLC) / (ox1 - ox0), (H - 2 * COLC) / (oy1 - oy0)
-    T = lambda p: (round(COLC + (p[0] - ox0) * sx_, 1), round(COLC + (p[1] - oy0) * sy_, 1))
+    dx0, dy0 = min(p[0] for p in col['dots']), min(p[1] for p in col['dots'])
+    dx1, dy1 = max(p[0] for p in col['dots']), max(p[1] for p in col['dots'])
+    e = COLC + ds + d / 2
+    T = lambda p: (e + (p[0] - dx0) * (W - 2 * e) / (dx1 - dx0), e + (p[1] - dy0) * (H - 2 * e) / (dy1 - dy0))
+    col['bars'] = [T(p) for p in col['dots']]
+    hall = MultiPoint(col['bars']).convex_hull
+    lim_cl, lim_oo = hall.buffer(d / 2 + ds / 2, join_style=2), hall.buffer(d / 2 + ds, join_style=2)
     ties = []
     for t in col['tieset']:
-        poly = [T(p) for p in t['poly']]
-        xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
-        per = sum(math.dist(poly[j], poly[(j + 1) % len(poly)]) for j in range(len(poly)))
-        ties.append(dict(poly=poly, w=round(max(xs) - min(xs)), hh=round(max(ys) - min(ys)),
-                         L=int(round((per + 2 * 100) / 10) * 10), draw=[(poly, True)]))   # perimeter of the real shape + two 135-deg hooks
+        pg = Polygon(t['poly']).buffer(0)
+        held = [T(p) for p in col['dots'] if pg.buffer(20).contains(Point(p))]
+        if len(held) < 2: continue
+        hull = MultiPoint(held).convex_hull
+        cl = hull.buffer(d / 2 + ds / 2, join_style=2).intersection(lim_cl).simplify(1)   # centre line, cut flat at the outer tie
+        oo = hull.buffer(d / 2 + ds, join_style=2).intersection(lim_oo).simplify(1)                      # out-to-out (bending dimensions)
+        poly = [(round(x, 1), round(y, 1)) for x, y in list(cl.exterior.coords)[:-1]]
+        out = [(round(x), round(y)) for x, y in list(oo.exterior.coords)[:-1]]
+        xs = [p[0] for p in out]; ys = [p[1] for p in out]
+        ties.append(dict(poly=out, w=round(max(xs) - min(xs)), hh=round(max(ys) - min(ys)),
+                         L=int(round((oo.exterior.length + 2 * 100) / 10) * 10), draw=[(poly, True)]))   # out-to-out perimeter + two 135-deg hooks
     s = int(1000 / col['per_m'])
     n_neck = math.floor((Hn - 100) / s) + 1                      # T.O.F + 50 .. T.O.GB - 50 (ties continue through the GB joint)
     n_ftg = 2                                                    # two ties inside the footing to hold the starters
     merged = {}
-    for t in ties:                      # identical ties (e.g. the two end hexagons) share one mark
+    def shape_key(t, flip):
         mnx = min(p[0] for p in t['poly']); mny = min(p[1] for p in t['poly']); mxx = max(p[0] for p in t['poly'])
-        k1 = tuple(sorted((round(p[0] - mnx), round(p[1] - mny)) for p in t['poly']))
-        k2 = tuple(sorted((round(mxx - p[0]), round(p[1] - mny)) for p in t['poly']))     # the same bar turned over
-        key = min(k1, k2)
-        if key in merged: merged[key]['k'] += 1; merged[key]['draw'] += t['draw']
-        else: merged[key] = dict(t, k=1)
+        return sorted(((mxx - p[0]) if flip else (p[0] - mnx), p[1] - mny) for p in t['poly'])
+    same = lambda a, b: len(a) == len(b) and all(min(math.dist(p, q) for q in b) <= 4 for p in a)
+    for i_, t in enumerate(ties):       # identical ties (e.g. the two end hexagons, one turned over) share one mark
+        k0 = shape_key(t, False)
+        hit = next((m for m in merged.values() if same(k0, m['key']) or same(shape_key(t, True), m['key'])), None)
+        if hit: hit['k'] += 1; hit['draw'] += t['draw']
+        else: merged[i_] = dict(t, k=1, key=k0)
     ties = list(merged.values())
     for t in ties:
         mnx = min(p[0] for p in t['poly']); mny = min(p[1] for p in t['poly'])
@@ -171,14 +220,15 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     ylead = f['h'] + Hn * 0.55
     sh.line(Q(xd, ylead), (Q(cw / 2 + 180, 0)[0], Q(0, ylead)[1] + 100), 'S-DIM')
     # section cut A-A
-    ya = f['h'] + Hn * 0.35
+    ya = f['h'] + Hn * 0.18
     sh.line(Q(-cw / 2 - 600, ya), Q(cw / 2 + 600, ya), 'S-SEC')
     for sx_ in (-1, 1):
         sh.line(Q(sx_ * (cw / 2 + 600), ya), Q(sx_ * (cw / 2 + 600), ya + 200), 'S-SEC')
         sh.text('A', Q(sx_ * (cw / 2 + 650), 0)[0], Q(0, ya + 220)[1], 300, 'S-SEC', align=TA.BOTTOM_CENTER)
     # dims and levels
-    sh.dim(Q(cw / 2 + 1700, f['h']), Q(cw / 2 + 1700, top), Q(cw / 2 + 2100, f['h']), angle=90, text=f'{Hn}')
-    sh.dim(Q(cw / 2 + 1700, top), Q(cw / 2 + 1700, top + lp), Q(cw / 2 + 2100, top), angle=90, text=f'LAP {lp}')
+    XD = cw / 2 + 2500                                               # dimension line clear of the call-outs
+    sh.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 400, f['h']), angle=90, text=f'{Hn}')
+    sh.dim(Q(XD, top), Q(XD, top + lp), Q(XD + 400, top), angle=90, text=f'LAP {lp}')
     sh.dim(Q(fx0, 0), Q(fx0, f['h']), Q(fx0 - 400, 0), angle=90, text=str(f['h']))
     for yy, lab in ((-100, f"F.L (B.O.PC) {LEV['founding']:+.2f}"), (0, f"T.O.PC {LEV['founding'] + .1:+.2f}"),
                     (f['h'], f"T.O.F {tof:+.2f}"), (top - gb_h, f"B.O.GB {tgb - gb_h / 1000:+.2f}"), (top, f"T.O.GB {tgb:+.2f}")):
@@ -188,27 +238,24 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.text(callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], 230)
     sh.text(f"(FOOT {foot} ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 330, 170)
     for i, t in enumerate(ties):
-        sh.text(callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 330, 210)
-    sh.text(f"TIES {col['sets']} SETS @{s} - {n_neck} IN THE NECK + {n_ftg} IN THE FOOTING", Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 330 - 100, 170)
+        sh.text(callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 330, 210, maxw=(XD - cw / 2 - 350) * k)
+    yt_ = Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 330 - 100
+    sh.text(f"TIES {col['sets']} SETS @{s}", Q(cw / 2 + 200, 0)[0], yt_, 170)
+    sh.text(f"{n_neck} IN THE NECK + {n_ftg} IN THE FOOTING", Q(cw / 2 + 200, 0)[0], yt_ - 260, 170)
     sh.text('ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)', Q(0, 0)[0], Q(0, -100)[1] - 700, 240, 'S-SEC', align=TA.TOP_CENTER)
 
     # ---------- SECTION A-A 1:10 (k=10) ----------
     ks = min(10.0, 9000 / max(col['b'], col['h']))
-    sx0, sy0 = 23500, 14500
+    sx0, sy0 = 24600, 14500
     P = lambda x, y: (sx0 + x * ks, sy0 + y * ks)
     sh.pline([P(0, 0), P(col['h'], 0), P(col['h'], col['b']), P(0, col['b'])], 'S-GB-CONC', 0, True) if False else None
     W, Hh = col['b_draw'], col['h_draw']
     sh.pline([P(0, 0), P(W, 0), P(W, Hh), P(0, Hh)], 'S-GB-CONC', 0, True)
     for t in ties:
         for pts, closed in t['draw']:
-            sh.pline([P(*p) for p in pts], 'S-RFT-STIR', 25, closed)
-        for pts, closed in t['draw']:
-            # 135-degree hook: two tails at the top-left corner of the tie, bent into the core (engineer's note)
-            ytop = max(p[1] for p in pts)
-            cxp = min(p[0] for p in pts if abs(p[1] - ytop) < 15); cyp = ytop        # top-left corner of the tie
-            for ox, oy in ((14, 0), (0, -14)):
-                sh.pline([P(cxp + ox, cyp + oy), P(cxp + ox + 45, cyp + oy - 45)], 'S-RFT-STIR', 25)
-    for (x, y) in col['dots']:
+            for seg in hooked_tie(pts, col['bars']):
+                sh.pline([P(*p) for p in seg], 'S-RFT-STIR', 25)
+    for (x, y) in col['bars']:
         hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'})
         hh.paths.add_edge_path().add_arc(sh.P(*P(x, y)), d / 2 * ks, 0, 360)
     sh.dim(P(0, 0), P(W, 0), (P(0, 0)[0], P(0, 0)[1] - 600), text=str(round(W)))
@@ -216,20 +263,41 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, 260, 'S-SEC', align=TA.TOP_CENTER)
     # tie shapes with their lengths
     tx = 23500; by = 7200
+    sh.text('TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 MM (OUT-TO-OUT DIMENSIONS)', 23500, 10400, 170, 'S-RFT-TXT', maxw=9500)
     for t in ties:
         kk = min(9.0, 2700 / max(1, t['hh']), 5500 / max(1, t['w']))
-        pts = [(tx + p[0] * kk, by + p[1] * kk) for p in t['norm']]
-        sh.pline(pts, 'S-RFT-STIR', 20, True)
-        for j in range(len(t['norm'])):                      # every side of the real shape with its length
-            a_, b_ = t['norm'][j], t['norm'][(j + 1) % len(t['norm'])]
-            ln = math.dist(a_, b_)
-            if ln < 25: continue
-            mx, my = (pts[j][0] + pts[(j + 1) % len(pts)][0]) / 2, (pts[j][1] + pts[(j + 1) % len(pts)][1]) / 2
+        nm = t['norm']; nn = len(nm)
+        def inner(j, off):                                   # point inside corner j along its bisector
+            a_, v_, b_ = nm[j - 1], nm[j], nm[(j + 1) % nn]
+            ua = ((a_[0] - v_[0]) / math.dist(a_, v_), (a_[1] - v_[1]) / math.dist(a_, v_))
+            ub = ((b_[0] - v_[0]) / math.dist(b_, v_), (b_[1] - v_[1]) / math.dist(b_, v_))
+            sn = math.sqrt(max(1e-9, (1 - (ua[0] * ub[0] + ua[1] * ub[1])) / 2))       # sin(half angle)
+            u_ = (ua[0] + ub[0], ua[1] + ub[1]); h_ = math.hypot(*u_)
+            return (v_[0] + u_[0] / h_ * off / sn, v_[1] + u_[1] / h_ * off / sn)
+        cb = [inner(j, d / 2 + 10) for j in range(nn)]     # bar centres for the out-to-out shape
+        Z = lambda p: (tx + p[0] * kk, by + p[1] * kk)
+        segs = hooked_tie(nm, cb, tail=100)
+        for sg_ in segs:
+            sh.pline([Z(*[p]) if False else Z(p) for p in sg_], 'S-RFT-STIR', 20)
+        # one or two sides dimensioned (engineer's note): the top side and the vertical side, plus one slanted side
+        ed = [(nm[j], nm[(j + 1) % nn]) for j in range(nn)]
+        hor = max((e_ for e_ in ed if abs(e_[0][1] - e_[1][1]) < 2), key=lambda e_: (e_[0][1], math.dist(*e_)), default=None)
+        ver = max((e_ for e_ in ed if abs(e_[0][0] - e_[1][0]) < 2), key=lambda e_: (math.dist(*e_), -e_[0][0]), default=None)
+        sl = [e_ for e_ in ed if abs(e_[0][1] - e_[1][1]) >= 2 and abs(e_[0][0] - e_[1][0]) >= 2 and math.dist(*e_) > 25]
+        for e_ in [x for x in (hor, ver, sl[0] if sl else None) if x]:
+            a_, b_ = e_
+            pa_, pb_ = Z(a_), Z(b_)
+            mx, my = (pa_[0] + pb_[0]) / 2, (pa_[1] + pb_[1]) / 2
             ang = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
             if ang > 90.5 or ang <= -89.5: ang += 180
-            sh.text(str(int(round(ln))), mx, my + 50, 170, 'S-DIM', rot=ang, align=TA.BOTTOM_CENTER)
-        sh.text(f"({t['mk']})  {t['w']}x{t['hh']}  L={t['L']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 600, 170, 'S-RFT-TXT')
-        tx += t['w'] * kk + 1500
+            cx_ = sum(p[0] for p in nm) / nn; cy_ = sum(p[1] for p in nm) / nn
+            nx_, ny_ = (a_[0] + b_[0]) / 2 - cx_, (a_[1] + b_[1]) / 2 - cy_; hn = math.hypot(nx_, ny_) or 1
+            sh.text(str(int(round(math.dist(a_, b_)))), mx + nx_ / hn * 180, my + ny_ / hn * 180, 170, 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
+        e_ = segs[1][-1]
+        sh.text('100', Z(e_)[0] + 60, Z(e_)[1] - 60, 150, 'S-DIM', align=TA.TOP_LEFT)
+        sh.text(f"({t['mk']})  {t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 450, 170, 'S-RFT-TXT')
+        sh.text(f"L={t['L']}", tx, by - 750, 170, 'S-RFT-TXT')
+        tx += max(t['w'] * kk, 2400) + 900
         if tx > 29500: tx = 23500; by -= 3600
     return Hn
 

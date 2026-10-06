@@ -30,6 +30,8 @@ def bars_for(f):
         long_is_x = f['L'] >= f['W']
         for along, n_m, d, s in (('X', nx, dx, sx), ('Y', ny, dy, sy)):
             run = (f['L'] if along == 'X' else f['W']) - 2 * COVER
+            if layer == 'T' and f['bot'][0]:                     # top U sits inside the legs of the bottom U
+                run -= 2 * (f['bot'][1] if along == 'X' else f['bot'][3])
             across = f['W'] if along == 'X' else f['L']
             is_long = (along == 'X') == long_is_x
             tag = (layer + ('1' if is_long else '2')) if layer == 'B' else (layer + ('2' if is_long else '1'))
@@ -43,6 +45,7 @@ def side_bars(f, ds=12):
     the main bars, the loop size is reduced by the main bar diameter and its own. Rows every <= 300 mm of free height.
     Loops longer than a stock bar are made of equal pieces lapped 60 d. Chairs Ø16 @100x100cm."""
     dB = max(f['bot'][1], f['bot'][3])
+    dB += max(f['top'][1], f['top'][3]) if f['top'][0] else 0    # inside the bottom AND the top U legs
     off = COVER + dB + ds / 2                                    # centre line of the loop from the face
     lx, ly = round(f['L'] - 2 * off), round(f['W'] - 2 * off)
     free = f['h'] - 2 * COVER
@@ -81,11 +84,11 @@ def draw_sheet(doc, idx, f, meta, bl):
     for kind, title, ox, oy in panels:
         P = lambda x, y: (ox + x * k, oy + y * k)
         sh.pline([P(0, 0), P(f['L'], 0), P(f['L'], f['W']), P(0, f['W'])], 'S-GB-CONC', 0, True)
-        sh.text(f['name'], ox + 250, oy + H_ - 650, 400, 'S-AXIS-TXT')
+        sh.text(f['name'], ox, oy + H_ + 250, 400, 'S-AXIS-TXT')          # panel name above the outline, clear of the bars
         cx0, cy0, cx1, cy1 = f['col']
         sh.hatch_rect(*P(cx0, cy0), *P(cx1, cy1))
-        sh.circle(*P(f['L'] * 0.62, f['W'] * 0.72), 330, 'S-SEC')
-        sh.text(str(f['h']), *P(f['L'] * 0.62, f['W'] * 0.72), 260, 'S-SEC', align=TA.MIDDLE_CENTER)
+        sh.circle(*P(f['L'] * 0.70, f['W'] * 0.32), 330, 'S-SEC')
+        sh.text(str(f['h']), *P(f['L'] * 0.70, f['W'] * 0.32), 260, 'S-SEC', align=TA.MIDDLE_CENTER)
         sh.text(title, ox + W_ / 2, oy - 900, 260, 'S-SEC', align=TA.TOP_CENTER)
         # overall dims in mm
         sh.dim(P(0, 0), P(f['L'], 0), (ox, oy - 450), text=str(f['L']))
@@ -102,25 +105,28 @@ def draw_sheet(doc, idx, f, meta, bl):
                     pts = [(P(x0, y)[0], P(x0, y)[1] + sgn * lgk), P(x0, y), P(x1, y), (P(x1, y)[0], P(x1, y)[1] + sgn * lgk)]
                     sh.pline(pts, lay, 30)
                     sh.text(f"{b['straight'] / 1000:.2f}", P((x0 + x1) / 2, y)[0], P(0, y)[1] + 150, 260, 'S-DIM', align=TA.BOTTOM_CENTER)
-                    sh.text(f"{b['leg'] / 1000:.2f}", P(x0, y)[0] - 150, P(0, y)[1] + sgn * lgk / 2, 220, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-                    sh.text(f"{b['leg'] / 1000:.2f}", P(x1, y)[0] + 380, P(0, y)[1] + sgn * lgk / 2, 220, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+                    sh.text(f"{b['leg'] / 1000:.2f}", P(x0, y)[0] + 100, P(0, y)[1] + sgn * lgk / 2, 220, 'S-DIM', rot=90, align=TA.TOP_CENTER)
+                    sh.text(f"{b['leg'] / 1000:.2f}", P(x1, y)[0] - 100, P(0, y)[1] + sgn * lgk / 2, 220, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
                     # distribution line across Y with the dot at the bar
-                    xd = f['L'] * 0.13
+                    xd = f['L'] * (0.13 if kind == 'B' else 0.90)
                     sh.line(P(xd, 0), P(xd, f['W']), 'S-DIM')
                     sh.circle(*P(xd, y), 90, 'S-DIM')
-                    tx, ty = P(f['L'] * 0.10, y + (f['W'] * 0.09 if kind == 'B' else -f['W'] * 0.12))
+                    tx, ty = P(f['L'] * (0.17 if kind == 'B' else 0.24), y + (f['W'] * 0.09 if kind == 'B' else -f['W'] * 0.12))
                 else:
                     x = f['L'] * (0.84 if kind == 'B' else 0.16)
                     y0, y1 = COVER, f['W'] - COVER
                     pts = [(P(x, y0)[0] - sgn * lgk, P(x, y0)[1]), P(x, y0), P(x, y1), (P(x, y1)[0] - sgn * lgk, P(x, y1)[1])]
                     sh.pline(pts, lay, 30)
                     sh.text(f"{b['straight'] / 1000:.2f}", P(x, 0)[0] + 200, P(x, (y0 + y1) / 2)[1], 260, 'S-DIM', rot=90, align=TA.TOP_CENTER)
-                    sh.text(f"{b['leg'] / 1000:.2f}", P(x, 0)[0] - sgn * lgk / 2, P(x, y0)[1] - 180, 220, 'S-DIM', align=TA.TOP_CENTER)
-                    sh.text(f"{b['leg'] / 1000:.2f}", P(x, 0)[0] - sgn * lgk / 2, P(x, y1)[1] + 180, 220, 'S-DIM', align=TA.BOTTOM_CENTER)
+                    sh.text(f"{b['leg'] / 1000:.2f}", P(x, 0)[0] - sgn * lgk / 2, P(x, y0)[1] + 100, 220, 'S-DIM', align=TA.BOTTOM_CENTER)
+                    sh.text(f"{b['leg'] / 1000:.2f}", P(x, 0)[0] - sgn * lgk / 2, P(x, y1)[1] - 100, 220, 'S-DIM', align=TA.TOP_CENTER)
                     yd = f['W'] * 0.10
                     sh.line(P(0, yd), P(f['L'], yd), 'S-DIM')
                     sh.circle(*P(x, yd), 90, 'S-DIM')
-                    tx, ty = P(f['L'] * 0.30, f['W'] * (0.45 if kind == 'B' else 0.55))
+                    # call-out along the bar, on the side away from its length (clear of the column)
+                    sh.text(callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), P(x, 0)[0] - 120, P(0, (y0 + y1) / 2)[1], 230, 'S-RFT-TXT',
+                            rot=90, align=TA.BOTTOM_CENTER, maxw=H_ - 800)
+                    continue
                 sh.text(callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), tx, ty, 260, 'S-RFT-TXT')
         else:
             o = sb['off']
@@ -133,7 +139,7 @@ def draw_sheet(doc, idx, f, meta, bl):
             tx, ty = P(f['L'] * 0.12, f['W'] * 0.14)
             sh.text(callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CHAIRS'), tx, ty, 260, 'S-RFT-TXT')
     # ---- SECTION along X (bars along X = lines, bars along Y = dots) ----
-    ks = min(k, 13000 / (f['L'] + 200), 7500 / (f['h'] + 900))
+    ks = min(k, 9800 / (f['L'] + 200), 7500 / (f['h'] + 900))       # room for the call-outs before the title block
     sx, sy = 18200 + 100 * ks, R2 + 1700
     Q = lambda x, y: (sx + x * ks, sy + y * ks)
     L, h, c = f['L'], f['h'], COVER
@@ -141,13 +147,11 @@ def draw_sheet(doc, idx, f, meta, bl):
     sh.pline([Q(0, 0), Q(L, 0), Q(L, h), Q(0, h)], 'S-GB-CONC', 0, True)
     cx0, cx1 = f['col'][0], f['col'][2]
     sh.hatch_rect(*Q(cx0, h), *Q(cx1, h + 700))                                                         # column / neck
-    def dots(y, d, s_, layer):
-        n = count(f['W'] if True else f['L'], s_)
-        x = c + d / 2 + 20
-        step = (L - 2 * c - d - 40) / max(1, round((L - 2 * c) / s_))
-        while x <= L - c - d / 2 - 19:
+    def dots(y, d, s_, layer, xa, xb):          # cut bars between xa and xb; the end bars sit in the bends of the U
+        n_ = max(1, round((xb - xa) / s_))
+        for j in range(n_ + 1):
+            x = xa + (xb - xa) * j / n_
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': layer}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(d / 2 * ks, 18), 0, 360)
-            x += step
     bx_ = [b for b in bars if b['layer'] == 'B']; tx_ = [b for b in bars if b['layer'] == 'T']
     lines = []
     def by_dir(lst, along): return next((b for b in lst if b['along'] == along), None)
@@ -165,20 +169,20 @@ def draw_sheet(doc, idx, f, meta, bl):
         tY = h - c - TX['d'] - TY['d'] / 2 if outer_is_x_t else h - c - TY['d'] / 2
         dT = TX['d'] + TY['d']
     side = sb
-    xs_ = c + (BX['d'] if bx_ else 0) + side['ds'] / 2 + 2      # side bars INSIDE the main U legs
+    xs_ = c + (BX['d'] if bx_ else 0) + (TX['d'] + 2 if tx_ else 0) + side['ds'] / 2 + 2   # side bars INSIDE both U legs
     if bx_:
         top_of_leg = (h - c - dT - 15) if tx_ else (h - c)
         xl, xr = c + BX['d'] / 2, L - c - BX['d'] / 2
         sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20))
-        dots(yY, BY['d'], BY['s'], 'S-RFT-BOT')
+        dots(yY, BY['d'], BY['s'], 'S-RFT-BOT', xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2)
         lines.append((yX, callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag'])))
         lines.append((yY, callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag'])))
     if tx_:
         bot_of_leg = c + (dB if bx_ else 0) + 15
-        ins = (BX['d'] + side['ds'] + 4) if bx_ else 0   # top U sits inside the bottom U legs and the side bars
+        ins = (BX['d'] + 2) if bx_ else 0                # top U sits inside the bottom U legs, side bars inside both
         xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
         sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20))
-        dots(tY, TY['d'], TY['s'], 'S-RFT-TOP')
+        dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
         lines.append((tX, callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag'])))
         lines.append((tY, callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag'])))
     # side bars (rows) on both faces
@@ -208,8 +212,8 @@ def draw_sheet(doc, idx, f, meta, bl):
             sh.text(f"NECK H = {neck:.2f} m", Q(cx1, 0)[0] + 300, Q(0, h + 300)[1], 170, 'S-DIM')
             sh.line(Q(cx0 - 150, h + 650), Q(cx1 + 150, h + 750), 'S-GB-CONC')        # break line on the neck
         for yy, lab in marks_:
-            sh.line(Q(-900, yy), Q(-150, yy), 'S-DIM')
-            sh.text(lab, Q(-900, yy)[0], Q(0, yy)[1] + 50, 150, 'S-DIM', align=TA.BOTTOM_RIGHT)
+            sh.line(Q(-1300, yy), Q(-150, yy), 'S-DIM')
+            sh.text(lab, Q(-1300, yy)[0], Q(0, yy)[1] + 50, 150, 'S-DIM', align=TA.BOTTOM_RIGHT)
     sh.text(f"SECTION 1-1  ({f['name']}, {f['h']} mm, PC 100 mm)", Q(L / 2, 0)[0], Q(0, -100)[1] - 900, 260, 'S-SEC', align=TA.TOP_CENTER)
     return bars
 
