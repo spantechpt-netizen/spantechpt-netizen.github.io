@@ -97,6 +97,8 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
   overall sizes dimensioned in mm, the column hatched.
 - Call-out: `(mark) 40Ø18  L=9.38m  S=12.5cm  - B1` ; layers B1 (outer, long direction) / B2, T1 / T2 (outer, long
   direction), ADD-B1 / ADD-B2 for additional bars; side bars `1Ø12 L=11.88m ... SB`; chairs `41Ø16 L=1.88m S=100*100CM`.
+- Chairs (engineer, Oct 2026): foot 300 / leg / top 400 / leg / foot 300, leg = h - 140 - both bottom layers - both top
+  layers (650, T14 -> 454), every side dimensioned in the BBS symbol.
 - Cover 70: straight = size − 140, leg = thickness − 140, count = ceil((width − 140) / s) + 1, n bars/m → s = 1000/n.
 - Rafts: bars longer than 12 m lapped 60 d (T20 → 1200), lap shown with a short dimension.
 

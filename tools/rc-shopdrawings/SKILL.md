@@ -134,7 +134,9 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - **Top U sits inside the bottom U legs** (its straight length is reduced by 2 × bottom bar dia).
 - **Side bars inside BOTH U layers** (not between them); the 70 cover stays on the main bars; loop reduced by the
   main bar diameters and its own; rows every ≤ 300 of free height; loops > 12 m in equal pieces lapped 60 d.
-  Chairs Ø16 @1000×1000.
+  **Chairs Ø16 @1000×1000**: foot 300 / leg / top 400 / leg / foot 300; leg (out-to-out) = h − 2×70 − both bottom
+  layers − both top layers (650 with T14 both ways → 454); L = 2×300 + 2×leg + 400; every side dimensioned in the
+  BBS symbol.
 - **Corner bar of the top layer sits inside the bend of the top U**; cut bars are spread between the U bends.
 - Plan: one representative bar per direction as a U (legs folded into the plan, curved), straight length and legs
   in mm, distribution line with a small circle at the bar, column hatched, overall dims.

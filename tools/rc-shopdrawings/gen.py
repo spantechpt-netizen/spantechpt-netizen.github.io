@@ -288,9 +288,14 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.text(str(int(bh)), x0 + bw * kk + 160, y0 + bh * kk / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
     elif kind == 'CH':        # chair: foot / leg / top / leg / foot
         f_, lg, top = seg
-        u = w * 0.12; hh = h * 0.35; x0 = x + w * 0.15; y0 = y + h * 0.25
-        sh.pline([(x0, y0), (x0 + u, y0), (x0 + u, y0 + hh), (x0 + 2.5 * u, y0 + hh), (x0 + 2.5 * u, y0), (x0 + 3.5 * u, y0)], 'S-RFT-TXT', r=30)
-        sh.text(f"{f_}/{lg}/{top}", x0 + 4 * u, y0, 120, 'S-RFT-TXT')
+        u = w * 0.13; hh = h * 0.42; x0 = x + w * 0.12; y0 = y + h * 0.18
+        sh.pline([(x0, y0), (x0 + u, y0), (x0 + u, y0 + hh), (x0 + 2.6 * u, y0 + hh), (x0 + 2.6 * u, y0), (x0 + 3.6 * u, y0)], 'S-RFT-TXT', r=30)
+        # every side with its own length (engineer's note)
+        sh.text(str(f_), x0 + u / 2, y0 + 50, 120, 'S-RFT-TXT', align=TA.BOTTOM_CENTER)
+        sh.text(str(f_), x0 + 3.1 * u, y0 + 50, 120, 'S-RFT-TXT', align=TA.BOTTOM_CENTER)
+        sh.text(str(top), x0 + 1.8 * u, y0 + hh + 50, 120, 'S-RFT-TXT', align=TA.BOTTOM_CENTER)
+        sh.text(str(lg), x0 + u - 50, y0 + hh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
+        sh.text(str(lg), x0 + 2.6 * u + 170, y0 + hh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
 
 
 def draw_bbs(doc, first_idx, rows, meta, Sheet_=None):

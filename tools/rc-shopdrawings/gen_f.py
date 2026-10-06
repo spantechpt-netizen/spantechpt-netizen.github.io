@@ -55,8 +55,11 @@ def side_bars(f, ds=12):
     pieces = 1 if per + lp <= 12000 else math.ceil(per / (12000 - lp))
     Lp = round((per / pieces + lp) / 10) * 10
     chair_n = max(4, math.ceil(f['L'] / 1000) * math.ceil(f['W'] / 1000))
-    return dict(rows=rows, ds=ds, off=off, lx=lx, ly=ly, pieces=pieces, L=Lp, chairs=chair_n,
-                chair_L=300 + (f['h'] - 2 * COVER - 120) * 2 // 1 + 400 + 300)
+    # chair Ø16: foot 300 / leg / top 400 / leg / foot 300 (out-to-out). It stands on the bottom mesh and carries
+    # the top mesh: leg = h - 2 x cover - both bottom layers - both top layers (engineer: F6 650, T14 -> 454)
+    ch_h = int(f['h'] - 2 * COVER - f['bot'][1] - f['bot'][3] - (f['top'][1] + f['top'][3] if f['top'][0] else 0))
+    return dict(rows=rows, ds=ds, off=off, lx=lx, ly=ly, pieces=pieces, L=Lp, chairs=chair_n, ch_foot=300, ch_top=400, ch_h=ch_h,
+                chair_L=int(math.ceil((2 * 300 + 2 * ch_h + 400) / 10) * 10))
 
 
 def draw_sheet(doc, idx, f, meta, bl):
@@ -67,7 +70,7 @@ def draw_sheet(doc, idx, f, meta, bl):
         b['mk'] = bl.add(b['d'], ('U', b['leg'], b['straight'], b['leg']), b['L'], b['n'], f['no'], b['tag'])
     sb = side_bars(f)
     sb['mk'] = bl.add(sb['ds'], ('ST', sb['lx'], sb['ly']) if sb['pieces'] == 1 else ('S', sb['L']), sb['L'], sb['rows'] * sb['pieces'], f['no'], 'SB')
-    sb['mk_ch'] = bl.add(16, ('CH', 300, f['h'] - 2 * COVER - 120, 400), sb['chair_L'], sb['chairs'], f['no'], 'CH')
+    sb['mk_ch'] = bl.add(16, ('CH', sb['ch_foot'], sb['ch_h'], sb['ch_top']), sb['chair_L'], sb['chairs'], f['no'], 'CH')
     mk = lambda b: b['mk']
     draw_legend(sh, 21000, 27900)
     sh.text(f['name'], 2000, 27900, ST['name'], 'S-AXIS-TXT')
