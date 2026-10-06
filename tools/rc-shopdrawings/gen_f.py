@@ -65,7 +65,7 @@ def side_bars(f, ds=12):
 def draw_sheet(doc, idx, f, meta, bl):
     sh = Sheet(doc, 0, -idx * 32000, meta)
     bars = bars_for(f)
-    k = min(4.0, 10000 / f['W'], 14500 / f['L'])     # drawing factor: 4 = 1:25 on the 1:100 frame
+    k = min(4.0, 9300 / f['W'], 14500 / f['L'])       # leaves room for the panel names between the rows     # drawing factor: 4 = 1:25 on the 1:100 frame
     for b in bars:
         b['mk'] = bl.add(b['d'], ('U', b['leg'], b['straight'], b['leg']), b['L'], b['n'], f['no'], b['tag'])
     sb = side_bars(f)

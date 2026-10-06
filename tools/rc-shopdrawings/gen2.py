@@ -10,10 +10,37 @@ Y_PLAN, Y_ELEV, Y_SEC = 22000, 13200, 2600
 AX = json.load(open('axes.json'))
 
 
-def axis_items(axis, runs, cols, tol=300):
+def axis_lines(axis, runs):
+    """The beam lines assigned to an axis: runs clustered by their centre line (200 mm). -> [(offset, runs)];
+    offset 0 = on the axis (within 300), else the off-grid line grouped under this nearest axis."""
+    rs = []
+    for r in sorted([r for r in runs if r.get('axis') == axis], key=lambda r: (-(r['hi'] - r['lo']), r['c'])):
+        # the same beam drawn twice (two copies of the outline): keep one
+        if any(abs(r['c'] - q['c']) <= 200 and min(r['hi'], q['hi']) - max(r['lo'], q['lo']) >= 0.8 * (r['hi'] - r['lo']) for q in rs): continue
+        rs.append(r)
+    rs.sort(key=lambda r: r['c'])
+    cl = []
+    for r in rs:                       # a run joins a line when near it (350) and not overlapping any run already on it
+        for c in cl:
+            if abs(r['c'] - sum(q['c'] for q in c) / len(c)) <= 350 and \
+               all(min(r['hi'], q['hi']) - max(r['lo'], q['lo']) < 300 for q in c):
+                c.append(r); break
+        else: cl.append([r])
+    # the line nearest to the axis (within 300) is the axis itself; every other line - even a parallel beam 200 mm
+    # away (double beam at a joint) - is its own set, named with its offset
+    ms = [sum(r['c'] for r in c) / len(c) - AX[axis] for c in cl]
+    near = min(range(len(cl)), key=lambda i: abs(ms[i])) if cl else None
+    out = {}
+    for i, c in enumerate(cl):
+        off = 0 if (i == near and abs(ms[i]) <= 300) else int(round(ms[i])) or 1
+        out.setdefault(off, []).extend(c)
+    return sorted(out.items())
+
+
+def axis_items(axis, runs, cols, tol=300, off=0, rs=None):
     hor = axis[0] == 'X'
-    c0 = AX[axis]
-    rs = [r for r in runs if r['hor'] == hor and abs(r['c'] - c0) <= tol]
+    if rs is None: rs = dict(axis_lines(axis, runs)).get(off, [])
+    c0 = sum(r['c'] for r in rs) / len(rs) if rs else AX[axis] + off     # the beam line itself
     rs.sort(key=lambda r: r['lo'])
     # groups: consecutive runs closer than 1500 (a column / crossing beam between them)
     groups = []
@@ -58,7 +85,7 @@ def detail(groups, sup):
     for gi, g in enumerate(groups):
         segs = []
         for r in sorted(g['runs'], key=lambda r: r['lo']):
-            t = r['lab'] or 'GB1'
+            t = r['lab'] or ('GB1' if r['w'] <= 200 else 'GB2')   # unlabelled run: type by drawn width
             if segs and segs[-1]['t'] == t:
                 segs[-1]['b'] = r['hi']
             else:
@@ -139,8 +166,10 @@ def windows(groups, sup):
     return cuts
 
 
-def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
-    hor, c0, groups, sup = axis_items(axis, runs, cols)
+def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
+    hor, c0, groups, sup = axis_items(axis, runs, cols, off=off)
+    name = axis + (f' OFFSET {off:+d}' if off else '')      # title of an off-grid line
+    tag = axis.replace('*', 'S') + (f'-O{abs(off)}{"N" if off < 0 else "P"}' if off else '')
     if not groups: return []
     bars, stirs, secs = detail(groups, sup)
     bl = BarList()
@@ -161,25 +190,31 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
     for wi, (w0, w1) in enumerate(wins):
         U = lambda u: X0 + (u - w0)
         meta = dict(meta0)
-        meta['title'] = f'GRADE BEAMS REINFORCEMENT\nAXIS {axis}  ({wi + 1}/{len(wins)})'
-        meta['dwg'] = f'{meta0["prefix"]}-{axis}-{wi + 1:02d}'
+        meta['title'] = f'GRADE BEAMS REINFORCEMENT\nAXIS {name}  ({wi + 1}/{len(wins)})'
+        meta['dwg'] = f'{meta0["prefix"]}-{tag}-{wi + 1:02d}'
         sh = Sheet(doc, 0, -(start_sheet - 1 + len(out)) * 32000, meta)
         out.append(meta['dwg'])
         vis = lambda a, b: b > w0 and a < w1
-        sh.text(f'AXIS {axis}', 1800, 27900, ST['name'], 'S-AXIS-TXT')
-        sh.text(f'GRADE BEAMS ON AXIS {axis} - PLAN  1:100', 1800, 27200, ST['sub'], 'S-SEC')
+        sh.text(f'AXIS {name}', 1800, 27900, ST['name'], 'S-AXIS-TXT')
+        sh.text(f'GRADE BEAMS ON AXIS {name} - PLAN  1:100', 1800, 27200, ST['sub'], 'S-SEC')
         # perpendicular grid lines + bubbles
-        for k, v in perp.items():
-            if w0 - 200 <= v <= w1 + 200:
-                x = U(v)
-                # grid lines broken where bars, call-outs and dimensions are written (no text on lines)
+        vis_ax = sorted([(U(v), k) for k, v in perp.items() if w0 - 200 <= v <= w1 + 200])
+        grp = []                                                   # grid lines closer than 1000: one bubble, both names
+        for x, k in vis_ax:
+            if grp and x - grp[-1][-1][0] < 1000: grp[-1].append((x, k))
+            else: grp.append([(x, k)])
+        for g_ in grp:
+            for x, k in g_:
                 for y0_, y1_ in ((Y_PLAN + 3150, Y_PLAN + 3450), (Y_PLAN - 700, Y_PLAN + 700), (Y_PLAN - 3800, Y_PLAN - 3550),
                                  (Y_ELEV + 1100, Y_ELEV + 1650), (Y_ELEV - 1000, Y_ELEV + 250)):
                     sh.line((x, y0_), (x, y1_), 'S-AXIS')
-                sh.circle(x, Y_PLAN + 3900, 450, 'S-AXIS')
-                sh.text(k, x, Y_PLAN + 3900, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
-                sh.circle(x, Y_ELEV + 2100, 450, 'S-AXIS')
-                sh.text(k, x, Y_ELEV + 2100, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
+            xb = sum(x for x, k in g_) / len(g_)
+            for yb in (Y_PLAN + 3900, Y_ELEV + 2100):
+                sh.circle(xb, yb, 450, 'S-AXIS')
+                if len(g_) == 1: sh.text(g_[0][1], xb, yb, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
+                else:
+                    for j, (x, k) in enumerate(g_):
+                        sh.text(k, xb, yb + (len(g_) - 1) * 120 - j * 240, 210, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
         # beams + supports on plan
         for g in groups:
             for r in g['runs']:
@@ -279,7 +314,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
                 bx = put([(U(c) - 100 - tw('CONT.', 180), yl0, U(c) - 100, yl0 + 180)])
                 sh.text('CONT.', bx[2], bx[1], 180, 'S-DIM', align=TA.BOTTOM_RIGHT)
         # ---- elevation ----
-        sh.text(f'LONGITUDINAL SECTION - AXIS {axis}  1:100', 1800, Y_ELEV + 3000, ST['sub'], 'S-SEC')
+        sh.text(f'LONGITUDINAL SECTION - AXIS {name}  1:100', 1800, Y_ELEV + 3000, ST['sub'], 'S-SEC')
         hmax = 700
         for g in groups:
             for s in g['segs']:
@@ -387,7 +422,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
                 sh.text(nm_, X0 - 1250, yy + 50, 150, 'S-DIM')
                 sh.text(f"{lv:+.2f}", X0 - 1250, yy - 50, 150, 'S-DIM', align=TA.TOP_LEFT)
     # BBS of the axis set
-    meta = dict(meta0); meta['title'] = f'GRADE BEAMS AXIS {axis}'; meta['dwg'] = f'{meta0["prefix"]}-{axis}'
+    meta = dict(meta0); meta['title'] = f'GRADE BEAMS AXIS {name}'; meta['dwg'] = f'{meta0["prefix"]}-{tag}'
     nb = draw_bbs(doc, start_sheet - 1 + len(out), bl.sorted(), meta, Sheet)
     out += [f'{meta["dwg"]}-BBS{i + 1:02d}' for i in range(nb)]
     return out
@@ -401,7 +436,10 @@ if __name__ == '__main__':
     meta0.update(json.load(open('project.json')).get('meta', {}))
     meta0['notes'] = project_notes('COVER GRADE BEAMS 40.', 'GB STIRRUPS STOP AT THE COLUMN FACE; COLUMN TIES CONTINUE THROUGH THE JOINT.')
     for a in axes:
-        doc = new_doc()
-        names = draw_axis(doc, a, runs, cols, meta0)
-        doc.saveas(f'out/GB_AXIS_{a}.dxf')
-        print(a, names)
+        # every line of beams assigned to this axis: the axis itself and each off-grid line (offset > 300)
+        for off, _rs in axis_lines(a, runs):
+            doc = new_doc()
+            names = draw_axis(doc, a, runs, cols, meta0, off=off)
+            tag = a.replace('*', 'S') + (f'-O{abs(off)}{"N" if off < 0 else "P"}' if off else '')
+            doc.saveas(f'out/GB_AXIS_{tag}.dxf')
+            print(tag, len(names), 'sheets')

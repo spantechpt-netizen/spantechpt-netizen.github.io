@@ -2,7 +2,7 @@
 The bar arrangement and the tie shapes are read from the consultant's COLUMN SCHEDULE block, so the section
 is the designer's own; the elevation runs from the footing (bars bent 90 deg on the bottom mesh) to the top of
 the grade beams plus the column lap. Call-outs in the office format, BBS sheet at the end."""
-import json, math, pickle, sys
+import json, math, pickle, re, sys
 import ezdxf
 from ezdxf import recover
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, fillet, tie_bar_centres, ST, mm, project_notes
@@ -81,6 +81,101 @@ def read_schedule(dxf='main.dxf', block='COLUMN SCH'):
     return out
 
 
+def read_schedule2(dxf='main.dxf', block='COLUMN SCH'):
+    """Generic reader of every row of the column schedule, whatever layers the row uses (nested blocks expanded):
+    bar circles (de-duplicated, mirrored when the sketch omits symmetric bars), tie polylines around them."""
+    doc, _ = recover.readfile(dxf)
+    ins = [e for e in doc.modelspace().query('INSERT') if e.dxf.name == block][0]
+    ents = []
+    def rec(e, d=0):
+        for v in e.virtual_entities():
+            if v.dxftype() == 'INSERT' and d < 4: rec(v, d + 1)
+            else: ents.append(v)
+    rec(ins)
+    txt = [((v.plain_text() if v.dxftype() == 'MTEXT' else v.dxf.text).strip(), v.dxf.insert.x, v.dxf.insert.y)
+           for v in ents if v.dxftype() in ('TEXT', 'MTEXT')]
+    types = sorted([t for t in txt if t[0] == 'C' or (t[0].startswith('C') and t[0][1:].isdigit())], key=lambda t: -t[2])
+    out = {}
+    for i, (name, tx, ty) in enumerate(types):
+        y_hi = (types[i - 1][2] + ty) / 2 if i else ty + 3000
+        y_lo = (types[i + 1][2] + ty) / 2 if i + 1 < len(types) else ty - 6000
+        inrow = lambda y: y_lo < y < y_hi
+        sz = PRJ.get('column_sizes', {}).get(name)
+        bars = next((t[0] for t in txt if inrow(t[2]) and re.match(r'^\d+\s*T\s*\d+$', t[0])), None)
+        stir = next((t[0] for t in txt if (inrow(t[2]) or abs(t[2] - y_hi) < 2500) and 'STIRR' in t[0] and t[2] > ty - 3000), '')
+        if not sz or not bars: continue
+        n, d = int(bars.split('T')[0]), int(bars.split('T')[1])
+        sets = int(stir.split(':')[1].split('X')[0]) if ':' in stir else 1
+        per_m = int(stir.split('X')[1].split('T')[0]) if 'X' in stir else 8
+        circ = []
+        for v in ents:
+            if v.dxftype() == 'CIRCLE' and inrow(v.dxf.center.y):
+                c = (v.dxf.center.x, v.dxf.center.y)
+                if not any(math.dist(c, q) < 20 for q in circ): circ.append(c)
+        if not circ: continue
+        # the section is the left-most group of circles (tie sketches with dots may follow on the right)
+        circ.sort()
+        x0, y0 = min(c[0] for c in circ), min(c[1] for c in circ)
+        span = max(sz) * 12                                     # generous: drawing scale is ~5-10 units / mm
+        circ = [c for c in circ if c[0] - x0 < span]
+        x1, y1 = max(c[0] for c in circ), max(c[1] for c in circ)
+        if len(circ) < n:                                     # sketch shows one side only: mirror the missing bars
+            for c in list(circ):
+                for m_ in ((x0 + x1 - c[0], c[1]), (c[0], y0 + y1 - c[1]), (x0 + x1 - c[0], y0 + y1 - c[1])):
+                    tol_ = 0.06 * min(x1 - x0, y1 - y0)          # ~ a bar diameter at the drawing's scale
+                    if len(circ) < n and not any(math.dist(m_, q) < tol_ for q in circ): circ.append(m_)
+        wd, ht = (max(sz), min(sz)) if (x1 - x0) >= (y1 - y0) else (min(sz), max(sz))
+        e = COLC + 10 + d / 2
+        k = ((x1 - x0) / max(1, wd - 2 * e) + (y1 - y0) / max(1, ht - 2 * e)) / 2
+        mmf = lambda a, b: ((a - x0) / k + e, (b - y0) / k + e)
+        dots = [mmf(*c) for c in circ]
+        # sketches are imprecise: snap the bars to common rows / columns (within 20 mm)
+        for ax_ in (0, 1):
+            vals = sorted(set(round(p[ax_], 1) for p in dots)); grp = []
+            for v_ in vals:
+                if grp and v_ - grp[-1][-1] <= 20: grp[-1].append(v_)
+                else: grp.append([v_])
+            snap = {v_: sum(g) / len(g) for g in grp for v_ in g}
+            dots = [tuple(snap[round(p[i], 1)] if i == ax_ else p[i] for i in (0, 1)) for p in dots]
+        # bars along each face equally spaced between the corner bars (standard detailing; the sketch is approximate)
+        mnx, mxx = min(p[0] for p in dots), max(p[0] for p in dots); mny, mxy = min(p[1] for p in dots), max(p[1] for p in dots)
+        new = {}
+        for ax_, lo_, hi_ in ((1, mny, mxy), (0, mnx, mxx)):
+            for edge in (lo_, hi_):
+                face = sorted([p for p in dots if abs(p[ax_] - edge) < 1], key=lambda p: p[1 - ax_])
+                if len(face) > 2:
+                    a0, a1 = face[0][1 - ax_], face[-1][1 - ax_]
+                    for j, p in enumerate(face):
+                        v_ = a0 + (a1 - a0) * j / (len(face) - 1)
+                        new[p] = (v_, p[1]) if ax_ == 1 else (p[0], v_)
+        dots_raw = dots
+        dots = [new.get(p, p) for p in dots]
+        ties = []
+        for v in ents:
+            if v.dxftype() != 'LWPOLYLINE': continue
+            q = [(a, b) for a, b, *_ in v.get_points()]
+            if not q or not all(x0 - 6 * 40 * k / 10 - 300 <= a <= x1 + 300 and y0 - 300 <= b <= y1 + 300 for a, b in q): continue
+            if not inrow(q[0][1]) or v.dxf.layer.endswith(('S-COLS-IDEN', 'CORE-COLS', 'CORE-COLS-CONC-SEC')) or v.dxf.layer == 'column': continue
+            L = sum(math.dist(q[j], q[j + 1]) for j in range(len(q) - 1)) + (math.dist(q[-1], q[0]) if v.closed else 0)
+            if L / k < 150: continue
+            xs_ = [a for a, b in q]; ys_ = [b for a, b in q]
+            if (max(xs_) - min(xs_)) / k > wd + 50 or (max(ys_) - min(ys_)) / k > ht + 50: continue   # outline / frame
+            ties.append(([mmf(a, b) for a, b in q], bool(v.closed)))
+        tieset, legs = [], []
+        for pts, closed in ties:
+            xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+            if max(xs) - min(xs) < 15: legs.append((sum(xs) / len(xs), min(ys), max(ys), pts))
+            elif max(ys) - min(ys) < 15: continue                  # straight horizontal piece (hook tail / link)
+            else: tieset.append(dict(poly=list(pts)))
+        legs.sort()
+        for a_, b_ in zip(legs[0::2], legs[1::2]):
+            pa = sorted(a_[3], key=lambda p: p[1]); pb = sorted(b_[3], key=lambda p: -p[1])
+            tieset.append(dict(poly=pa + pb))
+        out[name] = dict(tieset=tieset, shapes=[], b=min(sz), h=max(sz), dw=wd, dh=ht, n=n, d=d, sets=sets, per_m=per_m,
+                         dots=dots, dots_raw=dots_raw, ties=ties)
+    return out
+
+
 def tie_length(pts, closed):
     L = sum(math.dist(pts[j], pts[j + 1]) for j in range(len(pts) - 1)) + (math.dist(pts[-1], pts[0]) if closed else 0)
     return int(round((L + 2 * 100) / 10) * 10)                 # + two 135-degree hooks of 100 mm
@@ -114,7 +209,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     ties = []
     for t in col['tieset']:
         pg = Polygon(t['poly']).buffer(0)
-        held = [T(p) for p in col['dots'] if pg.buffer(20).contains(Point(p))]
+        held = [T(p) for p, r_ in zip(col['dots'], col.get('dots_raw', col['dots'])) if pg.buffer(20).contains(Point(r_))]   # held as drawn
         if len(held) < 2: continue
         hull = MultiPoint(held).convex_hull
         cl = hull.buffer(d / 2 + ds / 2, join_style=2).intersection(lim_cl).simplify(1)   # centre line, cut flat at the outer tie
@@ -145,7 +240,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
 
     title = f"{col['name']}  {col['b']}x{col['h']}  ON  {f['name']}"
     sh.text(f'NECK {title}', 2000, 27900, ST['name'], 'S-AXIS-TXT')
-    sh.text(f"FOOTING {f['name']} {f['L']}x{f['W']}x{f['h']}", 2000, 26400, ST['sub'], 'S-SEC')
+    sh.text(f"FOOTING {f['name']} " + (f"(COMBINED / RAFT / STRAP - SEE PLAN)  h={f['h']}" if f.get('part') else f"{f['L']}x{f['W']}x{f['h']}")
+            + (f"  - {f['note']}" if f.get('note') else ''), 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
     sh.text(f"NO={no}   T.O.F {tof:+.2f}   T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}", 2000, 27100, ST['sub'], 'S-SEC')
 
     # ---------- ELEVATION 1:25 (k=4) on the wide face ----------
@@ -260,9 +356,13 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
 
 
 if __name__ == '__main__':
-    sched = read_schedule()
-    pairs = [tuple(a.split(':')) for a in sys.argv[1:]] or [('C1', 'F6', '11')]
+    sched = read_schedule2()
+    args = sys.argv[1:]
+    if args and args[0].startswith('@'): args = open(args[0][1:]).read().split()        # @pairs.txt
+    pairs = [tuple(a.split(':')) for a in args] or [('C1', 'F6', '11')]
     lib = json.load(open('footings.json'))
+    import os
+    if os.path.exists('footings_ext.json'): lib.update(json.load(open('footings_ext.json')))   # CF / RAFT / ST (h, steel; see plan)
     doc = new_doc(); bl = BarList()
     for i, (cn, fn, no) in enumerate(pairs):
         col = dict(sched[cn]); col['name'] = cn

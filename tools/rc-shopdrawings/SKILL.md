@@ -69,7 +69,8 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `gen2.py` | GB per axis: supports, bar splitting & laps, plan strip (auto label placement), longitudinal section, cross sections |
 | `gen_f.py` | footings: bars, side bars, plan panels (bottom / top / side), section 1-1 |
 | `gen_n.py` | column necks: reads the `COLUMN SCH` block (bars + ties as drawn), elevation, section A-A, tie bending sketches |
-| `topdf.py` | DXF sheets → multi-page PDF |
+| `pair_necks.py` | FND plan → every column paired with its footing → `neck_pairs.txt` (input of `gen_n.py @neck_pairs.txt`) |
+| `topdf.py` | DXF sheets → multi-page PDF (each page renders only its own entities: fast) |
 | `rend.py` | fast PNG of a window of the source DXF |
 
 Sheets are A3 frames at 1:100 in model space (42000 × 29700 units), stacked every −32000 in y.
@@ -132,6 +133,14 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - Section: stirrup on its centre line with curved corners and the hooked corner, bars as filled dots, cover
   dims, call-outs `4 T 16 -T`, `T10 @125`, stirrup sketch beside with out-to-out dims.
 
+### Full run of the grade beams
+- `python3 gen2.py <all axes>` (axes = the `axis` values of `runs.pkl`). Per axis, `axis_lines()` splits the runs into
+  lines: the line nearest the axis (≤ 300) is the axis set; every other line is its own set `AXIS Y08 OFFSET -1342`
+  (off-grid beams grouped under the nearest axis). A run joins a line only if it does not overlap a run already on it
+  (parallel / double beams → separate sets). The same beam drawn twice (centre ≤ 200, overlap ≥ 80 %) is kept once.
+- Unlabelled runs: type by drawn width (200 → GB1, wider → GB2) — flag it to the engineer.
+- Grid lines closer than 1000 on a strip share one bubble with both names.
+
 ## 6. Footings (`gen_f.py F2 F3 …`)
 
 - One sheet per footing type: name, thickness in a circle, `NO=n`, PC and RC sizes; panels
@@ -154,7 +163,15 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
   (cut dots) on the second dot from the bend, side bar on its dot (never all on the cover line);
   levels on the left, neck stub with break line, `NECK UP TO T.O.GB`, `NECK H = …` (mm).
 
-## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` = column type : footing type : count)
+## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
+
+- `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,
+  isolated footings matched label ↔ nearest column (nearest pairs first), CF / RAFT / ST: all columns inside the
+  outline, a second column on an isolated footing → the outline around it. Unmatched columns / labels are listed —
+  report them. `footings_ext.json` (project data) gives h and steel of CF / RAFT / ST for the neck sheets.
+- `read_schedule2()` reads every row of `COLUMN SCH` whatever its layers (nested blocks expanded): bar circles
+  de-duplicated, missing symmetric bars mirrored, bars snapped to rows/columns (20 mm) and spaced equally along each
+  face (the ties are matched to the bars at their drawn positions).
 
 - Bar arrangement and tie set read from the consultant's **`COLUMN SCH`** block (to-scale section per type);
   sizes from `column_sizes`. Some types use other layers inside the block (check each row: outline layer,
@@ -228,6 +245,11 @@ the state in files, never only in the conversation:
   rendered, checked, sent and committed before the next — a cut in the chat then loses nothing.
 
 ## 11. Status (Oct 2026) and open points
+
+- **Full run done on Rev.02**: GB 125 sets / 369 sheets, footings 18 types + BBS, necks 61 pairs (319 necks) + BBS;
+  remarks list in the delivery (`REMARKS.md`): GB2 size, unlabelled beams, 11 columns without footing, 4 footing
+  labels without column, CF9 → CF8, RAFT-6 → RAFT-02, not yet detailed: CF / RAFT / ST / fence footings, ADD TOP bars.
+
 
 - Samples done (Rev.02 data), under the engineer's review: GB axis X11, footings F2/F3/F6, neck C1 on F6 (all rules above applied).
 - Next (after the engineer says go): full run — all column types incl. the ones on other layers in
