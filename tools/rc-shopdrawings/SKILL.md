@@ -186,6 +186,21 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 4. Zoom crops with PIL on a 250–300 dpi render to check bars/ties/hooks/texts.
 5. Copy scripts to `tools/rc-shopdrawings/`, update `README.md` and this skill (rule list §4–7), commit, push.
 
+## 8b. A new revision of the consultant drawing arrives
+
+1. Convert it (LibreDWG) next to the old one; keep the old DXF as `main_revNN.dxf`.
+2. **Text diff** of all TEXT/MTEXT/ATTRIB (model space, blocks expanded) old vs new: schedules (GB, columns,
+   footings), notes, levels — anything reinforcement-like that changed.
+3. **Geometry diff** of model-space entities (type, layer, rounded coordinates). Look for a common offset first
+   (a whole plan moved, e.g. dy = +1882 for the FND plan in Rev.02) and diff again after removing it.
+4. Re-run `extract.py` and compare runs / columns / axes; scan the FND plan (footing outlines on `CORE-FNDN`, the
+   label inside each outline → smallest containing outline) and compare drawn sizes with the schedule; locate
+   differences by the nearest grid axes (bubble attribute `X` = family + `00` = number).
+5. Compare the `COLUMN SCH` block entity by entity (nested inserts too).
+6. Render the changed areas old | new side by side and send them to the engineer with a short list; ask which
+   governs when the drawn size and the schedule disagree (default: the schedule). Then switch the project data to
+   the new revision (`meta.ref`), regenerate the samples and continue.
+
 ## 9. Verification checklist (every sheet)
 
 - Bars inside ties/stirrups; side bars inside both U layers; top corner bar inside the top U bend.
