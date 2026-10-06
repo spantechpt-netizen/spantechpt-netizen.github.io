@@ -31,6 +31,84 @@ def new_doc():
     return doc
 
 
+def fillet(pts, r, closed=False, n=6):
+    """Polyline with every corner replaced by an arc of radius r (bars are bent, never sharp). r is clamped so the
+    arcs never use more than 45 % of an edge."""
+    if r <= 0 or len(pts) < 3: return list(pts)
+    m = len(pts)
+    idx = range(m) if closed else range(1, m - 1)
+    out = [] if closed else [pts[0]]
+    for i in idx:
+        a, v, b = pts[i - 1], pts[i], pts[(i + 1) % m]
+        la, lb = math.dist(a, v), math.dist(b, v)
+        if la < 1e-6 or lb < 1e-6: out.append(v); continue
+        ua = ((a[0] - v[0]) / la, (a[1] - v[1]) / la); ub = ((b[0] - v[0]) / lb, (b[1] - v[1]) / lb)
+        cosg = max(-1.0, min(1.0, ua[0] * ub[0] + ua[1] * ub[1]))
+        g = math.acos(cosg)                                      # inner angle at the corner
+        if g > math.radians(178) or g < 1e-3: out.append(v); continue
+        t = min(r / math.tan(g / 2), 0.45 * la, 0.45 * lb)       # tangent distance
+        rr = t * math.tan(g / 2)
+        pa = (v[0] + ua[0] * t, v[1] + ua[1] * t); pb = (v[0] + ub[0] * t, v[1] + ub[1] * t)
+        bis = (ua[0] + ub[0], ua[1] + ub[1]); hb = math.hypot(*bis)
+        dc = rr / math.sin(g / 2)
+        c = (v[0] + bis[0] / hb * dc, v[1] + bis[1] / hb * dc)
+        a0 = math.atan2(pa[1] - c[1], pa[0] - c[0]); a1 = math.atan2(pb[1] - c[1], pb[0] - c[0])
+        da = (a1 - a0 + math.pi) % (2 * math.pi) - math.pi
+        out += [(c[0] + rr * math.cos(a0 + da * k / n), c[1] + rr * math.sin(a0 + da * k / n)) for k in range(n + 1)]
+    if not closed: out.append(pts[-1])
+    return out
+
+
+def tie_bar_centres(nm, off):
+    """Bar centres just inside every corner of an out-to-out tie outline (for sketches): off = d/2 + tie dia."""
+    nn = len(nm); res = []
+    for j in range(nn):
+        a_, v_, b_ = nm[j - 1], nm[j], nm[(j + 1) % nn]
+        ua = ((a_[0] - v_[0]) / math.dist(a_, v_), (a_[1] - v_[1]) / math.dist(a_, v_))
+        ub = ((b_[0] - v_[0]) / math.dist(b_, v_), (b_[1] - v_[1]) / math.dist(b_, v_))
+        sn = math.sqrt(max(1e-9, (1 - (ua[0] * ub[0] + ua[1] * ub[1])) / 2))
+        u_ = (ua[0] + ub[0], ua[1] + ub[1]); h_ = math.hypot(*u_) or 1
+        res.append((v_[0] + u_[0] / h_ * off / sn, v_[1] + u_[1] / h_ * off / sn))
+    return res
+
+
+def hooked_tie(pts, bars, tail=75, rc=0):
+    """Tie centre line as drawn on the section: open at its top-left corner, where both ends wrap 135 deg around
+    the corner bar and run into the core (engineer's note). -> list of polylines."""
+    ytop = max(p[1] for p in pts)
+    def ang(j):
+        a, v, b = pts[j - 1], pts[j], pts[(j + 1) % len(pts)]
+        x1, y1, x2, y2 = a[0] - v[0], a[1] - v[1], b[0] - v[0], b[1] - v[1]
+        return abs(math.degrees(math.atan2(x1 * y2 - y1 * x2, x1 * x2 + y1 * y2)))
+    top = [j for j in range(len(pts)) if abs(pts[j][1] - ytop) < 15]
+    sq = [j for j in top if abs(ang(j) - 90) < 10] or top            # a square corner on the top side, leftmost
+    i = min(sq, key=lambda j: pts[j][0])
+    V = pts[i]; Pa, Pb = pts[i - 1], pts[(i + 1) % len(pts)]
+    c = min(bars, key=lambda b: math.dist(b, V))
+    ua = ((Pa[0] - V[0]) / math.dist(Pa, V), (Pa[1] - V[1]) / math.dist(Pa, V))
+    ub = ((Pb[0] - V[0]) / math.dist(Pb, V), (Pb[1] - V[1]) / math.dist(Pb, V))
+    u = (ua[0] + ub[0], ua[1] + ub[1]); u = (u[0] / math.hypot(*u), u[1] / math.hypot(*u))   # into the core (bisector)
+    def foot(A):                                                                   # tangent point on edge A-V
+        ex, ey = V[0] - A[0], V[1] - A[1]; L = math.hypot(ex, ey)
+        tt = ((c[0] - A[0]) * ex + (c[1] - A[1]) * ey) / L ** 2
+        return (A[0] + tt * ex, A[1] + tt * ey), (ex / L, ey / L)
+    def hook(A):
+        T, dv = foot(A)
+        rr = math.dist(T, c)
+        th = math.atan2(T[1] - c[1], T[0] - c[0])
+        sg = 1 if (T[0] - c[0]) * dv[1] - (T[1] - c[1]) * dv[0] > 0 else -1      # +1 = counter-clockwise
+        th_end = math.atan2(-u[0], u[1]) if sg > 0 else math.atan2(u[0], -u[1])
+        sweep = (th_end - th) * sg % (2 * math.pi)
+        arc = [(c[0] + rr * math.cos(th + sg * sweep * k / 16), c[1] + rr * math.sin(th + sg * sweep * k / 16)) for k in range(17)]
+        e = arc[-1]
+        return T, arc + [(e[0] + u[0] * tail, e[1] + u[1] * tail)]
+    Ta, ha = hook(Pa); Tb, hb = hook(Pb)
+    n = len(pts)
+    body = [Tb] + [pts[(i + k) % n] for k in range(1, n)] + [Ta]
+    return [fillet(body, rc) if rc else body, ha, hb]                # every bend curved, never a sharp corner
+
+
+
 class Sheet:
     W, H = 42000, 29700      # A3 at 1:100
     def __init__(self, doc, ox, oy, meta):
@@ -39,7 +117,8 @@ class Sheet:
     def P(self, x, y): return (self.ox + x, self.oy + y)
     def line(self, a, b, layer):
         self.m.add_line(self.P(*a), self.P(*b), dxfattribs={'layer': layer})
-    def pline(self, pts, layer, width=0, closed=False):
+    def pline(self, pts, layer, width=0, closed=False, r=0):
+        if r: pts = fillet(pts, r, closed)                     # bars are bent: curved corners
         e = self.m.add_lwpolyline([self.P(*p) for p in pts], dxfattribs={'layer': layer, 'const_width': width})
         e.closed = closed; return e
     def text(self, s, x, y, h=250, layer='S-RFT-TXT', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
@@ -154,7 +233,7 @@ def _symbol(sh, x, y, w, h, shape, d):
         if a: pts.append((cx, cy + lg))
         pts += [(cx, cy), (cx + L, cy)]
         if b: pts.append((cx + L, cy + lg))
-        sh.pline(pts, 'S-RFT-TXT')
+        sh.pline(pts, 'S-RFT-TXT', r=60)
         sh.text(str(run), cx + L / 2, cy - 60, 130, 'S-RFT-TXT', align=TA.TOP_CENTER)
         if a: sh.text(str(a), cx - 60, cy + lg / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
         if b: sh.text(str(b), cx + L + 180, cy + lg / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
@@ -162,7 +241,7 @@ def _symbol(sh, x, y, w, h, shape, d):
         bw, bh = seg[0], seg[1]
         sw, shh = w * 0.25, h * 0.6
         x0, y0 = x + w * 0.35, y + h * 0.2
-        sh.pline([(x0, y0), (x0 + sw, y0), (x0 + sw, y0 + shh), (x0, y0 + shh)], 'S-RFT-TXT', 0, True)
+        sh.pline([(x0, y0), (x0 + sw, y0), (x0 + sw, y0 + shh), (x0, y0 + shh)], 'S-RFT-TXT', 0, True, r=40)
         sh.line((x0, y0 + shh - 60), (x0 + 120, y0 + shh - 180), 'S-RFT-TXT')
         sh.text(str(bw), x0 + sw / 2, y0 - 40, 120, 'S-RFT-TXT', align=TA.TOP_CENTER)
         sh.text(str(bh), x0 + sw + 160, y0 + shh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
@@ -171,13 +250,13 @@ def _symbol(sh, x, y, w, h, shape, d):
         bw = max(p[0] for p in pts) or 1; bh = max(p[1] for p in pts) or 1
         kk = min(w * 0.45 / bw, h * 0.7 / bh)
         x0, y0 = x + w * 0.3, y + h * 0.15
-        sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in pts], 'S-RFT-TXT', 0, True)
+        sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in pts], 'S-RFT-TXT', 0, True, r=40)
         sh.text(str(int(bw)), x0 + bw * kk / 2, y0 - 40, 120, 'S-RFT-TXT', align=TA.TOP_CENTER)
         sh.text(str(int(bh)), x0 + bw * kk + 160, y0 + bh * kk / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
     elif kind == 'CH':        # chair: foot / leg / top / leg / foot
         f_, lg, top = seg
         u = w * 0.12; hh = h * 0.35; x0 = x + w * 0.15; y0 = y + h * 0.25
-        sh.pline([(x0, y0), (x0 + u, y0), (x0 + u, y0 + hh), (x0 + 2.5 * u, y0 + hh), (x0 + 2.5 * u, y0), (x0 + 3.5 * u, y0)], 'S-RFT-TXT')
+        sh.pline([(x0, y0), (x0 + u, y0), (x0 + u, y0 + hh), (x0 + 2.5 * u, y0 + hh), (x0 + 2.5 * u, y0), (x0 + 3.5 * u, y0)], 'S-RFT-TXT', r=30)
         sh.text(f"{f_}/{lg}/{top}", x0 + 4 * u, y0, 120, 'S-RFT-TXT')
 
 

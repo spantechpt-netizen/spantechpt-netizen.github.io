@@ -115,6 +115,9 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - **Levels** (`project.json` -> `levels`): founding level (bottom of PC) and top of grade beams; written on the footing
   section (F.L, T.O.PC, T.O.F, neck height up to T.O.GB) and on the GB longitudinal section (T.O.GB / B.O.GB).
 
+- **Bars are bent, never sharp**: every bend drawn with a curve (`fillet`, `Sheet.pline(r=)`): U-bars, L-feet, GB legs,
+  ties / stirrups (radius = bar radius + tie radius around the corner bar), bending sketches and BBS symbols; hooks via
+  `hooked_tie` (shared by GB stirrups and column ties).
 - No text on lines: panel names above the outlines, leg lengths inside the bends, Y-bar call-outs along the bar, title
   block values squeezed to the box (`Sheet.text(maxw=)`).
 

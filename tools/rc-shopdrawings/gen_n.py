@@ -5,7 +5,7 @@ the grade beams plus the column lap. Call-outs in the office format, BBS sheet a
 import json, math, pickle, sys
 import ezdxf
 from ezdxf import recover
-from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap
+from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, fillet, tie_bar_centres
 
 PRJ = json.load(open('project.json'))
 LEV = PRJ['levels']
@@ -84,42 +84,6 @@ def read_schedule(dxf='main.dxf', block='COLUMN SCH'):
 def tie_length(pts, closed):
     L = sum(math.dist(pts[j], pts[j + 1]) for j in range(len(pts) - 1)) + (math.dist(pts[-1], pts[0]) if closed else 0)
     return int(round((L + 2 * 100) / 10) * 10)                 # + two 135-degree hooks of 100 mm
-
-
-def hooked_tie(pts, bars, tail=75):
-    """Tie centre line as drawn on the section: open at its top-left corner, where both ends wrap 135 deg around
-    the corner bar and run into the core (engineer's note). -> list of polylines."""
-    ytop = max(p[1] for p in pts)
-    def ang(j):
-        a, v, b = pts[j - 1], pts[j], pts[(j + 1) % len(pts)]
-        x1, y1, x2, y2 = a[0] - v[0], a[1] - v[1], b[0] - v[0], b[1] - v[1]
-        return abs(math.degrees(math.atan2(x1 * y2 - y1 * x2, x1 * x2 + y1 * y2)))
-    top = [j for j in range(len(pts)) if abs(pts[j][1] - ytop) < 15]
-    sq = [j for j in top if abs(ang(j) - 90) < 10] or top            # a square corner on the top side, leftmost
-    i = min(sq, key=lambda j: pts[j][0])
-    V = pts[i]; Pa, Pb = pts[i - 1], pts[(i + 1) % len(pts)]
-    c = min(bars, key=lambda b: math.dist(b, V))
-    ua = ((Pa[0] - V[0]) / math.dist(Pa, V), (Pa[1] - V[1]) / math.dist(Pa, V))
-    ub = ((Pb[0] - V[0]) / math.dist(Pb, V), (Pb[1] - V[1]) / math.dist(Pb, V))
-    u = (ua[0] + ub[0], ua[1] + ub[1]); u = (u[0] / math.hypot(*u), u[1] / math.hypot(*u))   # into the core (bisector)
-    def foot(A):                                                                   # tangent point on edge A-V
-        ex, ey = V[0] - A[0], V[1] - A[1]; L = math.hypot(ex, ey)
-        tt = ((c[0] - A[0]) * ex + (c[1] - A[1]) * ey) / L ** 2
-        return (A[0] + tt * ex, A[1] + tt * ey), (ex / L, ey / L)
-    def hook(A):
-        T, dv = foot(A)
-        rr = math.dist(T, c)
-        th = math.atan2(T[1] - c[1], T[0] - c[0])
-        sg = 1 if (T[0] - c[0]) * dv[1] - (T[1] - c[1]) * dv[0] > 0 else -1      # +1 = counter-clockwise
-        th_end = math.atan2(-u[0], u[1]) if sg > 0 else math.atan2(u[0], -u[1])
-        sweep = (th_end - th) * sg % (2 * math.pi)
-        arc = [(c[0] + rr * math.cos(th + sg * sweep * k / 16), c[1] + rr * math.sin(th + sg * sweep * k / 16)) for k in range(17)]
-        e = arc[-1]
-        return T, arc + [(e[0] + u[0] * tail, e[1] + u[1] * tail)]
-    Ta, ha = hook(Pa); Tb, hb = hook(Pb)
-    n = len(pts)
-    body = [Tb] + [pts[(i + k) % n] for k in range(1, n)] + [Ta]
-    return [body, ha, hb]
 
 
 def draw_neck(doc, idx, col, f, meta, bl, no):
@@ -204,7 +168,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     # vertical bars (two outer ones drawn), foot outwards on the mesh
     for sx in (-1, 1):
         x = sx * (cw / 2 - COLC - 10 - d / 2)
-        sh.pline([Q(x + sx * foot, yb), Q(x, yb), Q(x, top + lp)], 'S-RFT-TOP', max(d * k, 25))
+        sh.pline([Q(x + sx * foot, yb), Q(x, yb), Q(x, top + lp)], 'S-RFT-TOP', max(d * k, 25), r=3 * d * k)
     # ties
     y = f['h'] + 50
     while y <= top - 50:
@@ -253,7 +217,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.pline([P(0, 0), P(W, 0), P(W, Hh), P(0, Hh)], 'S-GB-CONC', 0, True)
     for t in ties:
         for pts, closed in t['draw']:
-            for seg in hooked_tie(pts, col['bars']):
+            for seg in hooked_tie(pts, col['bars'], rc=d / 2 + ds / 2):
                 sh.pline([P(*p) for p in seg], 'S-RFT-STIR', 25)
     for (x, y) in col['bars']:
         hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'})
@@ -267,16 +231,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     for t in ties:
         kk = min(9.0, 2700 / max(1, t['hh']), 5500 / max(1, t['w']))
         nm = t['norm']; nn = len(nm)
-        def inner(j, off):                                   # point inside corner j along its bisector
-            a_, v_, b_ = nm[j - 1], nm[j], nm[(j + 1) % nn]
-            ua = ((a_[0] - v_[0]) / math.dist(a_, v_), (a_[1] - v_[1]) / math.dist(a_, v_))
-            ub = ((b_[0] - v_[0]) / math.dist(b_, v_), (b_[1] - v_[1]) / math.dist(b_, v_))
-            sn = math.sqrt(max(1e-9, (1 - (ua[0] * ub[0] + ua[1] * ub[1])) / 2))       # sin(half angle)
-            u_ = (ua[0] + ub[0], ua[1] + ub[1]); h_ = math.hypot(*u_)
-            return (v_[0] + u_[0] / h_ * off / sn, v_[1] + u_[1] / h_ * off / sn)
-        cb = [inner(j, d / 2 + 10) for j in range(nn)]     # bar centres for the out-to-out shape
+        cb = tie_bar_centres(nm, d / 2 + 10)              # bar centres for the out-to-out shape
         Z = lambda p: (tx + p[0] * kk, by + p[1] * kk)
-        segs = hooked_tie(nm, cb, tail=100)
+        segs = hooked_tie(nm, cb, tail=100, rc=d / 2 + 10)
         for sg_ in segs:
             sh.pline([Z(*[p]) if False else Z(p) for p in sg_], 'S-RFT-STIR', 20)
         # one or two sides dimensioned (engineer's note): the top side and the vertical side, plus one slanted side

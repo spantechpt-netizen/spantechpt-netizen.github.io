@@ -1,7 +1,7 @@
 """Grade-beam shop drawings, one set of A3 sheets per grid axis (Roya-style call-outs).
 Each sheet: plan strip (top bars above the beam, bottom bars below), longitudinal section, cross sections."""
 import math, pickle, sys, json
-from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs
+from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, hooked_tie, tie_bar_centres
 LEV = json.load(open('project.json')).get('levels', {})
 
 WIN = 29500          # beam length per sheet at 1:100
@@ -196,7 +196,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             if b['legL'] and b['x0'] >= w0: pts.append((U(a), base - off * lg))
             pts += [(U(a), base), (U(c), base)]
             if b['legR'] and b['x1'] <= w1: pts.append((U(c), base - off * lg))
-            sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 40)
+            sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 40, r=150)
             cx = U((a + c) / 2)
             tx = U(a) + 500
             sh.text(callout(b['n'], b['d'], m, b['L'], layer=b['pos']), tx, base + 180, 250)
@@ -238,7 +238,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             if b['legL'] and b['x0'] >= w0: pts.append((U(a), y + dy * lg))
             pts += [(U(a), y), (U(c), y)]
             if b['legR'] and b['x1'] <= w1: pts.append((U(c), y + dy * lg))
-            sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 25)
+            sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 25, r=60)
         for s in stirs:
             if not vis(s['a'], s['b']): continue
             p = SCHED[s['t']]
@@ -280,11 +280,12 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.pline([Q(0, 0), Q(p['b'], 0), Q(p['b'], p['h']), Q(0, p['h'])], 'S-GB-CONC', 0, True)
             # stirrup: outer face at the cover, drawn on its centre line
             x0s, x1s, y0s, y1s = c + ds / 2, p['b'] - c - ds / 2, ct + ds / 2, p['h'] - ct - ds / 2
-            sh.pline([Q(x0s, y0s), Q(x1s, y0s), Q(x1s, y1s), Q(x0s, y1s)], 'S-RFT-STIR', ds * f, True)
-            # two 135-degree hook tails at the top-left corner, 100 mm long
-            t = 100 / math.sqrt(2)
-            sh.pline([Q(x0s + 2 * ds, y1s), Q(x0s + 2 * ds + t, y1s - t)], 'S-RFT-STIR', ds * f)
-            sh.pline([Q(x0s, y1s - 2 * ds), Q(x0s + t, y1s - 2 * ds - t)], 'S-RFT-STIR', ds * f)
+            # stirrup on its centre line, curved at every bend; 135-degree hooks wrap the top-left bar, 100 mm tails
+            dm = max(p['dt'], p['db'])
+            cbars = [(x0s + ds / 2 + dm / 2, y0s + ds / 2 + dm / 2), (x1s - ds / 2 - dm / 2, y0s + ds / 2 + dm / 2),
+                     (x1s - ds / 2 - dm / 2, y1s - ds / 2 - dm / 2), (x0s + ds / 2 + dm / 2, y1s - ds / 2 - dm / 2)]
+            for seg in hooked_tie([(x0s, y0s), (x1s, y0s), (x1s, y1s), (x0s, y1s)], cbars, tail=100, rc=dm / 2 + ds / 2):
+                sh.pline([Q(*q) for q in seg], 'S-RFT-STIR', ds * f)
             for row, n, d in (('T', p['nt'], p['dt']), ('B', p['nb'], p['db'])):
                 yy = p['h'] - ct - ds - d / 2 if row == 'T' else ct + ds + d / 2
                 xa, xb = c + ds + d / 2, p['b'] - c - ds - d / 2
@@ -302,21 +303,24 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.text(str(c), Q(c / 2, 0)[0], Q(0, p['h'] / 2)[1], 120, 'S-DIM', rot=90, align=TA.MIDDLE_CENTER)
             sh.text(f"T{p['ds']} @{p['s']} mm", bx + W_ + 250, by + H_ / 2, 200)
             # stirrup shape with dims (Roya style)
-            sx2 = bx + W_ + 1700
+            sx2 = bx + W_ + 3000                                      # stirrup sketch clear of the call-outs
             a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6
-            sh.pline([(sx2, by + 300), (sx2 + a_, by + 300), (sx2 + a_, by + 300 + b_), (sx2, by + 300 + b_)], 'S-RFT-STIR', 30, True)
+            kk_ = 0.6 * f; sk = [(0, 0), (a_ / kk_, 0), (a_ / kk_, b_ / kk_), (0, b_ / kk_)]
+            for seg in hooked_tie(sk, tie_bar_centres(sk, dm / 2 + ds), tail=100, rc=dm / 2 + ds):
+                sh.pline([(sx2 + q[0] * kk_, by + 300 + q[1] * kk_) for q in seg], 'S-RFT-STIR', 30)
             sh.text(f"{p['b'] - 2 * c}", sx2 + a_ / 2, by + 150, 170, 'S-DIM', align=TA.TOP_CENTER)
             sh.text(f"{p['h'] - 80}", sx2 + a_ + 150, by + 300 + b_ / 2, 170, 'S-DIM', rot=90, align=TA.TOP_CENTER)
             sh.text(f"SEC {sec_no}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
             sh.text(f"{sc['t']} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
-            sx += W_ + 1700 + a_ + 1600
+            sx += W_ + 3000 + a_ + 1600
         draw_legend(sh, 21000, 27900)
         # levels on the longitudinal section
         if 'top_gb' in LEV:
             tg = LEV['top_gb']
-            for yy, lab in ((Y_ELEV, f"T.O.GB {tg:+.2f}"), (Y_ELEV - hmax, f"B.O.GB {tg - hmax / 1000:+.2f}")):
-                sh.line((X0 - 1300, yy), (X0 - 100, yy), 'S-DIM')
-                sh.text(lab, X0 - 1300, yy + 60, 170, 'S-DIM')
+            for yy, nm_, lv in ((Y_ELEV, 'T.O.GB', tg), (Y_ELEV - hmax, 'B.O.GB', tg - hmax / 1000)):
+                sh.line((X0 - 1250, yy), (X0 - 300, yy), 'S-DIM')            # name above, value under the level line
+                sh.text(nm_, X0 - 1250, yy + 50, 150, 'S-DIM')
+                sh.text(f"{lv:+.2f}", X0 - 1250, yy - 50, 150, 'S-DIM', align=TA.TOP_LEFT)
     # BBS of the axis set
     meta = dict(meta0); meta['title'] = f'GRADE BEAMS AXIS {axis}'; meta['dwg'] = f'{meta0["prefix"]}-{axis}'
     nb = draw_bbs(doc, start_sheet - 1 + len(out), bl.sorted(), meta, Sheet)

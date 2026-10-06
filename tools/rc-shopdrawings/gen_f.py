@@ -103,7 +103,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                     y = f['W'] * (0.18 if kind == 'B' else 0.82)
                     x0, x1 = COVER, f['L'] - COVER
                     pts = [(P(x0, y)[0], P(x0, y)[1] + sgn * lgk), P(x0, y), P(x1, y), (P(x1, y)[0], P(x1, y)[1] + sgn * lgk)]
-                    sh.pline(pts, lay, 30)
+                    sh.pline(pts, lay, 30, r=3 * b['d'] * k)
                     sh.text(f"{b['straight'] / 1000:.2f}", P((x0 + x1) / 2, y)[0], P(0, y)[1] + 150, 260, 'S-DIM', align=TA.BOTTOM_CENTER)
                     sh.text(f"{b['leg'] / 1000:.2f}", P(x0, y)[0] + 100, P(0, y)[1] + sgn * lgk / 2, 220, 'S-DIM', rot=90, align=TA.TOP_CENTER)
                     sh.text(f"{b['leg'] / 1000:.2f}", P(x1, y)[0] - 100, P(0, y)[1] + sgn * lgk / 2, 220, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
@@ -116,7 +116,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                     x = f['L'] * (0.84 if kind == 'B' else 0.16)
                     y0, y1 = COVER, f['W'] - COVER
                     pts = [(P(x, y0)[0] - sgn * lgk, P(x, y0)[1]), P(x, y0), P(x, y1), (P(x, y1)[0] - sgn * lgk, P(x, y1)[1])]
-                    sh.pline(pts, lay, 30)
+                    sh.pline(pts, lay, 30, r=3 * b['d'] * k)
                     sh.text(f"{b['straight'] / 1000:.2f}", P(x, 0)[0] + 200, P(x, (y0 + y1) / 2)[1], 260, 'S-DIM', rot=90, align=TA.TOP_CENTER)
                     sh.text(f"{b['leg'] / 1000:.2f}", P(x, 0)[0] - sgn * lgk / 2, P(x, y0)[1] + 100, 220, 'S-DIM', align=TA.BOTTOM_CENTER)
                     sh.text(f"{b['leg'] / 1000:.2f}", P(x, 0)[0] - sgn * lgk / 2, P(x, y1)[1] - 100, 220, 'S-DIM', align=TA.TOP_CENTER)
@@ -130,7 +130,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                 sh.text(callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), tx, ty, 260, 'S-RFT-TXT')
         else:
             o = sb['off']
-            sh.pline([P(o, o), P(f['L'] - o, o), P(f['L'] - o, f['W'] - o), P(o, f['W'] - o)], 'S-RFT-STIR', 30, True)
+            sh.pline([P(o, o), P(f['L'] - o, o), P(f['L'] - o, f['W'] - o), P(o, f['W'] - o)], 'S-RFT-STIR', 30, True, r=3 * sb['ds'] * k)
             sh.text(f"{sb['lx'] / 1000:.2f}", *P(f['L'] / 2, o + 60), 230, 'S-DIM', align=TA.BOTTOM_CENTER)
             sh.text(f"{sb['ly'] / 1000:.2f}", P(f['L'] - o, 0)[0] - 120, P(0, f['W'] / 2)[1], 230, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
             tx, ty = P(f['L'] * 0.12, f['W'] * 0.84)
@@ -173,7 +173,7 @@ def draw_sheet(doc, idx, f, meta, bl):
     if bx_:
         top_of_leg = (h - c - dT - 15) if tx_ else (h - c)
         xl, xr = c + BX['d'] / 2, L - c - BX['d'] / 2
-        sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20))
+        sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20), r=3 * BX['d'] * ks)
         dots(yY, BY['d'], BY['s'], 'S-RFT-BOT', xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2)
         lines.append((yX, callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag'])))
         lines.append((yY, callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag'])))
@@ -181,7 +181,7 @@ def draw_sheet(doc, idx, f, meta, bl):
         bot_of_leg = c + (dB if bx_ else 0) + 15
         ins = (BX['d'] + 2) if bx_ else 0                # top U sits inside the bottom U legs, side bars inside both
         xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
-        sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20))
+        sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20), r=3 * TX['d'] * ks)
         dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
         lines.append((tX, callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag'])))
         lines.append((tY, callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag'])))
