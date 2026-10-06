@@ -93,7 +93,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - Panels: `FOUNDATION BOTTOM REINFORCEMENT PLAN @ X&Y DIRECTION`, `FOUNDATION TOP REINFORCEMENT PLAN @ X&Y DIRECTION`
   (rafts: X and Y on separate panels, plus ADD bottom / ADD top), `FOUNDATION SIDE REINFORCEMENT`.
 - One representative bar per direction drawn as a U (bottom legs up, top legs down) with the straight length and
-  the legs written in metres (`4.36`, `0.52`), a distribution line with a dot where it crosses the bar, the
+  the legs written in mm (`4360`, `520`; the Roya package used metres, changed by the engineer), a distribution line with a dot where it crosses the bar, the
   overall sizes dimensioned in mm, the column hatched.
 - Call-out: `(mark) 40Ø18  L=9.38m  S=12.5cm  - B1` ; layers B1 (outer, long direction) / B2, T1 / T2 (outer, long
   direction), ADD-B1 / ADD-B2 for additional bars; side bars `1Ø12 L=11.88m ... SB`; chairs `41Ø16 L=1.88m S=100*100CM`.
@@ -121,6 +121,11 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - Break lines (`Sheet.break_line`): straight line past both faces with one zig-zag in the middle (neck top, column above).
 - **Bar marks in a hexagon** (`Sheet.mark`, `Sheet.ctext`): in front of every call-out (GB, footings, necks, tie sketches)
   and in the BBS Position column.
+- **One project, one style** (`gen.ST`, `gen.mm`, `gen.project_notes`): every length, leg, lap and tie side is written in
+  **mm** (integers, no unit; levels stay in m); the same text sizes (name 500, sub-title 280, panel 260, call-out 250,
+  bar length 220, notes 170) and the same general notes on GB, footing and neck sheets.
+- GB plan labels are placed automatically in free spots (bars, legs, laps, beams, grid stubs reserved first; call-outs on
+  the outer side of each bar, lengths on the inner side; grid lines broken where text is written).
 - No text on lines: panel names above the outlines, leg lengths inside the bends, Y-bar call-outs along the bar, title
   block values squeezed to the box (`Sheet.text(maxw=)`).
 

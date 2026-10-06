@@ -1,7 +1,7 @@
 """Grade-beam shop drawings, one set of A3 sheets per grid axis (Roya-style call-outs).
 Each sheet: plan strip (top bars above the beam, bottom bars below), longitudinal section, cross sections."""
 import math, pickle, sys, json
-from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, hooked_tie, tie_bar_centres
+from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, hooked_tie, tie_bar_centres, ST, mm, project_notes
 LEV = json.load(open('project.json')).get('levels', {})
 
 WIN = 29500          # beam length per sheet at 1:100
@@ -160,13 +160,15 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
         sh = Sheet(doc, 0, -(start_sheet - 1 + len(out)) * 32000, meta)
         out.append(meta['dwg'])
         vis = lambda a, b: b > w0 and a < w1
-        sh.text(f'AXIS {axis}', 1800, 27900, 500, 'S-AXIS-TXT')
-        sh.text(f'GRADE BEAMS ON AXIS {axis} - PLAN  1:100', 1800, 27200, 280, 'S-SEC')
+        sh.text(f'AXIS {axis}', 1800, 27900, ST['name'], 'S-AXIS-TXT')
+        sh.text(f'GRADE BEAMS ON AXIS {axis} - PLAN  1:100', 1800, 27200, ST['sub'], 'S-SEC')
         # perpendicular grid lines + bubbles
         for k, v in perp.items():
             if w0 - 200 <= v <= w1 + 200:
                 x = U(v)
-                for y0_, y1_ in ((Y_PLAN - 3400, Y_PLAN + 3400), (Y_ELEV - 1500, Y_ELEV + 1600)):
+                # grid lines broken where bars, call-outs and dimensions are written (no text on lines)
+                for y0_, y1_ in ((Y_PLAN + 3150, Y_PLAN + 3450), (Y_PLAN - 700, Y_PLAN + 700), (Y_PLAN - 3400, Y_PLAN - 3150),
+                                 (Y_ELEV + 1100, Y_ELEV + 1650), (Y_ELEV - 1000, Y_ELEV + 250)):
                     sh.line((x, y0_), (x, y1_), 'S-AXIS')
                 sh.circle(x, Y_PLAN + 3900, 450, 'S-AXIS')
                 sh.text(k, x, Y_PLAN + 3900, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
@@ -183,13 +185,32 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
         for a, b, t in sup:
             if vis(a, b):
                 sh.hatch_rect(U(max(a, w0)), Y_PLAN - 400, U(min(b, w1)), Y_PLAN + 400)
-        # bars on plan
+        # bars on plan: bars drawn first, then every text is placed in a free spot (no text on lines / other text)
+        occ = []
+        def hit(bx):
+            return any(bx[0] < o[2] and o[0] < bx[2] and bx[1] < o[3] and o[1] < bx[3] for o in occ)
+        def tw(t, h): return len(t) * h * 0.9
+        def put(cands):
+            for bx in cands:
+                if not hit(bx): occ.append(bx); return bx
+            occ.append(cands[0]); return cands[0]
+        ROW = lambda pos, row: Y_PLAN + (1 if pos == 'T' else -1) * (1300 + 1100 * row)
+        for k_, v in perp.items():
+            if w0 - 200 <= v <= w1 + 200:
+                occ += [(U(v) - 30, Y_PLAN - 700, U(v) + 30, Y_PLAN + 700), (U(v) - 500, Y_PLAN + 3150, U(v) + 500, Y_PLAN + 4400),
+                        (U(v) - 30, Y_PLAN - 3400, U(v) + 30, Y_PLAN - 3150)]
+        for g in groups:
+            for r_ in g['runs']:
+                if vis(r_['lo'], r_['hi']):
+                    a_, b_ = U(max(r_['lo'], w0)), U(min(r_['hi'], w1))
+                    occ.append((a_, Y_PLAN - 420, b_, Y_PLAN + 420))
+                    occ.append((U((max(r_['lo'], w0) + min(r_['hi'], w1)) / 2) - 400, Y_PLAN - r_['w'] / 2 - 400, U((max(r_['lo'], w0) + min(r_['hi'], w1)) / 2) + 400, Y_PLAN - r_['w'] / 2))
+        drawn = []
         for b in bars:
             if not vis(b['x0'], b['x1']): continue
             if min(b['x1'], w1) - max(b['x0'], w0) < 1500 and (b['x0'] < w0 or b['x1'] > w1): continue   # tiny continuation stub
-            m = b['mk']
             off = 1 if b['pos'] == 'T' else -1
-            base = Y_PLAN + off * (1300 + 750 * b['row'])
+            base = ROW(b['pos'], b['row'])
             lg = leg(b['d'])
             a, c = max(b['x0'], w0), min(b['x1'], w1)
             pts = []
@@ -197,24 +218,52 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             pts += [(U(a), base), (U(c), base)]
             if b['legR'] and b['x1'] <= w1: pts.append((U(c), base - off * lg))
             sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 40, r=150)
-            cx = U((a + c) / 2)
-            tx = U(a) + 500
-            sh.ctext(m, callout(b['n'], b['d'], m, b['L'], layer=b['pos']), tx, base + 180, 250)
-            sh.text(f"{round(b['x1'] - b['x0'])} mm", cx + 600, base - 120, 200, 'S-DIM', align=TA.TOP_CENTER)
-            if b['x0'] < w0: sh.text('CONT.', U(a) + 100, base - 120, 180, 'S-DIM', align=TA.TOP_LEFT)
-            if b['x1'] > w1: sh.text('CONT.', U(c) - 100, base - 120, 180, 'S-DIM', align=TA.TOP_RIGHT)
-            if b['legL'] and b['x0'] >= w0: sh.text(f'{lg} mm', U(a) - 100, base - off * lg / 2, 170, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-            if b['legR'] and b['x1'] <= w1: sh.text(f'{lg} mm', U(c) + 280, base - off * lg / 2, 170, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+            occ.append((U(a) - 40, min(base, base - off * lg) - 40, U(c) + 40, max(base, base - off * lg) + 40))
+            drawn.append((b, a, c, base, off, lg))
+        hC, hL = ST['call'], ST['len']
+        for b, a, c, base, off, lg in drawn:
+            m = b['mk']
+            if b['legL'] and b['x0'] >= w0:
+                x_ = U(a) - 160; ym_ = base - off * lg / 2; occ.append((x_ - hL, ym_ - 400, x_, ym_ + 400))
+                sh.text(mm(lg), x_, base - off * lg / 2, hL, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+            if b['legR'] and b['x1'] <= w1:
+                x_ = U(c) + 380; ym_ = base - off * lg / 2; occ.append((x_ - hL, ym_ - 400, x_, ym_ + 400))
+                sh.text(mm(lg), x_, base - off * lg / 2, hL, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
         for pos in 'TB':
             rows = sorted([b for b in bars if b['pos'] == pos], key=lambda b: b['x0'])
             for a, b in zip(rows, rows[1:]):
                 if b['x0'] < a['x1'] and w0 <= b['x0'] and a['x1'] <= w1:
                     off = 1 if pos == 'T' else -1
-                    y = Y_PLAN + off * 2400
-                    sh.dim((U(b['x0']), y), (U(a['x1']), y), (U(b['x0']), y), text=str(round(a['x1'] - b['x0'])))
-
+                    lo, hi = sorted((ROW(pos, 0), ROW(pos, 1)))
+                    x0_, x1_ = U(b['x0']), U(a['x1'])
+                    cands = [(x0_ - 100, y, x1_ + 100, y + 330) for y in ((lo + hi) / 2 - 170, (lo + hi) / 2 + 150, (lo + hi) / 2 - 450,
+                                                                           hi + 700 if pos == 'T' else lo - 1000)]
+                    bx = put(cands)
+                    sh.dim((x0_, bx[1] + 60), (x1_, bx[1] + 60), (x0_, bx[1] + 60), text=str(round(a['x1'] - b['x0'])))
+        for b, a, c, base, off, lg in drawn:
+            m = b['mk']; t = callout(b['n'], b['d'], m, b['L'], layer=b['pos'])
+            W_ = tw(t, hC) + 2.6 * hC
+            xs = [U(a) + 300 + k * 350 for k in range(60) if U(a) + 300 + k * 350 + W_ <= max(U(c), U(a) + 300 + W_)]
+            # call-out on the outer side of the bar (above top bars, below bottom bars), lengths on the inner side
+            yc = (lambda dy: base + 150 + dy) if off > 0 else (lambda dy: base - 150 - hC * 1.3 - dy)
+            bx = put([(x, yc(dy), x + W_, yc(dy) + hC * 1.3) for dy in (0, 450, 900) for x in xs])
+            sh.ctext(m, t, bx[0], bx[1] + hC * 0.15, hC)
+            if abs((bx[1] if off > 0 else bx[3]) - base) > 300:            # moved away: short leader to the bar
+                sh.line((bx[0] + 1.1 * hC, bx[1] if off > 0 else bx[3]), (bx[0] + 1.1 * hC, base + off * 40), 'S-RFT-TXT')
+            lt = mm(b['x1'] - b['x0']); Wl = tw(lt, hL); cx = U((a + c) / 2)
+            yl0 = base - 100 - hL if off > 0 else base + 100                # inner side band
+            cands = [(cx + dx - Wl / 2, yl0, cx + dx + Wl / 2, yl0 + hL) for dx in (0, 600, -600, 1200, -1200, 1800, -1800)
+                     if U(a) <= cx + dx - Wl / 2 and cx + dx + Wl / 2 <= U(c)] or [(cx - Wl / 2, yl0, cx + Wl / 2, yl0 + hL)]
+            bx = put(cands)
+            sh.text(lt, (bx[0] + bx[2]) / 2, bx[1], hL, 'S-DIM', align=TA.BOTTOM_CENTER)
+            if b['x0'] < w0:
+                bx = put([(U(a) + 100, yl0, U(a) + 100 + tw('CONT.', 180), yl0 + 180)])
+                sh.text('CONT.', bx[0], bx[1], 180, 'S-DIM', align=TA.BOTTOM_LEFT)
+            if b['x1'] > w1:
+                bx = put([(U(c) - 100 - tw('CONT.', 180), yl0, U(c) - 100, yl0 + 180)])
+                sh.text('CONT.', bx[2], bx[1], 180, 'S-DIM', align=TA.BOTTOM_RIGHT)
         # ---- elevation ----
-        sh.text(f'LONGITUDINAL SECTION - AXIS {axis}  1:100', 1800, Y_ELEV + 3000, 280, 'S-SEC')
+        sh.text(f'LONGITUDINAL SECTION - AXIS {axis}  1:100', 1800, Y_ELEV + 3000, ST['sub'], 'S-SEC')
         hmax = 700
         for g in groups:
             for s in g['segs']:
@@ -259,9 +308,9 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
                 n = sum(s['n'] for s in ss if w0 <= (s['a'] + s['b']) / 2 <= w1)
                 if not n: continue
                 a = max(sg['a'], w0)
-                sh.ctext(ss[0]['mk'], callout(n, ss[0]['d'], ss[0]['mk'], ss[0]['L'], ss[0]['s']), U(a) + 900, Y_ELEV - hmax - 1100, 220)
+                sh.ctext(ss[0]['mk'], callout(n, ss[0]['d'], ss[0]['mk'], ss[0]['L'], ss[0]['s']), U(a) + 900, Y_ELEV - hmax - 1100, ST['call'])
         # ---- cross sections ----
-        sh.text('CROSS SECTIONS  1:20', 1800, Y_SEC + 4900, 280, 'S-SEC')
+        sh.text('CROSS SECTIONS  1:20', 1800, Y_SEC + 4900, ST['sub'], 'S-SEC')
         sx = 2600
         for sc in secs:
             if not (w0 <= sc['u'] <= w1): continue
@@ -301,15 +350,15 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.text(str(ct), Q(p['b'] / 2, ct / 2)[0], Q(0, ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
             sh.text(str(ct), Q(p['b'] / 2, 0)[0], Q(0, p['h'] - ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
             sh.text(str(c), Q(c / 2, 0)[0], Q(0, p['h'] / 2)[1], 120, 'S-DIM', rot=90, align=TA.MIDDLE_CENTER)
-            sh.text(f"T{p['ds']} @{p['s']} mm", bx + W_ + 250, by + H_ / 2, 200)
+            sh.text(f"T{p['ds']} @{p['s']}", bx + W_ + 250, by + H_ / 2, 200)
             # stirrup shape with dims (Roya style)
             sx2 = bx + W_ + 3000                                      # stirrup sketch clear of the call-outs
             a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6
             kk_ = 0.6 * f; sk = [(0, 0), (a_ / kk_, 0), (a_ / kk_, b_ / kk_), (0, b_ / kk_)]
             for seg in hooked_tie(sk, tie_bar_centres(sk, dm / 2 + ds), tail=100, rc=dm / 2 + ds):
                 sh.pline([(sx2 + q[0] * kk_, by + 300 + q[1] * kk_) for q in seg], 'S-RFT-STIR', 30)
-            sh.text(f"{p['b'] - 2 * c}", sx2 + a_ / 2, by + 150, 170, 'S-DIM', align=TA.TOP_CENTER)
-            sh.text(f"{p['h'] - 80}", sx2 + a_ + 150, by + 300 + b_ / 2, 170, 'S-DIM', rot=90, align=TA.TOP_CENTER)
+            sh.text(mm(p['b'] - 2 * c), sx2 + a_ / 2, by + 150, ST['len'], 'S-DIM', align=TA.TOP_CENTER)
+            sh.text(mm(p['h'] - 80), sx2 + a_ + 150, by + 300 + b_ / 2, ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
             sh.text(f"SEC {sec_no}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
             sh.text(f"{sc['t']} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
             sx += W_ + 3000 + a_ + 1600
@@ -334,6 +383,7 @@ if __name__ == '__main__':
     meta0 = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                  rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='1:100 / SEC 1:20', prefix='SDW-STR-GB')
     meta0.update(json.load(open('project.json')).get('meta', {}))
+    meta0['notes'] = project_notes('COVER GRADE BEAMS 40.', 'GB STIRRUPS STOP AT THE COLUMN FACE; COLUMN TIES CONTINUE THROUGH THE JOINT.')
     for a in axes:
         doc = new_doc()
         names = draw_axis(doc, a, runs, cols, meta0)

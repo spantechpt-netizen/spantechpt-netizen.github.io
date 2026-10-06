@@ -31,6 +31,21 @@ def new_doc():
     return doc
 
 
+# ---- one project, one style: the same text sizes, length format and notes on every element sheet
+ST = dict(name=500, sub=280, panel=260, call=250, len=220, note=170, level=170)
+
+
+def mm(v):
+    """Lengths are always written in mm (engineer's rule): integer, no unit."""
+    return str(int(round(v)))
+
+
+def project_notes(*extra):
+    return ['ALL DIMENSIONS, BAR LENGTHS AND LAPS IN MM; LEVELS IN M.', *extra,
+            'LAP SPLICE = 60 BAR DIAMETER (SBC); MAX. BAR LENGTH 12000.',
+            'ALL BENDS CURVED; TIES / STIRRUPS 135-DEG HOOKS x 100.', "fc' = 35 MPa, fy = 420 MPa."]
+
+
 def fillet(pts, r, closed=False, n=6):
     """Polyline with every corner replaced by an arc of radius r (bars are bent, never sharp). r is clamped so the
     arcs never use more than 45 % of an edge."""
@@ -184,7 +199,7 @@ class Sheet:
                                'LAP SPLICE = 60 BAR DIAMETER (SBC).',
                                'MAX. BAR LENGTH = 12.0 M.',
                                'STIRRUP HOOKS 135 DEG. - 100 MM.']):
-            self.text(f'{i+1}. {n}', tx + 300, 5550 - i * 330, 170, 'S-TITLE', maxw=7600)
+            self.text(f'{i+1}. {n}', tx + 300, 5600 - i * 270, 150, 'S-TITLE', maxw=7600)
         self.text('Drawing Number:', tx + 200, 3700, 200, 'S-TITLE')
         self.text(m['dwg'], tx + 300, 3200, 260, 'S-TITLE')
         self.text(f"Scale: {m.get('scale','AS SHOWN')}   Size: A3   Rev: {m['rev']}", tx + 300, 2600, 220, 'S-TITLE', maxw=7600)
@@ -282,7 +297,7 @@ def draw_bbs(doc, first_idx, rows, meta, Sheet_=None):
     """BBS sheets in the office table layout. Returns the number of sheets added."""
     S = Sheet_ or Sheet
     cols = [('Position', 2000), ('Steel grade', 1900), ('Diameter', 1900), ('in the\nelement', 2100), ('of elements', 2100),
-            ('total', 1900), ('Symbol ( m)', 6200), ('Length ( m)', 2300), ('Mass ( kg)', 2300), ('Total mass\n( kg)', 2500)]
+            ('total', 1900), ('Symbol ( mm)', 6200), ('Length ( m)', 2300), ('Mass ( kg)', 2300), ('Total mass\n( kg)', 2500)]
     per = 22
     pages = [rows[i:i + per] for i in range(0, len(rows), per)] or [[]]
     grand = sum(r['n_in'] * r['L'] / 1000 * unit_mass(r['d']) * r['n_el'] for r in rows)

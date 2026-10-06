@@ -5,7 +5,7 @@ the grade beams plus the column lap. Call-outs in the office format, BBS sheet a
 import json, math, pickle, sys
 import ezdxf
 from ezdxf import recover
-from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, fillet, tie_bar_centres
+from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, fillet, tie_bar_centres, ST, mm, project_notes
 
 PRJ = json.load(open('project.json'))
 LEV = PRJ['levels']
@@ -144,9 +144,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], (n_neck + n_ftg) * t['k'], no, '')
 
     title = f"{col['name']}  {col['b']}x{col['h']}  ON  {f['name']}"
-    sh.text(f'NECK {title}', 2000, 27900, 520, 'S-AXIS-TXT')
-    sh.text(f"FOOTING {f['name']} {f['L']}x{f['W']}x{f['h']}", 2000, 26400, 240, 'S-SEC')
-    sh.text(f"NO={no}   T.O.F {tof:+.2f}   T.O.GB {tgb:+.2f}   NECK H = {Hn / 1000:.2f} m", 2000, 27100, 280, 'S-SEC')
+    sh.text(f'NECK {title}', 2000, 27900, ST['name'], 'S-AXIS-TXT')
+    sh.text(f"FOOTING {f['name']} {f['L']}x{f['W']}x{f['h']}", 2000, 26400, ST['sub'], 'S-SEC')
+    sh.text(f"NO={no}   T.O.F {tof:+.2f}   T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}", 2000, 27100, ST['sub'], 'S-SEC')
 
     # ---------- ELEVATION 1:25 (k=4) on the wide face ----------
     k = min(4.0, 21000 / (f['h'] + Hn + lp + 1400))
@@ -199,14 +199,14 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         sh.line(Q(fx0 - 1600, yy), Q(fx0 - 150, yy), 'S-DIM')
         sh.text(lab, Q(fx0 - 1600, 0)[0], Q(0, yy)[1] + 50, 170, 'S-DIM')
     # call-outs
-    sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], 230)
-    sh.text(f"(FOOT {foot} ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 330, 170)
+    sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
+    sh.text(f"(FOOT {foot} ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
     for i, t in enumerate(ties):
-        sh.ctext(t['mk'], callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 330, 210, maxw=(XD - cw / 2 - 350) * k)
-    yt_ = Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 330 - 100
-    sh.text(f"TIES {col['sets']} SETS @{s}", Q(cw / 2 + 200, 0)[0], yt_, 170)
-    sh.text(f"{n_neck} IN THE NECK + {n_ftg} IN THE FOOTING", Q(cw / 2 + 200, 0)[0], yt_ - 260, 170)
-    sh.text('ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)', Q(0, 0)[0], Q(0, -100)[1] - 700, 240, 'S-SEC', align=TA.TOP_CENTER)
+        sh.ctext(t['mk'], callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 520, ST['call'], maxw=(XD - cw / 2 - 350) * k)
+    yt_ = Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 520 - 100
+    sh.text(f"TIES {col['sets']} SETS @{s}", Q(cw / 2 + 200, 0)[0], yt_, ST['note'])
+    sh.text(f"{n_neck} IN THE NECK + {n_ftg} IN THE FOOTING", Q(cw / 2 + 200, 0)[0], yt_ - 260, ST['note'])
+    sh.text('ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)', Q(0, 0)[0], Q(0, -100)[1] - 700, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
 
     # ---------- SECTION A-A 1:10 (k=10) ----------
     ks = min(10.0, 9000 / max(col['b'], col['h']))
@@ -224,10 +224,10 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         hh.paths.add_edge_path().add_arc(sh.P(*P(x, y)), d / 2 * ks, 0, 360)
     sh.dim(P(0, 0), P(W, 0), (P(0, 0)[0], P(0, 0)[1] - 600), text=str(round(W)))
     sh.dim(P(0, 0), P(0, Hh), (P(0, 0)[0] - 600, P(0, 0)[1]), angle=90, text=str(round(Hh)))
-    sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, 260, 'S-SEC', align=TA.TOP_CENTER)
+    sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # tie shapes with their lengths
-    tx = 23500; by = 7200
-    sh.text('TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 MM (OUT-TO-OUT DIMENSIONS)', 23500, 10400, 170, 'S-RFT-TXT', maxw=9500)
+    tx = 23500; by = 8400
+    sh.text('TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)', 23500, 11500, ST['note'], 'S-RFT-TXT', maxw=9500)
     for t in ties:
         kk = min(9.0, 2700 / max(1, t['hh']), 5500 / max(1, t['w']))
         nm = t['norm']; nn = len(nm)
@@ -249,13 +249,13 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
             if ang > 90.5 or ang <= -89.5: ang += 180
             cx_ = sum(p[0] for p in nm) / nn; cy_ = sum(p[1] for p in nm) / nn
             nx_, ny_ = (a_[0] + b_[0]) / 2 - cx_, (a_[1] + b_[1]) / 2 - cy_; hn = math.hypot(nx_, ny_) or 1
-            sh.text(str(int(round(math.dist(a_, b_)))), mx + nx_ / hn * 180, my + ny_ / hn * 180, 170, 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
+            sh.text(mm(math.dist(a_, b_)), mx + nx_ / hn * 200, my + ny_ / hn * 200, ST['len'], 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
         e_ = segs[1][-1]
-        sh.text('100', Z(e_)[0] + 60, Z(e_)[1] - 60, 150, 'S-DIM', align=TA.TOP_LEFT)
-        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 500, 170, 'S-RFT-TXT')
-        sh.text(f"L={t['L']}", tx, by - 820, 170, 'S-RFT-TXT')
-        tx += max(t['w'] * kk, 2400) + 900
-        if tx > 29500: tx = 23500; by -= 3600
+        sh.text('100', Z(e_)[0] + 60, Z(e_)[1] - 60, ST['len'], 'S-DIM', align=TA.TOP_LEFT)
+        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 550, ST['call'], 'S-RFT-TXT')
+        sh.text(f"L={mm(t['L'])}", tx, by - 1150, ST['call'], 'S-RFT-TXT')
+        tx += max(t['w'] * kk, 3700) + 900
+        if tx > 29500: tx = 23500; by -= 4300
     return Hn
 
 
@@ -270,8 +270,7 @@ if __name__ == '__main__':
         meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                     rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='ELEV 1:25 / SEC 1:10', prefix='SDW-STR-NCK')
         meta.update(PRJ.get('meta', {}))
-        meta['notes'] = ['ALL DIMENSIONS IN MM.', 'COLUMN COVER 40 MM (SCHEDULE NOTE 4).', 'VERTICAL BARS BENT 90 DEG ON THE FOOTING MESH.',
-                         'LAP SPLICE = 60 BAR DIAMETER (SBC).', 'TIES 135 DEG HOOKS 100 MM.']
+        meta['notes'] = project_notes('COVER COLUMNS 40 (SCHEDULE NOTE 4).', 'VERTICAL BARS BENT 90 DEG ON THE FOOTING MESH.')
         meta['title'] = f'COLUMN NECKS\n{cn} ON {fn}'
         meta['dwg'] = f"{meta['prefix']}-{cn}-{fn}"
         Hn = draw_neck(doc, i, col, lib[fn], meta, bl, int(no))
