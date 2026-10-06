@@ -161,7 +161,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     gb_h = 700
     for sx in (-1, 1):                                               # grade beams framing in (dashed outline)
         sh.pline([Q(sx * cw / 2, top), Q(sx * (cw / 2 + 1500), top), Q(sx * (cw / 2 + 1500), top - gb_h), Q(sx * cw / 2, top - gb_h)], 'S-SEC')
-    sh.line(Q(-cw / 2 - 300, top + lp + 150), Q(cw / 2 + 300, top + lp + 250), 'S-GB-CONC')     # break line of the column above
+    sh.break_line(Q(-cw / 2 - 300, top + lp + 200), Q(cw / 2 + 300, top + lp + 200))            # break line of the column above
     sh.pline([Q(-cw / 2, top), Q(-cw / 2, top + lp + 200)], 'S-GB-CONC'); sh.pline([Q(cw / 2, top), Q(cw / 2, top + lp + 200)], 'S-GB-CONC')
     # bottom mesh of the footing
     sh.pline([Q(fx0 + FC, FC + 10), Q(-fx0 - FC, FC + 10)], 'S-RFT-BOT', 30)

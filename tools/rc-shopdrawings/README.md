@@ -118,6 +118,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - **Bars are bent, never sharp**: every bend drawn with a curve (`fillet`, `Sheet.pline(r=)`): U-bars, L-feet, GB legs,
   ties / stirrups (radius = bar radius + tie radius around the corner bar), bending sketches and BBS symbols; hooks via
   `hooked_tie` (shared by GB stirrups and column ties).
+- Break lines (`Sheet.break_line`): straight line past both faces with one zig-zag in the middle (neck top, column above).
 - No text on lines: panel names above the outlines, leg lengths inside the bends, Y-bar call-outs along the bar, title
   block values squeezed to the box (`Sheet.text(maxw=)`).
 

@@ -210,7 +210,7 @@ def draw_sheet(doc, idx, f, meta, bl):
             neck = lev['top_gb'] - tof
             sh.text(f"NECK UP TO T.O.GB {lev['top_gb']:+.2f}", Q(cx1, 0)[0] + 300, Q(0, h + 560)[1], 170, 'S-DIM')
             sh.text(f"NECK H = {neck:.2f} m", Q(cx1, 0)[0] + 300, Q(0, h + 300)[1], 170, 'S-DIM')
-            sh.line(Q(cx0 - 150, h + 650), Q(cx1 + 150, h + 750), 'S-GB-CONC')        # break line on the neck
+            sh.break_line(Q(cx0 - 150, h + 700), Q(cx1 + 150, h + 700))                 # break line on the neck
         for yy, lab in marks_:
             sh.line(Q(-1300, yy), Q(-150, yy), 'S-DIM')
             sh.text(lab, Q(-1300, yy)[0], Q(0, yy)[1] + 50, 150, 'S-DIM', align=TA.BOTTOM_RIGHT)

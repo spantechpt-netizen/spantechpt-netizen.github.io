@@ -126,6 +126,11 @@ class Sheet:
         est = len(s) * h * 0.9                                   # rough text width; squeeze to fit a box
         if maxw and est > maxw: t.dxf.width = round(maxw / est, 2)
         t.set_placement(self.P(x, y), align=align); return t
+    def break_line(self, a, b, layer='S-GB-CONC', amp=260):
+        """Standard break line from a to b (sheet coords, horizontal): straight, with one zig-zag in the middle."""
+        (x0, y), (x1, _) = a, b
+        m, w = (x0 + x1) / 2, min(amp * 0.7, abs(x1 - x0) / 6)
+        self.pline([(x0, y), (m - w, y), (m - w / 3, y + amp), (m + w / 3, y - amp), (m + w, y), (x1, y)], layer)
     def circle(self, x, y, r, layer):
         self.m.add_circle(self.P(x, y), r, dxfattribs={'layer': layer})
     def dim(self, a, b, base, angle=0, text='<>'):
