@@ -70,7 +70,8 @@ def draw_sheet(doc, idx, f, meta, bl):
         b['mk'] = bl.add(b['d'], ('U', b['leg'], b['straight'], b['leg']), b['L'], b['n'], f['no'], b['tag'])
     sb = side_bars(f)
     sb['mk'] = bl.add(sb['ds'], ('ST', sb['lx'], sb['ly']) if sb['pieces'] == 1 else ('S', sb['L']), sb['L'], sb['rows'] * sb['pieces'], f['no'], 'SB')
-    sb['mk_ch'] = bl.add(16, ('CH', sb['ch_foot'], sb['ch_h'], sb['ch_top']), sb['chair_L'], sb['chairs'], f['no'], 'CH')
+    # chairs only carry a top mesh: none when the footing has no top reinforcement (engineer)
+    sb['mk_ch'] = bl.add(16, ('CH', sb['ch_foot'], sb['ch_h'], sb['ch_top']), sb['chair_L'], sb['chairs'], f['no'], 'CH') if f['top'][0] else None
     mk = lambda b: b['mk']
     draw_legend(sh, 21000, 27900)
     sh.text(f['name'], 2000, 27900, ST['name'], 'S-AXIS-TXT')
@@ -146,7 +147,7 @@ def draw_sheet(doc, idx, f, meta, bl):
             sh.ctext(sb['mk'], callout(sb['rows'] * sb['pieces'], sb['ds'], sb['mk'], sb['L'], layer='SB'), tx, ty, ST['call'], 'S-RFT-TXT')
             sh.text(f"({sb['rows']} ROW(S) INSIDE THE MAIN BARS" + (f", {sb['pieces']} PIECES / ROW LAPPED 60d)" if sb['pieces'] > 1 else ")"), tx, ty - 380, 200, 'S-RFT-TXT')
             tx, ty = P(f['L'] * 0.12, f['W'] * 0.14)
-            sh.ctext(sb['mk_ch'], callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CHAIRS'), tx, ty, ST['call'], 'S-RFT-TXT')
+            if sb['mk_ch']: sh.ctext(sb['mk_ch'], callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CH'), tx, ty, ST['call'], 'S-RFT-TXT')
     # ---- SECTION along X (bars along X = lines, bars along Y = dots) ----
     ks = min(k, 9800 / (f['L'] + 200), 7500 / (f['h'] + 900))       # room for the call-outs before the title block
     sx, sy = 18200 + 100 * ks, R2 + 1700
@@ -203,13 +204,25 @@ def draw_sheet(doc, idx, f, meta, bl):
         for x in (xs_, L - xs_):
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(6 * ks, 18), 0, 360)
         if i == 0: lines.append((y, side['mk'], callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB'), L - xs_))
+    # chair (only with a top mesh): stands on the bottom mesh, carries the top mesh; every side dimensioned
+    if bx_ and tx_ and sb['mk_ch']:
+        yb_, yt_ = c + dB + 8, h - c - dT - 8
+        xc = L * 0.30
+        cp = [(xc - 500, yb_), (xc - 200, yb_), (xc - 200, yt_), (xc + 200, yt_), (xc + 200, yb_), (xc + 500, yb_)]
+        sh.pline([Q(*p) for p in cp], 'S-RFT-STIR', max(16 * ks, 15), r=3 * 16 * ks)
+        hd = min(ST['len'], 150)
+        sh.text(str(sb['ch_foot']), Q(xc - 350, 0)[0], Q(0, yb_)[1] + 60, hd, 'S-DIM', align=TA.BOTTOM_CENTER)
+        sh.text(str(sb['ch_foot']), Q(xc + 350, 0)[0], Q(0, yb_)[1] + 60, hd, 'S-DIM', align=TA.BOTTOM_CENTER)
+        sh.text(str(sb['ch_top']), Q(xc, 0)[0], Q(0, yt_)[1] - 60, hd, 'S-DIM', align=TA.TOP_CENTER)
+        sh.text(str(sb['ch_h']), Q(xc - 200, 0)[0] - 60, Q(0, (yb_ + yt_) / 2)[1], hd, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+        lines.append(((yb_ + yt_) / 2, sb['mk_ch'], callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CH'), xc + 200))
     # call-outs with leaders to the right
     yt = sorted(lines)
     for i, (y, mk_, t, xt) in enumerate(yt):                 # each leader ends ON its bar (line or cut dot)
         ty_ = Q(0, 0)[1] + i * 560 - 100
         sh.line(Q(xt, y), (Q(L + 100, 0)[0] + 350, ty_ + 90), 'S-RFT-TXT')
         sh.circle(*Q(xt, y), 25, 'S-RFT-TXT')
-        sh.ctext(mk_, t, Q(L + 100, 0)[0] + 450, ty_, ST['call'])
+        sh.ctext(mk_, t, Q(L + 100, 0)[0] + 450, ty_, ST['call'], maxw=33600 - Q(L + 100, 0)[0] - 450)
     sh.dim(Q(0, -100), Q(L, -100), (Q(0, 0)[0], Q(0, -100)[1] - 400), text=str(L))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
     sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')
@@ -240,7 +253,7 @@ if __name__ == '__main__':
         meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                     rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='AS SHOWN', prefix='SDW-STR-FDN')
         meta.update(PRJ.get('meta', {}))
-        meta['notes'] = project_notes('COVER FOOTINGS 70; PLAIN CONCRETE 100 UNDER FOOTINGS.', 'SIDE BARS INSIDE THE MAIN U-BARS.')
+        meta['notes'] = project_notes('COVER FOOTINGS 70; PLAIN CONCRETE 100 UNDER FOOTINGS.', 'SIDE BARS INSIDE THE MAIN U-BARS; CH = CHAIRS (ONLY WITH A TOP MESH).')
         meta['title'] = f"STRUCTURAL FOUNDATION\nREINFORCEMENT - {n}  (NO={f['no']})"
         meta['dwg'] = f"{meta['prefix'].replace('GB', 'FDN')}-{n}"
         draw_sheet(doc, i, f, meta, bl)

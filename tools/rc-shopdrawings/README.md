@@ -63,7 +63,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
   reinforcement, with the cut marks on the longitudinal section.
 - Detailing rules in `gen2.py` (open points are confirmed with the engineer before a full run):
   bars anchor to the far face of the end support − cover 40; legs 200 (≤ T16) / 250 (T18+);
-  bars longer than 12 m are split into equal pieces lapped 60 d, top laps in the middle third of a span,
+  bars longer than 12 m are split into equal pieces lapped 60 d (no short filler bar; min piece max(2 lap + 1500, 4000)), top laps in the middle third of a span,
   bottom laps at the supports; stirrups counted per clear span, first 50 mm off the face.
 
 ## Files

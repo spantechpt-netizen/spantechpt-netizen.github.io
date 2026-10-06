@@ -115,6 +115,8 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
   of type/reinforcement, cut marks (numbered circles) on the longitudinal section.
 - Cover 40 (side cover 30 for b ≤ 300 as in Roya). Legs 200 (≤ T16) / 250 (T18+). Bars anchor to the far face
   of the end support − cover. Top laps in the middle third of a span, bottom laps at the supports.
+- **Bars longer than 12 m are split in EQUAL pieces** (engineer: no short filler bar): each cut aims at an equal share
+  of what is left, moves to the nearest allowed lap zone, and never leaves a piece shorter than max(2 × lap + 1500, 4000).
 - **Stirrups stop at the column face**; column ties continue through the joint (note on the sheet). Stirrups
   counted per clear span (face to face), first 50 mm off the face. `L = 2(a+b) + 200`, a = b − 2c,
   b = h − 80 (out-to-out).
@@ -140,9 +142,10 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - **Top U sits inside the bottom U legs** (its straight length is reduced by 2 × bottom bar dia).
 - **Side bars inside BOTH U layers** (not between them); the 70 cover stays on the main bars; loop reduced by the
   main bar diameters and its own; rows every ≤ 300 of free height; loops > 12 m in equal pieces lapped 60 d.
-  **Chairs Ø16 @1000×1000**: foot 300 / leg / top 400 / leg / foot 300; leg (out-to-out) = h − 2×70 − both bottom
+  **Chairs Ø16 @1000×1000 only when the footing has a top mesh** (no top mesh → no chairs, no BBS row); foot 300 / leg / top 400 / leg / foot 300; leg (out-to-out) = h − 2×70 − both bottom
   layers − both top layers (650 with T14 both ways → 454); L = 2×300 + 2×leg + 400; every side dimensioned in the
-  BBS symbol.
+  BBS symbol. The chair is drawn in SECTION 1-1 (standing on the bottom mesh, under the top mesh, curved bends,
+  300 / leg / 400 / 300 written on it) with its call-out `n T 16-mark-L-1000 -CH` on a leader.
 - **Corner bar of the top layer sits inside the bend of the top U**; cut bars are spread between the U bends.
 - Plan: one representative bar per direction as a U (legs folded into the plan, curved), straight length and legs
   in mm, distribution line with a small circle at the bar, column hatched, overall dims.
@@ -212,9 +215,21 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - Counts and lengths agree between call-outs, sketches and BBS; marks package-wide; mirrored ties merged.
 - `ezdxf` audit 0 errors.
 
-## 10. Status (Oct 2026) and open points
+## 10. Working across chats (context limit)
 
-- Samples done, under the engineer's review: GB axis X11, footings F2/F3/F6, neck C1 on F6 (all rules above applied).
+The chat history is summarised automatically when it gets long, so one chat can go on for a long time; still, keep
+the state in files, never only in the conversation:
+- **Rules** live in this skill (update it after every engineer note) and in `README.md`; code in the repo branch.
+- **Project state** (not in the repo): `project.json`, `footings.json`, the extracted `*.pkl` / `axes.json`,
+  `STUDY_NOTES.md` → zipped as `roya_project_state.zip` and sent to the engineer after each milestone.
+- **New chat**: upload `rc-shopdrawings-skill.zip` + `roya_project_state.zip` + the consultant DWG; say which step
+  is next. Rebuild LibreDWG only if the DXF is not in the state zip (it is large — usually not).
+- Work in batches (one batch per message: e.g. necks of C1–C3, footings F1–F7, GB axes X01–X06), each batch
+  rendered, checked, sent and committed before the next — a cut in the chat then loses nothing.
+
+## 11. Status (Oct 2026) and open points
+
+- Samples done (Rev.02 data), under the engineer's review: GB axis X11, footings F2/F3/F6, neck C1 on F6 (all rules above applied).
 - Next (after the engineer says go): full run — all column types incl. the ones on other layers in
   `COLUMN SCH`; pair every column with its footing (plan labels / FND column rects); all necks + BBS; all
   isolated footings with count > 0 (CF / raft / strap later); all GB axes (off-grid beams grouped to the nearest

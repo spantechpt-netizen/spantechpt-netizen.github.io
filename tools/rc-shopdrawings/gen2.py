@@ -87,21 +87,27 @@ def detail(groups, sup):
                 lg, lp = leg(d), lap(d)
                 total = eb - ea + 2 * lg
                 nbar = 1 if total <= STOCK else math.ceil((total - lp) / (STOCK - lp))
-                target = min(STOCK, (total + (nbar - 1) * lp) / nbar + 300) if nbar > 1 else STOCK
+                # equal pieces (engineer: no short filler bar): every cut is re-aimed at an equal share of what is left,
+                # moved to the nearest allowed lap zone, and never leaves a remainder shorter than MINP
+                MINP = max(2 * lp + 1500, 4000)
                 x, k = ea, 0
                 while True:
                     first = k == 0
-                    rem = eb - x + (lg if first else 0) + lg
-                    if rem <= STOCK:
+                    rem = eb - x + (lg if first else 0) + lg                  # length still to cover (with legs)
+                    nleft = nbar - k
+                    if rem <= STOCK or nleft <= 1:
                         bars.append(dict(pos=pos, n=n, d=d, x0=x, x1=eb, legL=first, legR=True, row=k % 2)); break
-                    e = x + target - (lg if first else 0)
-                    e = min(e, x + STOCK - (lg if first else 0))
-                    lo_lim = x + max(4000, target - 3000)
-                    e0 = e
-                    while e > lo_lim and not (ok(e) and ok(e - lp)): e -= 50
-                    if e <= lo_lim:
-                        e = e0
-                        while e < x + STOCK - (lg if first else 0) and not (ok(e) and ok(e - lp)): e += 50
+                    share = (rem + (nleft - 1) * lp) / nleft                 # equal piece length incl. its laps
+                    tgt = x + share - (lg if first else 0)
+                    hi = x + STOCK - (lg if first else 0)                    # piece within stock
+                    # remainder after this cut must fit the pieces left and not be short
+                    lo_rem = eb + lg - (nleft - 1) * STOCK + (nleft - 2) * lp + lp
+                    def fits(e):
+                        r_ = eb - (e - lp) + lg
+                        return e <= hi and e >= lo_rem and r_ >= MINP and (e - x) >= MINP
+                    cand = sorted(range(int(tgt - 4000), int(min(hi, tgt + 4000)) + 1, 50), key=lambda e: abs(e - tgt))
+                    e = next((e for e in cand if fits(e) and ok(e) and ok(e - lp)), None)
+                    if e is None: e = next((e for e in cand if fits(e)), min(hi, tgt))
                     e = round(e / 10) * 10
                     bars.append(dict(pos=pos, n=n, d=d, x0=x, x1=e, legL=first, legR=False, row=k % 2))
                     x, k = e - lp, k + 1
