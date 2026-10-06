@@ -137,9 +137,22 @@ class Sheet:
         d = self.m.add_linear_dim(base=self.P(*base), p1=self.P(*a), p2=self.P(*b), angle=angle,
                                   dimstyle='GB100', text=text, dxfattribs={'layer': 'S-DIM'})
         d.render()
-    def mark(self, x, y, n, h=250):
-        self.circle(x, y, h * 0.9, 'S-RFT-TXT')
-        self.text(str(n), x, y, h, align=TA.MIDDLE_CENTER)
+    def mark(self, x, y, n, h=250, layer='S-RFT-TXT'):
+        """Bar mark in a hexagon (office convention), centred at x, y."""
+        R = h * 1.1
+        self.pline([(x + R * math.cos(math.radians(60 * k)), y + R * math.sin(math.radians(60 * k))) for k in range(6)], layer, 0, True)
+        self.text(f'{int(n):02d}' if str(n).isdigit() else str(n), x, y, h * 0.75, layer, align=TA.MIDDLE_CENTER)
+    def ctext(self, mk, s, x, y, h=250, layer='S-RFT-TXT', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
+        """Bar call-out with its mark in a hexagon in front of it. rot 0: (x, y) = lower-left of the hexagon;
+        rot 90 with BOTTOM_CENTER: text centred on (x, y) along the bar, hexagon at its lower end."""
+        R = h * 1.1
+        if rot == 0:
+            self.mark(x + R, y + h / 2, mk, h)
+            return self.text(s, x + 2 * R + h * 0.35, y, h, layer, maxw=None if maxw is None else maxw - 2 * R)
+        t = self.text(s, x, y, h, layer, rot=rot, align=align, maxw=maxw)
+        est = len(s) * h * 0.9 * (t.dxf.width if t.dxf.hasattr('width') else 1)
+        self.mark(x - R - 20, y - est / 2 - R - h * 0.3, mk, h)          # clear of the bar on the right
+        return t
     def hatch_rect(self, x0, y0, x1, y1, layer='S-GB-COL'):
         h = self.m.add_hatch(color=8, dxfattribs={'layer': layer})
         h.paths.add_polyline_path([self.P(x0, y0), self.P(x1, y0), self.P(x1, y1), self.P(x0, y1)], is_closed=True)
@@ -302,7 +315,7 @@ def draw_bbs(doc, first_idx, rows, meta, Sheet_=None):
             cx = x0
             for i, (name, w) in enumerate(cols):
                 if i == 0:
-                    sh.circle(cx + w / 2, y + rh / 2, 260, 'S-TITLE'); sh.text(str(r['mark']), cx + w / 2, y + rh / 2, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
+                    sh.mark(cx + w / 2, y + rh / 2, r['mark'], 240, 'S-TITLE')
                 elif i == 6:
                     _symbol(sh, cx, y, w, rh, r['shape'], r['d'])
                 else:

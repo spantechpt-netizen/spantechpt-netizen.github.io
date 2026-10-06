@@ -199,7 +199,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 40, r=150)
             cx = U((a + c) / 2)
             tx = U(a) + 500
-            sh.text(callout(b['n'], b['d'], m, b['L'], layer=b['pos']), tx, base + 180, 250)
+            sh.ctext(m, callout(b['n'], b['d'], m, b['L'], layer=b['pos']), tx, base + 180, 250)
             sh.text(f"{round(b['x1'] - b['x0'])} mm", cx + 600, base - 120, 200, 'S-DIM', align=TA.TOP_CENTER)
             if b['x0'] < w0: sh.text('CONT.', U(a) + 100, base - 120, 180, 'S-DIM', align=TA.TOP_LEFT)
             if b['x1'] > w1: sh.text('CONT.', U(c) - 100, base - 120, 180, 'S-DIM', align=TA.TOP_RIGHT)
@@ -259,7 +259,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
                 n = sum(s['n'] for s in ss if w0 <= (s['a'] + s['b']) / 2 <= w1)
                 if not n: continue
                 a = max(sg['a'], w0)
-                sh.text(callout(n, ss[0]['d'], ss[0]['mk'], ss[0]['L'], ss[0]['s']), U(a) + 900, Y_ELEV - hmax - 1100, 220)
+                sh.ctext(ss[0]['mk'], callout(n, ss[0]['d'], ss[0]['mk'], ss[0]['L'], ss[0]['s']), U(a) + 900, Y_ELEV - hmax - 1100, 220)
         # ---- cross sections ----
         sh.text('CROSS SECTIONS  1:20', 1800, Y_SEC + 4900, 280, 'S-SEC')
         sx = 2600

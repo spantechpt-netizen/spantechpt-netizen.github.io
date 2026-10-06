@@ -124,20 +124,20 @@ def draw_sheet(doc, idx, f, meta, bl):
                     sh.line(P(0, yd), P(f['L'], yd), 'S-DIM')
                     sh.circle(*P(x, yd), 90, 'S-DIM')
                     # call-out along the bar, on the side away from its length (clear of the column)
-                    sh.text(callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), P(x, 0)[0] - 120, P(0, (y0 + y1) / 2)[1], 230, 'S-RFT-TXT',
+                    sh.ctext(m, callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), P(x, 0)[0] - 120, P(0, (y0 + y1) / 2)[1] + (700 if kind == 'B' else 0), 230, 'S-RFT-TXT',
                             rot=90, align=TA.BOTTOM_CENTER, maxw=H_ - 800)
                     continue
-                sh.text(callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), tx, ty, 260, 'S-RFT-TXT')
+                sh.ctext(m, callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), tx, ty, 260, 'S-RFT-TXT')
         else:
             o = sb['off']
             sh.pline([P(o, o), P(f['L'] - o, o), P(f['L'] - o, f['W'] - o), P(o, f['W'] - o)], 'S-RFT-STIR', 30, True, r=3 * sb['ds'] * k)
             sh.text(f"{sb['lx'] / 1000:.2f}", *P(f['L'] / 2, o + 60), 230, 'S-DIM', align=TA.BOTTOM_CENTER)
             sh.text(f"{sb['ly'] / 1000:.2f}", P(f['L'] - o, 0)[0] - 120, P(0, f['W'] / 2)[1], 230, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
             tx, ty = P(f['L'] * 0.12, f['W'] * 0.84)
-            sh.text(callout(sb['rows'] * sb['pieces'], sb['ds'], sb['mk'], sb['L'], layer='SB'), tx, ty, 260, 'S-RFT-TXT')
+            sh.ctext(sb['mk'], callout(sb['rows'] * sb['pieces'], sb['ds'], sb['mk'], sb['L'], layer='SB'), tx, ty, 260, 'S-RFT-TXT')
             sh.text(f"({sb['rows']} ROW(S) INSIDE THE MAIN BARS" + (f", {sb['pieces']} PIECES / ROW LAPPED 60d)" if sb['pieces'] > 1 else ")"), tx, ty - 380, 200, 'S-RFT-TXT')
             tx, ty = P(f['L'] * 0.12, f['W'] * 0.14)
-            sh.text(callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CHAIRS'), tx, ty, 260, 'S-RFT-TXT')
+            sh.ctext(sb['mk_ch'], callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CHAIRS'), tx, ty, 260, 'S-RFT-TXT')
     # ---- SECTION along X (bars along X = lines, bars along Y = dots) ----
     ks = min(k, 9800 / (f['L'] + 200), 7500 / (f['h'] + 900))       # room for the call-outs before the title block
     sx, sy = 18200 + 100 * ks, R2 + 1700
@@ -175,29 +175,29 @@ def draw_sheet(doc, idx, f, meta, bl):
         xl, xr = c + BX['d'] / 2, L - c - BX['d'] / 2
         sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20), r=3 * BX['d'] * ks)
         dots(yY, BY['d'], BY['s'], 'S-RFT-BOT', xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2)
-        lines.append((yX, callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag'])))
-        lines.append((yY, callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag'])))
+        lines.append((yX, BX['mk'], callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag'])))
+        lines.append((yY, BY['mk'], callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag'])))
     if tx_:
         bot_of_leg = c + (dB if bx_ else 0) + 15
         ins = (BX['d'] + 2) if bx_ else 0                # top U sits inside the bottom U legs, side bars inside both
         xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
         sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20), r=3 * TX['d'] * ks)
         dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
-        lines.append((tX, callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag'])))
-        lines.append((tY, callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag'])))
+        lines.append((tX, TX['mk'], callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag'])))
+        lines.append((tY, TY['mk'], callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag'])))
     # side bars (rows) on both faces
     y0, y1 = (yY + 60) if bx_ else c + 60, (tY - 60) if tx_ else h - c - 60
     for i in range(side['rows']):
         y = y0 + (i + 1) * (y1 - y0) / (side['rows'] + 1)
         for x in (xs_, L - xs_):
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(6 * ks, 18), 0, 360)
-        if i == 0: lines.append((y, callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB')))
+        if i == 0: lines.append((y, side['mk'], callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB')))
     # call-outs with leaders to the right
     yt = sorted(lines)
-    for i, (y, t) in enumerate(yt):
-        ty_ = Q(0, 0)[1] + i * 420 - 100
+    for i, (y, mk_, t) in enumerate(yt):
+        ty_ = Q(0, 0)[1] + i * 450 - 100
         sh.line(Q(L - c, y), (Q(L + 100, 0)[0] + 350, ty_ + 90), 'S-RFT-TXT')
-        sh.text(t, Q(L + 100, 0)[0] + 450, ty_, 200)
+        sh.ctext(mk_, t, Q(L + 100, 0)[0] + 450, ty_, 200)
     sh.dim(Q(0, -100), Q(L, -100), (Q(0, 0)[0], Q(0, -100)[1] - 400), text=str(L))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
     sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')

@@ -182,7 +182,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     for yy in (f['h'] - 350, f['h'] - 150, y0d, (y0d + y1d) / 2, y1d):
         sh.line(Q(xd - 25, yy - 25), Q(xd + 25, yy + 25), 'S-DIM')
     ylead = f['h'] + Hn * 0.55
-    sh.line(Q(xd, ylead), (Q(cw / 2 + 180, 0)[0], Q(0, ylead)[1] + 100), 'S-DIM')
+    sh.line(Q(xd, ylead), (Q(cw / 2 + 120, 0)[0], Q(0, ylead)[1] + 100), 'S-DIM')
     # section cut A-A
     ya = f['h'] + Hn * 0.18
     sh.line(Q(-cw / 2 - 600, ya), Q(cw / 2 + 600, ya), 'S-SEC')
@@ -199,10 +199,10 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         sh.line(Q(fx0 - 1600, yy), Q(fx0 - 150, yy), 'S-DIM')
         sh.text(lab, Q(fx0 - 1600, 0)[0], Q(0, yy)[1] + 50, 170, 'S-DIM')
     # call-outs
-    sh.text(callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], 230)
+    sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], 230)
     sh.text(f"(FOOT {foot} ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 330, 170)
     for i, t in enumerate(ties):
-        sh.text(callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 330, 210, maxw=(XD - cw / 2 - 350) * k)
+        sh.ctext(t['mk'], callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 330, 210, maxw=(XD - cw / 2 - 350) * k)
     yt_ = Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 330 - 100
     sh.text(f"TIES {col['sets']} SETS @{s}", Q(cw / 2 + 200, 0)[0], yt_, 170)
     sh.text(f"{n_neck} IN THE NECK + {n_ftg} IN THE FOOTING", Q(cw / 2 + 200, 0)[0], yt_ - 260, 170)
@@ -252,8 +252,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
             sh.text(str(int(round(math.dist(a_, b_)))), mx + nx_ / hn * 180, my + ny_ / hn * 180, 170, 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
         e_ = segs[1][-1]
         sh.text('100', Z(e_)[0] + 60, Z(e_)[1] - 60, 150, 'S-DIM', align=TA.TOP_LEFT)
-        sh.text(f"({t['mk']})  {t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 450, 170, 'S-RFT-TXT')
-        sh.text(f"L={t['L']}", tx, by - 750, 170, 'S-RFT-TXT')
+        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 500, 170, 'S-RFT-TXT')
+        sh.text(f"L={t['L']}", tx, by - 820, 170, 'S-RFT-TXT')
         tx += max(t['w'] * kk, 2400) + 900
         if tx > 29500: tx = 23500; by -= 3600
     return Hn
