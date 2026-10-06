@@ -80,7 +80,7 @@ class Sheet:
             self.line((tx, y + 300), (W - 500, y + 300), 'S-FRAME')
         self.text('SHOP DRAWING', tx + 4100, 6700, 450, 'S-TITLE', align=TA.MIDDLE_CENTER)
         self.text('GENERAL NOTES:', tx + 200, 6000, 220, 'S-TITLE')
-        for i, n in enumerate(['ALL DIMENSIONS IN MM UNLESS OTHERWISE SPECIFIED.',
+        for i, n in enumerate(m.get('notes') or ['ALL DIMENSIONS IN MM UNLESS OTHERWISE SPECIFIED.',
                                'CONCRETE COVER FOR GRADE BEAMS = 40 MM.',
                                'LAP SPLICE = 60 BAR DIAMETER (SBC).',
                                'MAX. BAR LENGTH = 12.0 M.',

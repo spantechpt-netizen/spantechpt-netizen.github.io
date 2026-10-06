@@ -73,6 +73,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `extract.py` | DXF → beam runs, columns, axes |
 | `gen.py` | sheet frame / title block / DXF helpers, schedule loader, layers, dim style |
 | `gen2.py` | per-axis sheets: supports, bar splitting, plan, elevation, sections |
+| `gen_f.py` | isolated footings, one sheet per type (bottom / top X&Y plans, side bars, section) from `footings.json` |
 | `topdf.py` | DXF sheets → multi-page PDF |
 | `rend.py` | fast PNG render of a window of a big source DXF |
 | `project.example.json` | template of the project file |
@@ -84,3 +85,16 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
   survive, the bars and their call-outs do not. For such references ask for the plotted **PDF**, or a copy of
   the DWG where ASD has converted the bars to plain AutoCAD geometry.
 - A 20 MB ASD drawing becomes a ~240 MB DXF (block definitions); reading it with `ezdxf.recover` takes ~15 s.
+
+## Footings (from the approved Roya footing package, exploded ASD drawings)
+
+- One sheet per footing type: name, thickness in a circle, `NO=n` (count on the plan), PC and RC sizes.
+- Panels: `FOUNDATION BOTTOM REINFORCEMENT PLAN @ X&Y DIRECTION`, `FOUNDATION TOP REINFORCEMENT PLAN @ X&Y DIRECTION`
+  (rafts: X and Y on separate panels, plus ADD bottom / ADD top), `FOUNDATION SIDE REINFORCEMENT`.
+- One representative bar per direction drawn as a U (bottom legs up, top legs down) with the straight length and
+  the legs written in metres (`4.36`, `0.52`), a distribution line with a dot where it crosses the bar, the
+  overall sizes dimensioned in mm, the column hatched.
+- Call-out: `(mark) 40Ø18  L=9.38m  S=12.5cm  - B1` ; layers B1 (outer, long direction) / B2, T1 / T2 (outer, long
+  direction), ADD-B1 / ADD-B2 for additional bars; side bars `1Ø12 L=11.88m ... SB`; chairs `41Ø16 L=1.88m S=100*100CM`.
+- Cover 70: straight = size − 140, leg = thickness − 140, count = ceil((width − 140) / s) + 1, n bars/m → s = 1000/n.
+- Rafts: bars longer than 12 m lapped 60 d (T20 → 1200), lap shown with a short dimension.
