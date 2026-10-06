@@ -72,10 +72,11 @@ def read_schedule(dxf='main.dxf', block='COLUMN SCH'):
             xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
             w_, h_ = max(xs) - min(xs), max(ys) - min(ys)
             if w_ < 15: legs.append((sum(xs) / len(xs), min(ys), max(ys), pts))
-            else: tieset.append(dict(w=round(w_), hh=round(h_), draw=[(pts, closed)]))
+            else: tieset.append(dict(poly=list(pts)))                 # the tie exactly as drawn (open ends = hook corner)
         legs.sort()
-        for a, b in zip(legs[0::2], legs[1::2]):
-            tieset.append(dict(w=round(b[0] - a[0]), hh=round(max(a[2], b[2]) - min(a[1], b[1])), draw=[(a[3], False), (b[3], False)]))
+        for a, b in zip(legs[0::2], legs[1::2]):                     # a tie drawn as two facing C-legs = one closed tie
+            pa = sorted(a[3], key=lambda p: p[1]); pb = sorted(b[3], key=lambda p: -p[1])
+            tieset.append(dict(poly=pa + pb))
         out[name] = dict(tieset=tieset, shapes=shapes, b=min(sz), h=max(sz), dw=wd, dh=ht, n=n, d=d, sets=sets, per_m=per_m, dots=dots, ties=ties)
     return out
 
@@ -98,25 +99,36 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     vert = (f['h'] - yb) + Hn + lp                               # up to T.O.GB + column lap
     Lv = int(round((vert + foot) / 10) * 10)
     mv = bl.add(d, ('L', foot, vert, 0), Lv, col['n'], no, 'V')
+    # every tie keeps the designer's exact shape: the drawn tie set is placed so the outer tie sits on the 40 mm cover
+    allp = [p for t in col['tieset'] for p in t['poly']]
+    ox0, oy0 = min(p[0] for p in allp), min(p[1] for p in allp)
+    ox1, oy1 = max(p[0] for p in allp), max(p[1] for p in allp)
+    W, H = col['dw'], col['dh']
+    sx_, sy_ = (W - 2 * COLC) / (ox1 - ox0), (H - 2 * COLC) / (oy1 - oy0)
+    T = lambda p: (round(COLC + (p[0] - ox0) * sx_, 1), round(COLC + (p[1] - oy0) * sy_, 1))
     ties = []
-    big = max(t['w'] for t in col['tieset'])
     for t in col['tieset']:
-        t = dict(t)
-        # outer tie = size - 2 x cover (40); inner ties keep the designer's width, full height inside the cover
-        if t['w'] == big: t['w'] = max(col['b'], col['h']) - 2 * COLC
-        t['hh'] = min(col['b'], col['h']) - 2 * COLC
-        ties.append(dict(t, L=int(2 * (t['w'] + t['hh']) + 200)))      # outside size of the tie + two 135-degree hooks
+        poly = [T(p) for p in t['poly']]
+        xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
+        per = sum(math.dist(poly[j], poly[(j + 1) % len(poly)]) for j in range(len(poly)))
+        ties.append(dict(poly=poly, w=round(max(xs) - min(xs)), hh=round(max(ys) - min(ys)),
+                         L=int(round((per + 2 * 100) / 10) * 10), draw=[(poly, True)]))   # perimeter of the real shape + two 135-deg hooks
     s = int(1000 / col['per_m'])
     n_neck = math.floor((Hn - 100) / s) + 1                      # T.O.F + 50 .. T.O.GB - 50 (ties continue through the GB joint)
     n_ftg = 2                                                    # two ties inside the footing to hold the starters
     merged = {}
     for t in ties:                      # identical ties (e.g. the two end hexagons) share one mark
-        key = (t['w'], t['hh'])
+        mnx = min(p[0] for p in t['poly']); mny = min(p[1] for p in t['poly']); mxx = max(p[0] for p in t['poly'])
+        k1 = tuple(sorted((round(p[0] - mnx), round(p[1] - mny)) for p in t['poly']))
+        k2 = tuple(sorted((round(mxx - p[0]), round(p[1] - mny)) for p in t['poly']))     # the same bar turned over
+        key = min(k1, k2)
         if key in merged: merged[key]['k'] += 1; merged[key]['draw'] += t['draw']
         else: merged[key] = dict(t, k=1)
     ties = list(merged.values())
     for t in ties:
-        t['mk'] = bl.add(10, ('ST', t['w'], t['hh']), t['L'], (n_neck + n_ftg) * t['k'], no, '')
+        mnx = min(p[0] for p in t['poly']); mny = min(p[1] for p in t['poly'])
+        t['norm'] = [(round(p[0] - mnx), round(p[1] - mny)) for p in t['poly']]
+        t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], (n_neck + n_ftg) * t['k'], no, '')
 
     title = f"{col['name']}  {col['b']}x{col['h']}  ON  {f['name']}"
     sh.text(f'NECK {title}', 2000, 27900, 520, 'S-AXIS-TXT')
@@ -176,6 +188,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     for t in ties:
         for pts, closed in t['draw']:
             sh.pline([P(*p) for p in pts], 'S-RFT-STIR', 25, closed)
+        for pts, closed in t['draw']:
+            cx = sum(p[0] for p in pts) / len(pts); cy = sum(p[1] for p in pts) / len(pts)
     for (x, y) in col['dots']:
         hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'})
         hh.paths.add_edge_path().add_arc(sh.P(*P(x, y)), d / 2 * ks, 0, 360)
@@ -183,15 +197,22 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.dim(P(0, 0), P(0, Hh), (P(0, 0)[0] - 600, P(0, 0)[1]), angle=90, text=str(round(Hh)))
     sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, 260, 'S-SEC', align=TA.TOP_CENTER)
     # tie shapes with their lengths
-    tx = 23500
+    tx = 23500; by = 7200
     for t in ties:
-        kk = min(5.0, 2600 / max(1, t['hh']), 3000 / max(1, t['w']))
-        sh.pline([(tx, 3500), (tx + t['w'] * kk, 3500), (tx + t['w'] * kk, 3500 + t['hh'] * kk), (tx, 3500 + t['hh'] * kk)], 'S-RFT-STIR', 20, True)
-        sh.line((tx + 40, 3500 + t['hh'] * kk - 40), (tx + 200, 3500 + t['hh'] * kk - 200), 'S-RFT-STIR')
-        sh.text(str(t['w']), tx + t['w'] * kk / 2, 3400, 150, 'S-DIM', align=TA.TOP_CENTER)
-        sh.text(str(t['hh']), tx + t['w'] * kk + 120, 3500 + t['hh'] * kk / 2, 150, 'S-DIM', rot=90, align=TA.TOP_CENTER)
-        sh.text(f"({t['mk']})  L={t['L']}", tx, 2900, 170, 'S-RFT-TXT')
+        kk = min(9.0, 2700 / max(1, t['hh']), 5500 / max(1, t['w']))
+        pts = [(tx + p[0] * kk, by + p[1] * kk) for p in t['norm']]
+        sh.pline(pts, 'S-RFT-STIR', 20, True)
+        for j in range(len(t['norm'])):                      # every side of the real shape with its length
+            a_, b_ = t['norm'][j], t['norm'][(j + 1) % len(t['norm'])]
+            ln = math.dist(a_, b_)
+            if ln < 25: continue
+            mx, my = (pts[j][0] + pts[(j + 1) % len(pts)][0]) / 2, (pts[j][1] + pts[(j + 1) % len(pts)][1]) / 2
+            ang = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
+            if ang > 90.5 or ang <= -89.5: ang += 180
+            sh.text(str(int(round(ln))), mx, my + 50, 170, 'S-DIM', rot=ang, align=TA.BOTTOM_CENTER)
+        sh.text(f"({t['mk']})  {t['w']}x{t['hh']}  L={t['L']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 600, 170, 'S-RFT-TXT')
         tx += t['w'] * kk + 1500
+        if tx > 29500: tx = 23500; by -= 3600
     return Hn
 
 

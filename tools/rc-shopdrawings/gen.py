@@ -140,7 +140,7 @@ def draw_legend(sh, x, y):
 def _symbol(sh, x, y, w, h, shape, d):
     """Small bar sketch with segment lengths, inside a BBS cell (x, y = lower-left, w x h)."""
     kind, seg = shape[0], shape[1:]
-    m = 0.6 * w / max(1, max(seg[:3]) if kind != 'ST' else max(seg))
+    m = 1
     cy, cx = y + h * 0.45, x + w * 0.2
     if kind == 'S':
         L = w * 0.6
@@ -164,6 +164,14 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.line((x0, y0 + shh - 60), (x0 + 120, y0 + shh - 180), 'S-RFT-TXT')
         sh.text(str(bw), x0 + sw / 2, y0 - 40, 120, 'S-RFT-TXT', align=TA.TOP_CENTER)
         sh.text(str(bh), x0 + sw + 160, y0 + shh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
+    elif kind == 'POLY':      # tie of any shape, drawn to its own proportions
+        pts = [(a, b) for a, b in seg]
+        bw = max(p[0] for p in pts) or 1; bh = max(p[1] for p in pts) or 1
+        kk = min(w * 0.45 / bw, h * 0.7 / bh)
+        x0, y0 = x + w * 0.3, y + h * 0.15
+        sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in pts], 'S-RFT-TXT', 0, True)
+        sh.text(str(int(bw)), x0 + bw * kk / 2, y0 - 40, 120, 'S-RFT-TXT', align=TA.TOP_CENTER)
+        sh.text(str(int(bh)), x0 + bw * kk + 160, y0 + bh * kk / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
     elif kind == 'CH':        # chair: foot / leg / top / leg / foot
         f_, lg, top = seg
         u = w * 0.12; hh = h * 0.35; x0 = x + w * 0.15; y0 = y + h * 0.25

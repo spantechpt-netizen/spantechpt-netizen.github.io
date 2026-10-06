@@ -119,6 +119,6 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - Arrangement of the vertical bars and the tie set are read from the consultant's `COLUMN SCH` block (to-scale
   section); sizes from the plan labels (`C1 30X80`) given in `project.json -> column_sizes`.
 - Vertical bars: 90-degree foot (max(12d, 300)) standing on the bottom mesh, up to T.O.GB plus the column lap 60 d.
-- Ties: outer tie = size - 2 x 40 cover, inner ties keep the designer's width; n sets x 8/m -> @125 from T.O.F + 50 to
+- Ties keep the designer's exact shape (hexagons stay hexagons): the drawn tie set is placed so the outer tie sits on the 40 mm cover, every side is dimensioned, L = perimeter of the real shape + two 135-deg hooks; mirrored ties share one mark; n sets x 8/m -> @125 from T.O.F + 50 to
   T.O.GB (the ties continue through the GB joint) + 2 ties inside the footing. Identical ties share one mark.
 - Usage: `python3 gen_n.py C1:F6:11 C3:F2:15 ...` (column type : footing type : number of necks).
