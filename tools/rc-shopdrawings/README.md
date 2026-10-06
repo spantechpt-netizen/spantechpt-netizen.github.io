@@ -75,6 +75,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `gen2.py` | per-axis sheets: supports, bar splitting, plan, elevation, sections |
 | `gen_f.py` | isolated footings, one sheet per type (bottom / top X&Y plans, side bars, section) from `footings.json` |
 | `gen_n.py` | column necks per (column type, footing) pair: elevation, section from the COLUMN SCH block, ties, BBS |
+| `pair_necks.py` | foundation plan → column / footing pairs → `neck_pairs.txt` for `gen_n.py @neck_pairs.txt` |
 | `topdf.py` | DXF sheets → multi-page PDF |
 | `rend.py` | fast PNG render of a window of a big source DXF |
 | `project.example.json` | template of the project file |
