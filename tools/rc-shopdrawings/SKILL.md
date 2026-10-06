@@ -221,4 +221,9 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - Open questions to the engineer (ask once, then use the stated default): drawn GB widths that differ from the
   schedule (use the schedule), GB side bars for h > 600, footing types not found on the plan (column centred),
   project code / drawing numbering, the Roya DWG layer set / title block block (until provided, `new_doc()` layers).
+- **Rev.02 (07 Oct 2026) is the final consultant drawing** for the shop drawings. Versus Rev.01: GB plan, columns,
+  axes, GB / column / footing schedules unchanged; FND plan moved +1882 in y and its blocks exploded; new type F
+  footing (F count 17); `T 20 @ 100 ADD TOP` over walls / rafts (54); 2 extra ties + sketches in the C5 row of
+  `COLUMN SCH`. Footings drawn bigger than their schedule (F6 ×2 at Y19, F15 ×5 on Y22, F15A Y22-X16,
+  F3A Y16-X07 / Y11-X09, F8 Y10-X26): **engineer's decision — the schedule governs** (type size + reinforcement).
 - The commercial ALI-BEAM tool was not reverse-engineered or cloned; the method here is our own.
