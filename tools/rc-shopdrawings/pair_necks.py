@@ -49,8 +49,8 @@ for r in crect:
     if not t: continue
     c = ((r[0] + r[2]) / 2, (r[1] + r[3]) / 2)
     for k in cl:
-        if math.dist(k['c'], c) <= 450: k['cand'].add(t); break
-    else: cl.append(dict(c=c, cand={t}))
+        if math.dist(k['c'], c) <= 450: k['cand'].add(t); k['r'].setdefault(t, r); break
+    else: cl.append(dict(c=c, cand={t}, r={t: r}))      # r: the outline of each candidate type
 for k in cl:
     near = [l for l in labs if l[0] in k['cand'] and math.dist((l[1], l[2]), k['c']) < 3000]
     k['t'] = next(iter(k['cand'])) if len(k['cand']) == 1 else (min(near, key=lambda l: math.dist((l[1], l[2]), k['c']))[0]

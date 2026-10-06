@@ -34,7 +34,18 @@ def axis_lines(axis, runs):
     for i, c in enumerate(cl):
         off = 0 if (i == near and abs(ms[i]) <= 300) else int(round(ms[i])) or 1
         out.setdefault(off, []).extend(c)
-    return sorted(out.items())
+    # fewer, fuller sheets: a line that does not overlap another one along the axis is drawn on the same strip
+    # (its beams labelled with their offset); only overlapping parallel lines keep their own set
+    merged = []
+    for off, rs_ in sorted(out.items(), key=lambda kv: abs(kv[0])):
+        for t in merged:
+            if all(min(r['hi'], q['hi']) - max(r['lo'], q['lo']) < 300 for r in rs_ for q in t[1]):
+                for r in rs_: r['offnote'] = (off - t[0]) if off != t[0] else 0
+                t[1].extend(rs_); break
+        else:
+            for r in rs_: r['offnote'] = 0
+            merged.append((off, list(rs_)))
+    return sorted(merged)
 
 
 def axis_items(axis, runs, cols, tol=300, off=0, rs=None):
@@ -154,25 +165,83 @@ def detail(groups, sup):
 
 
 def windows(groups, sup):
-    lo = min(g['lo'] for g in groups) - 1000; hi = max(g['hi'] for g in groups) + 1000
-    cuts, x = [], lo
-    while hi - x > WIN:
-        lim = x + WIN
-        cand = [g['lo'] - 500 for g in groups if x + 3000 < g['lo'] - 500 <= lim]          # cut in a gap
-        cand += [(a + b) / 2 for a, b, t in sup if x + 3000 < (a + b) / 2 <= lim]           # or at a support
-        nx = max(cand) if cand else lim
-        cuts.append((x, nx)); x = nx
-    cuts.append((x, hi))
-    return cuts
+    """Sheet windows along the line: beams separated by a gap > 2.5 m go to different windows (no empty strip
+    between them; the packer puts short windows side by side); a long run is cut every <= WIN at a gap/support."""
+    gs = sorted(groups, key=lambda g: g['lo']); clusters = []
+    for g in gs:
+        if clusters and g['lo'] - clusters[-1][1] <= 2500: clusters[-1][1] = max(clusters[-1][1], g['hi'])
+        else: clusters.append([g['lo'], g['hi']])
+    cuts = []
+    for c0, c1 in clusters:
+        x, hi = c0 - 1000, c1 + 1000
+        while hi - x > WIN:
+            lim = x + WIN
+            cand = [g['lo'] - 500 for g in groups if x + 3000 < g['lo'] - 500 <= lim]      # cut in a gap
+            cand += [(a + b) / 2 for a, b, t in sup if x + 3000 < (a + b) / 2 <= lim]       # or at a support
+            nx = max(cand) if cand else lim
+            cuts.append((x, nx)); x = nx
+        cuts.append((x, hi))
+    # no near-empty windows: kept only when at least 1 m of beam is drawn in it
+    return [(a, b) for a, b in cuts if any(min(g['hi'], b) - max(g['lo'], a) >= 1000 for g in groups)]
 
 
-def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
+def draw_gb_section(sh, bx, by, t, label):
+    """Cross section 1:20 of a beam type with its stirrup sketch. -> width used."""
+    p = SCHED[t]; f = 5
+    W_, H_ = p['b'] * f, p['h'] * f
+    c = 30 if p['b'] <= 300 else 40          # side cover (Roya: 200 wide -> stirrup 140)
+    ct = COVER                                # top / bottom cover
+    ds = p['ds']
+    Q = lambda x, y: (bx + x * f, by + y * f)
+    sh.pline([Q(0, 0), Q(p['b'], 0), Q(p['b'], p['h']), Q(0, p['h'])], 'S-GB-CONC', 0, True)
+    # stirrup: outer face at the cover, drawn on its centre line
+    x0s, x1s, y0s, y1s = c + ds / 2, p['b'] - c - ds / 2, ct + ds / 2, p['h'] - ct - ds / 2
+    # stirrup on its centre line, curved at every bend; 135-degree hooks wrap the top-left bar, 100 mm tails
+    dm = max(p['dt'], p['db'])
+    cbars = [(x0s + ds / 2 + dm / 2, y0s + ds / 2 + dm / 2), (x1s - ds / 2 - dm / 2, y0s + ds / 2 + dm / 2),
+             (x1s - ds / 2 - dm / 2, y1s - ds / 2 - dm / 2), (x0s + ds / 2 + dm / 2, y1s - ds / 2 - dm / 2)]
+    for seg in hooked_tie([(x0s, y0s), (x1s, y0s), (x1s, y1s), (x0s, y1s)], cbars, tail=100, rc=dm / 2 + ds / 2):
+        sh.pline([Q(*q) for q in seg], 'S-RFT-STIR', ds * f)
+    for row, n, d in (('T', p['nt'], p['dt']), ('B', p['nb'], p['db'])):
+        yy = p['h'] - ct - ds - d / 2 if row == 'T' else ct + ds + d / 2
+        xa, xb = c + ds + d / 2, p['b'] - c - ds - d / 2
+        for j in range(n):
+            xx = xa + j * (xb - xa) / (n - 1)
+            h = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP' if row == 'T' else 'S-RFT-BOT'})
+            h.paths.add_edge_path().add_arc(sh.P(*Q(xx, yy)), d / 2 * f, 0, 360)
+        # leader + call-out
+        sh.line(Q(xb, yy), (bx + W_ + 200, Q(0, yy)[1]), 'S-RFT-TXT')
+        sh.text(f"{n} T {d} -{row}", bx + W_ + 250, Q(0, yy)[1] - 90, 200)
+    sh.dim(Q(0, 0), Q(p['b'], 0), (bx, by - 350), text=str(p['b']))
+    sh.dim(Q(0, 0), Q(0, p['h']), (bx - 350, by), angle=90, text=str(p['h']))
+    sh.text(str(ct), Q(p['b'] / 2, ct / 2)[0], Q(0, ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
+    sh.text(str(ct), Q(p['b'] / 2, 0)[0], Q(0, p['h'] - ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
+    sh.text(str(c), Q(c / 2, 0)[0], Q(0, p['h'] / 2)[1], 120, 'S-DIM', rot=90, align=TA.MIDDLE_CENTER)
+    sh.text(f"T{p['ds']} @{p['s']}", bx + W_ + 250, by + H_ / 2, 200)
+    # stirrup shape with dims (Roya style)
+    sx2 = bx + W_ + 3000                                      # stirrup sketch clear of the call-outs
+    a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6
+    kk_ = 0.6 * f; sk = [(0, 0), (a_ / kk_, 0), (a_ / kk_, b_ / kk_), (0, b_ / kk_)]
+    for seg in hooked_tie(sk, tie_bar_centres(sk, dm / 2 + ds), tail=100, rc=dm / 2 + ds):
+        sh.pline([(sx2 + q[0] * kk_, by + 300 + q[1] * kk_) for q in seg], 'S-RFT-STIR', 30)
+    sh.text(mm(p['b'] - 2 * c), sx2 + a_ / 2, by + 150, ST['len'], 'S-DIM', align=TA.TOP_CENTER)
+    sh.text(mm(p['h'] - 80), sx2 + a_ + 150, by + 300 + b_ / 2, ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
+    sh.text(f"SEC {label}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
+    sh.text(f"{t} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
+    return W_ + 3000 + a_ + 1600
+
+
+SEC_LBL = {t: chr(65 + i) for i, t in enumerate(SCHED)}
+
+
+def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=None, sec_types=None):
     hor, c0, groups, sup = axis_items(axis, runs, cols, off=off)
     name = axis + (f' OFFSET {off:+d}' if off else '')      # title of an off-grid line
     tag = axis.replace('*', 'S') + (f'-O{abs(off)}{"N" if off < 0 else "P"}' if off else '')
     if not groups: return []
     bars, stirs, secs = detail(groups, sup)
-    bl = BarList()
+    own_bbs = bl is None                       # one BBS per axis, or one package-wide BBS at the end (combined file)
+    if own_bbs: bl = BarList()
     for b in bars:
         lg = leg(b['d'])
         shape = ('U' if b['legL'] and b['legR'] else 'L', lg if b['legL'] else 0, round(b['x1'] - b['x0']), lg if b['legR'] else 0)
@@ -188,15 +257,25 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
     perp = {k: v for k, v in AX.items() if (k[0] == 'Y') == hor}
     sec_no = 0
     for wi, (w0, w1) in enumerate(wins):
-        U = lambda u: X0 + (u - w0)
-        meta = dict(meta0)
-        meta['title'] = f'GRADE BEAMS REINFORCEMENT\nAXIS {name}  ({wi + 1}/{len(wins)})'
-        meta['dwg'] = f'{meta0["prefix"]}-{tag}-{wi + 1:02d}'
-        sh = Sheet(doc, 0, -(start_sheet - 1 + len(out)) * 32000, meta)
-        out.append(meta['dwg'])
+        nsec_ = sum(1 for sc in secs if w0 <= sc['u'] <= w1)
+        width_ = max(w1 - w0 + 2200, 5000) if slot else max(w1 - w0 + 2200, nsec_ * 7800 + 1200, 9000)
+        if slot is None:                                                  # one window per sheet
+            meta = dict(meta0)
+            meta['title'] = f'GRADE BEAMS REINFORCEMENT\nAXIS {name}  ({wi + 1}/{len(wins)})'
+            meta['dwg'] = f'{meta0["prefix"]}-{tag}-{wi + 1:02d}'
+            sh = Sheet(doc, 0, -(start_sheet - 1 + len(out)) * 32000, meta)
+            out.append(meta['dwg']); xo, first = X0, True
+        else:                                                             # several short windows side by side on a sheet
+            sh, xo, first, dwg = slot(width_, f'{name}' + (f' ({wi + 1}/{len(wins)})' if len(wins) > 1 else ''))
+            if dwg: out.append(dwg)
+        U = lambda u, xo=xo: xo + (u - w0)
         vis = lambda a, b: b > w0 and a < w1
-        sh.text(f'AXIS {name}', 1800, 27900, ST['name'], 'S-AXIS-TXT')
-        sh.text(f'GRADE BEAMS ON AXIS {name} - PLAN  1:100', 1800, 27200, ST['sub'], 'S-SEC')
+        if slot is None:
+            sh.text(f'AXIS {name}', 1800, 27900, ST['name'], 'S-AXIS-TXT')
+            sh.text(f'GRADE BEAMS ON AXIS {name} - PLAN  1:100', 1800, 27200, ST['sub'], 'S-SEC')
+        else:                                                             # slot heading under the legend band
+            sh.text(f'AXIS {name}' + (f' ({wi + 1}/{len(wins)})' if len(wins) > 1 else '') + ' - PLAN 1:100', xo, Y_PLAN - 4500, ST['sub'], 'S-AXIS-TXT',
+                    maxw=width_ - 600)                                    # under the plan strip (the legend is at the top)
         # perpendicular grid lines + bubbles
         vis_ax = sorted([(U(v), k) for k, v in perp.items() if w0 - 200 <= v <= w1 + 200])
         grp = []                                                   # grid lines closer than 1000: one bubble, both names
@@ -222,7 +301,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
                 a, b = max(r['lo'], w0), min(r['hi'], w1)
                 for sgn in (-1, 1):
                     sh.line((U(a), Y_PLAN + sgn * r['w'] / 2), (U(b), Y_PLAN + sgn * r['w'] / 2), 'S-GB-CONC')
-                sh.text(r['lab'] or 'GB?', U((a + b) / 2), Y_PLAN - r['w'] / 2 - 120, 200, 'S-GB-CONC', align=TA.TOP_CENTER)
+                sh.text((r['lab'] or 'GB?') + (f"  (OFFSET {r['offnote']:+d})" if r.get('offnote') else ''), U((a + b) / 2), Y_PLAN - r['w'] / 2 - 120, 200, 'S-GB-CONC', align=TA.TOP_CENTER)
         for a, b, t in sup:
             if vis(a, b):
                 sh.hatch_rect(U(max(a, w0)), Y_PLAN - 400, U(min(b, w1)), Y_PLAN + 400)
@@ -314,7 +393,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
                 bx = put([(U(c) - 100 - tw('CONT.', 180), yl0, U(c) - 100, yl0 + 180)])
                 sh.text('CONT.', bx[2], bx[1], 180, 'S-DIM', align=TA.BOTTOM_RIGHT)
         # ---- elevation ----
-        sh.text(f'LONGITUDINAL SECTION - AXIS {name}  1:100', 1800, Y_ELEV + 3000, ST['sub'], 'S-SEC')
+        sh.text(f'LONGITUDINAL SECTION - AXIS {name}  1:100', xo, Y_ELEV + 3000, ST['sub'], 'S-SEC', maxw=width_ - 600)
         hmax = 700
         for g in groups:
             for s in g['segs']:
@@ -350,7 +429,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
             sh.dim((U(a), Y_ELEV), (U(b), Y_ELEV), (U(a), Y_ELEV + 600), text=f"{round(s['b'] - s['a'])}")
 
         if any(vis(a, b) for a, b, t in sup):
-            sh.text('COLUMN TIES CONTINUE THROUGH THE JOINT - GB STIRRUPS STOP AT THE COLUMN FACE', 1800, Y_ELEV - hmax - 1900, 200, 'S-RFT-TXT')
+            if first: sh.text('COLUMN TIES CONTINUE THROUGH THE JOINT - GB STIRRUPS STOP AT THE COLUMN FACE', 1800, Y_ELEV - hmax - 1900, 200, 'S-RFT-TXT')
         # one stirrup call-out per beam type segment (count summed over its spans)
         for g in groups:
             for sg in g['segs']:
@@ -361,68 +440,36 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0):
                 a = max(sg['a'], w0)
                 sh.ctext(ss[0]['mk'], callout(n, ss[0]['d'], ss[0]['mk'], ss[0]['L'], ss[0]['s']), U(a) + 900, Y_ELEV - hmax - 1100, ST['call'])
         # ---- cross sections ----
-        sh.text('CROSS SECTIONS  1:20', 1800, Y_SEC + 4900, ST['sub'], 'S-SEC')
-        sx = 2600
-        for sc in secs:
-            if not (w0 <= sc['u'] <= w1): continue
+        if slot is None: sh.text('CROSS SECTIONS  1:20', xo, Y_SEC + 4900, ST['sub'], 'S-SEC', maxw=width_ - 600)
+        sx = xo + 800
+        wsecs = [sc for sc in secs if w0 <= sc['u'] <= w1]
+        if slot is not None:                 # combined file: every beam type in the window gets a cut mark (once)
+            for g in groups:
+                for sg in g['segs']:
+                    a_, b_ = max(sg['a'], w0), min(sg['b'], w1)
+                    if b_ - a_ > 500 and not any(sc['t'] == sg['t'] and a_ - 50 <= sc['u'] <= b_ for sc in wsecs):
+                        wsecs.append(dict(u=a_ + 300, t=sg['t']))
+        for sc in wsecs:
             sec_no += 1
-            p = SCHED[sc['t']]; f = 5
+            p = SCHED[sc['t']]
             x = U(sc['u'])
+            lbl = str(sec_no) if slot is None else SEC_LBL.get(sc['t'], sc['t'])     # combined file: typical section per type
             sh.line((x, Y_ELEV + 900), (x, Y_ELEV - hmax - 500), 'S-SEC')
             sh.circle(x, Y_ELEV - hmax - 900, 330, 'S-SEC')
-            sh.text(str(sec_no), x, Y_ELEV - hmax - 900, 300, 'S-SEC', align=TA.MIDDLE_CENTER)
-            bx, by = sx, Y_SEC
-            W_, H_ = p['b'] * f, p['h'] * f
-            c = 30 if p['b'] <= 300 else 40          # side cover (Roya: 200 wide -> stirrup 140)
-            ct = COVER                                # top / bottom cover
-            ds = p['ds']
-            Q = lambda x, y: (bx + x * f, by + y * f)
-            sh.pline([Q(0, 0), Q(p['b'], 0), Q(p['b'], p['h']), Q(0, p['h'])], 'S-GB-CONC', 0, True)
-            # stirrup: outer face at the cover, drawn on its centre line
-            x0s, x1s, y0s, y1s = c + ds / 2, p['b'] - c - ds / 2, ct + ds / 2, p['h'] - ct - ds / 2
-            # stirrup on its centre line, curved at every bend; 135-degree hooks wrap the top-left bar, 100 mm tails
-            dm = max(p['dt'], p['db'])
-            cbars = [(x0s + ds / 2 + dm / 2, y0s + ds / 2 + dm / 2), (x1s - ds / 2 - dm / 2, y0s + ds / 2 + dm / 2),
-                     (x1s - ds / 2 - dm / 2, y1s - ds / 2 - dm / 2), (x0s + ds / 2 + dm / 2, y1s - ds / 2 - dm / 2)]
-            for seg in hooked_tie([(x0s, y0s), (x1s, y0s), (x1s, y1s), (x0s, y1s)], cbars, tail=100, rc=dm / 2 + ds / 2):
-                sh.pline([Q(*q) for q in seg], 'S-RFT-STIR', ds * f)
-            for row, n, d in (('T', p['nt'], p['dt']), ('B', p['nb'], p['db'])):
-                yy = p['h'] - ct - ds - d / 2 if row == 'T' else ct + ds + d / 2
-                xa, xb = c + ds + d / 2, p['b'] - c - ds - d / 2
-                for j in range(n):
-                    xx = xa + j * (xb - xa) / (n - 1)
-                    h = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP' if row == 'T' else 'S-RFT-BOT'})
-                    h.paths.add_edge_path().add_arc(sh.P(*Q(xx, yy)), d / 2 * f, 0, 360)
-                # leader + call-out
-                sh.line(Q(xb, yy), (bx + W_ + 200, Q(0, yy)[1]), 'S-RFT-TXT')
-                sh.text(f"{n} T {d} -{row}", bx + W_ + 250, Q(0, yy)[1] - 90, 200)
-            sh.dim(Q(0, 0), Q(p['b'], 0), (bx, by - 350), text=str(p['b']))
-            sh.dim(Q(0, 0), Q(0, p['h']), (bx - 350, by), angle=90, text=str(p['h']))
-            sh.text(str(ct), Q(p['b'] / 2, ct / 2)[0], Q(0, ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
-            sh.text(str(ct), Q(p['b'] / 2, 0)[0], Q(0, p['h'] - ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
-            sh.text(str(c), Q(c / 2, 0)[0], Q(0, p['h'] / 2)[1], 120, 'S-DIM', rot=90, align=TA.MIDDLE_CENTER)
-            sh.text(f"T{p['ds']} @{p['s']}", bx + W_ + 250, by + H_ / 2, 200)
-            # stirrup shape with dims (Roya style)
-            sx2 = bx + W_ + 3000                                      # stirrup sketch clear of the call-outs
-            a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6
-            kk_ = 0.6 * f; sk = [(0, 0), (a_ / kk_, 0), (a_ / kk_, b_ / kk_), (0, b_ / kk_)]
-            for seg in hooked_tie(sk, tie_bar_centres(sk, dm / 2 + ds), tail=100, rc=dm / 2 + ds):
-                sh.pline([(sx2 + q[0] * kk_, by + 300 + q[1] * kk_) for q in seg], 'S-RFT-STIR', 30)
-            sh.text(mm(p['b'] - 2 * c), sx2 + a_ / 2, by + 150, ST['len'], 'S-DIM', align=TA.TOP_CENTER)
-            sh.text(mm(p['h'] - 80), sx2 + a_ + 150, by + 300 + b_ / 2, ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
-            sh.text(f"SEC {sec_no}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
-            sh.text(f"{sc['t']} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
-            sx += W_ + 3000 + a_ + 1600
-        draw_legend(sh, 21000, 27900)
+            sh.text(lbl, x, Y_ELEV - hmax - 900, 300, 'S-SEC', align=TA.MIDDLE_CENTER)
+            if slot is None: sx += draw_gb_section(sh, sx, Y_SEC, sc['t'], str(sec_no))
+            else: sec_types.add(sc['t'])
+        if first: draw_legend(sh, 21000, 27900)
         # levels on the longitudinal section
         if 'top_gb' in LEV:
             tg = LEV['top_gb']
             for yy, nm_, lv in ((Y_ELEV, 'T.O.GB', tg), (Y_ELEV - hmax, 'B.O.GB', tg - hmax / 1000)):
-                sh.line((X0 - 1250, yy), (X0 - 300, yy), 'S-DIM')            # name above, value under the level line
-                sh.text(nm_, X0 - 1250, yy + 50, 150, 'S-DIM')
-                sh.text(f"{lv:+.2f}", X0 - 1250, yy - 50, 150, 'S-DIM', align=TA.TOP_LEFT)
+                sh.line((xo - 1250, yy), (xo - 300, yy), 'S-DIM')            # name above, value under the level line
+                sh.text(nm_, xo - 1250, yy + 50, 150, 'S-DIM')
+                sh.text(f"{lv:+.2f}", xo - 1250, yy - 50, 150, 'S-DIM', align=TA.TOP_LEFT)
     # BBS of the axis set
     meta = dict(meta0); meta['title'] = f'GRADE BEAMS AXIS {name}'; meta['dwg'] = f'{meta0["prefix"]}-{tag}'
+    if not own_bbs: return out
     nb = draw_bbs(doc, start_sheet - 1 + len(out), bl.sorted(), meta, Sheet)
     out += [f'{meta["dwg"]}-BBS{i + 1:02d}' for i in range(nb)]
     return out
@@ -435,6 +482,45 @@ if __name__ == '__main__':
                  rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='1:100 / SEC 1:20', prefix='SDW-STR-GB')
     meta0.update(json.load(open('project.json')).get('meta', {}))
     meta0['notes'] = project_notes('COVER GRADE BEAMS 40.', 'GB STIRRUPS STOP AT THE COLUMN FACE; COLUMN TIES CONTINUE THROUGH THE JOINT.')
+    if axes and axes[0] == '--all':            # one combined file: every axis set, package-wide marks, one BBS at the end
+        axes = axes[1:]
+        doc = new_doc(); bl = BarList(); reg = []
+        st = dict(n=0, open=[])                  # sheets still open for packing (the last 4): {sh, used, types}
+        def finish(o):
+            if o['types']:                          # typical cross sections of the beam types on this sheet
+                sh = o['sh']; sx = 2600
+                sh.text('TYPICAL CROSS SECTIONS  1:20  (CUT MARKS ON THE LONGITUDINAL SECTIONS)', 1800, Y_SEC + 4900, ST['sub'], 'S-SEC')
+                for t in sorted(o['types'], key=lambda t: SEC_LBL[t]):
+                    if sx > 27000: break
+                    sx += draw_gb_section(sh, sx, Y_SEC, t, SEC_LBL[t])
+        cur = {}
+        def slot(width, label):
+            # windows packed left to right in the first open sheet with room (axis order kept as far as possible)
+            for o in st['open']:
+                if o['used'] + 1500 + width <= 32800:
+                    xo = o['used'] + 1500; o['used'] = xo + width; cur['o'] = o
+                    return o['sh'], xo, False, None
+            st['n'] += 1
+            meta = dict(meta0); meta['title'] = f'GRADE BEAMS REINFORCEMENT\nSHEET {st["n"]:03d}'
+            meta['dwg'] = f'{meta0["prefix"]}-{st["n"]:03d}'
+            o = dict(sh=Sheet(doc, 0, -(st['n'] - 1) * 32000, meta), used=X0 + width, types=set())
+            st['open'].append(o); cur['o'] = o
+            if len(st['open']) > 4: finish(st['open'].pop(0))
+            return o['sh'], X0, True, meta['dwg']
+        class Types:                              # section types go to the sheet the window was placed on
+            def add(self, t): cur['o']['types'].add(t)
+        for a in axes:
+            for off, _rs in axis_lines(a, runs):
+                if sum(r['hi'] - r['lo'] for r in _rs) < 1000: continue        # stubs: no set
+                reg += draw_axis(doc, a, runs, cols, meta0, off=off, bl=bl, slot=slot, sec_types=Types())
+        for o in st['open']: finish(o)
+        n = st['n'] + 1
+        meta = dict(meta0); meta['title'] = 'GRADE BEAMS\nBAR BENDING SCHEDULE (BBS)'; meta['dwg'] = f'{meta0["prefix"]}-BBS'
+        nb = draw_bbs(doc, n - 1, bl.sorted(), meta, Sheet)
+        reg += [f'{meta["dwg"]}{i + 1:02d}' for i in range(nb)]
+        doc.saveas('out/GB_ALL.dxf'); open('out/GB_ALL_register.txt', 'w').write('\n'.join(reg) + '\n')
+        print('GB_ALL sheets', n - 1, '+ BBS', nb)
+        sys.exit()
     for a in axes:
         # every line of beams assigned to this axis: the axis itself and each off-grid line (offset > 300)
         for off, _rs in axis_lines(a, runs):

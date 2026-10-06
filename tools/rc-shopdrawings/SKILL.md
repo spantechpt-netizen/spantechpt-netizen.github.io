@@ -133,6 +133,15 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - Section: stirrup on its centre line with curved corners and the hooked corner, bars as filled dots, cover
   dims, call-outs `4 T 16 -T`, `T10 @125`, stirrup sketch beside with out-to-out dims.
 
+### Combined grade-beam file (engineer: one file like the footings, no near-empty sheets)
+- `python3 gen2.py --all <axes>` → `out/GB_ALL.dxf`: every axis line, **package-wide marks, one BBS at the end**.
+  Windows hug the beams (gap > 2.5 m → new window); short windows are **packed side by side** (first open sheet with
+  room among the last 4); a line that does not overlap the axis beams shares the axis strip (beams labelled
+  `GB1 (OFFSET +742)`); windows with < 1 m of beam are dropped.
+- Cross sections are **typical per beam type** (A = GB1, B = GB2 …): cut marks with the letter on the longitudinal
+  sections, one section per type present at the bottom of each sheet (no repeated identical sections).
+- Slot titles under each plan strip (the legend stays at the top right).
+
 ### Full run of the grade beams
 - `python3 gen2.py <all axes>` (axes = the `axis` values of `runs.pkl`). Per axis, `axis_lines()` splits the runs into
   lines: the line nearest the axis (≤ 300) is the axis set; every other line is its own set `AXIS Y08 OFFSET -1342`
@@ -162,6 +171,19 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
   **every leader ends ON its own bar** with a small circle: X bars (lines) on the line between two dots, Y bars
   (cut dots) on the second dot from the bend, side bar on its dot (never all on the cover line);
   levels on the left, neck stub with break line, `NECK UP TO T.O.GB`, `NECK H = …` (mm).
+
+## 6b. Combined footings / rafts (`mats_scan.py` → `mats_build.py` → `gen_f.py @mats`)
+- Outlines on `*CORE-FNDN` containing a CF / RAFT / ST label (CF / RAFT: area > 12 m²); identical label + size +
+  additional bars → one type with NO = count (`CF1`, `CF1-B` …); columns inside hatched; depth / steel from
+  `footings_ext.json` (schedule "SEE PLAN" rows). Long side always along x (outline turned 90° if needed).
+- Same sheet style as the isolated footings; bars > 12 m in **equal pieces lapped 60 d** (end pieces with one leg,
+  middle pieces straight; written "(2 PIECES, LAP 960)"); long narrow mats (L/W > 3.2): panels stacked full width,
+  call-outs placed clear of the columns and of each other.
+- Additional bars written on the plan (`T 20 @ 100 ADD TOP`, `L = 3000`): own sheet `…-ADD` with ADD BOT / ADD TOP
+  panels; count = length of the crossing additional bars / spacing + 1.
+- Strip footing under the walls (`gen_st.py`, project.json → `strip`): typical section 1:20, typical stretch 1:50
+  (laps 60 d staggered), corner / junction notes, **BBS per metre run** (strip length measured on the plan).
+- `BarList`: the same bar in elements with different NO keeps the right total (n_in × n_el summed).
 
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 

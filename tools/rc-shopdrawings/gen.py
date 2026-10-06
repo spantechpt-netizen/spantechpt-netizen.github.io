@@ -230,7 +230,10 @@ class BarList:
         r = self.rows.get(key)
         if r is None:
             r = self.rows[key] = dict(mark=len(self.rows) + 1, d=d, shape=shape, L=int(round(L)), n_in=0, n_el=n_el, layer=layer)
-        r['n_in'] += n_in
+        if r['n_el'] != n_el:                 # the same bar in elements with different counts: keep the TOTAL right
+            r['n_in'] = r['n_in'] * r['n_el'] + n_in * n_el; r['n_el'] = 1
+        else:
+            r['n_in'] += n_in
         return r['mark']
     def sorted(self):
         return sorted(self.rows.values(), key=lambda r: r['mark'])

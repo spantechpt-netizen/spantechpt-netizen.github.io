@@ -32,7 +32,8 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
    (pairs of parallel edge lines at the scheduled widths, merged along a centreline, tagged with the nearest
    GBn text, assigned to the nearest axis with its offset) and columns (model-space outlines **and** outlines
    inside large blocks — canopy columns on pads were hidden in a block in the first project).
-4. `python3 gen2.py X11 Y05 …` → one DXF per axis, A3 frames at 1:100 stacked every 32 000 units in model
+4. `python3 gen2.py --all <axes>` → one combined file `out/GB_ALL.dxf` (packed sheets, typical sections, one BBS);
+   `python3 gen2.py X11 Y05 …` → one DXF per axis, A3 frames at 1:100 stacked every 32 000 units in model
    space; `python3 topdf.py out/GB_AXIS_X11.dxf out/GB_AXIS_X11.pdf <sheets>` → black-and-white PDF.
 5. Look at every sheet (`python3 rend.py drawing.dxf out.png xmin,ymin,xmax,ymax 4000` renders any window of
    the source drawing fast; the skill's `render_dxf.py` renders sheets).
@@ -75,6 +76,8 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `gen2.py` | per-axis sheets: supports, bar splitting, plan, elevation, sections |
 | `gen_f.py` | isolated footings, one sheet per type (bottom / top X&Y plans, side bars, section) from `footings.json` |
 | `gen_n.py` | column necks per (column type, footing) pair: elevation, section from the COLUMN SCH block, ties, BBS |
+| `mats_scan.py`, `mats_build.py` | combined footings / rafts from the FND plan → `mats.json` for `gen_f.py @mats` |
+| `gen_st.py` | strip footing under walls: typical section + BBS per metre |
 | `pair_necks.py` | foundation plan → column / footing pairs → `neck_pairs.txt` for `gen_n.py @neck_pairs.txt` |
 | `topdf.py` | DXF sheets → multi-page PDF |
 | `rend.py` | fast PNG render of a window of a big source DXF |
