@@ -120,7 +120,12 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
   b = h − 80 (out-to-out).
 - Plan labels: bars, legs, laps, beams, beam labels, grid stubs are reserved first; call-out on the **outer**
   side of each bar (above top bars, below bottom bars), lifted with a leader if no room; bar length on the
-  **inner** side; laps dimensioned between the two rows.
+  **inner** side; laps dimensioned between the two rows. Reserved boxes include the whole hexagon (text box
+  1.9 h high) and the dimension ticks. Order of placement: bars → legs → lap dims → call-outs → lengths.
+- A lap dimension only for a real lap: same diameter and overlap = 60 d. Bars of two different beams anchored in
+  the same column are NOT laps (no dimension).
+- Short bars: the call-out goes first right over/under the bar (lifted with a vertical leader), only then beside
+  it; never let a leader run along a text.
 - Section: stirrup on its centre line with curved corners and the hooked corner, bars as filled dots, cover
   dims, call-outs `4 T 16 -T`, `T10 @125`, stirrup sketch beside with out-to-out dims.
 

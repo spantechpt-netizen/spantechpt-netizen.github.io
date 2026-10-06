@@ -167,7 +167,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             if w0 - 200 <= v <= w1 + 200:
                 x = U(v)
                 # grid lines broken where bars, call-outs and dimensions are written (no text on lines)
-                for y0_, y1_ in ((Y_PLAN + 3150, Y_PLAN + 3450), (Y_PLAN - 700, Y_PLAN + 700), (Y_PLAN - 3400, Y_PLAN - 3150),
+                for y0_, y1_ in ((Y_PLAN + 3150, Y_PLAN + 3450), (Y_PLAN - 700, Y_PLAN + 700), (Y_PLAN - 3800, Y_PLAN - 3550),
                                  (Y_ELEV + 1100, Y_ELEV + 1650), (Y_ELEV - 1000, Y_ELEV + 250)):
                     sh.line((x, y0_), (x, y1_), 'S-AXIS')
                 sh.circle(x, Y_PLAN + 3900, 450, 'S-AXIS')
@@ -198,7 +198,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
         for k_, v in perp.items():
             if w0 - 200 <= v <= w1 + 200:
                 occ += [(U(v) - 30, Y_PLAN - 700, U(v) + 30, Y_PLAN + 700), (U(v) - 500, Y_PLAN + 3150, U(v) + 500, Y_PLAN + 4400),
-                        (U(v) - 30, Y_PLAN - 3400, U(v) + 30, Y_PLAN - 3150)]
+                        (U(v) - 30, Y_PLAN - 3800, U(v) + 30, Y_PLAN - 3550)]
         for g in groups:
             for r_ in g['runs']:
                 if vis(r_['lo'], r_['hi']):
@@ -224,36 +224,43 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
         for b, a, c, base, off, lg in drawn:
             m = b['mk']
             if b['legL'] and b['x0'] >= w0:
-                x_ = U(a) - 160; ym_ = base - off * lg / 2; occ.append((x_ - hL, ym_ - 400, x_, ym_ + 400))
+                x_ = U(a) - 160; ym_ = base - off * lg / 2; occ.append((x_ - hL, ym_ - 350, x_, ym_ + 350))
                 sh.text(mm(lg), x_, base - off * lg / 2, hL, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
             if b['legR'] and b['x1'] <= w1:
-                x_ = U(c) + 380; ym_ = base - off * lg / 2; occ.append((x_ - hL, ym_ - 400, x_, ym_ + 400))
+                x_ = U(c) + 380; ym_ = base - off * lg / 2; occ.append((x_ - hL, ym_ - 350, x_, ym_ + 350))
                 sh.text(mm(lg), x_, base - off * lg / 2, hL, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
         for pos in 'TB':
             rows = sorted([b for b in bars if b['pos'] == pos], key=lambda b: b['x0'])
             for a, b in zip(rows, rows[1:]):
-                if b['x0'] < a['x1'] and w0 <= b['x0'] and a['x1'] <= w1:
+                # a real lap only: same bar size and overlap = 60 d (bars of two beams anchored in one column are not laps)
+                if b['x0'] < a['x1'] and w0 <= b['x0'] and a['x1'] <= w1 and a['d'] == b['d'] and abs((a['x1'] - b['x0']) - lap(a['d'])) < 60:
                     off = 1 if pos == 'T' else -1
                     lo, hi = sorted((ROW(pos, 0), ROW(pos, 1)))
                     x0_, x1_ = U(b['x0']), U(a['x1'])
-                    cands = [(x0_ - 100, y, x1_ + 100, y + 330) for y in ((lo + hi) / 2 - 170, (lo + hi) / 2 + 150, (lo + hi) / 2 - 450,
+                    cands = [(x0_ - 100, y - 150, x1_ + 100, y + 300) for y in ((lo + hi) / 2 - 150, (lo + hi) / 2 - 50, (lo + hi) / 2 + 50, (lo + hi) / 2 - 250, (lo + hi) / 2 + 150, (lo + hi) / 2 - 450,
                                                                            hi + 700 if pos == 'T' else lo - 1000)]
                     bx = put(cands)
-                    sh.dim((x0_, bx[1] + 60), (x1_, bx[1] + 60), (x0_, bx[1] + 60), text=str(round(a['x1'] - b['x0'])))
+                    sh.dim((x0_, bx[1] + 210), (x1_, bx[1] + 210), (x0_, bx[1] + 210), text=str(round(a['x1'] - b['x0'])))
         for b, a, c, base, off, lg in drawn:
             m = b['mk']; t = callout(b['n'], b['d'], m, b['L'], layer=b['pos'])
             W_ = tw(t, hC) + 2.6 * hC
             xs = [U(a) + 300 + k * 350 for k in range(60) if U(a) + 300 + k * 350 + W_ <= max(U(c), U(a) + 300 + W_)]
+            # short bars: the call-out may also start left of the bar (a leader then points to the bar)
+            xs_out = [U(a) + 300 - k * 350 for k in range(1, int(W_ / 350) + 1)]
             # call-out on the outer side of the bar (above top bars, below bottom bars), lengths on the inner side
-            yc = (lambda dy: base + 150 + dy) if off > 0 else (lambda dy: base - 150 - hC * 1.3 - dy)
-            bx = put([(x, yc(dy), x + W_, yc(dy) + hC * 1.3) for dy in (0, 450, 900) for x in xs])
-            sh.ctext(m, t, bx[0], bx[1] + hC * 0.15, hC)
-            if abs((bx[1] if off > 0 else bx[3]) - base) > 300:            # moved away: short leader to the bar
-                sh.line((bx[0] + 1.1 * hC, bx[1] if off > 0 else bx[3]), (bx[0] + 1.1 * hC, base + off * 40), 'S-RFT-TXT')
+            yc = (lambda dy: base + 80 + dy) if off > 0 else (lambda dy: base - 80 - hC * 1.9 - dy)     # box holds the hexagon
+            bx = put([(x, yc(dy), x + W_, yc(dy) + hC * 1.9) for dy, xx in ((0, xs), (450, xs), (0, xs_out), (450, xs_out), (900, xs), (900, xs_out))
+                      for x in xx])          # prefer right over the bar; beside it only when there is no room
+            sh.ctext(m, t, bx[0], bx[1] + hC * 0.3, hC)
+            xh = bx[0] + 1.1 * hC                                     # leader from the hexagon to the nearest point of the bar
+            if abs((bx[1] if off > 0 else bx[3]) - base) > 300 or not (U(a) <= xh <= U(c)):
+                xb_ = min(max(xh, U(a) + 100), U(c) - 100)
+                sh.line((xh, bx[1] if off > 0 else bx[3]), (xb_, base + off * 40), 'S-RFT-TXT')
             lt = mm(b['x1'] - b['x0']); Wl = tw(lt, hL); cx = U((a + c) / 2)
             yl0 = base - 100 - hL if off > 0 else base + 100                # inner side band
-            cands = [(cx + dx - Wl / 2, yl0, cx + dx + Wl / 2, yl0 + hL) for dx in (0, 600, -600, 1200, -1200, 1800, -1800)
-                     if U(a) <= cx + dx - Wl / 2 and cx + dx + Wl / 2 <= U(c)] or [(cx - Wl / 2, yl0, cx + Wl / 2, yl0 + hL)]
+            cands = [(cx + dx - Wl / 2, yl0 - off * dy, cx + dx + Wl / 2, yl0 - off * dy + hL) for dy in (0, 300)
+                     for dx in (0, 600, -600, 1200, -1200, 1800, -1800, 300, -300)
+                     if U(a) - 200 <= cx + dx - Wl / 2 and cx + dx + Wl / 2 <= U(c) + 200] or [(cx - Wl / 2, yl0, cx + Wl / 2, yl0 + hL)]
             bx = put(cands)
             sh.text(lt, (bx[0] + bx[2]) / 2, bx[1], hL, 'S-DIM', align=TA.BOTTOM_CENTER)
             if b['x0'] < w0:
