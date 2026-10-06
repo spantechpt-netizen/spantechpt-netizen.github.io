@@ -71,10 +71,13 @@ def detail(groups, sup):
             if si > 0: ea = anchor(s['a'], -1)
             if si < len(segs) - 1: eb = anchor(s['b'], +1)
             inner = [x for x in sup if x[0] >= ea - 5 and x[1] <= eb + 5]
-            spans = []
-            edges = [ea] + [v for x in inner for v in (x[0], x[1])] + [eb]
-            for i in range(0, len(edges) - 1, 2):
-                if edges[i + 1] - edges[i] > 300: spans.append((edges[i], edges[i + 1]))
+            # clear spans = the beam length between support faces (no stirrups inside a column / crossing beam)
+            spans, x = [], s['a']
+            for a_, b_, _t in sorted(sup):
+                if b_ <= x or a_ >= s['b']: continue
+                if a_ - x > 300: spans.append((x, a_))
+                x = max(x, b_)
+            if s['b'] - x > 300: spans.append((x, s['b']))
             def top_ok(x):   # top bars: lap in the middle third of a span
                 return any(a + (b - a) / 3 <= x <= b - (b - a) / 3 for a, b in spans)
             def bot_ok(x):   # bottom bars: lap at supports (within L/4 of a support face)
@@ -239,6 +242,8 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             a, b = max(s['a'], w0), min(s['b'], w1)
             sh.dim((U(a), Y_ELEV), (U(b), Y_ELEV), (U(a), Y_ELEV + 600), text=f"{round(s['b'] - s['a'])}")
 
+        if any(vis(a, b) for a, b, t in sup):
+            sh.text('COLUMN TIES CONTINUE THROUGH THE JOINT - GB STIRRUPS STOP AT THE COLUMN FACE', 1800, Y_ELEV - hmax - 1900, 200, 'S-RFT-TXT')
         # one stirrup call-out per beam type segment (count summed over its spans)
         for g in groups:
             for sg in g['segs']:

@@ -112,6 +112,9 @@ for e in msp.query('LWPOLYLINE'):
     if e.dxf.layer in cfg['col_layers']: rect([(p[0], p[1]) for p in e.get_points()], e.dxf.layer)
 for e in msp.query('INSERT'):
     b = bbox.extents([e], fast=True)
+    # small column blocks (e.g. hatched column inserted on a ...COLS-CONC... layer): use the block extents
+    if b.has_data and 'COLS-CONC' in e.dxf.layer.upper() and 150 <= b.size.x <= 3000 and 150 <= b.size.y <= 3000:
+        rect([(b.extmin.x, b.extmin.y), (b.extmax.x, b.extmax.y)], e.dxf.layer); continue
     if not b.has_data or b.size.x < 20000 or b.extmax.x < X0 or b.extmin.x > X1 or b.extmax.y < Y0 or b.extmin.y > Y1: continue
     for ve in walk(e):
         if ve.dxftype() == 'LWPOLYLINE' and any(k in ve.dxf.layer.upper() for k in ('COL',)):
