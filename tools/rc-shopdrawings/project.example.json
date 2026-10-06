@@ -42,5 +42,11 @@
  "levels": {
   "founding": -2.9,
   "top_gb": 0.85
+ },
+ "column_sizes": {
+  "C1": [
+   300,
+   800
+  ]
  }
 }

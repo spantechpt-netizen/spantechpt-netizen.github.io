@@ -74,6 +74,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `gen.py` | sheet frame / title block / DXF helpers, schedule loader, layers, dim style |
 | `gen2.py` | per-axis sheets: supports, bar splitting, plan, elevation, sections |
 | `gen_f.py` | isolated footings, one sheet per type (bottom / top X&Y plans, side bars, section) from `footings.json` |
+| `gen_n.py` | column necks per (column type, footing) pair: elevation, section from the COLUMN SCH block, ties, BBS |
 | `topdf.py` | DXF sheets → multi-page PDF |
 | `rend.py` | fast PNG render of a window of a big source DXF |
 | `project.example.json` | template of the project file |
@@ -112,3 +113,12 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - **GB stirrups stop at the column face** (column ties continue through the joint); clear spans between support faces.
 - **Levels** (`project.json` -> `levels`): founding level (bottom of PC) and top of grade beams; written on the footing
   section (F.L, T.O.PC, T.O.F, neck height up to T.O.GB) and on the GB longitudinal section (T.O.GB / B.O.GB).
+
+## Column necks (`gen_n.py`, sample Oct 2026)
+
+- Arrangement of the vertical bars and the tie set are read from the consultant's `COLUMN SCH` block (to-scale
+  section); sizes from the plan labels (`C1 30X80`) given in `project.json -> column_sizes`.
+- Vertical bars: 90-degree foot (max(12d, 300)) standing on the bottom mesh, up to T.O.GB plus the column lap 60 d.
+- Ties: outer tie = size - 2 x 40 cover, inner ties keep the designer's width; n sets x 8/m -> @125 from T.O.F + 50 to
+  T.O.GB (the ties continue through the GB joint) + 2 ties inside the footing. Identical ties share one mark.
+- Usage: `python3 gen_n.py C1:F6:11 C3:F2:15 ...` (column type : footing type : number of necks).
