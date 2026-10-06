@@ -96,8 +96,8 @@ class Sheet:
 def callout(n, d, mark, L, s=None, layer=None, stg=False):
     """'15 T 12 00 12000 150 -STG -B1' = no. of bars, T (high tensile), dia, bar mark, length mm, spacing mm,
     staggered, layer position. Spacing / STG / layer only when they apply."""
-    t = f"{n} T {d} {mark:02d} {int(round(L))}"
-    if s: t += f" {int(round(s))}"
+    t = f"{n} T {d}-{mark:02d}-{int(round(L))}"          # engineer: dashes between dia, mark and length
+    if s: t += f"-{int(round(s))}"
     if stg: t += " -STG"
     if layer: t += f" -{layer}"
     return t
@@ -124,8 +124,8 @@ class BarList:
 
 def draw_legend(sh, x, y):
     """Key of the call-out, as on the office sheets."""
-    parts = [('15', 'No. OF\nBARS'), ('T', '( HIGH\nTENSILE)'), ('12', 'BAR\nDIAMETER'), ('00', 'BAR\nMARK'),
-             ('12000', 'LENGTH\nOF BAR\nMM'), ('150', 'SPACING\nMM'), ('-STG', 'STAGGERED RFT'), ('- B1', 'LAYER\nPOSITION')]
+    parts = [('15', 'No. OF\nBARS'), ('T', '( HIGH\nTENSILE)'), ('12-', 'BAR\nDIAMETER'), ('00-', 'BAR\nMARK'),
+             ('12000-', 'LENGTH\nOF BAR\nMM'), ('150', 'SPACING\nMM'), ('-STG', 'STAGGERED RFT'), ('- B1', 'LAYER\nPOSITION')]
     cx = x
     for i, (v, lab) in enumerate(parts):
         w = 400 + 230 * len(v)

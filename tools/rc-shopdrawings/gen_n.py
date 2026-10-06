@@ -162,6 +162,20 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         sh.line(Q(-cw / 2 + COLC, y), Q(cw / 2 - COLC, y), 'S-RFT-STIR'); y += s
     for y in (f['h'] - 150, f['h'] - 350):
         sh.line(Q(-cw / 2 + COLC, y), Q(cw / 2 - COLC, y), 'S-RFT-STIR')
+    # distribution line of the ties: vertical line over the tie zone, ticks at the ties, leader to the call-outs
+    xd = -cw / 2 + cw * 0.3
+    y0d, y1d = f['h'] + 50, f['h'] + 50 + (n_neck - 1) * s
+    sh.line(Q(xd, f['h'] - 350), Q(xd, y1d), 'S-DIM')
+    for yy in (f['h'] - 350, f['h'] - 150, y0d, (y0d + y1d) / 2, y1d):
+        sh.line(Q(xd - 25, yy - 25), Q(xd + 25, yy + 25), 'S-DIM')
+    ylead = f['h'] + Hn * 0.55
+    sh.line(Q(xd, ylead), (Q(cw / 2 + 180, 0)[0], Q(0, ylead)[1] + 100), 'S-DIM')
+    # section cut A-A
+    ya = f['h'] + Hn * 0.35
+    sh.line(Q(-cw / 2 - 600, ya), Q(cw / 2 + 600, ya), 'S-SEC')
+    for sx_ in (-1, 1):
+        sh.line(Q(sx_ * (cw / 2 + 600), ya), Q(sx_ * (cw / 2 + 600), ya + 200), 'S-SEC')
+        sh.text('A', Q(sx_ * (cw / 2 + 650), 0)[0], Q(0, ya + 220)[1], 300, 'S-SEC', align=TA.BOTTOM_CENTER)
     # dims and levels
     sh.dim(Q(cw / 2 + 1700, f['h']), Q(cw / 2 + 1700, top), Q(cw / 2 + 2100, f['h']), angle=90, text=f'{Hn}')
     sh.dim(Q(cw / 2 + 1700, top), Q(cw / 2 + 1700, top + lp), Q(cw / 2 + 2100, top), angle=90, text=f'LAP {lp}')
@@ -189,7 +203,11 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         for pts, closed in t['draw']:
             sh.pline([P(*p) for p in pts], 'S-RFT-STIR', 25, closed)
         for pts, closed in t['draw']:
-            cx = sum(p[0] for p in pts) / len(pts); cy = sum(p[1] for p in pts) / len(pts)
+            # 135-degree hook: two tails at the top-left corner of the tie, bent into the core (engineer's note)
+            ytop = max(p[1] for p in pts)
+            cxp = min(p[0] for p in pts if abs(p[1] - ytop) < 15); cyp = ytop        # top-left corner of the tie
+            for ox, oy in ((14, 0), (0, -14)):
+                sh.pline([P(cxp + ox, cyp + oy), P(cxp + ox + 45, cyp + oy - 45)], 'S-RFT-STIR', 25)
     for (x, y) in col['dots']:
         hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'})
         hh.paths.add_edge_path().add_arc(sh.P(*P(x, y)), d / 2 * ks, 0, 360)

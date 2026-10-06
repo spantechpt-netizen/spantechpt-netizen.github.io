@@ -102,7 +102,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 
 ## Engineer's rules added (Oct 2026)
 
-- **Call-out format** on every bar: `15 T 12 00 12000 150 -STG -B1` = no. of bars, T (high tensile), diameter,
+- **Call-out format** on every bar: `15 T 12-00-12000-150 -STG -B1` (dashes between diameter, mark, length and spacing - engineer's note) = no. of bars, T (high tensile), diameter,
   bar mark, length (mm), spacing (mm, when distributed), `-STG` when staggered, layer position. The key of the
   format is drawn on every sheet (`draw_legend`).
 - **BBS** after each set (`draw_bbs`): Position | Steel grade | Diameter | Number (in the element, of elements, total) |
@@ -122,3 +122,6 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - Ties keep the designer's exact shape (hexagons stay hexagons): the drawn tie set is placed so the outer tie sits on the 40 mm cover, every side is dimensioned, L = perimeter of the real shape + two 135-deg hooks; mirrored ties share one mark; n sets x 8/m -> @125 from T.O.F + 50 to
   T.O.GB (the ties continue through the GB joint) + 2 ties inside the footing. Identical ties share one mark.
 - Usage: `python3 gen_n.py C1:F6:11 C3:F2:15 ...` (column type : footing type : number of necks).
+- Necks (engineer's notes on the sample): the 135-degree hooks drawn on every tie in the section at its top-left
+  corner bar; a vertical distribution line with ticks over the ties and a leader to the tie call-outs; the section
+  cut A-A marked on the elevation. Founding level of the project -3.00.
