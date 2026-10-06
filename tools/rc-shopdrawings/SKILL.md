@@ -124,8 +124,9 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
   1.9 h high) and the dimension ticks. Order of placement: bars → legs → lap dims → call-outs → lengths.
 - A lap dimension only for a real lap: same diameter and overlap = 60 d. Bars of two different beams anchored in
   the same column are NOT laps (no dimension).
-- Short bars: the call-out goes first right over/under the bar (lifted with a vertical leader), only then beside
-  it; never let a leader run along a text.
+- **Keep every call-out next to its bar** (engineer): slide it along the bar first, then just beside the bar end at
+  the same level, and move it outwards (away from the beam, never towards other elements) only when nothing at the
+  bar's level is free. A leader is drawn only when the text was moved off the bar; never along a text.
 - Section: stirrup on its centre line with curved corners and the hooked corner, bars as filled dots, cover
   dims, call-outs `4 T 16 -T`, `T10 @125`, stirrup sketch beside with out-to-out dims.
 

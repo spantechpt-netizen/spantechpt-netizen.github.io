@@ -249,13 +249,16 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             xs_out = [U(a) + 300 - k * 350 for k in range(1, int(W_ / 350) + 1)]
             # call-out on the outer side of the bar (above top bars, below bottom bars), lengths on the inner side
             yc = (lambda dy: base + 80 + dy) if off > 0 else (lambda dy: base - 80 - hC * 1.9 - dy)     # box holds the hexagon
-            bx = put([(x, yc(dy), x + W_, yc(dy) + hC * 1.9) for dy, xx in ((0, xs), (450, xs), (0, xs_out), (450, xs_out), (900, xs), (900, xs_out))
-                      for x in xx])          # prefer right over the bar; beside it only when there is no room
+            # stay next to the bar: slide along it first, then just beside its end, and move outwards (away from the
+            # beam) only when nothing at the bar's own level is free (engineer: never far from the bar unless needed)
+            bx = put([(x, yc(dy), x + W_, yc(dy) + hC * 1.9) for dy, xx in ((0, xs), (0, xs_out), (200, xs), (200, xs_out),
+                                                                           (450, xs), (450, xs_out), (900, xs), (900, xs_out))
+                      for x in xx])
             sh.ctext(m, t, bx[0], bx[1] + hC * 0.3, hC)
             xh = bx[0] + 1.1 * hC                                     # leader from the hexagon to the nearest point of the bar
-            if abs((bx[1] if off > 0 else bx[3]) - base) > 300 or not (U(a) <= xh <= U(c)):
+            if abs((bx[1] if off > 0 else bx[3]) - base) > 150 or bx[2] < U(a) or bx[0] > U(c):   # leader only when moved off the bar
                 xb_ = min(max(xh, U(a) + 100), U(c) - 100)
-                sh.line((xh, bx[1] if off > 0 else bx[3]), (xb_, base + off * 40), 'S-RFT-TXT')
+                sh.line((min(max(xh, bx[0]), bx[2]), bx[1] if off > 0 else bx[3]), (xb_, base + off * 40), 'S-RFT-TXT')
             lt = mm(b['x1'] - b['x0']); Wl = tw(lt, hL); cx = U((a + c) / 2)
             yl0 = base - 100 - hL if off > 0 else base + 100                # inner side band
             cands = [(cx + dx - Wl / 2, yl0 - off * dy, cx + dx + Wl / 2, yl0 - off * dy + hL) for dy in (0, 300)
