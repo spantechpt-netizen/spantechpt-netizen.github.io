@@ -76,3 +76,11 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `topdf.py` | DXF sheets → multi-page PDF |
 | `rend.py` | fast PNG render of a window of a big source DXF |
 | `project.example.json` | template of the project file |
+
+## Known limits of the DWG route
+
+- Drawings detailed with **AutoCAD Structural Detailing (ASD)** store every bar as an ASD object
+  (`RBCR_EN_BAR`, `RBCRREBAR`, `RBCRREBARTABLET` …). LibreDWG drops them: outlines, dimensions and texts
+  survive, the bars and their call-outs do not. For such references ask for the plotted **PDF**, or a copy of
+  the DWG where ASD has converted the bars to plain AutoCAD geometry.
+- A 20 MB ASD drawing becomes a ~240 MB DXF (block definitions); reading it with `ezdxf.recover` takes ~15 s.
