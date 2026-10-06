@@ -38,5 +38,9 @@
   "approver": "",
   "date": "",
   "prefix": "SDW-STR-GB"
+ },
+ "levels": {
+  "founding": -2.9,
+  "top_gb": 0.85
  }
 }

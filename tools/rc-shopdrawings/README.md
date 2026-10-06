@@ -98,3 +98,17 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
   direction), ADD-B1 / ADD-B2 for additional bars; side bars `1Ø12 L=11.88m ... SB`; chairs `41Ø16 L=1.88m S=100*100CM`.
 - Cover 70: straight = size − 140, leg = thickness − 140, count = ceil((width − 140) / s) + 1, n bars/m → s = 1000/n.
 - Rafts: bars longer than 12 m lapped 60 d (T20 → 1200), lap shown with a short dimension.
+
+## Engineer's rules added (Oct 2026)
+
+- **Call-out format** on every bar: `15 T 12 00 12000 150 -STG -B1` = no. of bars, T (high tensile), diameter,
+  bar mark, length (mm), spacing (mm, when distributed), `-STG` when staggered, layer position. The key of the
+  format is drawn on every sheet (`draw_legend`).
+- **BBS** after each set (`draw_bbs`): Position | Steel grade | Diameter | Number (in the element, of elements, total) |
+  Symbol (sketch with segment lengths) | Length (m) | Mass (kg) = n x L x d^2/162 | Total mass (kg) = Mass x elements.
+  Marks are package-wide; for footings "of elements" is the number of footings of the type (`NO=`).
+- **Side bars of footings are placed inside the main bars**: the 70 mm cover stays on the main U-bars, the side loop
+  is reduced by the main bar diameter and its own; loops longer than 12 m are equal pieces lapped 60 d.
+- **GB stirrups stop at the column face** (column ties continue through the joint); clear spans between support faces.
+- **Levels** (`project.json` -> `levels`): founding level (bottom of PC) and top of grade beams; written on the footing
+  section (F.L, T.O.PC, T.O.F, neck height up to T.O.GB) and on the GB longitudinal section (T.O.GB / B.O.GB).

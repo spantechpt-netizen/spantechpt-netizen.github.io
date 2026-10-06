@@ -4,7 +4,7 @@
 Panels: BOTTOM REINFORCEMENT PLAN @ X&Y, TOP REINFORCEMENT PLAN @ X&Y (when the schedule has top bars),
 FOUNDATION SIDE REINFORCEMENT, and a section through the footing."""
 import json, math, pickle, sys
-from gen import new_doc, Sheet, TA
+from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs
 
 PRJ = json.load(open('project.json'))
 COVER = PRJ.get('footing_cover', 70)
@@ -38,24 +38,35 @@ def bars_for(f):
     return out
 
 
-def side_bars(f):
-    """Perimeter side bars Ø12 (loops) - rows every <= 300 mm of the free height; chairs Ø16 @100x100cm."""
+def side_bars(f, ds=12):
+    """Perimeter side bars (loops) placed INSIDE the main U-bar legs (engineer, Oct 2026): the 70 mm cover stays on
+    the main bars, the loop size is reduced by the main bar diameter and its own. Rows every <= 300 mm of free height.
+    Loops longer than a stock bar are made of equal pieces lapped 60 d. Chairs Ø16 @100x100cm."""
+    dB = max(f['bot'][1], f['bot'][3])
+    off = COVER + dB + ds / 2                                    # centre line of the loop from the face
+    lx, ly = round(f['L'] - 2 * off), round(f['W'] - 2 * off)
     free = f['h'] - 2 * COVER
     rows = max(1, math.ceil(free / 300) - 1)
-    per = 2 * (f['L'] - 2 * COVER + f['W'] - 2 * COVER) + 2 * 60 * 12        # loop + lap 60d
+    per = 2 * (lx + ly)
+    lp = 60 * ds
+    pieces = 1 if per + lp <= 12000 else math.ceil(per / (12000 - lp))
+    Lp = round((per / pieces + lp) / 10) * 10
     chair_n = max(4, math.ceil(f['L'] / 1000) * math.ceil(f['W'] / 1000))
-    return dict(rows=rows, L=per, chairs=chair_n, chair_L=300 + (f['h'] - 2 * COVER - 120) * 2 // 1 + 400 + 300)
+    return dict(rows=rows, ds=ds, off=off, lx=lx, ly=ly, pieces=pieces, L=Lp, chairs=chair_n,
+                chair_L=300 + (f['h'] - 2 * COVER - 120) * 2 // 1 + 400 + 300)
 
 
-def draw_sheet(doc, idx, f, meta):
+def draw_sheet(doc, idx, f, meta, bl):
     sh = Sheet(doc, 0, -idx * 32000, meta)
     bars = bars_for(f)
     k = min(4.0, 10000 / f['W'], 14500 / f['L'])     # drawing factor: 4 = 1:25 on the 1:100 frame
-    marks = {}
-    def mk(b):
-        key = (b['d'], b['L'], b['tag'])
-        if key not in marks: marks[key] = len(marks) + 1
-        return marks[key]
+    for b in bars:
+        b['mk'] = bl.add(b['d'], ('U', b['leg'], b['straight'], b['leg']), b['L'], b['n'], f['no'], b['tag'])
+    sb = side_bars(f)
+    sb['mk'] = bl.add(sb['ds'], ('ST', sb['lx'], sb['ly']) if sb['pieces'] == 1 else ('S', sb['L']), sb['L'], sb['rows'] * sb['pieces'], f['no'], 'SB')
+    sb['mk_ch'] = bl.add(16, ('CH', 300, f['h'] - 2 * COVER - 120, 400), sb['chair_L'], sb['chairs'], f['no'], 'CH')
+    mk = lambda b: b['mk']
+    draw_legend(sh, 21000, 27900)
     sh.text(f['name'], 2000, 27900, 600, 'S-AXIS-TXT')
     sh.circle(4800, 28150, 520, 'S-SEC'); sh.text(str(f['h']), 4800, 28150, 380, 'S-SEC', align=TA.MIDDLE_CENTER)
     sh.text(f"NO={f['no']}", 5700, 27900, 500, 'S-AXIS-TXT')
@@ -110,21 +121,17 @@ def draw_sheet(doc, idx, f, meta):
                     sh.line(P(0, yd), P(f['L'], yd), 'S-DIM')
                     sh.circle(*P(x, yd), 90, 'S-DIM')
                     tx, ty = P(f['L'] * 0.30, f['W'] * (0.45 if kind == 'B' else 0.55))
-                sh.text(str(m), tx - 120, ty + 60, 180, 'S-AXIS-TXT', align=TA.BOTTOM_RIGHT)
-                sh.text(f"{b['n']}{PHI}{b['d']}  L={b['L'] / 1000:.2f}m  S={b['s'] / 10:.1f}cm  - {b['tag']}", tx, ty, 260, 'S-RFT-TXT')
+                sh.text(callout(b['n'], b['d'], m, b['L'], b['s'], b['tag']), tx, ty, 260, 'S-RFT-TXT')
         else:
-            sb = side_bars(f)
-            off = 150 / k if k < 4 else 40
-            loop = [P(COVER / 2, COVER / 2), P(f['L'] - COVER / 2, COVER / 2), P(f['L'] - COVER / 2, f['W'] - COVER / 2), P(COVER / 2, f['W'] - COVER / 2)]
-            sh.pline(loop, 'S-RFT-STIR', 30, True)
-            m = mk(dict(d=12, L=sb['L'], tag='SB'))
-            tx, ty = P(f['L'] * 0.12, f['W'] * 0.86)
-            sh.text(str(m), tx - 120, ty + 60, 180, 'S-AXIS-TXT', align=TA.BOTTOM_RIGHT)
-            sh.text(f"{sb['rows']}{PHI}12  L={min(sb['L'], 12000) / 1000:.2f}m  (PER ROW, LAP 60d)  - SB", tx, ty, 260, 'S-RFT-TXT')
-            tx, ty = P(f['L'] * 0.12, f['W'] * 0.12)
-            m2 = mk(dict(d=16, L=sb['chair_L'], tag='CH'))
-            sh.text(str(m2), tx - 120, ty + 60, 180, 'S-AXIS-TXT', align=TA.BOTTOM_RIGHT)
-            sh.text(f"{sb['chairs']}{PHI}16  L={sb['chair_L'] / 1000:.2f}m  S=100*100CM  - CHAIRS", tx, ty, 260, 'S-RFT-TXT')
+            o = sb['off']
+            sh.pline([P(o, o), P(f['L'] - o, o), P(f['L'] - o, f['W'] - o), P(o, f['W'] - o)], 'S-RFT-STIR', 30, True)
+            sh.text(f"{sb['lx'] / 1000:.2f}", *P(f['L'] / 2, o + 60), 230, 'S-DIM', align=TA.BOTTOM_CENTER)
+            sh.text(f"{sb['ly'] / 1000:.2f}", P(f['L'] - o, 0)[0] - 120, P(0, f['W'] / 2)[1], 230, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+            tx, ty = P(f['L'] * 0.12, f['W'] * 0.84)
+            sh.text(callout(sb['rows'] * sb['pieces'], sb['ds'], sb['mk'], sb['L'], layer='SB'), tx, ty, 260, 'S-RFT-TXT')
+            sh.text(f"({sb['rows']} ROW(S) INSIDE THE MAIN BARS" + (f", {sb['pieces']} PIECES / ROW LAPPED 60d)" if sb['pieces'] > 1 else ")"), tx, ty - 380, 200, 'S-RFT-TXT')
+            tx, ty = P(f['L'] * 0.12, f['W'] * 0.14)
+            sh.text(callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CHAIRS'), tx, ty, 260, 'S-RFT-TXT')
     # ---- SECTION along X (bars along X = lines, bars along Y = dots) ----
     ks = min(k, 13000 / (f['L'] + 200), 7500 / (f['h'] + 900))
     sx, sy = 18200 + 100 * ks, R2 + 1700
@@ -157,30 +164,30 @@ def draw_sheet(doc, idx, f, meta):
         tX = h - c - TX['d'] / 2 if outer_is_x_t else h - c - TY['d'] - TX['d'] / 2
         tY = h - c - TX['d'] - TY['d'] / 2 if outer_is_x_t else h - c - TY['d'] / 2
         dT = TX['d'] + TY['d']
-    side = side_bars(f)
-    xs_ = c + 6                                     # side bars just inside the cover
+    side = sb
+    xs_ = c + (BX['d'] if bx_ else 0) + side['ds'] / 2 + 2      # side bars INSIDE the main U legs
     if bx_:
         top_of_leg = (h - c - dT - 15) if tx_ else (h - c)
-        xl, xr = c + 12 + BX['d'] / 2, L - c - 12 - BX['d'] / 2
+        xl, xr = c + BX['d'] / 2, L - c - BX['d'] / 2
         sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20))
         dots(yY, BY['d'], BY['s'], 'S-RFT-BOT')
-        lines.append((yX, f"({mk(BX)}) {BX['n']}{PHI}{BX['d']} @{BX['s']} - {BX['tag']}"))
-        lines.append((yY, f"({mk(BY)}) {BY['n']}{PHI}{BY['d']} @{BY['s']} - {BY['tag']}"))
+        lines.append((yX, callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag'])))
+        lines.append((yY, callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag'])))
     if tx_:
         bot_of_leg = c + (dB if bx_ else 0) + 15
-        ins = (BX['d'] + 6) if bx_ else 0           # top U sits inside the bottom U legs
-        xl, xr = c + 12 + ins + TX['d'] / 2, L - c - 12 - ins - TX['d'] / 2
+        ins = (BX['d'] + side['ds'] + 4) if bx_ else 0   # top U sits inside the bottom U legs and the side bars
+        xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
         sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20))
         dots(tY, TY['d'], TY['s'], 'S-RFT-TOP')
-        lines.append((tX, f"({mk(TX)}) {TX['n']}{PHI}{TX['d']} @{TX['s']} - {TX['tag']}"))
-        lines.append((tY, f"({mk(TY)}) {TY['n']}{PHI}{TY['d']} @{TY['s']} - {TY['tag']}"))
+        lines.append((tX, callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag'])))
+        lines.append((tY, callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag'])))
     # side bars (rows) on both faces
     y0, y1 = (yY + 60) if bx_ else c + 60, (tY - 60) if tx_ else h - c - 60
     for i in range(side['rows']):
         y = y0 + (i + 1) * (y1 - y0) / (side['rows'] + 1)
         for x in (xs_, L - xs_):
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(6 * ks, 18), 0, 360)
-        if i == 0: lines.append((y, f"{side['rows']}{PHI}12 - SB (EACH FACE)"))
+        if i == 0: lines.append((y, callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB')))
     # call-outs with leaders to the right
     yt = sorted(lines)
     for i, (y, t) in enumerate(yt):
@@ -191,14 +198,27 @@ def draw_sheet(doc, idx, f, meta):
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
     sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')
     sh.text(f'COVER {c}', Q(L / 2, 0)[0], Q(0, c / 2)[1], 150, 'S-DIM', align=TA.MIDDLE_CENTER)
+    lev = PRJ.get('levels', {})
+    if 'founding' in lev:
+        fl = lev['founding']; tpc = fl + 0.10; tof = tpc + h / 1000
+        marks_ = [(-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (h, f"T.O.F {tof:+.2f}")]
+        if 'top_gb' in lev:
+            neck = lev['top_gb'] - tof
+            sh.text(f"NECK UP TO T.O.GB {lev['top_gb']:+.2f}", Q(cx1, 0)[0] + 300, Q(0, h + 560)[1], 170, 'S-DIM')
+            sh.text(f"NECK H = {neck:.2f} m", Q(cx1, 0)[0] + 300, Q(0, h + 300)[1], 170, 'S-DIM')
+            sh.line(Q(cx0 - 150, h + 650), Q(cx1 + 150, h + 750), 'S-GB-CONC')        # break line on the neck
+        for yy, lab in marks_:
+            sh.line(Q(-900, yy), Q(-150, yy), 'S-DIM')
+            sh.text(lab, Q(-900, yy)[0], Q(0, yy)[1] + 50, 150, 'S-DIM', align=TA.BOTTOM_RIGHT)
     sh.text(f"SECTION 1-1  ({f['name']}, {f['h']} mm, PC 100 mm)", Q(L / 2, 0)[0], Q(0, -100)[1] - 900, 260, 'S-SEC', align=TA.TOP_CENTER)
-    return marks
+    return bars
 
 
 if __name__ == '__main__':
     lib = json.load(open('footings.json'))
     names = sys.argv[1:] or list(lib)
     doc = new_doc()
+    bl = BarList()
     for i, n in enumerate(names):
         f = lib[n]
         meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
@@ -208,6 +228,8 @@ if __name__ == '__main__':
                          'PLAIN CONCRETE 100 MM UNDER FOOTINGS.', 'LAP SPLICE = 60 BAR DIAMETER (SBC).', 'MAX. BAR LENGTH = 12.0 M.']
         meta['title'] = f"STRUCTURAL FOUNDATION\nREINFORCEMENT - {n}  (NO={f['no']})"
         meta['dwg'] = f"{meta['prefix'].replace('GB', 'FDN')}-{n}"
-        draw_sheet(doc, i, f, meta)
+        draw_sheet(doc, i, f, meta, bl)
+    meta['title'] = 'STRUCTURAL FOUNDATION'; meta['dwg'] = meta['prefix'].replace('GB', 'FDN')
+    nb = draw_bbs(doc, len(names), bl.sorted(), meta)
     doc.saveas('out/FOOTINGS.dxf')
-    print('sheets', len(names))
+    print('sheets', len(names), '+ BBS', nb)

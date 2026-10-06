@@ -1,7 +1,8 @@
 """Grade-beam shop drawings, one set of A3 sheets per grid axis (Roya-style call-outs).
 Each sheet: plan strip (top bars above the beam, bottom bars below), longitudinal section, cross sections."""
 import math, pickle, sys, json
-from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA
+from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs
+LEV = json.load(open('project.json')).get('levels', {})
 
 WIN = 29500          # beam length per sheet at 1:100
 X0 = 1800            # sheet x of window start
@@ -136,6 +137,17 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
     hor, c0, groups, sup = axis_items(axis, runs, cols)
     if not groups: return []
     bars, stirs, secs = detail(groups, sup)
+    bl = BarList()
+    for b in bars:
+        lg = leg(b['d'])
+        shape = ('U' if b['legL'] and b['legR'] else 'L', lg if b['legL'] else 0, round(b['x1'] - b['x0']), lg if b['legR'] else 0)
+        b['mk'] = bl.add(b['d'], shape, b['L'], b['n'], 1, b['pos'])
+    for g in groups:
+        for sg in g['segs']:
+            ss = [s for s in stirs if sg['a'] - 1500 <= s['a'] and s['b'] <= sg['b'] + 1500 and s['t'] == sg['t']]
+            for s in ss:
+                p = SCHED[s['t']]; c = 30 if p['b'] <= 300 else 40
+                s['mk'] = bl.add(s['d'], ('ST', p['b'] - 2 * c, p['h'] - 80), s['L'], s['n'], 1)
     out = []
     wins = windows(groups, sup)
     perp = {k: v for k, v in AX.items() if (k[0] == 'Y') == hor}
@@ -147,10 +159,6 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
         meta['dwg'] = f'{meta0["prefix"]}-{axis}-{wi + 1:02d}'
         sh = Sheet(doc, 0, -(start_sheet - 1 + len(out)) * 32000, meta)
         out.append(meta['dwg'])
-        marks = {}
-        def mk(key):
-            if key not in marks: marks[key] = len(marks) + 1
-            return marks[key]
         vis = lambda a, b: b > w0 and a < w1
         sh.text(f'AXIS {axis}', 1800, 27900, 500, 'S-AXIS-TXT')
         sh.text(f'GRADE BEAMS ON AXIS {axis} - PLAN  1:100', 1800, 27200, 280, 'S-SEC')
@@ -179,7 +187,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
         for b in bars:
             if not vis(b['x0'], b['x1']): continue
             if min(b['x1'], w1) - max(b['x0'], w0) < 1500 and (b['x0'] < w0 or b['x1'] > w1): continue   # tiny continuation stub
-            m = mk(('L', b['d'], b['L'], b['legL'], b['legR']))
+            m = b['mk']
             off = 1 if b['pos'] == 'T' else -1
             base = Y_PLAN + off * (1300 + 750 * b['row'])
             lg = leg(b['d'])
@@ -191,8 +199,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 40)
             cx = U((a + c) / 2)
             tx = U(a) + 500
-            sh.mark(tx, base + 330, m)
-            sh.text(f"{b['n']}T {b['d']} mm L={b['L']}mm {b['pos']}", tx + 350, base + 180, 250)
+            sh.text(callout(b['n'], b['d'], m, b['L'], layer=b['pos']), tx, base + 180, 250)
             sh.text(f"{round(b['x1'] - b['x0'])} mm", cx + 600, base - 120, 200, 'S-DIM', align=TA.TOP_CENTER)
             if b['x0'] < w0: sh.text('CONT.', U(a) + 100, base - 120, 180, 'S-DIM', align=TA.TOP_LEFT)
             if b['x1'] > w1: sh.text('CONT.', U(c) - 100, base - 120, 180, 'S-DIM', align=TA.TOP_RIGHT)
@@ -251,10 +258,8 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
                 if not ss: continue
                 n = sum(s['n'] for s in ss if w0 <= (s['a'] + s['b']) / 2 <= w1)
                 if not n: continue
-                m = mk(('S', ss[0]['d'], ss[0]['L']))
                 a = max(sg['a'], w0)
-                sh.mark(U(a) + 900, Y_ELEV - hmax - 1100 + 120, m, 220)
-                sh.text(f"{n}T {ss[0]['d']}mm L={ss[0]['L']}mm @{ss[0]['s']}mm", U(a) + 1200, Y_ELEV - hmax - 1100, 220)
+                sh.text(callout(n, ss[0]['d'], ss[0]['mk'], ss[0]['L'], ss[0]['s']), U(a) + 900, Y_ELEV - hmax - 1100, 220)
         # ---- cross sections ----
         sh.text('CROSS SECTIONS  1:20', 1800, Y_SEC + 4900, 280, 'S-SEC')
         sx = 2600
@@ -289,13 +294,12 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
                     h.paths.add_edge_path().add_arc(sh.P(*Q(xx, yy)), d / 2 * f, 0, 360)
                 # leader + call-out
                 sh.line(Q(xb, yy), (bx + W_ + 200, Q(0, yy)[1]), 'S-RFT-TXT')
-                sh.text(f"{n}T {d} mm ({row})", bx + W_ + 250, Q(0, yy)[1] - 90, 200)
+                sh.text(f"{n} T {d} -{row}", bx + W_ + 250, Q(0, yy)[1] - 90, 200)
             sh.dim(Q(0, 0), Q(p['b'], 0), (bx, by - 350), text=str(p['b']))
             sh.dim(Q(0, 0), Q(0, p['h']), (bx - 350, by), angle=90, text=str(p['h']))
             sh.text(str(ct), Q(p['b'] / 2, ct / 2)[0], Q(0, ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
             sh.text(str(ct), Q(p['b'] / 2, 0)[0], Q(0, p['h'] - ct / 2)[1], 120, 'S-DIM', align=TA.MIDDLE_CENTER)
             sh.text(str(c), Q(c / 2, 0)[0], Q(0, p['h'] / 2)[1], 120, 'S-DIM', rot=90, align=TA.MIDDLE_CENTER)
-            sm = mk(('S', p['ds'], 2 * (p['b'] - 2 * c + p['h'] - 80) + 200))
             sh.text(f"T{p['ds']} @{p['s']} mm", bx + W_ + 250, by + H_ / 2, 200)
             # stirrup shape with dims (Roya style)
             sx2 = bx + W_ + 1700
@@ -306,7 +310,17 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
             sh.text(f"SEC {sec_no}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
             sh.text(f"{sc['t']} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
             sx += W_ + 1700 + a_ + 1600
-        # bar list on sheet (marks)
+        draw_legend(sh, 21000, 27900)
+        # levels on the longitudinal section
+        if 'top_gb' in LEV:
+            tg = LEV['top_gb']
+            for yy, lab in ((Y_ELEV, f"T.O.GB {tg:+.2f}"), (Y_ELEV - hmax, f"B.O.GB {tg - hmax / 1000:+.2f}")):
+                sh.line((X0 - 1300, yy), (X0 - 100, yy), 'S-DIM')
+                sh.text(lab, X0 - 1300, yy + 60, 170, 'S-DIM')
+    # BBS of the axis set
+    meta = dict(meta0); meta['title'] = f'GRADE BEAMS AXIS {axis}'; meta['dwg'] = f'{meta0["prefix"]}-{axis}'
+    nb = draw_bbs(doc, start_sheet - 1 + len(out), bl.sorted(), meta, Sheet)
+    out += [f'{meta["dwg"]}-BBS{i + 1:02d}' for i in range(nb)]
     return out
 
 
