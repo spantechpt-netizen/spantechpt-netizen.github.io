@@ -161,6 +161,8 @@ def draw_sheet(doc, idx, f, meta, bl):
         for j in range(n_ + 1):
             x = xa + (xb - xa) * j / n_
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': layer}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(d / 2 * ks, 18), 0, 360)
+    def dot2(xa, xb, s_):                                # second cut bar from the right end (clear of the bend)
+        n_ = max(1, round((xb - xa) / s_)); return xb - (xb - xa) / n_
     bx_ = [b for b in bars if b['layer'] == 'B']; tx_ = [b for b in bars if b['layer'] == 'T']
     lines = []
     def by_dir(lst, along): return next((b for b in lst if b['along'] == along), None)
@@ -184,28 +186,29 @@ def draw_sheet(doc, idx, f, meta, bl):
         xl, xr = c + BX['d'] / 2, L - c - BX['d'] / 2
         sh.pline([Q(xl, top_of_leg), Q(xl, yX), Q(xr, yX), Q(xr, top_of_leg)], 'S-RFT-BOT', max(BX['d'] * ks, 20), r=3 * BX['d'] * ks)
         dots(yY, BY['d'], BY['s'], 'S-RFT-BOT', xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2)
-        lines.append((yX, BX['mk'], callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag'])))
-        lines.append((yY, BY['mk'], callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag'])))
+        lines.append((yX, BX['mk'], callout(BX['n'], BX['d'], BX['mk'], BX['L'], BX['s'], BX['tag']), dot2(xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2, BY['s']) - BY['s'] * 1.5))   # on the line, between two dots
+        lines.append((yY, BY['mk'], callout(BY['n'], BY['d'], BY['mk'], BY['L'], BY['s'], BY['tag']), dot2(xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2, BY['s'])))   # a cut dot clear of the bend
     if tx_:
         bot_of_leg = c + (dB if bx_ else 0) + 15
         ins = (BX['d'] + 2) if bx_ else 0                # top U sits inside the bottom U legs, side bars inside both
         xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
         sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20), r=3 * TX['d'] * ks)
         dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
-        lines.append((tX, TX['mk'], callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag'])))
-        lines.append((tY, TY['mk'], callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag'])))
+        lines.append((tX, TX['mk'], callout(TX['n'], TX['d'], TX['mk'], TX['L'], TX['s'], TX['tag']), dot2(xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2, TY['s']) - TY['s'] * 1.5))
+        lines.append((tY, TY['mk'], callout(TY['n'], TY['d'], TY['mk'], TY['L'], TY['s'], TY['tag']), dot2(xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2, TY['s'])))
     # side bars (rows) on both faces
     y0, y1 = (yY + 60) if bx_ else c + 60, (tY - 60) if tx_ else h - c - 60
     for i in range(side['rows']):
         y = y0 + (i + 1) * (y1 - y0) / (side['rows'] + 1)
         for x in (xs_, L - xs_):
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(6 * ks, 18), 0, 360)
-        if i == 0: lines.append((y, side['mk'], callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB')))
+        if i == 0: lines.append((y, side['mk'], callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB'), L - xs_))
     # call-outs with leaders to the right
     yt = sorted(lines)
-    for i, (y, mk_, t) in enumerate(yt):
+    for i, (y, mk_, t, xt) in enumerate(yt):                 # each leader ends ON its bar (line or cut dot)
         ty_ = Q(0, 0)[1] + i * 560 - 100
-        sh.line(Q(L - c, y), (Q(L + 100, 0)[0] + 350, ty_ + 90), 'S-RFT-TXT')
+        sh.line(Q(xt, y), (Q(L + 100, 0)[0] + 350, ty_ + 90), 'S-RFT-TXT')
+        sh.circle(*Q(xt, y), 25, 'S-RFT-TXT')
         sh.ctext(mk_, t, Q(L + 100, 0)[0] + 450, ty_, ST['call'])
     sh.dim(Q(0, -100), Q(L, -100), (Q(0, 0)[0], Q(0, -100)[1] - 400), text=str(L))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))

@@ -140,7 +140,9 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - **Corner bar of the top layer sits inside the bend of the top U**; cut bars are spread between the U bends.
 - Plan: one representative bar per direction as a U (legs folded into the plan, curved), straight length and legs
   in mm, distribution line with a small circle at the bar, column hatched, overall dims.
-- Section 1-1: PC, footing, curved Us, dots, side bars, call-outs with hexagon marks on leaders to the right,
+- Section 1-1: PC, footing, curved Us, dots, side bars, call-outs with hexagon marks on leaders to the right;
+  **every leader ends ON its own bar** with a small circle: X bars (lines) on the line between two dots, Y bars
+  (cut dots) on the second dot from the bend, side bar on its dot (never all on the cover line);
   levels on the left, neck stub with break line, `NECK UP TO T.O.GB`, `NECK H = …` (mm).
 
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` = column type : footing type : count)
@@ -185,6 +187,7 @@ drawing title, reference file, authored/checked/approved, general notes, drawing
 - Every bend curved; hooks 135° around the corner bar; break lines zig-zag.
 - All lengths in mm; levels in m; call-out format with dashes; hexagon marks; legend on the sheet.
 - No text on lines / on text / outside the frame / into the title block.
+- Every leader ends on the bar it describes (line or dot), not on the cover line or a neighbour bar.
 - Counts and lengths agree between call-outs, sketches and BBS; marks package-wide; mirrored ties merged.
 - `ezdxf` audit 0 errors.
 
