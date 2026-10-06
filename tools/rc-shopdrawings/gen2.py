@@ -1,0 +1,306 @@
+"""Grade-beam shop drawings, one set of A3 sheets per grid axis (Roya-style call-outs).
+Each sheet: plan strip (top bars above the beam, bottom bars below), longitudinal section, cross sections."""
+import math, pickle, sys, json
+from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA
+
+WIN = 29500          # beam length per sheet at 1:100
+X0 = 1800            # sheet x of window start
+Y_PLAN, Y_ELEV, Y_SEC = 22000, 13200, 2600
+AX = json.load(open('axes.json'))
+
+
+def axis_items(axis, runs, cols, tol=300):
+    hor = axis[0] == 'X'
+    c0 = AX[axis]
+    rs = [r for r in runs if r['hor'] == hor and abs(r['c'] - c0) <= tol]
+    rs.sort(key=lambda r: r['lo'])
+    # groups: consecutive runs closer than 1500 (a column / crossing beam between them)
+    groups = []
+    for r in rs:
+        if groups and r['lo'] - groups[-1]['hi'] <= 1500 and abs(r['c'] - groups[-1]['c']) <= 200:
+            groups[-1]['runs'].append(r); groups[-1]['hi'] = max(groups[-1]['hi'], r['hi'])
+        else:
+            groups.append(dict(c=r['c'], lo=r['lo'], hi=r['hi'], runs=[r]))
+    # supports along the axis band
+    sup = []
+    for c in cols:
+        lo, hi, a, b = (c[0], c[2], c[1], c[3]) if hor else (c[1], c[3], c[0], c[2])
+        if a - 30 <= c0 + 0 and b + 30 >= c0 - 0 or any(a - 30 <= g['c'] <= b + 30 for g in groups):
+            sup.append([lo, hi, 'C'])
+    for o in runs:
+        if o['hor'] == hor: continue
+        if o['lo'] - 1000 <= c0 <= o['hi'] + 1000:
+            sup.append([o['c'] - o['w'] / 2, o['c'] + o['w'] / 2, o['lab'] or 'GB'])
+    sup.sort()
+    merged = []
+    for s in sup:
+        if merged and s[0] <= merged[-1][1] + 5:
+            merged[-1][1] = max(merged[-1][1], s[1])
+        else:
+            merged.append(list(s))
+    lo = min(g['lo'] for g in groups); hi = max(g['hi'] for g in groups)
+    merged = [s for s in merged if any(s[1] >= g['lo'] - 1200 and s[0] <= g['hi'] + 1200 for g in groups)]
+    return hor, c0, groups, merged
+
+
+def detail(groups, sup):
+    """Bars and stirrups in axis coordinates."""
+    bars, stirs, secs = [], [], []
+    def anchor(pos, side):
+        best = None
+        for a, b, t in sup:
+            if side < 0 and a - 5 <= pos <= b + 1000 and a <= pos + 5:   # support at / before the start
+                if b >= pos - 1000: best = a + COVER if best is None else min(best, a + COVER)
+            if side > 0 and a - 1000 <= pos <= b + 5 and b >= pos - 5:
+                best = b - COVER if best is None else max(best, b - COVER)
+        return best if best is not None else pos - side * COVER
+    for gi, g in enumerate(groups):
+        segs = []
+        for r in sorted(g['runs'], key=lambda r: r['lo']):
+            t = r['lab'] or 'GB1'
+            if segs and segs[-1]['t'] == t:
+                segs[-1]['b'] = r['hi']
+            else:
+                segs.append(dict(t=t, a=r['lo'], b=r['hi'], w=r['w']))
+        g['segs'] = segs
+        for si, s in enumerate(segs):
+            p = SCHED[s['t']]
+            secs.append(dict(u=s['a'] + 300, t=s['t'], g=gi))
+            ea = anchor(s['a'], -1) if si == 0 else s['a'] - 0      # type change inside a group: anchor into the support between
+            eb = anchor(s['b'], +1) if si == len(segs) - 1 else s['b']
+            if si > 0: ea = anchor(s['a'], -1)
+            if si < len(segs) - 1: eb = anchor(s['b'], +1)
+            inner = [x for x in sup if x[0] >= ea - 5 and x[1] <= eb + 5]
+            spans = []
+            edges = [ea] + [v for x in inner for v in (x[0], x[1])] + [eb]
+            for i in range(0, len(edges) - 1, 2):
+                if edges[i + 1] - edges[i] > 300: spans.append((edges[i], edges[i + 1]))
+            def top_ok(x):   # top bars: lap in the middle third of a span
+                return any(a + (b - a) / 3 <= x <= b - (b - a) / 3 for a, b in spans)
+            def bot_ok(x):   # bottom bars: lap at supports (within L/4 of a support face)
+                return any(a - 50 <= x <= b + 50 for a, b, _ in inner) or any(abs(x - a) < (b - a) / 4 or abs(x - b) < (b - a) / 4 for a, b in spans)
+            for pos, n, d, ok in (('T', p['nt'], p['dt'], top_ok), ('B', p['nb'], p['db'], bot_ok)):
+                lg, lp = leg(d), lap(d)
+                total = eb - ea + 2 * lg
+                nbar = 1 if total <= STOCK else math.ceil((total - lp) / (STOCK - lp))
+                target = min(STOCK, (total + (nbar - 1) * lp) / nbar + 300) if nbar > 1 else STOCK
+                x, k = ea, 0
+                while True:
+                    first = k == 0
+                    rem = eb - x + (lg if first else 0) + lg
+                    if rem <= STOCK:
+                        bars.append(dict(pos=pos, n=n, d=d, x0=x, x1=eb, legL=first, legR=True, row=k % 2)); break
+                    e = x + target - (lg if first else 0)
+                    e = min(e, x + STOCK - (lg if first else 0))
+                    lo_lim = x + max(4000, target - 3000)
+                    e0 = e
+                    while e > lo_lim and not (ok(e) and ok(e - lp)): e -= 50
+                    if e <= lo_lim:
+                        e = e0
+                        while e < x + STOCK - (lg if first else 0) and not (ok(e) and ok(e - lp)): e += 50
+                    e = round(e / 10) * 10
+                    bars.append(dict(pos=pos, n=n, d=d, x0=x, x1=e, legL=first, legR=False, row=k % 2))
+                    x, k = e - lp, k + 1
+            c = 30 if p['b'] <= 300 else 40
+            ls = 2 * (p['b'] - 2 * c + p['h'] - 80) + 200
+            for a, b in spans:
+                n = math.floor((b - a - 100) / p['s']) + 1
+                stirs.append(dict(a=a, b=b, n=n, d=p['ds'], L=ls, s=p['s'], t=s['t']))
+    for pos in 'TB':
+        last_end = {0: -1e18, 1: -1e18}
+        for b in sorted([b for b in bars if b['pos'] == pos], key=lambda b: b['x0']):
+            b['row'] = 0 if b['x0'] > last_end[0] + 2500 else 1 if b['x0'] > last_end[1] + 2500 else 0
+            last_end[b['row']] = b['x1']
+    for b in bars:
+        b['L'] = round(b['x1'] - b['x0'] + (leg(b['d']) if b['legL'] else 0) + (leg(b['d']) if b['legR'] else 0))
+    return bars, stirs, secs
+
+
+def windows(groups, sup):
+    lo = min(g['lo'] for g in groups) - 1000; hi = max(g['hi'] for g in groups) + 1000
+    cuts, x = [], lo
+    while hi - x > WIN:
+        lim = x + WIN
+        cand = [g['lo'] - 500 for g in groups if x + 3000 < g['lo'] - 500 <= lim]          # cut in a gap
+        cand += [(a + b) / 2 for a, b, t in sup if x + 3000 < (a + b) / 2 <= lim]           # or at a support
+        nx = max(cand) if cand else lim
+        cuts.append((x, nx)); x = nx
+    cuts.append((x, hi))
+    return cuts
+
+
+def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1):
+    hor, c0, groups, sup = axis_items(axis, runs, cols)
+    if not groups: return []
+    bars, stirs, secs = detail(groups, sup)
+    out = []
+    wins = windows(groups, sup)
+    perp = {k: v for k, v in AX.items() if (k[0] == 'Y') == hor}
+    sec_no = 0
+    for wi, (w0, w1) in enumerate(wins):
+        U = lambda u: X0 + (u - w0)
+        meta = dict(meta0)
+        meta['title'] = f'GRADE BEAMS REINFORCEMENT\nAXIS {axis}  ({wi + 1}/{len(wins)})'
+        meta['dwg'] = f'{meta0["prefix"]}-{axis}-{wi + 1:02d}'
+        sh = Sheet(doc, 0, -(start_sheet - 1 + len(out)) * 32000, meta)
+        out.append(meta['dwg'])
+        marks = {}
+        def mk(key):
+            if key not in marks: marks[key] = len(marks) + 1
+            return marks[key]
+        vis = lambda a, b: b > w0 and a < w1
+        sh.text(f'AXIS {axis}', 1800, 27900, 500, 'S-AXIS-TXT')
+        sh.text(f'GRADE BEAMS ON AXIS {axis} - PLAN  1:100', 1800, 27200, 280, 'S-SEC')
+        # perpendicular grid lines + bubbles
+        for k, v in perp.items():
+            if w0 - 200 <= v <= w1 + 200:
+                x = U(v)
+                for y0_, y1_ in ((Y_PLAN - 3400, Y_PLAN + 3400), (Y_ELEV - 1500, Y_ELEV + 1600)):
+                    sh.line((x, y0_), (x, y1_), 'S-AXIS')
+                sh.circle(x, Y_PLAN + 3900, 450, 'S-AXIS')
+                sh.text(k, x, Y_PLAN + 3900, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
+                sh.circle(x, Y_ELEV + 2100, 450, 'S-AXIS')
+                sh.text(k, x, Y_ELEV + 2100, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
+        # beams + supports on plan
+        for g in groups:
+            for r in g['runs']:
+                if not vis(r['lo'], r['hi']): continue
+                a, b = max(r['lo'], w0), min(r['hi'], w1)
+                for sgn in (-1, 1):
+                    sh.line((U(a), Y_PLAN + sgn * r['w'] / 2), (U(b), Y_PLAN + sgn * r['w'] / 2), 'S-GB-CONC')
+                sh.text(r['lab'] or 'GB?', U((a + b) / 2), Y_PLAN - r['w'] / 2 - 120, 200, 'S-GB-CONC', align=TA.TOP_CENTER)
+        for a, b, t in sup:
+            if vis(a, b):
+                sh.hatch_rect(U(max(a, w0)), Y_PLAN - 400, U(min(b, w1)), Y_PLAN + 400)
+        # bars on plan
+        for b in bars:
+            if not vis(b['x0'], b['x1']): continue
+            if min(b['x1'], w1) - max(b['x0'], w0) < 1500 and (b['x0'] < w0 or b['x1'] > w1): continue   # tiny continuation stub
+            m = mk(('L', b['d'], b['L'], b['legL'], b['legR']))
+            off = 1 if b['pos'] == 'T' else -1
+            base = Y_PLAN + off * (1300 + 750 * b['row'])
+            lg = leg(b['d'])
+            a, c = max(b['x0'], w0), min(b['x1'], w1)
+            pts = []
+            if b['legL'] and b['x0'] >= w0: pts.append((U(a), base - off * lg))
+            pts += [(U(a), base), (U(c), base)]
+            if b['legR'] and b['x1'] <= w1: pts.append((U(c), base - off * lg))
+            sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 40)
+            cx = U((a + c) / 2)
+            tx = U(a) + 500
+            sh.mark(tx, base + 330, m)
+            sh.text(f"{b['n']}T {b['d']} mm L={b['L']}mm {b['pos']}", tx + 350, base + 180, 250)
+            sh.text(f"{round(b['x1'] - b['x0'])} mm", cx + 600, base - 120, 200, 'S-DIM', align=TA.TOP_CENTER)
+            if b['x0'] < w0: sh.text('CONT.', U(a) + 100, base - 120, 180, 'S-DIM', align=TA.TOP_LEFT)
+            if b['x1'] > w1: sh.text('CONT.', U(c) - 100, base - 120, 180, 'S-DIM', align=TA.TOP_RIGHT)
+            if b['legL'] and b['x0'] >= w0: sh.text(f'{lg} mm', U(a) - 100, base - off * lg / 2, 170, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+            if b['legR'] and b['x1'] <= w1: sh.text(f'{lg} mm', U(c) + 280, base - off * lg / 2, 170, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+        for pos in 'TB':
+            rows = sorted([b for b in bars if b['pos'] == pos], key=lambda b: b['x0'])
+            for a, b in zip(rows, rows[1:]):
+                if b['x0'] < a['x1'] and w0 <= b['x0'] and a['x1'] <= w1:
+                    off = 1 if pos == 'T' else -1
+                    y = Y_PLAN + off * 2400
+                    sh.dim((U(b['x0']), y), (U(a['x1']), y), (U(b['x0']), y), text=str(round(a['x1'] - b['x0'])))
+
+        # ---- elevation ----
+        sh.text(f'LONGITUDINAL SECTION - AXIS {axis}  1:100', 1800, Y_ELEV + 3000, 280, 'S-SEC')
+        hmax = 700
+        for g in groups:
+            for s in g['segs']:
+                if not vis(s['a'], s['b']): continue
+                p = SCHED[s['t']]; a, b = max(s['a'], w0), min(s['b'], w1)
+                sh.pline([(U(a), Y_ELEV), (U(b), Y_ELEV), (U(b), Y_ELEV - p['h']), (U(a), Y_ELEV - p['h'])], 'S-GB-CONC', closed=True)
+        for a, b, t in sup:
+            if vis(a, b):
+                sh.hatch_rect(U(max(a, w0)), Y_ELEV - hmax - 400, U(min(b, w1)), Y_ELEV)
+        for b in bars:
+            if not vis(b['x0'], b['x1']): continue
+            p = SCHED['GB1']
+            for g in groups:
+                for s in g['segs']:
+                    if s['a'] - 1500 <= b['x0'] <= s['b']: p = SCHED[s['t']]
+            dy = -1 if b['pos'] == 'T' else 1
+            y = Y_ELEV - COVER - 20 - 25 * b['row'] if b['pos'] == 'T' else Y_ELEV - p['h'] + COVER + 20 + 25 * b['row']
+            lg = min(leg(b['d']), p['h'] - 150)
+            a, c = max(b['x0'], w0), min(b['x1'], w1)
+            pts = []
+            if b['legL'] and b['x0'] >= w0: pts.append((U(a), y + dy * lg))
+            pts += [(U(a), y), (U(c), y)]
+            if b['legR'] and b['x1'] <= w1: pts.append((U(c), y + dy * lg))
+            sh.pline(pts, 'S-RFT-TOP' if b['pos'] == 'T' else 'S-RFT-BOT', 25)
+        for s in stirs:
+            if not vis(s['a'], s['b']): continue
+            p = SCHED[s['t']]
+            x = s['a'] + 50
+            while x <= s['b'] - 50:
+                if w0 <= x <= w1: sh.line((U(x), Y_ELEV - COVER), (U(x), Y_ELEV - p['h'] + COVER), 'S-RFT-STIR')
+                x += s['s']
+            a, b = max(s['a'], w0), min(s['b'], w1)
+            sh.dim((U(a), Y_ELEV), (U(b), Y_ELEV), (U(a), Y_ELEV + 600), text=f"{round(s['b'] - s['a'])}")
+
+        # one stirrup call-out per beam type segment (count summed over its spans)
+        for g in groups:
+            for sg in g['segs']:
+                ss = [s for s in stirs if sg['a'] - 1500 <= s['a'] and s['b'] <= sg['b'] + 1500 and s['t'] == sg['t'] and vis(s['a'], s['b'])]
+                if not ss: continue
+                n = sum(s['n'] for s in ss if w0 <= (s['a'] + s['b']) / 2 <= w1)
+                if not n: continue
+                m = mk(('S', ss[0]['d'], ss[0]['L']))
+                a = max(sg['a'], w0)
+                sh.mark(U(a) + 900, Y_ELEV - hmax - 1100 + 120, m, 220)
+                sh.text(f"{n}T {ss[0]['d']}mm L={ss[0]['L']}mm @{ss[0]['s']}mm", U(a) + 1200, Y_ELEV - hmax - 1100, 220)
+        # ---- cross sections ----
+        sh.text('CROSS SECTIONS  1:20', 1800, Y_SEC + 4900, 280, 'S-SEC')
+        sx = 2600
+        for sc in secs:
+            if not (w0 <= sc['u'] <= w1): continue
+            sec_no += 1
+            p = SCHED[sc['t']]; f = 5
+            x = U(sc['u'])
+            sh.line((x, Y_ELEV + 900), (x, Y_ELEV - hmax - 500), 'S-SEC')
+            sh.circle(x, Y_ELEV - hmax - 900, 330, 'S-SEC')
+            sh.text(str(sec_no), x, Y_ELEV - hmax - 900, 300, 'S-SEC', align=TA.MIDDLE_CENTER)
+            bx, by = sx, Y_SEC
+            W_, H_ = p['b'] * f, p['h'] * f
+            sh.pline([(bx, by), (bx + W_, by), (bx + W_, by + H_), (bx, by + H_)], 'S-GB-CONC', 0, True)
+            c = 30 if p['b'] <= 300 else 40
+            sh.pline([(bx + c * f, by + 40 * f), (bx + W_ - c * f, by + 40 * f), (bx + W_ - c * f, by + H_ - 40 * f), (bx + c * f, by + H_ - 40 * f)], 'S-RFT-STIR', 30, True)
+            sh.pline([(bx + c * f + 10 * f, by + H_ - 40 * f), (bx + c * f + 80 * f, by + H_ - 110 * f)], 'S-RFT-STIR', 30)
+            for row, n, d in (('T', p['nt'], p['dt']), ('B', p['nb'], p['db'])):
+                yy = by + H_ - (40 + 10 + d / 2) * f if row == 'T' else by + (40 + 10 + d / 2) * f
+                for j in range(n):
+                    xx = bx + (c + 10 + d / 2 + j * (p['b'] - 2 * c - 20 - d) / (n - 1)) * f
+                    h = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP' if row == 'T' else 'S-RFT-BOT'})
+                    h.paths.add_edge_path().add_arc(sh.P(xx, yy), d / 2 * f, 0, 360)
+            sh.text(f"{p['b']}", bx + W_ / 2, by - 150, 200, 'S-DIM', align=TA.TOP_CENTER)
+            sh.text(f"{p['h']}", bx - 150, by + H_ / 2, 200, 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+            tm = mk(('L', p['dt']))  # label only
+            sh.text(f"{p['nt']}T{p['dt']} (T)", bx + W_ + 250, by + H_ - 250, 200)
+            sh.text(f"{p['nb']}T{p['db']} (B)", bx + W_ + 250, by + 150, 200)
+            sm = mk(('S', p['ds'], 2 * (p['b'] - 2 * c + p['h'] - 80) + 200))
+            sh.text(f"T{p['ds']}@{p['s']}", bx + W_ + 250, by + H_ / 2, 200)
+            # stirrup shape with dims (Roya style)
+            sx2 = bx + W_ + 1700
+            a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6
+            sh.pline([(sx2, by + 300), (sx2 + a_, by + 300), (sx2 + a_, by + 300 + b_), (sx2, by + 300 + b_)], 'S-RFT-STIR', 30, True)
+            sh.text(f"{p['b'] - 2 * c}", sx2 + a_ / 2, by + 150, 170, 'S-DIM', align=TA.TOP_CENTER)
+            sh.text(f"{p['h'] - 80}", sx2 + a_ + 150, by + 300 + b_ / 2, 170, 'S-DIM', rot=90, align=TA.TOP_CENTER)
+            sh.text(f"SEC {sec_no}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
+            sh.text(f"{sc['t']} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
+            sx += W_ + 1700 + a_ + 1600
+        # bar list on sheet (marks)
+    return out
+
+
+if __name__ == '__main__':
+    runs = pickle.load(open('runs.pkl', 'rb')); cols = pickle.load(open('cols.pkl', 'rb'))
+    axes = sys.argv[1:] or ['X11']
+    meta0 = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
+                 rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='1:100 / SEC 1:20', prefix='SDW-STR-GB')
+    meta0.update(json.load(open('project.json')).get('meta', {}))
+    for a in axes:
+        doc = new_doc()
+        names = draw_axis(doc, a, runs, cols, meta0)
+        doc.saveas(f'out/GB_AXIS_{a}.dxf')
+        print(a, names)

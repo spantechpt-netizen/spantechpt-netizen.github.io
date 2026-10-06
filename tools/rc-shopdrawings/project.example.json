@@ -1,0 +1,42 @@
+{
+ "dxf": "drawing.dxf",
+ "layout": "4-SOG",
+ "beam_layer": "CORE-FNDN-GRBM",
+ "label_layer": "$0$CORE-COLS-IDEN",
+ "col_layers": [
+  "CORE-COLS-CONC",
+  "COLUMN MAIN"
+ ],
+ "axis_block": "A-AX",
+ "axis_attr": "00",
+ "axis_family_attr": "X",
+ "widths": [
+  200,
+  350,
+  400
+ ],
+ "schedule": {
+  "GB1": {
+   "b": 200,
+   "h": 700,
+   "nb": 4,
+   "db": 16,
+   "nt": 4,
+   "dt": 16,
+   "ds": 10,
+   "s": 125
+  }
+ },
+ "meta": {
+  "project": "PROJECT NAME",
+  "client": "",
+  "consultant": "",
+  "contractor": "",
+  "ref": "consultant drawing name - rev - date",
+  "author": "",
+  "checker": "",
+  "approver": "",
+  "date": "",
+  "prefix": "SDW-STR-GB"
+ }
+}
