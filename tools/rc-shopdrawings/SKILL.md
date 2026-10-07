@@ -99,6 +99,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `survey.py` | first look at a new DXF → `survey.md` (layers, blocks, islands, viewports, text families, candidates, units) + `texts.csv` + `project.draft.json` |
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
+| `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
 | `extract.py` | DXF → beam runs, columns, axes |
 | `gen.py` | shared: `SCHED`, `COVER`, `leg()`, `lap()`, `new_doc()` (layers, dim style GB100), **style** `ST`, `mm()`, `project_notes()`, `fillet()`, `hooked_tie()`, `tie_bar_centres()`, `Sheet` (frame + title block, `pline(r=)`, `text(maxw=)`, `ctext()`, `mark()`, `break_line()`, `dim()`, `hatch_rect()`), `callout()`, `BarList`, `draw_legend()`, `draw_bbs()` |
 | `gen2.py` | GB per axis: supports, bar splitting & laps, plan strip (auto label placement), longitudinal section, cross sections |
@@ -112,11 +113,29 @@ Sheets are A3 frames at 1:100 in model space (42000 × 29700 units), stacked eve
 Title block on the right (client, project, consultant, contractor, *Shop Drawings Prepared By: SPAN TECH*,
 drawing title, reference file, authored/checked/approved, general notes, drawing number, scale, rev).
 
+**Office / client title block (engineer, Oct 2026: "نغير الباندا بتاع المشروع كله")** — when the engineer sends a
+sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block `LAY` in paper space, A0):
+1. Convert it, find the title-block INSERT in the paper layouts (survey §3 / `probe.py`), list its texts with their
+   positions / attachment (MTEXT attachment 5 = middle centre) and the cell lines.
+2. `python3 tb_template.py sheet.dxf LAY titleblock.dxf "<sheet-specific texts>"…` → template with frame, logos,
+   key plan, general notes, revision table, names kept; drawing title / reference / scale / size / area / venue /
+   rev / date stripped (the drawing number and Seq. were paper-space texts, outside the block).
+3. `project.json → title_block` (project data): `dxf`, `block`, `paper` [x0, y0, x1, y1] = the paper sheet in block
+   units (layout limits), `style`, `size`, `code` {project_id, dwg_type, orig, doc_type, area}, `venue_by_title`
+   [[title keyword, venue code] …], `seq_start` {venue: first number}, `fields` {title, ref, scale, size, dwg, area,
+   venue, seq, rev, date: [x, y, text height, cell width] in block units}.
+4. `new_doc()` loads the block once per file (`ezdxf.xref.Loader`); `Sheet.frame()` inserts it scaled so the paper
+   sheet = 42000 × 29700 and writes the values (middle-centred, squeezed into the cell). Drawing number =
+   `project_id-dwg_type-orig-doc_type-area-venue-seq-rev`, Seq. numbered per venue through the file.
+   The built-in frame (and its sheet notes) is used only when `title_block` is absent; with the office block the
+   block's own GENERAL NOTES are the sheet notes.
+
 ## 4. Project-wide drafting rules (engineer, Oct 2026) — apply to EVERY element
 
-1. **Call-out format** on every bar: `n T d-mark-L-s -STG -layer`, dashes between diameter, mark, length and
-   spacing (`15 T 12-00-12000-150 -STG -B1`). `callout()` builds it. The key of the format (`draw_legend`) is on
-   every sheet.
+1. **Call-out format** on every bar: `n T d-L-s -STG -layer`, dashes between diameter, length and spacing
+   (`20 T 14-3752-125 -T2`). **The bar mark is not repeated in the text** (engineer, Oct 2026: it is in the hexagon
+   in front only — same as the office key `(00) 00 T 00-00-00-T1`). `callout()` builds it. The key of the format
+   (`draw_legend`: hexagon = BAR MARK, then the text parts) is on every sheet.
 2. **Bar mark in a hexagon** in front of every call-out (`Sheet.ctext(mark, text, …)`), two digits (`01`), and in
    the BBS Position column. Circles stay only for grid bubbles, section numbers and the footing thickness tag.
 3. **All lengths in mm**, integers, no unit (`mm()`): bar lengths, legs, laps, tie sides, side-bar loops, neck

@@ -400,7 +400,9 @@ if __name__ == '__main__':
         meta['dwg'] = f"{meta['prefix'].replace('GB', 'FDN')}-{n}"
         draw_sheet(doc, idx, f, meta, bl)
         idx += 2 if f.get('adds') else 1
-    meta['title'] = 'STRUCTURAL FOUNDATION'; meta['dwg'] = meta['prefix'].replace('GB', 'FDN')
+    mats_only = all(n.startswith(('CF', 'RAFT')) for n in names)
+    meta['title'] = 'STRUCTURAL COMBINED FOOTINGS / RAFTS' if mats_only else 'STRUCTURAL FOUNDATION'
+    meta['dwg'] = meta['prefix'].replace('GB', 'FDN')
     nb = draw_bbs(doc, idx, bl.sorted(), meta)
     doc.saveas('out/FOOTINGS.dxf')
     print('sheets', idx, '+ BBS', nb)

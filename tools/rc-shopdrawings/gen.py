@@ -5,7 +5,9 @@ from ezdxf.enums import TextEntityAlignment as TA
 
 import json as _json, os as _os
 # beam schedule comes from the project file: {"schedule": {"GB1": {"b":200,"h":700,"nb":4,"db":16,"nt":4,"dt":16,"ds":10,"s":125}, ...}}
-SCHED = _json.load(open(_os.environ.get('RC_PROJECT', 'project.json')))['schedule']
+_PRJ = _json.load(open(_os.environ.get('RC_PROJECT', 'project.json')))
+SCHED = _PRJ['schedule']
+TB = _PRJ.get('title_block')       # office / client title block (tb_template.py); None -> the built-in frame
 COVER = 40          # grade beams, contact with soil
 STOCK = 12000
 LAP = 60            # x d
@@ -28,6 +30,11 @@ def new_doc():
     ds.dxf.dimtxt = 2.0; ds.dxf.dimscale = 100; ds.dxf.dimasz = 1.5; ds.dxf.dimexo = 1.0
     ds.dxf.dimexe = 1.0; ds.dxf.dimgap = 0.6; ds.dxf.dimtad = 1; ds.dxf.dimdec = 0
     ds.dxf.dimtih = 0; ds.dxf.dimtoh = 0; ds.dxf.dimblk = 'ARCHTICK'
+    if TB:                                   # the title-block block (frame, logos, key plan, notes) once per file
+        from ezdxf import xref
+        tpl = ezdxf.readfile(TB['dxf'])
+        ld = xref.Loader(tpl, doc); ld.load_block_layout(tpl.blocks.get(TB['block'])); ld.execute()
+    doc._tb_seq = {}                          # running sheet number per venue code
     return doc
 
 
@@ -175,6 +182,7 @@ class Sheet:
         self.pline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], layer, closed=True)
 
     def frame(self):
+        if TB: return self.frame_tb()
         W, H = self.W, self.H
         self.pline([(0, 0), (W, 0), (W, H), (0, H)], 'S-FRAME', closed=True)
         self.pline([(500, 500), (W - 500, 500), (W - 500, H - 500), (500, H - 500)], 'S-FRAME', 50, True)
@@ -206,11 +214,43 @@ class Sheet:
         self.text(f"Rev {m['rev']}  {m['rev_desc']}  {m['date']}", tx + 300, 2100, 200, 'S-TITLE')
 
 
+def _tb_frame(self):
+    """Office / client title block: the block of the template scaled so its paper sheet = this sheet, plus the
+    per-sheet values (title, reference, scale, size, drawing number, area / venue / sequence / rev, date)."""
+    x0, y0, x1, y1 = TB['paper']
+    k = self.W / (x1 - x0)
+    self.m.add_blockref(TB['block'], self.P(-x0 * k, -y0 * k), dxfattribs={'xscale': k, 'yscale': k, 'layer': 'S-FRAME'})
+    m, c = self.meta, TB.get('code', {})
+    venue = m.get('venue') or next((v for key, v in TB.get('venue_by_title', []) if key in m.get('title', '').upper()),
+                                    c.get('venue', 'XX'))
+    seqs = self.doc._tb_seq
+    seqs[venue] = seqs.get(venue, int(TB.get('seq_start', {}).get(venue, 1)) - 1) + 1
+    rev = m.get('rev', '00')
+    val = dict(title=m.get('title', ''), ref=' '.join(m.get('ref', '').split('\n')), scale=m.get('scale', 'AS SHOWN'),
+               size=TB.get('size', 'A3'), area=c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,
+               date=m.get('date', ''))
+    val['dwg'] = '-'.join(str(v) for v in (c.get('project_id', ''), c.get('dwg_type', ''), c.get('orig', ''),
+                                          c.get('doc_type', ''), val['area'], venue, val['seq'], rev))
+    self.meta['dwg_no'] = val['dwg']
+    for key, (px, py, h, w) in TB['fields'].items():
+        lines = str(val.get(key, '')).split('\n')
+        for i, ln in enumerate(lines):
+            yy = (py - y0) * k - (i - (len(lines) - 1) / 2) * h * k * 1.6
+            t = self.text(ln.strip(), (px - x0) * k, yy, h * k, 'S-TITLE', align=TA.MIDDLE_CENTER)
+            t.dxf.style = TB.get('style', 'ROMANS')
+            est = len(ln.strip()) * h * k * 0.72                 # squeeze into the cell (wide fonts too)
+            if est > w * k: t.dxf.width = round(w * k / est, 2)
+
+
+Sheet.frame_tb = _tb_frame
+
+
 # ---------------------------------------------------------------- bar call-outs and BBS (office format)
 def callout(n, d, mark, L, s=None, layer=None, stg=False):
-    """'15 T 12 00 12000 150 -STG -B1' = no. of bars, T (high tensile), dia, bar mark, length mm, spacing mm,
-    staggered, layer position. Spacing / STG / layer only when they apply."""
-    t = f"{n} T {d}-{mark:02d}-{int(round(L))}"          # engineer: dashes between dia, mark and length
+    """'15 T 12-12000-150 -STG -B1' = no. of bars, T (high tensile), dia, length mm, spacing mm, staggered, layer
+    position. The bar mark is NOT repeated in the text: it is in the hexagon in front (engineer, Oct 2026).
+    Spacing / STG / layer only when they apply."""
+    t = f"{n} T {d}-{int(round(L))}"                      # engineer: dashes between dia and length
     if s: t += f"-{int(round(s))}"
     if stg: t += " -STG"
     if layer: t += f" -{layer}"
@@ -241,9 +281,13 @@ class BarList:
 
 def draw_legend(sh, x, y):
     """Key of the call-out, as on the office sheets."""
-    parts = [('15', 'No. OF\nBARS'), ('T', '( HIGH\nTENSILE)'), ('12-', 'BAR\nDIAMETER'), ('00-', 'BAR\nMARK'),
+    parts = [('15', 'No. OF\nBARS'), ('T', '( HIGH\nTENSILE)'), ('12-', 'BAR\nDIAMETER'),
              ('12000-', 'LENGTH\nOF BAR\nMM'), ('150', 'SPACING\nMM'), ('-STG', 'STAGGERED RFT'), ('- B1', 'LAYER\nPOSITION')]
-    cx = x
+    sh.mark(x + 280, y + 130, 0, 260)                     # the bar mark: hexagon in front of the call-out
+    sh.line((x + 280, y - 180), (x + 280, y - 1450), 'S-RFT-TXT')
+    for j, part in enumerate(('BAR', 'MARK')):
+        sh.text(part, x + 280, y - 1550 - j * 230, 160, 'S-RFT-TXT', align=TA.TOP_CENTER)
+    cx = x + 700
     for i, (v, lab) in enumerate(parts):
         w = 400 + 230 * len(v)
         sh.text(v, cx + w / 2, y, 260, 'S-RFT-TXT', align=TA.BOTTOM_CENTER)

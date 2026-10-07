@@ -72,5 +72,119 @@
   "S-COLS-IDEN",
   "CORE-COLS",
   "CORE-COLS-CONC-SEC"
- ]
+ ],
+ "_title_block_example (rename to title_block once titleblock.dxf exists)": {
+  "dxf": "titleblock.dxf",
+  "block": "LAY",
+  "paper": [
+   2.58,
+   3.25,
+   1191.58,
+   844.25
+  ],
+  "style": "Calibri_1",
+  "size": "A3",
+  "code": {
+   "project_id": "PRJ",
+   "dwg_type": "SD",
+   "orig": "STCO.",
+   "doc_type": "STR",
+   "area": "Z00"
+  },
+  "venue_by_title": [
+   [
+    "GRADE BEAM",
+    "GB"
+   ],
+   [
+    "NECK",
+    "NK"
+   ],
+   [
+    "STRIP",
+    "SF"
+   ],
+   [
+    "RAFT",
+    "CF"
+   ],
+   [
+    "COMBINED",
+    "CF"
+   ],
+   [
+    "FOUNDATION",
+    "FD"
+   ]
+  ],
+  "seq_start": {
+   "GB": 20001,
+   "FD": 21001,
+   "NK": 22001,
+   "CF": 23001,
+   "SF": 24001
+  },
+  "fields": {
+   "title": [
+    1106.2,
+    140.7,
+    4.08,
+    146
+   ],
+   "ref": [
+    1106.2,
+    115.7,
+    3.4,
+    146
+   ],
+   "scale": [
+    1147.6,
+    49.6,
+    3.0,
+    19
+   ],
+   "size": [
+    1169.7,
+    49.6,
+    3.4,
+    20
+   ],
+   "dwg": [
+    1084.0,
+    48.0,
+    3.2,
+    104
+   ],
+   "area": [
+    1119.3,
+    21.3,
+    3.4,
+    18
+   ],
+   "venue": [
+    1139.5,
+    21.3,
+    3.4,
+    18
+   ],
+   "seq": [
+    1157.8,
+    21.3,
+    3.4,
+    14
+   ],
+   "rev": [
+    1172.9,
+    21.3,
+    3.4,
+    14
+   ],
+   "date": [
+    1130.6,
+    392.0,
+    2.68,
+    24
+   ]
+  }
+ }
 }

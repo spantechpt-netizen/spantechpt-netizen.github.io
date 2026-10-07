@@ -18,6 +18,12 @@ python3 table_dump.py drawing.dxf "FOOTINGS SCHEDULE" # a schedule as rows / cel
 No layer or block name is assumed by the generators; they read `project.json` and the schedule files built from
 this reading.
 
+## Office title block
+
+`python3 tb_template.py sheet.dxf LAY titleblock.dxf "<texts that change per sheet>"…` then `project.json →
+title_block` (see SKILL.md §3): every sheet gets that frame scaled to the A3 sheet, with its own title, reference,
+scale, drawing number (`project-dwgtype-orig-doctype-area-venue-seq-rev`) and date.
+
 ## Pipeline
 
 ```
