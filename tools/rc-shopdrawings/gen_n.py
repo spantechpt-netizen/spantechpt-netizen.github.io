@@ -15,6 +15,7 @@ FC = PRJ.get('footing_cover', 70)
 
 def read_schedule(dxf='main.dxf', block='COLUMN SCH'):
     """-> {type: dict(b, h, n, d, sets, dots=[(x,y)], ties=[(pts, closed)])} in mm, origin = section corner."""
+    dxf = dxf or PRJ.get('dxf', 'main.dxf'); block = block or PRJ.get('column_schedule_block', 'COLUMN SCH')
     doc, _ = recover.readfile(dxf)
     ins = [e for e in doc.modelspace().query('INSERT') if e.dxf.name == block][0]
     ents = list(ins.virtual_entities())
@@ -81,9 +82,10 @@ def read_schedule(dxf='main.dxf', block='COLUMN SCH'):
     return out
 
 
-def read_schedule2(dxf='main.dxf', block='COLUMN SCH'):
+def read_schedule2(dxf=None, block=None):
     """Generic reader of every row of the column schedule, whatever layers the row uses (nested blocks expanded):
     bar circles (de-duplicated, mirrored when the sketch omits symmetric bars), tie polylines around them."""
+    dxf = dxf or PRJ.get('dxf', 'main.dxf'); block = block or PRJ.get('column_schedule_block', 'COLUMN SCH')
     doc, _ = recover.readfile(dxf)
     ins = [e for e in doc.modelspace().query('INSERT') if e.dxf.name == block][0]
     ents = []
@@ -155,7 +157,7 @@ def read_schedule2(dxf='main.dxf', block='COLUMN SCH'):
             if v.dxftype() != 'LWPOLYLINE': continue
             q = [(a, b) for a, b, *_ in v.get_points()]
             if not q or not all(x0 - 6 * 40 * k / 10 - 300 <= a <= x1 + 300 and y0 - 300 <= b <= y1 + 300 for a, b in q): continue
-            if not inrow(q[0][1]) or v.dxf.layer.endswith(('S-COLS-IDEN', 'CORE-COLS', 'CORE-COLS-CONC-SEC')) or v.dxf.layer == 'column': continue
+            if not inrow(q[0][1]) or v.dxf.layer.endswith(tuple(PRJ.get('sched_outline_layers', ['S-COLS-IDEN', 'CORE-COLS', 'CORE-COLS-CONC-SEC']))) or v.dxf.layer == 'column': continue
             L = sum(math.dist(q[j], q[j + 1]) for j in range(len(q) - 1)) + (math.dist(q[-1], q[0]) if v.closed else 0)
             if L / k < 150: continue
             xs_ = [a for a, b in q]; ys_ = [b for a, b in q]

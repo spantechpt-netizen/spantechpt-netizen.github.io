@@ -1,4 +1,4 @@
-"""Combined footings / rafts / strap footings: outline polygons (CORE-FNDN) with their label, the columns inside,
+"""Combined footings / rafts / strap footings: outline polygons (project.json -> fnd_layers, default CORE-FNDN) with their label, the columns inside,
 the ADD TOP / ADD BOT annotations inside. -> mats.pkl"""
 import json, pickle, re, math, collections
 from ezdxf import recover
@@ -8,13 +8,15 @@ doc, _ = recover.readfile(P.get('dxf', 'main.dxf')); msp = doc.modelspace()
 cx, cy, H = P['fnd_view']; W = H * 1.6
 X0, X1, Y0, Y1 = cx - W / 2, cx + W / 2, cy - H / 2, cy + H / 2
 polys, texts = [], []
-def walk(e, d=0):
+FNDL = tuple(P.get('fnd_layers', ['CORE-FNDN']))
+def walk(e, d=0, inh=None):
     t = e.dxftype()
+    if inh and e.dxf.layer == '0': e.dxf.layer = inh          # layer 0 in a block = the INSERT's layer
     if t == 'INSERT' and d < 3:
         try:
-            for v in e.virtual_entities(): walk(v, d + 1)
+            for v in e.virtual_entities(): walk(v, d + 1, e.dxf.layer)
         except Exception: pass
-    elif t == 'LWPOLYLINE' and e.dxf.layer.endswith('CORE-FNDN'):
+    elif t == 'LWPOLYLINE' and e.dxf.layer.endswith(FNDL):
         p = [(a, b) for a, b in e.get_points('xy')]
         if len(p) >= 4 and X0 < p[0][0] < X1 and Y0 < p[0][1] < Y1:
             try:

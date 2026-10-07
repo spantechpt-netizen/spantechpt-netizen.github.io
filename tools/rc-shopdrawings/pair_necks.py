@@ -1,9 +1,9 @@
 """Column necks: pair every column of the foundation plan with the footing it stands on.
 project.json -> fnd_view: [centre x, centre y, height] of the foundation-plan window (aspect 1.6).
-Columns: outlines on *CORE-COLS-CONC (model space + blocks), typed by size (column_sizes), duplicates merged
+Columns: outlines on the layers ending with project.json -> fnd_col_layers (default CORE-COLS-CONC; model space + blocks), typed by size (column_sizes), duplicates merged
 (type from the nearest plan label such as 'C3 35X80'). Isolated footings (in footings.json): every label matched to
 its nearest column, nearest pairs first. Combined footings / rafts / straps (labels CF*, RAFT*, ST*): every column
-inside their outline. -> neck_pairs.txt (C:F:count for gen_n.py) + neck_pairs.pkl (details, unmatched)."""
+inside their outline (outline layers: fnd_layers, default CORE-FNDN). -> neck_pairs.txt (C:F:count for gen_n.py) + neck_pairs.pkl (details, unmatched)."""
 import json, pickle, collections, re, math
 from ezdxf import recover
 P = json.load(open('project.json'))
@@ -12,13 +12,15 @@ cx, cy, H = P['fnd_view']; W = H * 1.6
 X0, X1, Y0, Y1 = cx - W / 2, cx + W / 2, cy - H / 2, cy + H / 2
 sizes = P['column_sizes']; bysize = {tuple(sorted(v)): k for k, v in sizes.items()}
 sched = json.load(open('footings.json'))
+COLL = tuple(P.get('fnd_col_layers', ['CORE-COLS-CONC'])); FNDL = tuple(P.get('fnd_layers', ['CORE-FNDN']))
 crect, frect, labs, flabs = [], [], [], []
-LBL = re.compile(r'(F\d*A?|Fx|CF\d+|FF\d+|RAFT-?\d*|ST-?\d*)')
-def walk(e, d=0):
+LBL = re.compile(P.get('footing_label_re', r'(F\d*A?|Fx|CF\d+|FF\d+|RAFT-?\d*|ST-?\d*)'))
+def walk(e, d=0, inh=None):
     t = e.dxftype()
+    if inh and e.dxf.layer == '0': e.dxf.layer = inh          # layer 0 in a block = the INSERT's layer
     if t == 'INSERT' and d < 3:
         try:
-            for v in e.virtual_entities(): walk(v, d + 1)
+            for v in e.virtual_entities(): walk(v, d + 1, e.dxf.layer)
         except Exception: pass
     elif t == 'LWPOLYLINE':
         p = e.get_points('xy')
@@ -26,8 +28,8 @@ def walk(e, d=0):
         xs = [a for a, b in p]; ys = [b for a, b in p]
         if not (X0 < min(xs) < X1 and Y0 < min(ys) < Y1): return
         r = (min(xs), min(ys), max(xs), max(ys))
-        if e.dxf.layer.endswith('CORE-COLS-CONC'): crect.append(r)
-        elif e.dxf.layer.endswith('CORE-FNDN'): frect.append(r)
+        if e.dxf.layer.endswith(COLL): crect.append(r)
+        elif e.dxf.layer.endswith(FNDL): frect.append(r)
     elif t in ('TEXT', 'MTEXT'):
         s = (e.plain_text() if t == 'MTEXT' else e.dxf.text).strip()
         x, y = e.dxf.insert.x, e.dxf.insert.y

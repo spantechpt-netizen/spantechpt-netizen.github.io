@@ -1,6 +1,6 @@
 ---
 name: rc-shopdrawings
-description: Span Tech RC shop drawings (grade beams per grid axis, isolated footings, column necks) generated from the consultant's structural DWG/DXF in the office style approved on the Roya school package. Use whenever the user (Span Tech) sends a consultant structural drawing and asks for شوب درونج / shop drawings of الجريد بيم / grade beams / tie beams, القواعد / footings, رقاب الأعمدة / column necks, a BBS / جدول تفريد, or sends a screenshot of one of these sheets saying a bar, a tie, a hook, a text, a length or a level is wrong. Covers the pipeline (DWG -> DXF -> extract -> generators -> PDF), every drafting rule the engineer has fixed so far, how to change a rule, how to verify a sheet and how to talk and deliver.
+description: Span Tech RC shop drawings (grade beams per grid axis, isolated / combined footings, rafts, strip footings, column necks) generated from ANY consultant's structural DWG/DXF in the office style approved on the Roya school package, including how to read a new consultant's drawing (layers, blocks, grid, columns, beams, footings, schedules) with survey.py / probe.py / table_dump.py. Use whenever the user (Span Tech) sends a consultant structural drawing and asks for شوب درونج / shop drawings of الجريد بيم / grade beams / tie beams, القواعد / footings, رقاب الأعمدة / column necks, a BBS / جدول تفريد, or sends a screenshot of one of these sheets saying a bar, a tie, a hook, a text, a length or a level is wrong. Covers the pipeline (DWG -> DXF -> extract -> generators -> PDF), every drafting rule the engineer has fixed so far, how to change a rule, how to verify a sheet and how to talk and deliver.
 ---
 
 # RC shop drawings (Span Tech) — grade beams / footings / column necks
@@ -26,6 +26,37 @@ committed.
 - The engineer reviews by screenshots with red marks. Treat every mark as a rule for **all elements**, not only
   the one in the screenshot ("ثبت كل التفاصيل لكل العناصر بحيث تكون زي بعضها … لانه مشروع واحد").
 - At the very end of the project: send one ZIP with everything (sheets PDF + DXF, scripts, this skill).
+
+## 2a. A drawing from a NEW consultant / another project — read it first (full method: `READING_DRAWINGS.md`)
+
+Nothing in the generators depends on the consultant's layer or block names: everything office-specific is decided
+while reading the drawing and written into `project.json` / `footings.json` / `footings_ext.json` / `mats.json`.
+**Read `READING_DRAWINGS.md` before touching a new drawing**, then:
+
+1. Convert (LibreDWG, §2). Check: proxy / ASD objects (bars lost → ask for an exploded DWG), unbound xrefs (grid
+   or columns missing → ask for a bound DWG), units (column side ~200–1000 → mm; `$INSUNITS` often lies).
+2. `python3 survey.py main.dxf survey/` → read `survey/survey.md` top to bottom:
+   layers (naming convention, what is inside blocks, bound-xref `$0$` prefixes), blocks (grid bubbles with their
+   attribute tags, level marks, schedule blocks), separate drawings in model space, **which model window each
+   layout shows** (FND plan, GB plan, schedules, notes), text families (how GB / C / F / CF / RAFT / ST / FF / rebar
+   / levels are written and on which layer / in which block), candidates (grid block, column layers with size
+   histogram, footing outline layers with label counts, beam edge layer = the pair layer carrying the GB labels,
+   the drawn width of every GB label, schedule titles), units, and a **draft `project.json`**.
+3. Render every window you will use (`rend.py`) and confirm each candidate by eye. Use
+   `probe.py main.dxf text "<label>"` (where is it, which layer / block), `probe.py main.dxf at x,y` (what is drawn
+   here), `probe.py main.dxf around "C5" 3000` (texts around a mark).
+4. Schedules: `table_dump.py main.dxf "<SCHEDULE TITLE>" [window]` (or `--block "<block>"`) → rows / cells →
+   type `schedule` (GB), `footings.json` (cm → mm, n/m → spacing), `footings_ext.json` (`SEE PLAN` rows), levels,
+   covers, notes. Column sections come from the schedule block sketch (`gen_n.read_schedule2`).
+5. Check before drawing: counts per type vs plan, every GB labelled (or typed by width, flagged), every column
+   paired with a footing (`pair_necks.py`), drawn size vs schedule → ask once which governs (default: schedule).
+   Note every assumption in the project's `STUDY_NOTES.md` and in the delivery `REMARKS.md`.
+6. Only then run the pipeline below — with samples first (one GB axis, 2–3 footings, one neck) for the engineer.
+
+If an element is drawn in a way no reader handles yet (columns only as hatches, circular columns, grid as circle +
+text, labels as attributes, inclined beams …), extend the reader **generically** (by geometry + labels, never by
+the new office's layer name hard-coded), keep the old behaviour, re-run Roya's survey/extract counts to prove
+nothing changed, and add the case to `READING_DRAWINGS.md` (pitfalls / worked examples).
 
 ## 2. Pipeline
 
@@ -64,6 +95,10 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 
 | file | role |
 |---|---|
+| `READING_DRAWINGS.md` | **how to read any consultant's drawing**: file checks, survey, plan windows, grid, columns, GBs, footings / mats / strips, schedules, levels, pitfalls, Roya worked example |
+| `survey.py` | first look at a new DXF → `survey.md` (layers, blocks, islands, viewports, text families, candidates, units) + `texts.csv` + `project.draft.json` |
+| `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
+| `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `extract.py` | DXF → beam runs, columns, axes |
 | `gen.py` | shared: `SCHED`, `COVER`, `leg()`, `lap()`, `new_doc()` (layers, dim style GB100), **style** `ST`, `mm()`, `project_notes()`, `fillet()`, `hooked_tie()`, `tie_bar_centres()`, `Sheet` (frame + title block, `pline(r=)`, `text(maxw=)`, `ctext()`, `mark()`, `break_line()`, `dim()`, `hatch_rect()`), `callout()`, `BarList`, `draw_legend()`, `draw_bbs()` |
 | `gen2.py` | GB per axis: supports, bar splitting & laps, plan strip (auto label placement), longitudinal section, cross sections |
@@ -261,6 +296,8 @@ the state in files, never only in the conversation:
 - **Rules** live in this skill (update it after every engineer note) and in `README.md`; code in the repo branch.
 - **Project state** (not in the repo): `project.json`, `footings.json`, the extracted `*.pkl` / `axes.json`,
   `STUDY_NOTES.md` → zipped as `roya_project_state.zip` and sent to the engineer after each milestone.
+- **New project / new consultant in a new chat**: upload `rc-shopdrawings-skill.zip` + the DWG; start at §2a
+  (survey → read → project data → samples).
 - **New chat**: upload `rc-shopdrawings-skill.zip` + `roya_project_state.zip` + the consultant DWG; say which step
   is next. Rebuild LibreDWG only if the DXF is not in the state zip (it is large — usually not).
 - Work in batches (one batch per message: e.g. necks of C1–C3, footings F1–F7, GB axes X01–X06), each batch

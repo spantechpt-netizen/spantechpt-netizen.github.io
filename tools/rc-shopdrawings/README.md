@@ -6,6 +6,18 @@ from the consultant's structural drawing. Footings / tanks generators follow the
 Project drawings (DWG / DXF / PDF) never go into this repository — keep them next to the scripts in a
 scratch folder. Only the scripts and the method live here.
 
+## Reading a new consultant's drawing
+
+Before anything else read **`READING_DRAWINGS.md`** and run:
+```bash
+python3 survey.py drawing.dxf survey/                 # survey/survey.md + texts.csv + project.draft.json
+python3 probe.py drawing.dxf text "GB1"               # where / which layer / which block
+python3 probe.py drawing.dxf at 2983652,2112164 500   # what is drawn at a point
+python3 table_dump.py drawing.dxf "FOOTINGS SCHEDULE" # a schedule as rows / cells (table.csv)
+```
+No layer or block name is assumed by the generators; they read `project.json` and the schedule files built from
+this reading.
+
 ## Pipeline
 
 ```
