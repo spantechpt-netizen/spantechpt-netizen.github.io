@@ -214,6 +214,8 @@ Layer names are matched by **suffix** (`endswith`), so bound-xref prefixes (`$0$
 - **Dynamic blocks** appear as anonymous `*U…` blocks — the geometry is right, the name is not meaningful.
 - **Several schedules side by side**: `table_dump.py`'s automatic window can take the neighbour's rows — pass the
   window explicitly (from `rend.py` / survey §5).
+- **Copying blocks from a converted drawing into an output** (title block, details): AutoCAD refuses incomplete embedded
+  objects (ATTRIB / MTEXT `Embedded Object`, OLE frames) that ezdxf passes — make the copy plain (`tb_template.py`).
 - **Bars per metre vs spacing**: `8 Ø 14 / M` → spacing = 1000 / 8 floored to 5 mm (125); `T16@125` is a spacing.
 - **Stirrup notation**: `STIRRUPS : 4X8 T10 /M` = 4 sets × 8 per metre; GB `8 10/m'` = 8 stirrups T10 per metre.
 

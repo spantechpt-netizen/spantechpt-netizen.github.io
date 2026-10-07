@@ -127,6 +127,11 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
 4. `new_doc()` loads the block once per file (`ezdxf.xref.Loader`); `Sheet.frame()` inserts it scaled so the paper
    sheet = 42000 × 29700 and writes the values (middle-centred, squeezed into the cell). Drawing number =
    `project_id-dwg_type-orig-doc_type-area-venue-seq-rev`, Seq. numbered per venue through the file.
+   **AutoCAD strictness** (engineer: "الملفات مش بتفتح" — `Premature end of object in ATTRIB`): entities copied from a
+   LibreDWG-converted sheet can carry incomplete embedded objects that ezdxf accepts and AutoCAD rejects (the whole
+   file is discarded). `tb_template.py` therefore makes the template plain: ATTRIBs → TEXT, MTEXT column data
+   dropped, DIMENSION / LEADER exploded, OLE frames and extension dictionaries removed. After any import from a
+   converted drawing check every output: `ATTRIB`, `Embedded Object`, `OLE2FRAME` counts = 0 and audit 0.
    The built-in frame (and its sheet notes) is used only when `title_block` is absent; with the office block the
    block's own GENERAL NOTES are the sheet notes.
 
