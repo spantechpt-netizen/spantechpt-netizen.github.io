@@ -29,6 +29,8 @@ SCAN = pickle.load(open('cd_scan.pkl', 'rb'))
 AXES = json.load(open('cd_axes.json'))
 STRIP = PRJ.get('strip', {})
 
+TF = 1.0                                            # text / offset factor (2 = A0 at 1:200)
+STRIP_EL = dict(lab='ST-01', kind='ST', h=None, base='ST-01')
 LAYERS = {'S-CD-RC': 7, 'S-CD-PC': 2, 'S-CD-AX': 1, 'S-CD-COL': 8, 'S-CD-TXT': 7, 'S-CD-DIM': 3, 'S-CD-SEC': 4}
 
 
@@ -63,6 +65,40 @@ def merge_split(raw, gap=450):
     return [list(box(*r).exterior.coords) for r in rs] + [p for p in raw if not rect_of(Polygon(p).buffer(0))]
 
 
+def _segs_open(chains):
+    out = []
+    for q in chains:
+        for (a, b), (c, d) in zip(q, q[1:]):
+            if abs(a - c) < 2: out.append(('V', (a + c) / 2, min(b, d), max(b, d)))
+            elif abs(b - d) < 2: out.append(('H', (b + d) / 2, min(a, c), max(a, c)))
+    return out
+
+
+def chain_open(pieces, tol=6):
+    """Open outline pieces joined end to end; the chains that close are shapes (a footing drawn as two L lines or as
+    four separate lines). Returns (closed loops, still-open chains)."""
+    key = lambda p: (round(p[0] / tol), round(p[1] / tol))
+    todo = [list(p) for p in pieces if len(p) >= 2]
+    loops, opens = [], []
+    while todo:
+        cur = todo.pop()
+        grown = True
+        while grown and key(cur[0]) != key(cur[-1]):
+            grown = False
+            for i, q in enumerate(todo):
+                if key(q[0]) == key(cur[-1]): cur += q[1:]
+                elif key(q[-1]) == key(cur[-1]): cur += q[::-1][1:]
+                elif key(q[-1]) == key(cur[0]): cur = q + cur[1:]
+                elif key(q[0]) == key(cur[0]): cur = q[::-1] + cur[1:]
+                else: continue
+                todo.pop(i); grown = True; break
+        (loops if len(cur) >= 4 and key(cur[0]) == key(cur[-1]) else opens).append(cur)
+    return loops, opens
+
+
+OPEN = {k: chain_open([p for p, kk in SCAN.get('open', []) if kk == k]) for k in ('rc', 'pc')}
+
+
 def _segs(raw):
     out = []
     for p in raw:
@@ -78,7 +114,7 @@ def fit_rect(x, y, L, W, raw):
     """Schedule rectangle L x W (either way round) placed where its four sides lie most on the drawn outline lines,
     containing the label (x, y). For footings drawn in pieces or merged with a wall strip."""
     global SEGS
-    if SEGS is None: SEGS = _segs(raw)
+    if SEGS is None: SEGS = _segs(raw + OPEN['rc'][0]) + _segs_open(OPEN['rc'][1])
     R = max(L, W) * 1.3
     near = [s for s in SEGS if (s[0] == 'V' and abs(s[1] - x) < R and s[3] > y - R and s[2] < y + R) or
             (s[0] == 'H' and abs(s[1] - y) < R and s[3] > x - R and s[2] < x + R)]
@@ -102,7 +138,7 @@ def fit_rect(x, y, L, W, raw):
 def build():
     polys = []
     seen = set()
-    for p in merge_split(SCAN['rc']):
+    for p in merge_split(SCAN['rc'] + OPEN['rc'][0]):
         try: pg = Polygon(p).buffer(0)
         except Exception: continue
         if pg.is_empty or pg.area < 0.4e6 or pg.area > 3000e6: continue
@@ -110,7 +146,7 @@ def build():
         if key in seen: continue
         seen.add(key); polys.append(pg)
     pcs = []
-    for p in merge_split(SCAN['pc']):
+    for p in merge_split(SCAN['pc'] + OPEN['pc'][0]):
         try: pg = Polygon(p).buffer(0)
         except Exception: continue
         if not pg.is_empty and pg.area > 0.4e6: pcs.append(pg)
@@ -119,7 +155,13 @@ def build():
         pt = Point(x, y)
         cont = [e for e in els if e['rc'].buffer(50).contains(pt)]
         if not cont: cont = [e for e in els if e['rc'].distance(pt) < 600]
-        if not cont: continue
+        if not cont:
+            sch = SCH.get(s) or FENCE.get(s)
+            fr = fit_rect(x, y, sch['L'], sch['W'], SCAN['rc']) if sch else None
+            if fr and fr[0] > 0.45:
+                _, fx, fy, flx, fly = fr
+                els.append(dict(rc=box(fx, fy, fx + flx, fy + fly), lab=s, lpos=(x, y), fitted=round(fr[0], 2)))
+            continue
         e = min(cont, key=lambda e: e['rc'].area)
         if e['lab'] is None: e['lab'] = s; e['lpos'] = (x, y)
         elif (SCH.get(s) or FENCE.get(s)) and e['lab'] != s:     # a second footing label in the same drawn outline
@@ -269,9 +311,63 @@ def draw_plan(doc, els, cols, start_idx, meta0):
     return idx, len(tiles)
 
 
+class BigSheet(Sheet):
+    W, H = 237800, 168200                     # A0 at 1:200
+    dimstyle = 'GB200'
+
+
+def draw_full_plan(doc, els, cols, meta0):
+    """The whole foundation plan on one A0 sheet at 1:200."""
+    global TF
+    TF = 2.0
+    meta = dict(meta0); meta['title'] = 'CONCRETE DIMENSIONS\nFOUNDATION PLAN (WHOLE SITE)'; meta['scale'] = '1:200'; meta['size'] = 'A0'
+    sh = BigSheet(doc, 0, 0, meta)
+    gx = [s for a in AXES.values() for s in a['segs']]
+    xs = [c for nm, a in AXES.items() if a['fam'] == 'Y' for c, lo, hi in a['segs']] + [lo for nm, a in AXES.items() if a['fam'] == 'X' for c, lo, hi in a['segs']] + \
+         [hi for nm, a in AXES.items() if a['fam'] == 'X' for c, lo, hi in a['segs']]
+    ys = [c for nm, a in AXES.items() if a['fam'] == 'X' for c, lo, hi in a['segs']] + [lo for nm, a in AXES.items() if a['fam'] == 'Y' for c, lo, hi in a['segs']] + \
+         [hi for nm, a in AXES.items() if a['fam'] == 'Y' for c, lo, hi in a['segs']]
+    X0, X1, Y0, Y1 = min(xs) - 2500, max(xs) + 2500, min(ys) - 2500, max(ys) + 2500
+    ax0, ay0, ax1, ay1 = 2300, 5200, 205500, 165900               # drawing area of the frame (sheet units)
+    ox = ax0 + (ax1 - ax0 - (X1 - X0)) / 2 - X0; oy = ay0 + (ay1 - ay0 - (Y1 - Y0)) / 2 - Y0
+    Q = lambda x, y: (x + ox, y + oy)
+    for nm, a in AXES.items():
+        for c, lo, hi in a['segs']:
+            p0, p1 = (Q(lo - 1500, c), Q(hi + 1500, c)) if a['fam'] == 'X' else (Q(c, lo - 1500), Q(c, hi + 1500))
+            sh.m.add_line(sh.P(*p0), sh.P(*p1), dxfattribs={'layer': 'S-CD-AX', 'linetype': 'CENTER', 'ltscale': 500})
+        segs = a['segs']
+        if a['fam'] == 'X':
+            bubble(sh, *Q(segs[0][1] - 1500 - 1100, segs[0][0]), nm); bubble(sh, *Q(segs[-1][2] + 1500 + 1100, segs[-1][0]), nm)
+        else:
+            bubble(sh, *Q(segs[0][0], segs[0][1] - 1500 - 1100), nm); bubble(sh, *Q(segs[-1][0], segs[-1][2] + 1500 + 1100), nm)
+    for e in els:
+        for key, lay, lt in (('pc', 'S-CD-PC', 'DASHED'), ('rc', 'S-CD-RC', None)):
+            for gg in getattr(e[key], 'geoms', [e[key]]):
+                if gg.geom_type != 'Polygon': continue
+                pl = sh.m.add_lwpolyline([sh.P(*Q(*p)) for p in gg.exterior.coords], dxfattribs={'layer': lay, 'const_width': 0 if lt else 40})
+                if lt: pl.dxf.linetype = lt; pl.dxf.ltscale = 200
+    for p, kind in SCAN.get('open', []):
+        pl = sh.m.add_lwpolyline([sh.P(*Q(*q)) for q in p], dxfattribs={'layer': 'S-CD-PC' if kind == 'pc' else 'S-CD-RC',
+                                                                          'const_width': 0 if kind == 'pc' else 40})
+        if kind == 'pc': pl.dxf.linetype = 'DASHED'; pl.dxf.ltscale = 200
+    for c in cols:
+        x0, y0, x1, y1 = c['r'].bounds
+        sh.hatch_rect(*Q(x0, y0), *Q(x1, y1), 'S-CD-COL')
+    for e in els:
+        label_plan(sh, Q, e)
+        bb = e['rc'].bounds
+        if e['kind'] in ('F', 'M') or (e['kind'] == '?' and max(bb[2] - bb[0], bb[3] - bb[1]) < 15000): dims_plan(sh, Q, e)
+    n = gap_dims(sh, Q, els)
+    sh.text('FOUNDATION PLAN - CONCRETE DIMENSIONS  1:200', ax0, 3000, 500, 'S-CD-SEC')
+    sh.text('RC FOOTING (CONTINUOUS) / PC 100 (DASHED, RC + 100 EACH SIDE); ALL DIMENSIONS IN MM; SIZES OF ISOLATED FOOTINGS PER '
+            'SCHEDULE; DIMENSIONS BETWEEN FOOTINGS = CLEAR DISTANCE BETWEEN RC FACES.', ax0, 1900, 300, 'S-CD-TXT')
+    TF = 1.0
+    return n
+
+
 def bubble(sh, x, y, nm):
-    sh.circle(x, y, 520, 'S-CD-AX')
-    sh.text(nm, x, y, 380 if len(nm) <= 3 else 300, 'S-CD-AX', align=TA.MIDDLE_CENTER)
+    sh.circle(x, y, 520 * TF, 'S-CD-AX')
+    sh.text(nm, x, y, (380 if len(nm) <= 3 else 300) * TF, 'S-CD-AX', align=TA.MIDDLE_CENTER)
 
 
 def label_plan(sh, Q, e):
@@ -282,18 +378,22 @@ def label_plan(sh, Q, e):
         pb = e['pc'].bounds
         t2 = f"{x1 - x0:.0f}x{y1 - y0:.0f}  h={e['h']}"
         t3 = f"PC {pb[2] - pb[0]:.0f}x{pb[3] - pb[1]:.0f}x{PCH}"
-        cx, cy = (x0 + x1) / 2, pb[3] + 80                      # above the footing, clear of the column
-        sh.text(t3, *Q(cx, cy), 150, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
-        sh.text(t2, *Q(cx, cy + 230), 170, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
-        sh.text(lab, *Q(cx, cy + 490), 300, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
+        cx, cy = (x0 + x1) / 2, pb[3] + 80 * TF                 # above the footing, clear of the column
+        if TF == 1:
+            sh.text(t3, *Q(cx, cy), 150, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
+            sh.text(t2, *Q(cx, cy + 230), 170, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
+            sh.text(lab, *Q(cx, cy + 490), 300, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
+        else:                                                   # whole plan: name + RC size / h (PC = RC + 2 x 100)
+            if min(x1 - x0, y1 - y0) >= 2400:                   # big enough: inside, upper part (clear of the column)
+                cy = y1 - 120 * TF - 420 * TF
+            sh.text(f"{x1 - x0:.0f}x{y1 - y0:.0f} h{e['h']}", *Q(cx, cy), 150 * TF, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
+            sh.text(lab, *Q(cx, cy + 210 * TF), 220 * TF, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
         if e.get('changed'):
-            sh.text(f"(DRAWN {e['drawn'][0]}x{e['drawn'][1]})", *Q(cx, y0 + 250), 140, 'S-CD-TXT', align=TA.BOTTOM_CENTER, maxw=(x1 - x0) - 100)
+            sh.text(f"(DRAWN {e['drawn'][0]}x{e['drawn'][1]})", *Q(cx, y0 + 250), 140 * TF, 'S-CD-TXT', align=TA.BOTTOM_CENTER, maxw=(x1 - x0) - 100)
     else:
-        t = lab or ('ST-01' if e['kind'] == 'ST' else '')
-        if e['kind'] == 'ST': t += f"  B={STRIP.get('B', '')}  h={e['h']}"
-        if not t: return
-        elif e['h']: t += f"  h={e['h']}"
-        sh.text(t, *Q(rp.x, rp.y), 260, 'S-CD-TXT', align=TA.MIDDLE_CENTER)
+        if not lab: return                                       # unlabelled pieces (strip parts ...): no text
+        t = lab + (f"  B={STRIP.get('B', '')}" if e['kind'] == 'ST' else '') + (f"  h={e['h']}" if e['h'] else '')
+        sh.text(t, *Q(rp.x, rp.y), 260 * TF, 'S-CD-TXT', align=TA.MIDDLE_CENTER)
 
 
 def dims_plan(sh, Q, e):
@@ -305,18 +405,48 @@ def dims_plan(sh, Q, e):
     pts = [x0, x1]
     if ny and ny[0] < 8000: pts.append(ny[2])
     pts = sorted(set(round(p) for p in pts))
-    yb = py0 - 450
+    yb = py0 - 450 * TF
     for a, b in zip(pts, pts[1:]):
         if b - a > 1: sh.dim(Q(a, y0), Q(b, y0), Q(a, yb), text=mm(b - a))
-    if len(pts) > 2: sh.dim(Q(x0, y0), Q(x1, y0), Q(x0, yb - 450), text=mm(x1 - x0))
+    if len(pts) > 2 and TF == 1: sh.dim(Q(x0, y0), Q(x1, y0), Q(x0, yb - 450 * TF), text=mm(x1 - x0))
     nx_ = nearest_axis('X', x0, x1, cy)                   # horizontal grid line -> y chain
     pts = [y0, y1]
     if nx_ and nx_[0] < 8000: pts.append(nx_[2])
     pts = sorted(set(round(p) for p in pts))
-    xb = px0 - 450
+    xb = px0 - 450 * TF
     for a, b in zip(pts, pts[1:]):
         if b - a > 1: sh.dim(Q(x0, a), Q(x0, b), Q(xb, a), angle=90, text=mm(b - a))
-    if len(pts) > 2: sh.dim(Q(x0, y0), Q(x0, y1), Q(xb - 450, y0), angle=90, text=mm(y1 - y0))
+    if len(pts) > 2 and TF == 1: sh.dim(Q(x0, y0), Q(x0, y1), Q(xb - 450 * TF, y0), angle=90, text=mm(y1 - y0))
+
+
+def gap_dims(sh, Q, els):
+    """Clear distance between neighbouring RC footings in both directions (engineer): for every footing the nearest
+    footing to its right and above it whose extent overlaps it across; the dimension runs between the two faces in
+    the middle of the overlap (each pair once; left / below come from the neighbour)."""
+    rs = [(e, e['rc'].bounds) for e in els if e['kind'] in ('F', 'M', '?', 'ST')]
+    n = 0
+    for e, (x0, y0, x1, y1) in rs:
+        if max(x1 - x0, y1 - y0) > 30000: continue
+        for d in ('x', 'y'):
+            best = None
+            for f, (a0, b0, a1, b1) in rs:
+                if f is e or max(a1 - a0, b1 - b0) > 30000: continue
+                if d == 'x':
+                    ov = min(y1, b1) - max(y0, b0); gap = a0 - x1
+                else:
+                    ov = min(x1, a1) - max(x0, a0); gap = b0 - y1
+                if ov > 200 and 30 < gap < 15000 and (best is None or gap < best[0]):
+                    best = (gap, f, (a0, b0, a1, b1), ov)
+            if not best: continue
+            gap, f, (a0, b0, a1, b1), ov = best
+            if d == 'x':
+                ym = (max(y0, b0) + min(y1, b1)) / 2
+                sh.dim(Q(x1, ym), Q(a0, ym), Q(x1, ym), text=mm(gap))
+            else:
+                xm = (max(x0, a0) + min(x1, a1)) / 2
+                sh.dim(Q(xm, y1), Q(xm, b0), Q(xm, y1), angle=90, text=mm(gap))
+            n += 1
+    return n
 
 
 def key_plan(sh, tiles, k, ext):
@@ -352,6 +482,21 @@ def cuts_along(nm, fam, c, lo, hi, els, cols):
         us = sorted(U(p) for p in g.coords)
         host = next((e for e in els if e['rc'].contains(Point(*col['c']))), None)
         if host: out.append(('col', us[0], us[-1], host))
+    # wall strips drawn as open lines: two crossings one strip width apart = one strip cut (RC and PC)
+    B = STRIP.get('B')
+    if B:
+        for kind, chains, width in (('rc', OPEN['rc'][1], B), ('pc', OPEN['pc'][1], STRIP.get('pcB', B + 2 * PCH))):
+            pts = []
+            for q in chains:
+                g = LineString(q).intersection(ln)
+                for gg in getattr(g, 'geoms', [g]):
+                    if gg.geom_type == 'Point': pts.append(U((gg.x, gg.y)))
+            pts = sorted(set(round(p) for p in pts))
+            i = 0
+            while i + 1 < len(pts):
+                if abs(pts[i + 1] - pts[i] - width) < 60:
+                    out.append((kind, pts[i], pts[i + 1], STRIP_EL)); i += 2
+                else: i += 1
     crossing = []
     for nm2, a in AXES.items():
         if a['fam'] == fam: continue
@@ -467,8 +612,9 @@ def draw_strip(sh, X, Ytop, nm, fam, c, cuts, crossing, win, wi):
             h = e['h'] or 600
             sh.pline([(xa, Y(0)), (xb, Y(0)), (xb, Y(h)), (xa, Y(h))], 'S-CD-RC', 30, True)
             rcs.append((a, b, e))
-            if id(e) in labelled: continue
-            labelled[id(e)] = 1
+            kl = (id(e), round(a)) if e is STRIP_EL else id(e)     # every strip cut labelled, other footings once
+            if kl in labelled: continue
+            labelled[kl] = 1
             tof = FL + PCH / 1000 + h / 1000
             lab = (e['lab'] or ('ST-01' if e['kind'] == 'ST' else '')) + (f" h={h}" if e['h'] else ' h=?')
             xm = (xa + xb) / 2
@@ -501,6 +647,7 @@ def draw_strip(sh, X, Ytop, nm, fam, c, cuts, crossing, win, wi):
 
 def main():
     els, cols = build()
+    STRIP_EL['h'] = STRIP.get('h'); STRIP_EL['lab'] = STRIP.get('name', 'ST-01')
     doc = new_doc()
     for n, col in LAYERS.items():
         if n not in doc.layers: doc.layers.add(n, color=col)
@@ -508,9 +655,19 @@ def main():
                  rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='1:100', prefix='SDW-STR-CD')
     meta0.update(PRJ.get('meta', {})); meta0['scale'] = '1:100'
     meta0['notes'] = ['ALL DIMENSIONS IN MM; LEVELS IN M.', 'PC 100 UNDER ALL FOOTINGS.']
-    idx, nt = draw_plan(doc, els, cols, 0, meta0)
+    if '--parts' in sys.argv:                                  # plan in A3 parts (1:100) + sections in one file
+        idx, nt = draw_plan(doc, els, cols, 0, meta0)
+    else:                                                      # whole plan on one A0 sheet (1:200), own file
+        pdoc = new_doc()
+        for n, col in LAYERS.items():
+            if n not in pdoc.layers: pdoc.layers.add(n, color=col)
+        ds = pdoc.dimstyles.duplicate_entry('GB100', 'GB200'); ds.dxf.dimscale = 200
+        ng = draw_full_plan(pdoc, els, cols, meta0)
+        pdoc.saveas('out/CONCRETE_DIM_PLAN.dxf')
+        print('whole plan: out/CONCRETE_DIM_PLAN.dxf, gaps dimensioned', ng)
+        idx, nt = 0, 0
     idx2, ns = draw_sections(doc, els, cols, idx, meta0)
-    doc.saveas('out/CONCRETE_DIM.dxf')
+    doc.saveas('out/CONCRETE_DIM.dxf' if '--parts' in sys.argv else 'out/CONCRETE_DIM_SECTIONS.dxf')
     unl = [e for e in els if not e['lab']]
     print(f'plan parts {nt}, section strips {ns}, sheets {idx2}; footings {len(els)} (unlabelled {len(unl)}), '
           f'schedule size differs from drawn: {sum(1 for e in els if e.get("changed"))}; h unknown: {sum(1 for e in els if not e["h"])}')

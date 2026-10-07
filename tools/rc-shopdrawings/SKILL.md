@@ -296,6 +296,17 @@ from / between the grid lines, plan + sections along EVERY grid line (both direc
   Isolated / fence footings take the SCHEDULE size centred on the drawn one (`(DRAWN axb)` written when different);
   CF / rafts / strips keep the drawn outline; unlabelled narrow outlines = ST-01; thickness from the schedules
   (fence footings: `project.json → fence_footings`).
+- **Whole plan on ONE sheet** (engineer: "جمع المخطط كله على بعضه"): default `python3 gen_cd.py` → `out/CONCRETE_DIM_PLAN.dxf`,
+  A0 at 1:200 (`BigSheet` 237800 × 168200, dim style GB200, texts ×2, title block scaled, Size A0 / Scale 1:200) +
+  `out/CONCRETE_DIM_SECTIONS.dxf` (A3). `--parts` gives the old A3 parts. PDF: `topdf.py plan.dxf plan.pdf --one
+  237800,168200,46.81,33.11`.
+- **Clear distances between RC footings in every direction** (`gap_dims`): for each footing the nearest footing to its
+  right and above whose extent overlaps across; dimension between the two faces in the middle of the overlap (left /
+  below come from the neighbour). On the whole plan the overall-size dims are dropped (size is in the label), names
+  inside footings ≥ 2400.
+- Reading traps of this plan: footings on a second RC layer (`cd_rc_layers_extra`, e.g. `CORE-FNDN-FTNG-RC`); open
+  outlines: closed when the missing side is orthogonal, otherwise joined end to end (`chain_open`), never closed with
+  a diagonal; wall strips drawn as open lines → in the sections two crossings one strip width apart = a strip cut.
 - Plan 1:100 in parts of 31 × 23 m (match lines, key plan): RC continuous, PC dashed, columns hatched, grid with
   bubbles; per footing name / RC size h / PC size above it, chain axis → edges under it (x) and left of it (y) +
   overall size.

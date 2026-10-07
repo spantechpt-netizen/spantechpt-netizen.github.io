@@ -157,7 +157,7 @@ class Sheet:
         self.m.add_circle(self.P(x, y), r, dxfattribs={'layer': layer})
     def dim(self, a, b, base, angle=0, text='<>'):
         d = self.m.add_linear_dim(base=self.P(*base), p1=self.P(*a), p2=self.P(*b), angle=angle,
-                                  dimstyle='GB100', text=text, dxfattribs={'layer': 'S-DIM'})
+                                  dimstyle=getattr(self, 'dimstyle', 'GB100'), text=text, dxfattribs={'layer': 'S-DIM'})
         d.render()
     def mark(self, x, y, n, h=250, layer='S-RFT-TXT'):
         """Bar mark in a hexagon (office convention), centred at x, y."""
@@ -227,7 +227,7 @@ def _tb_frame(self):
     seqs[venue] = seqs.get(venue, int(TB.get('seq_start', {}).get(venue, 1)) - 1) + 1
     rev = m.get('rev', '00')
     val = dict(title=m.get('title', ''), ref=' '.join(m.get('ref', '').split('\n')), scale=m.get('scale', 'AS SHOWN'),
-               size=TB.get('size', 'A3'), area=c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,
+               size=m.get('size') or TB.get('size', 'A3'), area=c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,
                date=m.get('date', ''))
     val['dwg'] = '-'.join(str(v) for v in (c.get('project_id', ''), c.get('dwg_type', ''), c.get('orig', ''),
                                           c.get('doc_type', ''), val['area'], venue, val['seq'], rev))
