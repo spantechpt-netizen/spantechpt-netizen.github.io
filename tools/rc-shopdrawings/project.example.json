@@ -186,5 +186,21 @@
     24
    ]
   }
+ },
+ "fnd_pc_layers": [
+  "CORE-FNDN-FTNG-PC"
+ ],
+ "grid_layers": [
+  "A-AXIS-ST"
+ ],
+ "pc_thickness": 100,
+ "fence_footings": {
+  "FF1": {
+   "L": 1900,
+   "W": 1900,
+   "h": 600,
+   "pcL": 2100,
+   "pcW": 2100
+  }
  }
 }

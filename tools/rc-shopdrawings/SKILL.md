@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `cd_scan.py`, `cd_axes.py`, `gen_cd.py` | concrete dimensions of the foundations: plan in parts + sections along every grid line (§7b) |
 | `extract.py` | DXF → beam runs, columns, axes |
 | `gen.py` | shared: `SCHED`, `COVER`, `leg()`, `lap()`, `new_doc()` (layers, dim style GB100), **style** `ST`, `mm()`, `project_notes()`, `fillet()`, `hooked_tie()`, `tie_bar_centres()`, `Sheet` (frame + title block, `pline(r=)`, `text(maxw=)`, `ctext()`, `mark()`, `break_line()`, `dim()`, `hatch_rect()`), `callout()`, `BarList`, `draw_legend()`, `draw_bbs()` |
 | `gen2.py` | GB per axis: supports, bar splitting & laps, plan strip (auto label placement), longitudinal section, cross sections |
@@ -281,6 +282,27 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
 - Tie bending sketches: out-to-out shape, curved corners, hook drawn with `100`, **only one or two sides
   dimensioned** (+ one slanted side for polygons), hexagon mark + size, `L=…` on the next line, one note
   "TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)".
+
+## 7b. Concrete dimensions of the foundations (`cd_scan.py` → `cd_axes.py` → `gen_cd.py`)
+Engineer (Oct 2026): one setting-out package for the site — RC and PC footings with their sizes and their distances
+from / between the grid lines, plan + sections along EVERY grid line (both directions).
+- `cd_scan.py`: in the FND window (`fnd_view`) RC outlines (`fnd_layers`), PC outlines (`fnd_pc_layers`), columns,
+  footing labels, grid bubbles → `cd_scan.pkl`. `cd_axes.py`: grid lines (`grid_layers`) grouped per coordinate and
+  named by the bubble at their end (a kinked axis keeps both segments; an axis with bubbles but no line = the line
+  between its bubbles) → `cd_axes.json`.
+- The consultant draws footings in PIECES (cut by a beam / wall line: FF1 = two halves 200 apart) or merged with the
+  wall strip (F5 / F13 as bumps of ST-01): `merge_split` joins same-span rectangles ≤ 450 apart; a typed footing whose
+  outline is still a piece is placed by `fit_rect` (schedule rectangle where its sides lie most on the drawn lines).
+  Isolated / fence footings take the SCHEDULE size centred on the drawn one (`(DRAWN axb)` written when different);
+  CF / rafts / strips keep the drawn outline; unlabelled narrow outlines = ST-01; thickness from the schedules
+  (fence footings: `project.json → fence_footings`).
+- Plan 1:100 in parts of 31 × 23 m (match lines, key plan): RC continuous, PC dashed, columns hatched, grid with
+  bubbles; per footing name / RC size h / PC size above it, chain axis → edges under it (x) and left of it (y) +
+  overall size.
+- Sections 1:100 along every grid line: PC + RC cut, neck stubs, F.L / T.O.PC at the left, name + T.O.F on each
+  footing (staggered when close), chain 1 = footing edges + grid lines (sizes + clear distances), chain 2 = grid to
+  grid; stretches with nothing are shortened with a break (dimensions keep the real distance); long lines in parts
+  cut in a gap between footings; parts with no footing dropped; 3 strips per sheet.
 
 ## 8. Changing a rule
 
