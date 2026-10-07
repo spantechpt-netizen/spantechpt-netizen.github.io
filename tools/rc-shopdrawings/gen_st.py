@@ -24,7 +24,7 @@ def main(name='ST-01', B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12):
     sh.text('STRIP FOOTING UNDER THE WALLS - LENGTH: SEE FOUNDATION PLAN', 2000, 27100, ST['sub'], 'S-SEC')
     # marks (per metre run)
     tB = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, n_m, 1, 'B-TR')
-    tT = bl.add(d, ('U', lg, B - 2 * C - 2 * d, lg), B - 2 * C - 2 * d + 2 * lg, n_m, 1, 'T-TR')
+    tT = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, n_m, 1, 'T-TR')        # top U = bottom U (legs side by side)
     lb = bl.add(d, ('S', 12000), 12000, round(nl * 1000 / (12000 - lp), 2), 1, 'B-LG')
     lt = bl.add(d, ('S', 12000), 12000, round(nl * 1000 / (12000 - lp), 2), 1, 'T-LG')
     sbm = bl.add(ds, ('S', 12000), 12000, round(2 * 1000 / (12000 - 60 * ds), 2), 1, 'SB')
@@ -39,16 +39,16 @@ def main(name='ST-01', B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12):
     yb = C + d / 2; yt = h - C - d / 2
     xl, xr = C + d / 2, B - C - d / 2
     sh.pline([Q(xl, h - C - 2 * d - 15), Q(xl, yb), Q(xr, yb), Q(xr, h - C - 2 * d - 15)], 'S-RFT-BOT', d * k, r=3 * d * k)
-    sh.pline([Q(xl + d + 2, C + 2 * d + 15), Q(xl + d + 2, yt), Q(xr - d - 2, yt), Q(xr - d - 2, C + 2 * d + 15)], 'S-RFT-TOP', d * k, r=3 * d * k)
+    sh.pline([Q(xl, C + 2 * d + 15), Q(xl, yt), Q(xr, yt), Q(xr, C + 2 * d + 15)], 'S-RFT-TOP', d * k, r=3 * d * k)
     def dot(x, y, dd, lay):
         hh = sh.m.add_hatch(color=7, dxfattribs={'layer': lay}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), dd / 2 * k, 0, 360)
     xa, xb = xl + d, xr - d
     for j in range(nl):
         x = xa + (xb - xa) * j / (nl - 1)
         dot(x, yb + d, d, 'S-RFT-BOT'); dot(x, yt - d, d, 'S-RFT-TOP')
-    xs = C + 2 * d + 2 + ds / 2 + 4
+    xs = C + d + ds / 2 + 2                                       # side bars inside the (one) main U leg
     for x in (xs, B - xs): dot(x, h / 2, ds, 'S-RFT-STIR')
-    lines = [(yt, tT, callout(n_m, d, tT, B - 2 * C - 2 * d + 2 * lg, s, 'T-TR') + '  /M', xr - d - 2 - 300),
+    lines = [(yt, tT, callout(n_m, d, tT, B - 2 * C + 2 * lg, s, 'T-TR') + '  /M', xr - 300),
              (yt - d, lt, callout(nl, d, lt, 12000, s, 'T-LG') + '  CONT.', xa + (xb - xa) * (nl - 2) / (nl - 1)),
              (h / 2, sbm, callout(2, ds, sbm, 12000, None, 'SB') + '  CONT.', B - xs),
              (yb + d, lb, callout(nl, d, lb, 12000, s, 'B-LG') + '  CONT.', xa + (xb - xa) * (nl - 2) / (nl - 1)),

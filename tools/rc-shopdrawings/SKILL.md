@@ -211,9 +211,18 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   (if top steel), `FOUNDATION SIDE REINFORCEMENT`, `SECTION 1-1`.
 - Cover 70. Straight = size − 140, leg = h − 140, count = ceil((width − 140)/s) + 1, n bars/m → s = 1000/n
   floored to 5 mm. Long-direction bars are the outer layer: B1 (long) / B2, T2 (long, outer) / T1 (Roya FC11).
-- **Top U sits inside the bottom U legs** (its straight length is reduced by 2 × bottom bar dia).
-- **Side bars inside BOTH U layers** (not between them); the 70 cover stays on the main bars; loop reduced by the
-  main bar diameters and its own; rows every ≤ 300 of free height; loops > 12 m in equal pieces lapped 60 d.
+- **Top U = bottom U** (engineer, Oct 2026): same straight length (size − 2 × 70) and legs; the legs of the two meshes
+  stand SIDE BY SIDE at the face (no longer one U inside the other). Same in the strip footing.
+- **Side bars (SB)** (engineer, Oct 2026): out-to-out loop = size − 2 × 70 − 2 × the main bar diameter at that face
+  (ONE main diameter per face, the top and bottom legs are side by side; CF9 8300, T16 → 8128); rows every ≤ 300 of
+  free height. Loop + 60 d ≤ 12000 → one closed loop. Longer → **bent pieces, laps 60 d in the sides, never at a
+  corner** (`pieces_of_loop`): 2 U pieces (base = short side, legs = half the long side + lap/2), else 4 corner L
+  pieces, plus straight pieces between them when the sides need more parts (fewest pieces, U preferred). One mark per
+  piece type with its real shape in the BBS (U / L / straight). Side plan (`draw_side_plan`): the pieces drawn on the
+  loop centre line, every second piece offset a little so each lap shows, `LAP 720` at one lap, segment lengths of
+  one piece of each type, one call-out block (piece types, note, chairs) in the first spot clear of the columns /
+  lap label / thickness tag, short leaders from the hexagon to the nearest piece of that type. Section: the first
+  type in the hexagon, the other types as `+ … (MARK nn)`.
   **Chairs Ø16 @1000×1000 only when the footing has a top mesh** (no top mesh → no chairs, no BBS row); foot 300 / leg / top 400 / leg / foot 300; leg (out-to-out) = h − 2×70 − both bottom
   layers − both top layers (650 with T14 both ways → 454); L = 2×300 + 2×leg + 400; every side dimensioned in the
   BBS symbol. The chair is drawn in SECTION 1-1 (standing on the bottom mesh, under the top mesh, curved bends,

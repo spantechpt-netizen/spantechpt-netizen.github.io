@@ -30,8 +30,8 @@ def bars_for(f):
         long_is_x = f['L'] >= f['W']
         for along, n_m, d, s in (('X', nx, dx, sx), ('Y', ny, dy, sy)):
             run = (f['L'] if along == 'X' else f['W']) - 2 * COVER
-            if layer == 'T' and f['bot'][0]:                     # top U sits inside the legs of the bottom U
-                run -= 2 * (f['bot'][1] if along == 'X' else f['bot'][3])
+            # top U = bottom U: same straight length, the legs of both meshes stand SIDE BY SIDE at the face
+            # (engineer, Oct 2026 - was: top U inside the bottom U legs)
             across = f['W'] if along == 'X' else f['L']
             is_long = (along == 'X') == long_is_x
             tag = (layer + ('1' if is_long else '2')) if layer == 'B' else (layer + ('2' if is_long else '1'))
@@ -44,25 +44,69 @@ def bars_for(f):
 
 
 def side_bars(f, ds=12):
-    """Perimeter side bars (loops) placed INSIDE the main U-bar legs (engineer, Oct 2026): the 70 mm cover stays on
-    the main bars, the loop size is reduced by the main bar diameter and its own. Rows every <= 300 mm of free height.
-    Loops longer than a stock bar are made of equal pieces lapped 60 d. Chairs Ø16 @100x100cm."""
-    dB = max(f['bot'][1], f['bot'][3])
-    dB += max(f['top'][1], f['top'][3]) if f['top'][0] else 0    # inside the bottom AND the top U legs
-    off = COVER + dB + ds / 2                                    # centre line of the loop from the face
-    lx, ly = round(f['L'] - 2 * off), round(f['W'] - 2 * off)
+    """Perimeter side bars (engineer, Oct 2026): out-to-out loop = size - 2 x cover - 2 x the main bar diameter at that
+    face (the legs of the bottom and top U stand side by side, so ONE main diameter per face). Rows every <= 300 of
+    free height. A loop longer than a stock bar is made of bent pieces with the laps (60 d) in the sides, never at a
+    corner: 2 U pieces (base = short side), or 4 corner L pieces, plus straight pieces between them when needed
+    (fewest pieces, U preferred). Chairs Ø16 @100x100cm only with a top mesh."""
+    dX = max(f['bot'][1], f['top'][1] if f['top'][0] else 0)       # bars along X: legs at the x faces
+    dY = max(f['bot'][3], f['top'][3] if f['top'][0] else 0)
+    lx, ly = round(f['L'] - 2 * COVER - 2 * dX), round(f['W'] - 2 * COVER - 2 * dY)
+    off = COVER + (dX + dY) / 2 + ds / 2                         # loop centre line from the face (drawing)
     free = f['h'] - 2 * COVER
     rows = max(1, math.ceil(free / 300) - 1)
-    per = 2 * (lx + ly)
     lp = 60 * ds
-    pieces = 1 if per + lp <= 12000 else math.ceil(per / (12000 - lp))
-    Lp = round((per / pieces + lp) / 10) * 10
+    pieces = pieces_of_loop(lx, ly, lp)
     chair_n = max(4, math.ceil(f['L'] / 1000) * math.ceil(f['W'] / 1000))
     # chair Ø16: foot 300 / leg / top 400 / leg / foot 300 (out-to-out). It stands on the bottom mesh and carries
     # the top mesh: leg = h - 2 x cover - both bottom layers - both top layers (engineer: F6 650, T14 -> 454)
     ch_h = int(f['h'] - 2 * COVER - f['bot'][1] - f['bot'][3] - (f['top'][1] + f['top'][3] if f['top'][0] else 0))
-    return dict(rows=rows, ds=ds, off=off, lx=lx, ly=ly, pieces=pieces, L=Lp, chairs=chair_n, ch_foot=300, ch_top=400, ch_h=ch_h,
+    return dict(rows=rows, ds=ds, off=off, offx=COVER + dX + ds / 2, offy=COVER + dY + ds / 2, lx=lx, ly=ly, lap=lp,
+                pieces=pieces, chairs=chair_n, ch_foot=300, ch_top=400, ch_h=ch_h,
                 chair_L=int(math.ceil((2 * 300 + 2 * ch_h + 400) / 10) * 10))
+
+
+def pieces_of_loop(lx, ly, lp, stock=12000):
+    """Split a rectangular loop lx x ly (out-to-out) into bent pieces. Returns a list of piece types:
+    dict(shape, segs (list of segment lengths), L, n (per row), path (perimeter interval t0, t1 on the loop)).
+    The perimeter starts at the lower-left corner and runs +x, +y, -x, -y."""
+    up = lambda v: int(math.ceil(v / 10) * 10)
+    P = 2 * (lx + ly)
+    if P + lp <= stock:                                          # one closed loop, lapped in a side
+        return [dict(shape=('ST', lx, ly), segs=[lx, ly], L=up(P + lp), n=1, path=[(0, P + lp)])]
+    long_x = lx >= ly
+    Ll, Ls = (lx, ly) if long_x else (ly, lx)
+    best = None
+    for kl in range(2, 30):
+        for ks in range(1, 30):
+            part_l, part_s = Ll / kl, Ls / ks
+            corner = (Ls + 2 * part_l if ks == 1 else part_l + part_s) + lp      # U piece / corner L piece
+            ok = corner <= stock and (kl < 3 or part_l + lp <= stock) and (ks < 3 or part_s + lp <= stock)
+            if not ok: continue
+            n = (2 if ks == 1 else 4) + 2 * (kl - 2) + (2 * (ks - 2) if ks >= 2 else 0)
+            if best is None or n < best[0] or (n == best[0] and ks < best[2]): best = (n, kl, ks)
+            break
+    _, kl, ks = best
+    kx, ky = (kl, ks) if long_x else (ks, kl)
+    # cut points on the perimeter (centres of the laps): the inner part boundaries of every side
+    cuts = [lx * j / kx for j in range(1, kx)] + [lx + ly * j / ky for j in range(1, ky)] + \
+           [lx + ly + lx * j / kx for j in range(1, kx)] + [2 * lx + ly + ly * j / ky for j in range(1, ky)]
+    cuts.sort()
+    corners = [0, lx, lx + ly, 2 * lx + ly, P]
+    types = {}
+    for i, c0 in enumerate(cuts):
+        c1 = cuts[(i + 1) % len(cuts)] + (P if i + 1 == len(cuts) else 0)
+        t0, t1 = c0 - lp / 2, c1 + lp / 2
+        inner = sorted(cc + P * m for cc in corners[:4] for m in (0, 1) if t0 < cc + P * m < t1)
+        pts = [t0] + inner + [t1]
+        segs = [up(b - a) for a, b in zip(pts, pts[1:])]
+        if len(segs) == 1: shape = ('S', segs[0])
+        elif len(segs) == 2: shape = ('L', segs[0], segs[1], 0)
+        else: shape = ('U', segs[0], segs[1], segs[2])
+        key = tuple(sorted([tuple(segs), tuple(reversed(segs))])[0])
+        tp = types.setdefault(key, dict(shape=shape, segs=segs, L=sum(segs), n=0, path=[]))
+        tp['n'] += 1; tp['path'].append((t0, t1))
+    return list(types.values())
 
 
 def draw_sheet(doc, idx, f, meta, bl):
@@ -79,13 +123,16 @@ def draw_sheet(doc, idx, f, meta, bl):
     def cot(b):                                  # call-out(s) of a main bar
         if b['pieces'] == 1: return callout(b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag'])
         t = callout(2 * b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag'])
-        if b['pieces'] > 2: t += ' + ' + callout((b['pieces'] - 2) * b['n'], b['d'], b['mk2'], b['L'], b['s'], b['tag'])
+        if b['pieces'] > 2: t += ' + ' + callout((b['pieces'] - 2) * b['n'], b['d'], b['mk2'], b['L'], b['s'], b['tag']) + f" (MARK {b['mk2']:02d})"
         return t
     # additional bars written on the consultant's plan (ADD TOP / ADD BOT): straight, in their zone
     for a in f.get('adds', []):
         a['mk'] = bl.add(a['d'], ('S', a['L']), a['L'], a['n'], f['no'], 'ADD-' + a['layer'])
     sb = side_bars(f)
-    sb['mk'] = bl.add(sb['ds'], ('ST', sb['lx'], sb['ly']) if sb['pieces'] == 1 else ('S', sb['L']), sb['L'], sb['rows'] * sb['pieces'], f['no'], 'SB')
+    for p in sb['pieces']:                       # one mark per side-bar piece type (loop / U / corner L / straight)
+        p['mk'] = bl.add(sb['ds'], p['shape'], p['L'], sb['rows'] * p['n'], f['no'], 'SB')
+    sb['mk'] = sb['pieces'][0]['mk']
+    sb_txt = lambda p: callout(sb['rows'] * p['n'], sb['ds'], p['mk'], p['L'], layer='SB')
     # chairs only carry a top mesh: none when the footing has no top reinforcement (engineer)
     sb['mk_ch'] = bl.add(16, ('CH', sb['ch_foot'], sb['ch_h'], sb['ch_top']), sb['chair_L'], sb['chairs'], f['no'], 'CH') if f['top'][0] else None
     mk = lambda b: b['mk']
@@ -236,15 +283,8 @@ def draw_sheet(doc, idx, f, meta, bl):
         if kind in 'BT':
             pass
         else:
-            o = sb['off']
-            sh.pline([P(o, o), P(f['L'] - o, o), P(f['L'] - o, f['W'] - o), P(o, f['W'] - o)], 'S-RFT-STIR', 30, True, r=3 * sb['ds'] * k)
-            sh.text(mm(sb['lx']), *P(f['L'] / 2, o + 60), ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
-            sh.text(mm(sb['ly']), P(f['L'] - o, 0)[0] - 120, P(0, f['W'] / 2)[1], ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-            tx, ty = P(f['L'] * 0.12, f['W'] * 0.84)
-            sh.ctext(sb['mk'], callout(sb['rows'] * sb['pieces'], sb['ds'], sb['mk'], sb['L'], layer='SB'), tx, ty, ST['call'], 'S-RFT-TXT')
-            sh.text(f"({sb['rows']} ROW(S) INSIDE THE MAIN BARS" + (f", {sb['pieces']} PIECES / ROW LAPPED 60d)" if sb['pieces'] > 1 else ")"), tx, ty - 380, 200, 'S-RFT-TXT')
-            tx, ty = P(f['L'] * 0.12, f['W'] * 0.14)
-            if sb['mk_ch']: sh.ctext(sb['mk_ch'], callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CH'), tx, ty, ST['call'], 'S-RFT-TXT')
+            draw_side_plan(sh, f, sb, P, k, sb_txt, (sb['mk_ch'], callout(sb['chairs'], 16, sb['mk_ch'], sb['chair_L'], 1000, 'CH'))
+                           if sb['mk_ch'] else None)
     # ---- SECTION along X (bars along X = lines, bars along Y = dots) ----
     ks = min(k, 9800 / (f['L'] + 200), 7500 / (f['h'] + 900))       # room for the call-outs before the title block
     sx, sy = 18200 + 100 * ks, R2 + 1700
@@ -280,7 +320,7 @@ def draw_sheet(doc, idx, f, meta, bl):
         tY = h - c - TX['d'] - TY['d'] / 2 if outer_is_x_t else h - c - TY['d'] / 2
         dT = TX['d'] + TY['d']
     side = sb
-    xs_ = c + (BX['d'] if bx_ else 0) + (TX['d'] + 2 if tx_ else 0) + side['ds'] / 2 + 2   # side bars INSIDE both U legs
+    xs_ = side['offx']                           # side bars inside the main U legs (top and bottom legs side by side)
     if bx_:
         top_of_leg = (h - c - dT - 15) if tx_ else (h - c)
         xl, xr = c + BX['d'] / 2, L - c - BX['d'] / 2
@@ -290,7 +330,7 @@ def draw_sheet(doc, idx, f, meta, bl):
         lines.append((yY, BY['mk'], cot(BY), dot2(xl + (BX['d'] + BY['d']) / 2, xr - (BX['d'] + BY['d']) / 2, BY['s'])))   # a cut dot clear of the bend
     if tx_:
         bot_of_leg = c + (dB if bx_ else 0) + 15
-        ins = (BX['d'] + 2) if bx_ else 0                # top U sits inside the bottom U legs, side bars inside both
+        ins = 0                                          # top U = bottom U: legs side by side at the face (engineer)
         xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
         sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20), r=3 * TX['d'] * ks)
         dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
@@ -302,7 +342,10 @@ def draw_sheet(doc, idx, f, meta, bl):
         y = y0 + (i + 1) * (y1 - y0) / (side['rows'] + 1)
         for x in (xs_, L - xs_):
             hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x, y)), max(6 * ks, 18), 0, 360)
-        if i == 0: lines.append((y, side['mk'], callout(side['rows'] * side['pieces'], side['ds'], side['mk'], side['L'], layer='SB'), L - xs_))
+        if i == 0:
+            ps_ = side['pieces']
+            t_ = sb_txt(ps_[0]) + ''.join(f" + {sb_txt(p)} (MARK {p['mk']:02d})" for p in ps_[1:])
+            lines.append((y, side['mk'], t_, L - xs_))
     # chair (only with a top mesh): stands on the bottom mesh, carries the top mesh; every side dimensioned
     if bx_ and tx_ and sb['mk_ch']:
         yb_, yt_ = c + dB + 8, h - c - dT - 8
@@ -341,6 +384,126 @@ def draw_sheet(doc, idx, f, meta, bl):
     sh.text(f"SECTION 1-1  ({f['name']}, {f['h']}, PC 100)", Q(L / 2, 0)[0], Q(0, -100)[1] - 900, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     if f.get('adds'): draw_adds(doc, idx + 1, f, meta)
     return bars
+
+
+def draw_side_plan(sh, f, sb, P, k, sb_txt, chair_txt=None):
+    """FOUNDATION SIDE REINFORCEMENT: the loop drawn piece by piece on its centre line (neighbouring pieces offset a
+    little so every 60 d lap shows), each piece type with its hexagon mark, call-out and segment lengths."""
+    lx, ly, lp = sb['lx'], sb['ly'], sb['lap']
+    X0, X1, Y0, Y1 = sb['offx'], f['L'] - sb['offx'], sb['offy'], f['W'] - sb['offy']
+    Pm = 2 * (lx + ly)
+    def pt(t, d=0):                               # perimeter parameter (out-to-out lengths) -> plan point, d inwards
+        t %= Pm
+        if t <= lx: return (X0 + (X1 - X0) * t / lx, Y0 + d)
+        t -= lx
+        if t <= ly: return (X1 - d, Y0 + (Y1 - Y0) * t / ly)
+        t -= ly
+        if t <= lx: return (X1 - (X1 - X0) * t / lx, Y1 - d)
+        t -= lx
+        return (X0 + d, Y1 - (Y1 - Y0) * t / ly)
+    corners = [0, lx, lx + ly, 2 * lx + ly]
+    gap = 170 / k                                  # visual offset of every second piece (mm in the plan)
+    allp = sorted((t0, t1, p) for p in sb['pieces'] for t0, t1 in p['path'])
+    rep, drawn = {}, []
+    for i, (t0, t1, p) in enumerate(allp):
+        d = gap if (i % 2 and len(allp) > 1) else 0
+        drawn.append((p, t0, t1, d))
+        cs = sorted(c + Pm * m for c in corners for m in (0, 1, 2) if t0 < c + Pm * m < t1)
+        pts = [pt(t0, d)] + [pt(c, d) if True else None for c in cs] + [pt(t1, d)]
+        if p['shape'][0] == 'ST':                  # one closed loop: draw it closed, the lap on the bottom side
+            pts = [pt(0), pt(lx), pt(lx + ly), pt(2 * lx + ly)]
+            sh.pline([P(*q) for q in pts], 'S-RFT-STIR', 30, True, r=3 * sb['ds'] * k)
+        else:
+            # pull the corner points onto the offset rectangle
+            q2 = []
+            for j, q in enumerate(pts):
+                x_, y_ = q
+                if 0 < j < len(pts) - 1:
+                    x_ = X0 + d if abs(x_ - X0) < 1 else (X1 - d if abs(x_ - X1) < 1 else x_)
+                    y_ = Y0 + d if abs(y_ - Y0) < 1 else (Y1 - d if abs(y_ - Y1) < 1 else y_)
+                q2.append((x_, y_))
+            sh.pline([P(*q) for q in q2], 'S-RFT-STIR', 30, r=3 * sb['ds'] * k)
+        rep.setdefault(id(p), (p, t0, t1, d))
+    # lap dimension at the first lap (between the ends of two neighbouring pieces)
+    lapbox = []
+    if len(allp) > 1:
+        t1_ = allp[0][1]; a_, b_ = pt(t1_ - lp), pt(t1_)
+        mid = pt(t1_ - lp / 2, 0)
+        horiz = abs(a_[1] - b_[1]) < 1
+        cq = P(*mid); lw_ = 7 * ST['len'] * 0.8 * 0.9
+        lapbox.append(((cq[0] - lw_ / 2 - 150, cq[1] - 450), (cq[0] + lw_ / 2 + 150, cq[1] + 450)) if horiz else
+                      ((cq[0] - 450, cq[1] - lw_ / 2 - 150), (cq[0] + 450, cq[1] + lw_ / 2 + 150)))
+        sh.text(f'LAP {lp}', *P(mid[0], mid[1] + (gap + 120 / k) * (1 if mid[1] < f['W'] / 2 else -1)) if horiz else
+                P(mid[0] + (gap + 120 / k) * (1 if mid[0] < f['L'] / 2 else -1), mid[1]), ST['len'] * 0.8, 'S-DIM',
+                rot=0 if horiz else 90, align=TA.BOTTOM_CENTER if (not horiz or mid[1] < f['W'] / 2) else TA.TOP_CENTER)
+    # segment lengths of one piece of every type, written inside the loop along the segment
+    for p, t0, t1, d in rep.values():
+        cs = sorted(c + Pm * m for c in corners for m in (0, 1, 2) if t0 < c + Pm * m < t1)
+        ts = [t0] + cs + [t1]
+        for (ta, tb), seg in zip(zip(ts, ts[1:]), p['segs'] if p['shape'][0] != 'ST' else []):
+            q = pt((ta + tb) / 2, d)
+            if abs(q[1] - Y0 - d) < 1 or abs(q[1] - Y1 + d) < 1:              # horizontal segment
+                inward = 1 if q[1] < f['W'] / 2 else -1
+                sh.text(mm(seg), *P(q[0], q[1] + inward * 90 / k), ST['len'], 'S-DIM',
+                        align=TA.BOTTOM_CENTER if inward > 0 else TA.TOP_CENTER)
+            else:
+                inward = 1 if q[0] < f['L'] / 2 else -1
+                sh.text(mm(seg), *P(q[0] + inward * 90 / k, q[1]), ST['len'], 'S-DIM', rot=90,
+                        align=TA.TOP_CENTER if inward > 0 else TA.BOTTOM_CENTER)
+        if p['shape'][0] == 'ST':
+            sh.text(mm(lx), *P(f['L'] / 2, Y0 + 90 / k), ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
+            sh.text(mm(ly), *P(X1 - 90 / k, f['W'] / 2), ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+    # call-outs: one block (side-bar types, note, chairs) inside the loop, in the first spot clear of the columns and
+    # of the thickness tag; each side-bar call-out has a short leader to the nearest piece of its type
+    n_ = sum(p['n'] for p in sb['pieces'])
+    note = f"({sb['rows']} ROW(S), " + (f"{n_} PIECES/ROW, LAP {lp})" if n_ > 1 else f"CLOSED LOOP, LAP {lp})")
+    items = [('sb', p) for p in rep_types(rep)] + [('note', note)] + ([('ch', chair_txt)] if chair_txt else [])
+    hb = 2.3 * ST['call'] + (len(items) - 1) * 470 + 150          # hexagon top of line 1 .. bottom of the last
+    wb = max([len(sb_txt(p)) * ST['call'] * 0.8 for p in sb['pieces']] + [len(note) * 190 * 0.8] +
+             ([len(chair_txt[1]) * ST['call'] * 0.8] if chair_txt else [])) + 3 * ST['call']
+    xl_, xr_ = P(X0 + gap, 0)[0] + 250, P(X1 - gap, 0)[0] - 250
+    yb_, yt_ = P(0, Y0 + gap)[1] + 300, P(0, Y1 - gap)[1] - 350
+    tg = P(f['L'] * 0.75, f['W'] * 0.32)                              # thickness tag of the side panel
+    obst = [(P(c_[0], c_[1]), P(c_[2], c_[3])) for c_ in (f.get('cols') or ([f['col']] if f.get('col') else []))] + lapbox + \
+           [((tg[0] - 450, tg[1] - 450), (tg[0] + 450, tg[1] + 450))]
+    def hits(x0, y0):
+        return sum(max(0, min(x0 + wb, b_[0]) - max(x0, a_[0])) * max(0, min(y0, b_[1]) - max(y0 - hb, a_[1]))
+                   for a_, b_ in obst)                    # overlapped area (0 = free)
+    best = None
+    for yy in [yt_ - j * 150 for j in range(int(max(1, (yt_ - yb_ - hb) / 150)) + 1)]:
+        for xx in [xl_ + j * 400 for j in range(int(max(0, xr_ - wb - xl_) / 400) + 1)]:
+            if xx < xl_ - 1: continue
+            h_ = hits(xx, yy)
+            if best is None or h_ < best[0]: best = (h_, xx, yy)
+            if h_ == 0: break
+        if best[0] == 0: break
+    _, tx, ty = best
+    ty -= 1.7 * ST['call']                         # the hexagon of the first line stays inside the free box
+    for j, (kind, it) in enumerate(items):
+        y_ = ty - j * 470
+        if kind == 'sb':
+            p = it
+            sh.ctext(p['mk'], sb_txt(p), tx, y_, ST['call'], 'S-RFT-TXT')
+            if p['shape'][0] != 'ST':
+                cand = [P(*pt(t0 + (t1 - t0) * u / 40, d)) for (pp, t0, t1, d) in drawn if pp is p for u in range(2, 39)]
+                # leader from the hexagon, to the nearest point of a piece of this type on its LEFT (never across a
+                # text of the block); else straight up / down from the hexagon
+                st_ = (tx - 20, y_ + ST['call'] / 2)
+                left = [c_ for c_ in cand if c_[0] <= tx - 60]
+                if left: q = min(left, key=lambda c_: math.dist(c_, st_))
+                else:
+                    q = min(cand, key=lambda c_: abs(c_[0] - tx) + 0.2 * abs(c_[1] - st_[1]))
+                    q = (tx + ST['call'], q[1]); st_ = (tx + ST['call'], y_ + (2.1 * ST['call'] if q[1] > y_ else -0.6 * ST['call']))
+                sh.line(st_, q, 'S-RFT-TXT'); sh.circle(*q, 25, 'S-RFT-TXT')
+        elif kind == 'note':
+            sh.text(it, tx + 2.5 * ST['call'], y_ + 60, 190, 'S-RFT-TXT', maxw=xr_ - tx - 2.5 * ST['call'])
+        else:
+            mk_, t_ = it
+            sh.ctext(mk_, t_, tx, y_, ST['call'], 'S-RFT-TXT')
+
+
+def rep_types(rep):
+    return [v[0] for v in rep.values()]
 
 
 def draw_adds(doc, idx, f, meta):
