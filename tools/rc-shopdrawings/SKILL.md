@@ -288,8 +288,16 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
 - Bar arrangement and tie set read from the consultant's **`COLUMN SCH`** block (to-scale section per type);
   sizes from `column_sizes`. Some types use other layers inside the block (check each row: outline layer,
   tie layer, bar circles) — extend `read_schedule()` when a type comes back empty.
-- **Neck = same size as the column.** Vertical bars stand on the footing bottom mesh with a **foot of 300**
-  (max(12d, 300)), run to T.O.GB + **lap 60 d**.
+- **Neck = same size as the column.** Vertical bars stand on the footing bottom mesh with a 90° foot, run to T.O.GB
+  + **lap 60 d**.
+- **Development inside the footing (engineer):** Ld = straight part in the footing (T.O.F → bar on the mesh) + foot
+  ≥ 60 d (general note "LENGTH DEVELOPMENT ≥ 60 BAR DIAMETER"); foot = max(12 d, 300, 60 d − straight part). Foot
+  outwards when it fits inside the footing (½ min(L, W) − cover − bar offset), else turned INWARDS (under the column);
+  neither fits → "(!) … CONSULTANT TO CONFIRM" on the sheet + CHECK in the run log. Elevation: dimension of the
+  straight part + "Ld = 402 + 560 = 962 ≥ 60d = 960".
+- **The bar detailed outside ("تفرد السيخ برة"):** BAR DETAIL at the top left of every neck sheet: the L bar to scale
+  with the foot and vertical lengths written on it, T.O.F / T.O.GB / LAP marks along it, call-out + "L = foot +
+  vertical = total".
 - **Bars inside the ties**: corner bars centred at cover 40 + tie dia + d/2 from the faces; the others spaced
   as the designer drew them.
 - **Every tie keeps the designer's exact shape and size**: each tie wraps exactly the bars it holds in the

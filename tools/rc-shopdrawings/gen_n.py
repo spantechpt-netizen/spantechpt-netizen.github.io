@@ -192,7 +192,16 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     Hn = round((tgb - tof) * 1000)
     d, lp = col['d'], lap(col['d'])
     yb = FC + max(f['bot'][1], f['bot'][3]) * 2                 # bars stand on the bottom mesh
-    foot = max(12 * d, 300)                                      # 90-degree foot on the mesh
+    # development inside the footing (engineer + general note: Ld >= 60 d, measured along the bar from T.O.F):
+    # straight part in the footing + the 90-degree foot on the bottom mesh; the foot is lengthened to make it up
+    emb = f['h'] - yb                                            # T.O.F -> bar on the mesh
+    LD = 60 * d
+    foot = max(12 * d, 300, int(math.ceil((LD - emb) / 10) * 10))
+    xbar = (max(col['b'], col['h']) / 2 - COLC - 10 - d / 2)
+    room = min(f.get('L', 1e9), f.get('W', 1e9)) / 2 - FC - xbar   # foot must stay inside the footing (cover)
+    inward = foot > room                                          # no room outwards: feet turned inwards (under the column)
+    room_in = min(f.get('L', 1e9), f.get('W', 1e9)) / 2 - FC + xbar
+    ld_ok = emb + foot >= LD and foot <= (room_in if inward else room)
     vert = (f['h'] - yb) + Hn + lp                               # up to T.O.GB + column lap
     Lv = int(round((vert + foot) / 10) * 10)
     mv = bl.add(d, ('L', foot, vert, 0), Lv, col['n'], no, 'V')
@@ -266,7 +275,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     # vertical bars (two outer ones drawn), foot outwards on the mesh
     for sx in (-1, 1):
         x = sx * (cw / 2 - COLC - 10 - d / 2)
-        sh.pline([Q(x + sx * foot, yb), Q(x, yb), Q(x, top + lp)], 'S-RFT-TOP', max(d * k, 25), r=3 * d * k)
+        sh.pline([Q(x + (-sx if inward else sx) * foot, yb - (0 if sx < 0 or not inward else d)), Q(x, yb - (0 if sx < 0 or not inward else d)), Q(x, top + lp)],
+                 'S-RFT-TOP', max(d * k, 25), r=3 * d * k)
     # ties
     y = f['h'] + 50
     while y <= top - 50:
@@ -298,7 +308,29 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         sh.text(lab, Q(fx0 - 1600, 0)[0], Q(0, yy)[1] + 50, 170, 'S-DIM')
     # call-outs
     sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
-    sh.text(f"(FOOT {foot} ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
+    sh.text(f"(FOOT {foot} {'TURNED INWARDS ' if inward else ''}ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
+    # Ld in the footing on the elevation
+    sh.dim(Q(-cw / 2 - 250, yb), Q(-cw / 2 - 250, f['h']), Q(-cw / 2 - 650, yb), angle=90, text=f'{emb}')
+    sh.text(f"Ld = {emb} + {foot} = {emb + foot} {'>=' if emb + foot >= LD else '<'} 60d = {LD}" + ('' if ld_ok else '  (!) SEE NOTE'),
+            Q(-fx0 + 250, 0)[0], Q(0, f['h'] * 0.45)[1], ST['note'], 'S-DIM')
+    # ---------- the bar detailed outside (bending detail with every length) ----------
+    bx0, by0 = 2600, 18100
+    kb = min(6300 / (vert + 600), 2.0)
+    B_ = lambda x, y: (bx0 + x * kb, by0 + y * kb)
+    fx_ = min(foot * kb, 3500) / kb                                  # drawn foot (long feet shortened on the sketch)
+    sh.pline([B_(fx_, 0), B_(0, 0), B_(0, vert)], 'S-RFT-TOP', max(d * kb, 30), r=3 * d * kb)
+    sh.text(str(foot), *B_(fx_ / 2, -120 / kb * 1.0), ST['len'], 'S-DIM', align=TA.TOP_CENTER)
+    sh.text(str(vert), *B_(-140 / kb, vert / 2), ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+    for yy, t in ((emb, f'T.O.F (IN FOOTING {emb})'), (emb + Hn, f'T.O.GB (NECK {Hn})')):
+        sh.line(B_(-60, yy), B_(380 / kb, yy), 'S-DIM'); sh.text(t, B_(420 / kb, 0)[0], B_(0, yy)[1] - 60, ST['note'], 'S-DIM')
+    sh.text(f'LAP {lp}', B_(420 / kb, 0)[0], B_(0, emb + Hn + lp / 2)[1], ST['note'], 'S-DIM')
+    sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), bx0, by0 + vert * kb + 700, ST['call'])
+    sh.text(f'L = {foot} + {vert} = {Lv}', bx0, by0 + vert * kb + 300, ST['note'], 'S-RFT-TXT')
+    sh.text('BAR DETAIL (VERTICAL BAR)', bx0, by0 - 850, ST['panel'], 'S-SEC', maxw=7000)
+    if inward: sh.text('FOOT TURNED INWARDS (NO ROOM OUTWARDS)', bx0, by0 - 1250, ST['note'], 'S-RFT-TXT')
+    if not ld_ok:
+        sh.text(f'(!) FOOT {foot} DOES NOT FIT IN THE FOOTING EVEN TURNED INWARDS: CONSULTANT TO CONFIRM',
+                bx0, by0 - 1600, ST['note'], 'S-DIM', maxw=8000)
     for i, t in enumerate(ties):
         sh.ctext(t['mk'], callout((n_neck + n_ftg) * t['k'], 10, t['mk'], t['L'], s) + (f"  ({t['k']} PER SET)" if t['k'] > 1 else ''), Q(cw / 2 + 200, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - i * 520, ST['call'], maxw=(XD - cw / 2 - 350) * k)
     yt_ = Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 520 - 100
@@ -354,7 +386,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         sh.text(f"L={mm(t['L'])}", tx, by - 1150, ST['call'], 'S-RFT-TXT')
         tx += max(t['w'] * kk, 3700) + 900
         if tx > 29500: tx = 23500; by -= 4300
-    return Hn
+    return Hn, (emb, foot, LD, ld_ok, inward)
 
 
 if __name__ == '__main__':
@@ -372,11 +404,11 @@ if __name__ == '__main__':
         meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                     rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='ELEV 1:25 / SEC 1:10', prefix='SDW-STR-NCK')
         meta.update(PRJ.get('meta', {}))
-        meta['notes'] = project_notes('COVER COLUMNS 40 (SCHEDULE NOTE 4).', 'VERTICAL BARS BENT 90 DEG ON THE FOOTING MESH.')
+        meta['notes'] = project_notes('COVER COLUMNS 40 (SCHEDULE NOTE 4).', 'VERTICAL BARS BENT 90 DEG ON THE FOOTING MESH; Ld IN THE FOOTING >= 60d (STRAIGHT + FOOT).')
         meta['title'] = f'COLUMN NECKS\n{cn} ON {fn}'
         meta['dwg'] = f"{meta['prefix']}-{cn}-{fn}"
-        Hn = draw_neck(doc, i, col, lib[fn], meta, bl, int(no))
-        print(cn, fn, 'neck H', Hn)
+        Hn, ld = draw_neck(doc, i, col, lib[fn], meta, bl, int(no))
+        print(cn, fn, 'neck H', Hn, 'Ld emb+foot', ld[0], '+', ld[1], '>= 60d', ld[2], 'OK' if ld[3] else 'CHECK', 'INWARDS' if ld[4] else '')
     meta['title'] = 'COLUMN NECKS'; meta['dwg'] = 'SDW-STR-NCK'
     nb = draw_bbs(doc, len(pairs), bl.sorted(), meta)
     doc.saveas('out/NECKS.dxf'); print('sheets', len(pairs), '+ BBS', nb)
