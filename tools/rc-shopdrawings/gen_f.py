@@ -109,6 +109,38 @@ def pieces_of_loop(lx, ly, lp, stock=12000):
     return list(types.values())
 
 
+def draw_bar(sh, pts, b, lay, k, across):
+    """A main bar on the plan: one U, or its real pieces (engineer: "مش مقطع السيخين") - equal pieces lapped 60 d,
+    the end pieces with their leg, the middle ones straight; every second piece offset `across` (sheet units) so each
+    lap shows, LAP written at every lap. pts = [leg end, corner, corner, leg end] in sheet units."""
+    r = 3 * b['d'] * k
+    if b['pieces'] == 1:
+        sh.pline(pts, lay, 30, r=r); return
+    import math as _m
+    lens = [b['leg'], b['straight'], b['leg']]                     # real lengths of the three segments
+    T = sum(lens); Lp, lp = b['L'], b['lap']
+    def at(t):                                                      # developed length (mm) -> sheet point
+        for i, (L_, (p, q)) in enumerate(zip(lens, zip(pts, pts[1:]))):
+            if t <= L_ or i == 2:
+                u = min(max(t / L_, 0), 1) if L_ else 0
+                return (p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u)
+            t -= L_
+    starts = [i * (T - Lp) / (b['pieces'] - 1) for i in range(b['pieces'])]       # equal pieces over the bar
+    dx, dy = pts[2][0] - pts[1][0], pts[2][1] - pts[1][1]; n = _m.hypot(dx, dy) or 1
+    ox, oy = -dy / n * across, dx / n * across                       # offset normal to the straight part
+    for i, t0 in enumerate(starts):
+        t1 = t0 + Lp
+        cuts = [t0] + [c for c in (lens[0], lens[0] + lens[1]) if t0 < c < t1] + [t1]
+        q = [at(t) for t in cuts]
+        if i % 2: q = [(x + ox, y + oy) for x, y in q]
+        sh.pline(q, lay, 30, r=r)
+        if i:                                                       # lap between piece i-1 and i
+            a_, b_ = at(t0), at(starts[i - 1] + Lp)
+            mx, my = (a_[0] + b_[0]) / 2 - ox * 2.0, (a_[1] + b_[1]) / 2 - oy * 2.0       # outside: clear of the length text
+            ang = _m.degrees(_m.atan2(dy, dx))
+            sh.text(f'LAP {lp}', mx, my, ST['len'] * 0.8, 'S-DIM', rot=ang if abs(ang) < 91 else ang - 180, align=TA.MIDDLE_CENTER)
+
+
 def draw_sheet(doc, idx, f, meta, bl):
     sh = Sheet(doc, 0, -idx * 32000, meta)
     bars = bars_for(f)
@@ -190,7 +222,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                     y = free_y(cy_, band)
                     x0, x1 = COVER, f['L'] - COVER
                     pts = [(P(x0, y)[0], P(x0, y)[1] + sgn * lgk), P(x0, y), P(x1, y), (P(x1, y)[0], P(x1, y)[1] + sgn * lgk)]
-                    sh.pline(pts, lay, 30, r=3 * b['d'] * k)
+                    draw_bar(sh, pts, b, lay, k, sgn * 110)
                     sh.text(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']})" if b['pieces'] > 1 else ''), P((x0 + x1) / 2, y)[0], P(0, y)[1] + 150, ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
                     sh.text(mm(b['leg']), P(x0, y)[0] + 100, P(0, y)[1] + sgn * lgk / 2, ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
                     sh.text(mm(b['leg']), P(x1, y)[0] - 100, P(0, y)[1] + sgn * lgk / 2, ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
@@ -231,7 +263,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                         if spot: x = spot[0]
                     y0, y1 = COVER, f['W'] - COVER
                     pts = [(P(x, y0)[0] - sgn * lgk, P(x, y0)[1]), P(x, y0), P(x, y1), (P(x, y1)[0] - sgn * lgk, P(x, y1)[1])]
-                    sh.pline(pts, lay, 30, r=3 * b['d'] * k)
+                    draw_bar(sh, pts, b, lay, k, sgn * 110)
                     sh.text(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']})" if b['pieces'] > 1 else ''), P(x, 0)[0] + 200, P(x, (y0 + y1) / 2)[1], ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
                     sh.text(mm(b['leg']), P(x, 0)[0] - sgn * lgk / 2, P(x, y0)[1] + 100, ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
                     sh.text(mm(b['leg']), P(x, 0)[0] - sgn * lgk / 2, P(x, y1)[1] - 100, ST['len'], 'S-DIM', align=TA.TOP_CENTER)

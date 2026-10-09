@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `strip_net.py`, `gen_st_plan.py` | strip footing network from the plan → strip detailed on plan + real BBS (§6) |
 | `cd_scan.py`, `cd_axes.py`, `gen_cd.py` | concrete dimensions of the foundations: plan in parts + sections along every grid line (§7b) |
 | `extract.py` | DXF → beam runs, columns, axes |
 | `gen.py` | shared: `SCHED`, `COVER`, `leg()`, `lap()`, `new_doc()` (layers, dim style GB100), **style** `ST`, `mm()`, `project_notes()`, `fillet()`, `hooked_tie()`, `tie_bar_centres()`, `Sheet` (frame + title block, `pline(r=)`, `text(maxw=)`, `ctext()`, `mark()`, `break_line()`, `dim()`, `hatch_rect()`), `callout()`, `BarList`, `draw_legend()`, `draw_bbs()` |
@@ -250,8 +251,28 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   call-outs placed clear of the columns and of each other.
 - Additional bars written on the plan (`T 20 @ 100 ADD TOP`, `L = 3000`): own sheet `…-ADD` with ADD BOT / ADD TOP
   panels; count = length of the crossing additional bars / spacing + 1.
-- Strip footing under the walls (`gen_st.py`, project.json → `strip`): typical section 1:20, typical stretch 1:50
-  (laps 60 d staggered), corner / junction notes, **BBS per metre run** (strip length measured on the plan).
+- Bars split in pieces are DRAWN as pieces on the plan (engineer: "قايل انه فى وصله لكن مش مقطع السيخين"):
+  `gen_f.draw_bar` draws every piece (end pieces with their leg), every second piece offset so each lap shows,
+  `LAP nnn` at each lap.
+- Strip footing under the walls is **detailed on the plan** (engineer: "متاخد فيها قطاع فقط لازم تتسلك … متداخل مع
+  القواعد"): `python3 gen_st_plan.py` (after `cd_scan.py`; project.json → `strip`) → `out/STRIP.dxf` = typical
+  section 1:20 (`gen_st.section_sheet`) + typical details (corner / T / strip through or into a footing) + plan parts
+  1:100 + BBS with the real quantities. `gen_st.py` alone = section + BBS per metre run (no plan available).
+  - Network (`strip_net.strip_runs`): pairs of parallel RC edges one width B apart from every source (closed
+    outlines, outlines merged with footings, open chains, LINEs, 2-point polylines) → runs; collinear runs joined
+    through a footing that fills the gap; dropped: bands inside one footing, bands whose two edges are both footing
+    faces (gap between footings that happens to be B), runs < 1.5 m; a T / cross junction (two collinear runs B
+    apart with the other strip in the gap) = one through run.
+  - Run ends: other strip (corner, stem of a T, sideways jog) → bars to its FAR face − cover; footing ahead (even if
+    the drawn strip stops short) → anchored gap + 60 d (≤ far face − cover); footing beside the end square → strip
+    turns: to the far face − cover + plan leg into the footing (gap + B/2 − c + 60 d); nothing → stopped at cover and
+    bent down (leg h − 2c).
+  - Longitudinal bars (B & T, nl per layer, + 2 SB) from end to end of the run THROUGH the isolated footings (on the
+    footing mesh); > 12 m equal pieces lapped 60 d, drawn as pieces; U bars (top U = bottom U) @ s per clear stretch
+    between footings (none inside a footing; the through strip's U bars run through a T), first 50 from the face.
+  - Plan: bottom bar continuous / top dashed (one bar of each set), one U per stretch + distribution line, stretch
+    dimensions, end notes (TO FAR FACE / 840 INTO F5 / TURN …), one call-out block per run placed clear of the
+    footings and other blocks; a run whose block is on another part gets "R10 - BARS: SEE PART n".
 - `BarList`: the same bar in elements with different NO keeps the right total (n_in × n_el summed).
 
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
@@ -306,7 +327,8 @@ from / between the grid lines, plan + sections along EVERY grid line (both direc
   inside footings ≥ 2400.
 - Reading traps of this plan: footings on a second RC layer (`cd_rc_layers_extra`, e.g. `CORE-FNDN-FTNG-RC`); open
   outlines: closed when the missing side is orthogonal, otherwise joined end to end (`chain_open`), never closed with
-  a diagonal; wall strips drawn as open lines → in the sections two crossings one strip width apart = a strip cut.
+  a diagonal; wall strips drawn as open lines → in the sections two crossings one strip width apart = a strip cut;
+  strip edges are often 2-point polylines or LINEs → `cd_scan` keeps them (they were skipped as "< 3 points").
 - Plan 1:100 in parts of 31 × 23 m (match lines, key plan): RC continuous, PC dashed, columns hatched, grid with
   bubbles; per footing name / RC size h / PC size above it, chain axis → edges under it (x) and left of it (y) +
   overall size.

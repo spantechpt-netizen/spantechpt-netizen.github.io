@@ -1,33 +1,41 @@
-"""Strip footing under the walls (ST-01): typical cross section, a plan of a typical stretch with the lap and corner
-details, and a BBS per metre run (the strip length is measured on the foundation plan - see plan)."""
+"""Strip footing under the walls (ST-01): typical cross section and a plan of a typical stretch with the laps.
+section_sheet() is shared with gen_st_plan.py (the strip detailed on the foundation plan, real BBS); run alone this
+file gives the section + a BBS per metre run (when the foundation plan is not available)."""
 import json, math
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes
 PRJ = json.load(open('project.json')); LEV = PRJ.get('levels', {})
 C = PRJ.get('footing_cover', 70)
 
 
-def main(name='ST-01', B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12):
+def section_sheet(doc, idx, bl, B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12, name='ST-01', per_metre=False, meta0=None):
+    """Typical cross section 1:20 + typical stretch 1:50 on sheet idx. Call-outs: the U bar with its mark (the same
+    bar everywhere); the longitudinal / side bars by position (their lengths change per run: see plan) unless
+    per_metre (then marks of a 12 m bar per metre run)."""
     s = math.floor(1000 / n_m / 5) * 5                    # 7 / m -> 140
     lg = h - 2 * C; lp = 60 * d
     nl = math.ceil((B - 2 * C) / s) + 1                   # longitudinal bars across the width (per layer)
     meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                 rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='SEC 1:20 / PLAN 1:50', prefix='SDW-STR-FDN')
-    meta.update(PRJ.get('meta', {}))
-    meta['notes'] = project_notes('COVER FOOTINGS 70; PLAIN CONCRETE 100.', 'STRIP LENGTH: SEE FOUNDATION PLAN; BBS PER METRE RUN.')
+    meta.update(meta0 or PRJ.get('meta', {})); meta['scale'] = 'SEC 1:20 / PLAN 1:50'
+    meta['notes'] = project_notes('COVER FOOTINGS 70; PLAIN CONCRETE 100.',
+                                  'STRIP LENGTH: SEE FOUNDATION PLAN; BBS PER METRE RUN.' if per_metre else 'BARS OF EVERY RUN: SEE STRIP REINFORCEMENT PLAN.')
     meta['title'] = f'STRIP FOOTING UNDER WALLS\nREINFORCEMENT - {name}'; meta['dwg'] = f'SDW-STR-FDN-{name}'
-    doc = new_doc(); bl = BarList(); sh = Sheet(doc, 0, 0, meta)
+    sh = Sheet(doc, 0, -idx * 32000, meta)
     draw_legend(sh, 21000, 27900)
     sh.text(name, 2000, 27900, ST['name'], 'S-AXIS-TXT')
     xc_ = 2000 + len(name) * ST['name'] * 0.9 + 800
     sh.circle(xc_, 28150, 520, 'S-SEC'); sh.text(str(h), xc_, 28150, 380, 'S-SEC', align=TA.MIDDLE_CENTER)
     sh.text(f'PC {pcB}x100   RC {B}x{h}', xc_ + 900, 27950, ST['sub'], 'S-SEC')
     sh.text('STRIP FOOTING UNDER THE WALLS - LENGTH: SEE FOUNDATION PLAN', 2000, 27100, ST['sub'], 'S-SEC')
-    # marks (per metre run)
-    tB = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, n_m, 1, 'B-TR')
-    tT = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, n_m, 1, 'T-TR')        # top U = bottom U (legs side by side)
-    lb = bl.add(d, ('S', 12000), 12000, round(nl * 1000 / (12000 - lp), 2), 1, 'B-LG')
-    lt = bl.add(d, ('S', 12000), 12000, round(nl * 1000 / (12000 - lp), 2), 1, 'T-LG')
-    sbm = bl.add(ds, ('S', 12000), 12000, round(2 * 1000 / (12000 - 60 * ds), 2), 1, 'SB')
+    if per_metre:
+        tB = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, n_m, 1, 'B-TR')
+        tT = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, n_m, 1, 'T-TR')        # top U = bottom U (legs side by side)
+        lb = bl.add(d, ('S', 12000), 12000, round(nl * 1000 / (12000 - lp), 2), 1, 'B-LG')
+        lt = bl.add(d, ('S', 12000), 12000, round(nl * 1000 / (12000 - lp), 2), 1, 'T-LG')
+        sbm = bl.add(ds, ('S', 12000), 12000, round(2 * 1000 / (12000 - 60 * ds), 2), 1, 'SB')
+    else:
+        tB = tT = bl.add(d, ('U', lg, B - 2 * C, lg), B - 2 * C + 2 * lg, 0, 1, 'TR')       # counted per stretch on plan
+        lb = lt = sbm = None
     # ---- typical cross section 1:20 (factor 5 on the 1:100 frame) ----
     k = 5; ox, oy = 3500, 12500
     Q = lambda x, y: (ox + x * k, oy + y * k)
@@ -48,15 +56,18 @@ def main(name='ST-01', B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12):
         dot(x, yb + d, d, 'S-RFT-BOT'); dot(x, yt - d, d, 'S-RFT-TOP')
     xs = C + d + ds / 2 + 2                                       # side bars inside the (one) main U leg
     for x in (xs, B - xs): dot(x, h / 2, ds, 'S-RFT-STIR')
-    lines = [(yt, tT, callout(n_m, d, tT, B - 2 * C + 2 * lg, s, 'T-TR') + '  /M', xr - 300),
-             (yt - d, lt, callout(nl, d, lt, 12000, s, 'T-LG') + '  CONT.', xa + (xb - xa) * (nl - 2) / (nl - 1)),
-             (h / 2, sbm, callout(2, ds, sbm, 12000, None, 'SB') + '  CONT.', B - xs),
-             (yb + d, lb, callout(nl, d, lb, 12000, s, 'B-LG') + '  CONT.', xa + (xb - xa) * (nl - 2) / (nl - 1)),
-             (yb, tB, callout(n_m, d, tB, B - 2 * C + 2 * lg, s, 'B-TR') + '  /M', xr - 300)]
+    LG_ = lambda n, dd, mk, lay: (callout(n, dd, mk, 12000, s if lay != 'SB' else None, lay) + '  CONT.') if mk else \
+        f"{n} T {dd}{'-' + str(s) if lay != 'SB' else ''} -{lay}  (LENGTHS: SEE PLAN)"
+    lines = [(yt, tT, callout(n_m, d, tT, B - 2 * C + 2 * lg, s, 'T') + '  /M', xr - 300),
+             (yt - d, lt, LG_(nl, d, lt, 'T'), xa + (xb - xa) * (nl - 2) / (nl - 1)),
+             (h / 2, sbm, LG_(2, ds, sbm, 'SB'), B - xs),
+             (yb + d, lb, LG_(nl, d, lb, 'B'), xa + (xb - xa) * (nl - 2) / (nl - 1)),
+             (yb, tB, callout(n_m, d, tB, B - 2 * C + 2 * lg, s, 'B') + '  /M', xr - 300)]
     for i, (y, mk_, t, xt) in enumerate(sorted(lines, key=lambda l: l[0])):
         ty_ = Q(0, 0)[1] + i * 600 + 200
         sh.line(Q(xt, y), (Q(B, 0)[0] + 900, ty_ + 90), 'S-RFT-TXT'); sh.circle(*Q(xt, y), 25, 'S-RFT-TXT')
-        sh.ctext(mk_, t, Q(B, 0)[0] + 1000, ty_, ST['call'])
+        if mk_: sh.ctext(mk_, t, Q(B, 0)[0] + 1000, ty_, ST['call'])
+        else: sh.text(t, Q(B, 0)[0] + 1000 + 2 * 1.1 * ST['call'] + ST['call'] * 0.35, ty_, ST['call'], 'S-RFT-TXT')
     sh.dim(Q(0, -100), Q(B, -100), (Q(0, 0)[0], Q(0, -100)[1] - 450), text=str(B))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 500, Q(0, 0)[1]), angle=90, text=str(h))
     sh.text(f'COVER {C}', Q(B / 2, 0)[0], Q(0, C / 2)[1], 150, 'S-DIM', align=TA.MIDDLE_CENTER)
@@ -83,11 +94,21 @@ def main(name='ST-01', B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12):
     sh.text(f'TYPICAL STRETCH ON PLAN 1:50 - TRANSVERSE BARS @{s}, LONGITUDINAL BARS LAPPED 60d ({lp}), LAPS STAGGERED',
             px, py - 1600, ST['panel'], 'S-SEC', maxw=15000)
     # corner / T-junction note (longitudinal bars run through, outer bars bent round the corner + 60d)
-    sh.text('AT CORNERS AND T-JUNCTIONS: OUTER LONGITUDINAL BARS BENT ROUND THE CORNER AND CARRIED 60d BEYOND;', 18000, 7600, ST['note'], 'S-RFT-TXT')
-    sh.text('INNER BARS CARRIED TO THE FAR FACE - COVER + 60d LEG. WHERE AN ISOLATED FOOTING MERGES WITH THE STRIP,', 18000, 7250, ST['note'], 'S-RFT-TXT')
-    sh.text('THE FOOTING REINFORCEMENT GOVERNS INSIDE THE FOOTING AND THE STRIP BARS ARE LAPPED 60d INTO IT.', 18000, 6900, ST['note'], 'S-RFT-TXT')
-    sh.text('BBS PER METRE RUN OF STRIP: MULTIPLY BY THE STRIP LENGTH MEASURED ON THE FOUNDATION PLAN.', 18000, 6400, ST['note'], 'S-RFT-TXT')
-    meta['title'] = 'STRIP FOOTING ST-01\nBBS PER METRE RUN'; meta['dwg'] = 'SDW-STR-FDN-ST-01'
+    sh.text('AT CORNERS AND T-JUNCTIONS: BARS CARRIED TO THE FAR FACE - COVER; THE THROUGH STRIP CONTINUOUS (SEE DETAILS).', 18000, 7600, ST['note'], 'S-RFT-TXT')
+    sh.text('ISOLATED FOOTING ON THE STRIP: STRIP BARS RUN THROUGH IT ON THE FOOTING MESH, NO U BARS INSIDE THE FOOTING;', 18000, 7250, ST['note'], 'S-RFT-TXT')
+    sh.text(f'STRIP ENDING IN A FOOTING: BARS ANCHORED 60d ({lp}) INTO IT. FREE END: BARS BENT DOWN (LEG {lg}).', 18000, 6900, ST['note'], 'S-RFT-TXT')
+    if per_metre:
+        sh.text('BBS PER METRE RUN OF STRIP: MULTIPLY BY THE STRIP LENGTH MEASURED ON THE FOUNDATION PLAN.', 18000, 6400, ST['note'], 'S-RFT-TXT')
+    return idx + 1
+
+
+def main(name='ST-01', B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12):
+    doc = new_doc(); bl = BarList()
+    section_sheet(doc, 0, bl, B, h, pcB, n_m, d, ds, name, per_metre=True)
+    meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
+                rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='-', prefix='SDW-STR-FDN')
+    meta.update(PRJ.get('meta', {}))
+    meta['title'] = f'STRIP FOOTING {name}\nBBS PER METRE RUN'; meta['dwg'] = f'SDW-STR-FDN-{name}'
     nb = draw_bbs(doc, 1, bl.sorted(), meta)
     doc.saveas('out/STRIP.dxf'); print('strip sheet + BBS', nb)
 

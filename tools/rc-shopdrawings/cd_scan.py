@@ -22,9 +22,18 @@ def walk(e, d=0, inh=None):
             try:
                 for v in e.virtual_entities(): walk(v, d + 1, e.dxf.layer)
             except Exception: pass
+    elif t == 'LINE':                                    # outline edges drawn as single lines (strip faces ...)
+        a_, b_ = (e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)
+        if not inw(*a_) or math.dist(a_, b_) < 50: return
+        L = e.dxf.layer
+        if L.endswith(RC + PC): out.setdefault('open', []).append(([a_, b_], 'pc' if L.endswith(PC) else 'rc'))
     elif t == 'LWPOLYLINE':
         p = [(a, b) for a, b in e.get_points('xy')]
-        if len(p) < 3 or not inw(*p[0]): return
+        if len(p) < 2 or not inw(*p[0]): return
+        if len(p) == 2:                                   # a 2-point polyline = one outline edge (strip faces ...)
+            L = e.dxf.layer
+            if L.endswith(RC + PC) and math.dist(p[0], p[1]) >= 50: out.setdefault('open', []).append((p, 'pc' if L.endswith(PC) else 'rc'))
+            return
         L = e.dxf.layer
         dx, dy = abs(p[0][0] - p[-1][0]), abs(p[0][1] - p[-1][1])
         # an open outline whose missing side is horizontal / vertical (or tiny) is a closed shape drawn without the
