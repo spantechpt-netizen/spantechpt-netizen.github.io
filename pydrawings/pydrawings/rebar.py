@@ -21,7 +21,7 @@ import re
 
 from .geometry import (
     bbox, ceil_to, chords_at_x, chords_at_y, circle_polygon, dist, edges, grow_rect,
-    perimeter, point_in_polygon, polygon_area, rect_polygon, subtract_intervals, js_round, fmt_num,
+    perimeter, point_in_polygon, polygon_area, rect_polygon, subtract_intervals, js_round, fmt_num, dist_to_polygon,
 )
 
 DEFAULT_SPEC = {
@@ -425,6 +425,17 @@ def _near_segment(p, a, b, tol):
     L = dist(a, b) or 1
     t = max(0, min(L, ((p['x'] - a['x']) * (b['x'] - a['x']) + (p['y'] - a['y']) * (b['y'] - a['y'])) / L))
     return math.hypot(p['x'] - (a['x'] + (b['x'] - a['x']) / L * t), p['y'] - (a['y'] + (b['y'] - a['y']) / L * t)) < tol
+
+
+def column_on_beam(level, c):
+    """
+    A column standing on a beam (an edge beam, an interior beam - not a band, which is slab) does not punch the slab:
+    the beam carries it. True when the beam's body passes through the column (its centre inside the beam polygon, or
+    the polygon within half the column's smaller side of the centre).
+    """
+    cc = {'x': c['cx'], 'y': c['cy']}
+    half = min(c['d'] if c.get('shape') == 'circle' else c['w'], c['d'] if c.get('shape') == 'circle' else c['h']) / 2
+    return next((b for b in (level.get('beams') or []) if b.get('polygon') and not b.get('band') and (point_in_polygon(cc, b['polygon']) or dist_to_polygon(cc, b['polygon']) < half)), None)
 
 
 def edge_end_at(level, spec, p):

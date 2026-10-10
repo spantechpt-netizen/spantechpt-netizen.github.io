@@ -96,7 +96,12 @@ def _dimension_measure(e):
 
 def parse_callout(text):
     """The call-out figures: count (0 = a run), diameter, spacing."""
-    m = re.search(r'(\d+)?\s*T(\d+)(?:-(\d+))?', str(text if text is not None else ''), re.I)
+    s = str(text if text is not None else '')
+    # the consultant's per-metre form "7T18/m": a run at 1000 / 7 spacing, not 7 bars
+    pm = re.search(r'(\d+)\s*T(\d+)\s*/\s*m', s, re.I)
+    if pm:
+        return {'n': 0, 'dia': int(pm.group(2)), 's': js_round(1000 / int(pm.group(1)))}
+    m = re.search(r'(\d+)?\s*T(\d+)(?:-(\d+))?', s, re.I)
     if not m:
         return None
     return {'n': int(m.group(1)) if m.group(1) else 0, 'dia': int(m.group(2)), 's': int(m.group(3)) if m.group(3) else 0}

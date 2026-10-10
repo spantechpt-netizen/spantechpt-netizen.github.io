@@ -43,7 +43,9 @@ The `spec` of the config takes every key the Node version takes: `cover`, `fc`, 
 `drops`, `bottom`, `topMesh`, `pourStrip` (with `wall`), `openings`, `punching` (`ramFailed`, `override`, `ramOk`),
 `beams` (`ramFailed`, `override`), `beamDesign` (`ram` / `office` / `max`), `beamTypes` (the project's unified beam
 schedule), `mesh` (`bottom` / `both`), `rotate` (`auto` / `0` / `90`), `cables` (`figures`: `ram` = the profile values as entered in RAM at the high / low points, the default; `chair` = chair heights CGS − 10), `ramBands` (`all` / `user` / `none`),
-`partMax`, `reference` (the architect's plan: `file`, `use`, `align`), `edits` (the bar edits by id), ...; `meta`
+`partMax`, `reference` (the architect's plan: `file`, `use`, `align`), `edits` (the bar edits by id), `designerBars` (the
+consultant's bars kept as drawn), `beamAssign` (beams given a type of `beamTypes` as it is), `rules` (General Details
+rules switched off), `topColumns.only`, `beams.topBars`, `consultant` (name, drawing, notes), `grid` (the project's grid), ...; `meta`
 takes `project`, `client`, `consultant`, `contractor`, `location`, `company`, `prefix`, `revision`, `date`,
 `prepared`, `designer`, `checked`, `approved`, `levelId`, `frame` (the sheet frame sizes and boxes; the bottom
 detail strip is off by default), `frameDxf` (the office frame with `<TOKENS>`), `status`, ...

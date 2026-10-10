@@ -1234,3 +1234,75 @@ test('every entity of a bar carries the bar tag (XDATA): the sheet reads back ba
   assert.equal(q.levels[0].steel.kg, 1000, 'the original is left alone');
   void barFigures;
 });
+
+test('the consultant\'s bars kept as drawn: designerBars in the office convention, the column rule on the listed columns only, beams assigned to the consultant\'s types, the rules switched off, the project grid', async () => {
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const { parseCallout } = await import('../shopdrawings/lib/dxf-bars.mjs');
+  const { punchingCheck } = await import('../shopdrawings/lib/punching.mjs');
+  const { applyColumnRule } = await import('../shopdrawings/lib/design.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'cons-'));
+  const cpt = await buildSyntheticCpt(dir, { beam: true });
+  const spec = {
+    mesh: 'both',
+    grid: { x: [{ label: '1', x: 0 }, { label: '2', x: 6000 }, { label: '3', x: 12000 }], y: [{ label: 'A', y: 0 }, { label: 'B', y: 4000 }, { label: 'C', y: 8000 }] },
+    topColumns: { only: ['B/2'] },
+    beams: { topBars: false, source: 'QUANTUM DWG No. 4' },
+    rules: { perimeter: false, corners: false, drops: false, voids: false },
+    consultant: { name: 'Quantum Group', drawing: 'dwg 4', notes: ['Slab 260 per the consultant'] },
+    beamTypes: [{ mark: 'K1', width: 300, depth: 600, top: { n: 3, dia: 16 }, bottom: { n: 4, dia: 18 }, stirrups: { dia: 8, legs: 2, spacing: 150 } }],
+    beamAssign: { bm1: 'K1', BM2: 'k1' },
+    designerBars: [
+      { id: 'CT-B2', face: 'T', dia: 18, perMetre: 7, a: { x: 4000, y: 4000 }, b: { x: 8000, y: 4000 }, width: 2000, zone: 'COL B/2 X' },
+      { id: 'CB-1', face: 'B', dia: 12, count: 3, a: { x: 2000, y: 2000 }, b: { x: 8000, y: 2000 }, width: 3000, zone: 'MID-SPAN' },
+      { id: 'BT-1', face: 'T', dia: 16, count: 4, beam: 'BM1', a: { x: 9000, y: 3000 }, b: { x: 9000, y: 5000 }, zone: 'BEAM BM1 SUPPORT' },
+    ],
+  };
+  const r = generate({ inputDxf: cpt, out: join(dir, 'out'), meta: {}, spec, svg: false, levelNames: ['GROUND'], mode: 'design' });
+  const L = r.model.levels[0];
+  // the project's grid: the columns carry its references, the model's own numbers kept beside them
+  assert.equal(L.grid.source, 'config');
+  assert.deepEqual(L.columns.map((c) => c.id).sort(), ['A/1', 'A/3', 'B/2', 'C/1', 'C/3']);
+  assert.ok(L.columns.every((c) => /^C\d+$/.test(c.ramId)), 'the RAM column number is kept as ramId');
+  assert.ok(r.model.assumptions.some((a) => /Grid lines and references are the project's own \(1, 2, 3 \/ A, B, C/.test(a.text)));
+  // the consultant's bars as designer items: call-out, length, distribution, kept out of the office rules' way
+  const des = L.existing.items.filter((it) => it.designer);
+  assert.equal(des.length, 3); assert.ok(des.every((it) => it.fixed && it.noTag));
+  const ct = des.find((it) => it.id === 'CT-B2');
+  assert.deepEqual([ct.l1, ct.l2, ct.face, ct.dia, ct.spacing, ct.count], ['7T18/m (T)', 'L=4000', 'T', 18, 143, 14]);
+  assert.ok(ct.dist && Math.round(Math.hypot(ct.dist.p.x - ct.dist.q.x, ct.dist.p.y - ct.dist.q.y)) === 2000, 'distribution width as given');
+  const cb = des.find((it) => it.id === 'CB-1');
+  assert.deepEqual([cb.l1, cb.l2, cb.count, cb.spacing], ['3T12 (B)', 'L=6000', 3, 0]);
+  const bt = des.find((it) => it.id === 'BT-1');
+  assert.ok(bt.beam === 'BM1' && bt.distAuto && !bt.uEnd, 'a beam support bar: no given distribution (the office one-bar dimension is drawn), no end legs');
+  assert.ok(r.model.assumptions.some((a) => /3 bars of the consultant's drawing \(Quantum Group, dwg 4\) are drawn/.test(a.text)));
+  assert.equal(L.designerBars, 3);
+  // the column rule: only B/2, and only across the consultant's bars (the x group is theirs); nothing on the beams
+  const rule = applyColumnRule(JSON.parse(JSON.stringify({ ...L, punchingCheck: null, beamSchedule: null, beamCheck: null })), r.model.spec);
+  assert.ok(rule.added.length >= 1 && rule.added.every((it) => it.column === 'B/2' && it.dir === 'y'), JSON.stringify(rule.added.map((it) => [it.column, it.dir])));
+  assert.equal(ct.l2, 'L=4000', 'the consultant\'s bar is not re-lengthed');
+  // the beams carry the consultant's types: no office design, no typing, the source named on the framing plan
+  const sch = L.beamSchedule;
+  assert.deepEqual([sch.assigned, sch.unassigned, sch.undesigned, sch.source], [['BM1', 'BM2'], [], [], 'QUANTUM DWG No. 4']);
+  assert.ok(sch.types.length === 1 && sch.types[0].mark === 'K1' && sch.types[0].count === 2);
+  assert.equal(L.beamCheck.beams.length, 0, 'assigned beams are not designed by the office');
+  const framing = readFileSync(r.files.find((f) => /FRAMING.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(framing.includes('QUANTUM DWG NO. 4') && framing.includes('CARRY THE TYPES OF QUANTUM DWG NO. 4 AS ASSIGNED BY THE ENGINEER (K1)'));
+  // punching: the columns standing on the edge beam are the beam's, the interior one is checked
+  const pc = r.punching[0];
+  assert.deepEqual(pc.columns.filter((c) => c.status === 'on beam').map((c) => [c.id, c.beam]).sort(), [['A/1', 'BM2'], ['A/3', 'BM2']]);
+  assert.ok(pc.columns.find((c) => c.id === 'B/2').status === 'ok' && pc.blocking.length === 0);
+  const reported = punchingCheck(L, { ...r.model.spec, punching: { ramFailed: ['a/1'] } });
+  assert.ok(reported.columns.find((c) => c.id === 'A/1').ram_failed && reported.blocking.includes('A/1'), 'the engineer\'s report of a RAM failure wins over the beam');
+  // the rules switched off and the consultant's notes on the sheets
+  const top = readFileSync(r.files.find((f) => /TOP_REINFORCEMENT.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(top.includes('\n1\n7T18/m (T)\n') && top.includes('\n1\n4T16 (T)\n'), 'the consultant\'s call-outs as given');
+  assert.ok(!top.includes('\n1\nT12-150 U-BAR\n'), 'perimeter rule off: no U-bar drawn');
+  assert.ok(top.includes('SLAB 260 PER THE CONSULTANT'), 'the consultant\'s note on the sheet');
+  assert.ok(top.includes("GENERAL DETAILS + CONSULTANT'S BARS (TOP)"));
+  const bot = readFileSync(r.files.find((f) => /BOTTOM_REINFORCEMENT.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(bot.includes('\n1\n3T12 (B)\n') && !bot.includes('LAP 500'), 'the consultant\'s bottom bars; no drop detail (rule off)');
+  assert.ok(readFileSync(join(dir, 'out', 'REPORT.md'), 'utf8').includes("the consultant's bars as drawn"));
+  // the per-metre call-out form reads as a run
+  assert.deepEqual(parseCallout('7T18/m'), { n: 0, dia: 18, s: 143 });
+  assert.deepEqual(parseCallout('3T12-150'), { n: 3, dia: 12, s: 150 });
+});

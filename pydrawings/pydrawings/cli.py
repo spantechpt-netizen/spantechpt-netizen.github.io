@@ -127,7 +127,7 @@ def generate(input_dxf=None, input_text=None, out=None, meta=None, spec=None, sv
         _use_reference_plan(raw, ram, spec)
         for l in raw['levels']:
             l['beamCheck'] = design_beams(l, {**(raw.get('spec') or {}), **spec})
-            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'])
+            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'], assign=spec.get('beamAssign') or None, source=(spec.get('beams') or {}).get('source') or None)
             l['punchingCheck'] = punching_check(l, {**(raw.get('spec') or {}), **spec, 'punching': {**((raw.get('spec') or {}).get('punching') or {}), **(spec.get('punching') or {})}})
         model = prepare_ram_design(raw, {'levelName': level_name, 'spec': spec, 'wallThickness': spec.get('wallThickness')})
         h = ram['project']
@@ -142,7 +142,7 @@ def generate(input_dxf=None, input_text=None, out=None, meta=None, spec=None, sv
         _use_reference_plan(model, ram, spec)
         for l in model['levels']:
             l['beamCheck'] = design_beams(l, {**(model.get('spec') or {}), **spec})
-            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'])
+            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'], assign=spec.get('beamAssign') or None, source=(spec.get('beams') or {}).get('source') or None)
             l['punchingCheck'] = punching_check(l, {**(model.get('spec') or {}), **spec, 'punching': {**((model.get('spec') or {}).get('punching') or {}), **(spec.get('punching') or {})}})
         h = ram['project']
         meta = {'project': ' - '.join([v for v in [h.get('name'), h.get('part')] if v]) or meta.get('project'), 'company': h.get('company') or meta.get('company'), 'revision': re.sub(r'^rev\.?\s*', '', h.get('revision') or '', flags=re.I) or meta.get('revision'), **meta}
@@ -270,6 +270,11 @@ def serializable(model):
     return _normalise(model)
 
 
+def _nn(v):
+    """JS `${v ?? '-'}`: a missing figure prints as a dash (a column on a beam has no punching figures)."""
+    return '-' if v is None else _n(v)
+
+
 def _n(v):
     """JS `${v}` for a number in a report cell."""
     if v is None:
@@ -324,8 +329,11 @@ def report(model, pack):
         L.append(f"| {s.get('drawingNo')} | {s.get('title')} | {s.get('level')} | `{s.get('blockName')}` | {('1:' + _n(s['scale'])) if s.get('scale') else 'NTS'} | {js_round(s['weight']) if s.get('weight') else '-'} |")
     total = sum((x.get('weight') or 0) for x in pack['sheets'])
     L.append('')
-    L.append(f"Reinforcement added from the General Details: **{_locale(js_round(total))} kg** (the designer's own bars are kept as drawn and not scheduled here)." if design
-             else f"Total scheduled reinforcement: **{_locale(js_round(total))} kg** (cables excluded - template only).")
+    if design:
+        L.append(f"Reinforcement scheduled (the General Details additions and the consultant's bars as drawn): **{_locale(js_round(total))} kg** (the RAM bands are not scheduled here)." if any(l.get('designerBars') for l in model['levels'])
+                 else f"Reinforcement added from the General Details: **{_locale(js_round(total))} kg** (the designer's own bars are kept as drawn and not scheduled here).")
+    else:
+        L.append(f"Total scheduled reinforcement: **{_locale(js_round(total))} kg** (cables excluded - template only).")
     checked = [l for l in model['levels'] if l.get('punchingCheck') and l['punchingCheck'].get('columns')]
     if checked:
         L.append('')
@@ -336,7 +344,8 @@ def report(model, pack):
         for l in checked:
             for c in l['punchingCheck']['columns']:
                 ps_note = " (PS AT THE ENGINEER'S RESPONSIBILITY)" if c.get('id') in (l.get('punchingOverridden') or []) else ''
-                L.append(f"| {l['id']} | {c.get('id')} | {c.get('loc')} | {_n(c.get('h'))} | {_n(c.get('trib_m2'))} | {_n(c.get('wu_kn_m2'))} | {_n(c.get('Vu_kn'))} | {_n(c.get('vu_mpa'))} | {_n(c.get('phi_vc_mpa'))} | {_n(c.get('ratio'))} | {c.get('status')}{' (SSR in RAM)' if c.get('ssr') else ''}{' (FAILS IN RAM)' if c.get('ram_failed') else ''}{ps_note} |")
+                beam_txt = (' ' + str(c['beam'])) if c.get('beam') else ''
+                L.append(f"| {l['id']} | {c.get('id')} | {c.get('loc')}{beam_txt} | {_n(c.get('h'))} | {_nn(c.get('trib_m2'))} | {_nn(c.get('wu_kn_m2'))} | {_nn(c.get('Vu_kn'))} | {_nn(c.get('vu_mpa'))} | {_nn(c.get('phi_vc_mpa'))} | {_nn(c.get('ratio'))} | {c.get('status')}{' (SSR in RAM)' if c.get('ssr') else ''}{' (FAILS IN RAM)' if c.get('ram_failed') else ''}{ps_note} |")
         for l in checked:
             if l['punchingCheck'].get('flagged'):
                 L.append(f"\n**{l['id']}: columns to look at in the RAM punching report: {', '.join(l['punchingCheck']['flagged'])}** (blocking: {', '.join(l['punchingCheck'].get('blocking') or []) or 'none'}).")

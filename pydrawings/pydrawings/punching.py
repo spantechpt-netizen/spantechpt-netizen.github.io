@@ -17,6 +17,7 @@ and the date printed on the sheets (`spec.punching.override`).
 import math
 
 from .geometry import bbox, dist, polygon_area, point_in_polygon, dist_to_polygon, js_round
+from .rebar import column_on_beam
 
 PHI = 0.75
 GAMMA = {'interior': 1.15, 'edge': 1.3, 'corner': 1.4}  # unbalanced moment allowance on the direct shear
@@ -56,6 +57,12 @@ def punching_check(level, spec=None):
         cc = {'x': c['cx'], 'y': c['cy']}
         zone = next((z for z in (level.get('thickZones') or []) if point_in_polygon(cc, z['polygon'])), None)
         h = zone['thickness'] if zone else level.get('thickness')
+        # a column standing on a beam is carried by the beam: no punching of the slab, no check, nothing flagged
+        # (unless the engineer reports it failing in RAM: their report wins and the column is checked and flagged)
+        beam = column_on_beam(level, c)
+        if beam and str(c.get('id')).upper() not in ram_failed:
+            out['columns'].append({'id': c.get('id'), 'loc': 'beam', 'h': h, 'd': None, 'trib_m2': None, 'wu_kn_m2': None, 'Vu_kn': None, 'bo_mm': None, 'vu_mpa': None, 'phi_vc_mpa': None, 'phi_vmax_mpa': None, 'ratio': None, 'fpc_mpa': None, 'rule': 'BEAM', 'ssr': False, 'trib_source': '-', 'ram_failed': False, 'ram_ok': False, 'status': 'on beam', 'beam': beam.get('id')})
+            continue
         pc = next((p for p in checks if dist(p['p'], cc) < max(w, hh, 400)), None)
         d = max(h - ((pc or {}).get('coverToCgs') or (spec.get('cover') or 25) + 16), 0.6 * h)
         st_set = next((st for st in ssr_sets if dist(st['loc'], cc) < max(w, hh, 400)), None)

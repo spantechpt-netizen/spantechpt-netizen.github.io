@@ -15,6 +15,7 @@
  * and the date printed on the sheets (`spec.punching.override`).
  */
 import { bbox, dist, polygonArea, pointInPolygon, distToPolygon } from './geometry.mjs';
+import { columnOnBeam } from './rebar.mjs';
 
 const PHI = 0.75;
 const GAMMA = { interior: 1.15, edge: 1.3, corner: 1.4 }; // unbalanced moment allowance on the direct shear
@@ -43,6 +44,13 @@ export function punchingCheck(level, spec = {}) {
     const cc = { x: c.cx, y: c.cy };
     const zone = (level.thickZones || []).find((z) => pointInPolygon(cc, z.polygon));
     const h = zone ? zone.thickness : level.thickness;
+    // a column standing on a beam is carried by the beam: no punching of the slab, no check, nothing flagged
+    // (unless the engineer reports it failing in RAM: their report wins and the column is checked and flagged)
+    const beam = columnOnBeam(level, c);
+    if (beam && !ramFailed.has(String(c.id).toUpperCase())) {
+      out.columns.push({ id: c.id, loc: 'beam', h, d: null, trib_m2: null, wu_kn_m2: null, Vu_kn: null, bo_mm: null, vu_mpa: null, phi_vc_mpa: null, phi_vmax_mpa: null, ratio: null, fpc_mpa: null, rule: 'BEAM', ssr: false, trib_source: '-', ram_failed: false, ram_ok: false, status: 'on beam', beam: beam.id });
+      continue;
+    }
     const pc = checks.find((p) => dist(p.p, cc) < Math.max(w, hh, 400));
     const d = Math.max(h - (pc?.coverToCgs || (spec.cover || 25) + 16), 0.6 * h);
     const set = ssrSets.find((st) => dist(st.loc, cc) < Math.max(w, hh, 400));

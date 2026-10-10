@@ -1946,7 +1946,7 @@ def draw_beam_sections(sheet, sch, first=0):
                     return
                 nb, r = set_['n'], set_['dia'] / 2
                 x1, x2 = x0 + cov + 12, x0 + b - cov - 12
-                for i in range(nb):
+                for i in range(math.ceil(nb)):  # JS `i < nb` on a fractional count
                     xx = x1 + ((x2 - x1) * i) / (nb - 1) if nb > 1 else (x1 + x2) / 2
                     pen.circle({'x': xx, 'y': y}, r, {'layer': 'REBAR'})
                     pen.hatch([[{'x': xx - r, 'y': y - r}, {'x': xx + r, 'y': y - r}, {'x': xx + r, 'y': y + r}, {'x': xx - r, 'y': y + r}]], {'layer': 'REBAR', 'pattern': 'SOLID'})
@@ -1976,6 +1976,9 @@ def beam_schedule_totals(sch, kg=None):
     return f"{len(sch['beams'])} BEAMS IN {len(sch['types'])} TYPES{(' · ' + _s(len(sch['undesigned'])) + ' NOT DESIGNED') if len(sch['undesigned']) else ''} · MAIN BARS ≈ {js_round(kg)} kg"
 
 
+_CONSULTANT_SCHEDULE = "THE CONSULTANT'S BEAM SCHEDULE"
+
+
 def beam_schedule_notes(model, level, sch):
     """The notes of the beam design (how the bars were found, the beams without a design, the failing ones, the unified schedule)."""
     office = sch.get('office') or None
@@ -1992,6 +1995,7 @@ def beam_schedule_notes(model, level, sch):
         f"{(_s(len(sch['undesigned'])) + ' BEAM(S) CARRY NO ' + ('RAM ' if design == 'ram' else '') + 'DESIGN (' + ', '.join(_s(u) for u in sch['undesigned'][:10]) + '): RUN CALC ALL ON THE MODEL WITH THE BEAM STRIPS AND RE-ISSUE. ') if len(sch['undesigned']) else ''}CONTINUING TOP BARS, LAPS AND ANCHORAGES PER THE OFFICE BEAM DETAILS; STIRRUP SPACING TO BE HALVED OVER 2h FROM EVERY SUPPORT FACE.",
         (f"BEAMS NOT PASSING THE OFFICE CHECK: {'; '.join(b['id'] + ' (' + (', '.join(b['reasons']) or 'REPORTED FAILING IN RAM') + ')' for b in failing).upper()}"
          + (f" - ACCEPTED AT THE DESIGN ENGINEER'S RESPONSIBILITY ({', '.join(_s(v) for v in [bypass.get('by'), bypass.get('date')] if v).upper()}){(': ' + _s(bypass['note']).upper()) if bypass.get('note') else ''}" if bypass else ' - TO BE RESOLVED (DEEPEN THE BEAM OR CONFIRM AGAINST THE RAM REPORT)') + '.') if len(failing) else None,
+        (f"BEAMS {', '.join(_s(b) for b in sch['assigned'])} CARRY THE TYPES OF {_s(sch.get('source') or _CONSULTANT_SCHEDULE).upper()} AS ASSIGNED BY THE ENGINEER ({', '.join(_s(m) for m in dict.fromkeys(b.get('mark') for b in sch['beams'] if b.get('assigned')))}): THEIR BARS ARE THAT SCHEDULE'S, NOT DESIGNED OR CHECKED HERE{('; NO TYPE ON RECORD FOR ' + ', '.join(_s(u) for u in sch['unassigned'])) if sch.get('unassigned') else ''}.") if sch.get('assigned') else None,
         (f"BEAM TYPES FOLLOW THE PROJECT'S UNIFIED BEAM SCHEDULE ({_s(sch['library'])} TYPES ON RECORD): A BEAM TAKES THE LIGHTEST TYPE THAT CARRIES IT; {('TYPES MARKED * (' + ', '.join(t['mark'] for t in added) + ') ARE NEW ON THIS SHEET, ADDED FOR BEAMS NO EXISTING TYPE CARRIES - THE EXISTING TYPES ARE UNCHANGED.') if added else 'NO NEW TYPE WAS NEEDED ON THIS SHEET.'}") if sch.get('library') else None,
     ]
     return [n for n in notes if n]

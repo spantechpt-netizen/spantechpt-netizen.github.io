@@ -337,6 +337,8 @@ def design_beams(level, spec=None):
     loads = (level.get('ram') or {}).get('areaLoads') or []
     h_slab = level.get('thickness') or 250
     ram_failed = set(str(v).strip().upper() for v in ((spec.get('beams') or {}).get('ramFailed') or []))
+    # beams assigned a type of the consultant's / project's schedule (spec.beamAssign) keep that design: not designed here
+    assigned = set(str(v).strip().upper() for v in (spec.get('beamAssign') or {}).keys())
     no_loads = not len(loads)
     if no_loads:
         out['assumed'].append(f"no area loads in the model: SDL {fmt_num(ASSUMED['dead'])} kN/m² and LL {fmt_num(ASSUMED['live'])} kN/m² assumed")  # JS prints 2 for 2.0
@@ -359,6 +361,8 @@ def design_beams(level, spec=None):
         return bool((pj.get('lo') and abs(p[pc['axis']] - (pc['lo'] - overlap)) < 400) or (pj.get('hi') and abs(p[pc['axis']] - (pc['hi'] + overlap)) < 400))
 
     for bm in beams:
+        if str(bm['id']).upper() in assigned:
+            continue
         sp = beam_spans(bm, level.get('columns') or [], level.get('walls') or [], beams)  # (a deeper beam crossing it is a support)
         L = dist(bm['a'], bm['b'])
         mid = {'x': (bm['a']['x'] + bm['b']['x']) / 2, 'y': (bm['a']['y'] + bm['b']['y']) / 2}

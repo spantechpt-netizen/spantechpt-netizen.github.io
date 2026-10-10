@@ -63,6 +63,11 @@ longDia, longSpacing, wall {...}}`, `blockBeam`, `topMesh`, `mesh 'bottom'|'both
 `partOverlap 600`, `ramBands 'all'|'user'|'none'`, `wallThickness 250`, `beams {bandMaxWidth 3000, ramFailed [], override}`,
 `beamDesign 'ram'|'office'|'max'`, `beamTypes [...]` (the project's records), `cables {figures 'ram'|'chair'}`,
 `reference {file, use {grid, columns, outline}, align {mode 'auto'|'point', ...}}`, `edits [...]` (by bar id from `plan.json`).
+`designerBars [{id, face, dia, perMetre|count|spacing, a, b, width|dist, zone, beam?, label?, frame?}]` (the consultant's bars kept as
+drawn, model mm; `designerItems` in `design.mjs` / `designer_items`), `consultant {name, drawing, notes[]}`, `rules {perimeter, walls,
+drops, corners, voids, pourStrips, blockBeam, punching}` (false = off), `topColumns.only 'bands'|[ids]`, `beams.topBars false`,
+`beams.source`, `beamAssign {BMx: mark}` (a `beamTypes` record used as it is: `beamSchedule` marks the row `assigned`, `designBeams`
+skips it), `grid {x [{label, x}], y [{label, y}], tolerance}` (the project's grid in model coordinates; columns relabelled, `ramId` kept).
 
 `meta`: `project`, `projectAr`, `code`, `client`, `consultant`, `contractor`, `location`, `country`, `company`, `prefix`
 (`SPAN-DD` / `SPAN-SD`), `revision`, `date`, `prepared`, `designer`, `checked`, `approved`, `levelId`, `level`, `zone`,

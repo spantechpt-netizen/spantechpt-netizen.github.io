@@ -18,6 +18,16 @@ from .extract import chain_segments
 NAN = float('nan')
 
 
+def _finite(v):
+    """JS Number.isFinite(Number(v)) for a config figure (a number or a numeric string)."""
+    if isinstance(v, bool) or v is None:
+        return False
+    try:
+        return math.isfinite(float(v))
+    except (TypeError, ValueError):
+        return False
+
+
 def _num(v):
     """A JS number out of a column value: null / undefined -> NaN (the JS arithmetic gives NaN too)."""
     return NAN if v is None else v
@@ -718,10 +728,41 @@ def ram_to_model(ram, level_name='1ST FLOOR', level_id=None, spec=None):
             'source': 'derived from column positions',
         }
         for c in level['columns']:
+            c['ramId'] = c['id']  # the model's own column number (C8), kept beside the grid reference
             gx = next((g for g in level['grid']['x'] if abs(g['x'] - c['cx']) < 400), None)
             gy = next((g for g in level['grid']['y'] if abs(g['y'] - c['cy']) < 400), None)
             if gx and gy:
                 c['id'] = f"{gx['label']}/{gy['label']}"
+        # the project's own grid given in the config (`spec.grid`, model coordinates: x lines and y lines with their labels)
+        # replaces the derived one; the columns are re-labelled by it (letter row / number line as the drawing reads them)
+        cfg_grid = spec_overrides.get('grid')
+        grid_from_config = False
+        if cfg_grid and (isinstance(cfg_grid.get('x'), list) or isinstance(cfg_grid.get('y'), list)):
+            gxs, gys = [], []
+
+            def place(label, p1, p2):
+                a, b = R(p1), R(p2)
+                if abs(a['x'] - b['x']) < 1:
+                    gxs.append({'label': label, 'x': a['x'], 'y1': ob['minY'], 'y2': ob['maxY']})
+                else:
+                    gys.append({'label': label, 'y': a['y'], 'x1': ob['minX'], 'x2': ob['maxX']})
+            for g in cfg_grid.get('x') or []:
+                if g and g.get('label') is not None and _finite(g.get('x')):
+                    place(str(g['label']), {'x': float(g['x']), 'y': 0}, {'x': float(g['x']), 'y': 1000})
+            for g in cfg_grid.get('y') or []:
+                if g and g.get('label') is not None and _finite(g.get('y')):
+                    place(str(g['label']), {'x': 0, 'y': float(g['y'])}, {'x': 1000, 'y': float(g['y'])})
+            if gxs and gys:
+                level['grid'] = {'x': sorted(gxs, key=lambda p: p['x']), 'y': sorted(gys, key=lambda p: p['y']), 'source': 'config'}
+                tol = (float(cfg_grid['tolerance']) if _finite(cfg_grid.get('tolerance')) else 0) or 600
+                for c in level['columns']:
+                    fx = next((g for g in level['grid']['x'] if abs(g['x'] - c['cx']) < tol), None)
+                    fy = next((g for g in level['grid']['y'] if abs(g['y'] - c['cy']) < tol), None)
+                    if fx and fy:
+                        c['id'] = f"{fy['label']}/{fx['label']}" if re.fullmatch(r'[A-Za-z]+', fy['label']) and re.fullmatch(r'\d+', fx['label']) else f"{fx['label']}/{fy['label']}"
+                    else:
+                        c['id'] = c['ramId']
+                grid_from_config = True
         findings.append(f"{level['id']} {level['name']}: {_S(_round(abs(polygon_area(outline)) / 1e6))} m², {len(level['columns'])} columns, {len(level['walls'])} wall segments, {len(level['thickZones'])} thickened zones, {len(level['pourStrips'])} pour strips, {len(level['ram']['bands'])} designed bar bands, {len(level['ram']['tendons'])} tendons, {len(level['openings'])} openings{f', rotated {_S(angle_deg)}° to its local frame' if angle_deg else ''}.")
         if level['customZones']:
             sizes = ', '.join(f"{_S(_round(bbox(z['polygon'])['w'] / 1000))} x {_S(_round(bbox(z['polygon'])['h'] / 1000))} m" for z in level['customZones'])
@@ -731,7 +772,10 @@ def ram_to_model(ram, level_name='1ST FLOOR', level_id=None, spec=None):
         if turn:
             why = f"its {_S(_round(bb0['h'] / 1000))} m side is longer than its {_S(_round(bb0['w'] / 1000))} m side: the long side lies along the sheet" if rot_opt == 'auto' else 'as set for the project'
             assumptions.append({'level': level['id'], 'text': f"{level['name']} is turned {_S(turn)}° on the sheet ({why}); the north arrow follows."})
-        assumptions.append({'level': level['id'], 'text': 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.'})
+        if grid_from_config:
+            assumptions.append({'level': level['id'], 'text': f"Grid lines and references are the project's own ({', '.join(g['label'] for g in level['grid']['x'])} / {', '.join(g['label'] for g in level['grid']['y'])}, given in the config); the columns are labelled by them."})
+        else:
+            assumptions.append({'level': level['id'], 'text': 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.'})
         levels.append(level)
     assumptions.append({'text': f"Reinforcement, tendons and materials are taken from the RAM Concept model (f'c {_S(spec['fc'])} MPa from {materials.get('concreteName') or 'the model'}, fy {_S(spec['fy'])} MPa, cover {_S(spec['cover'])} mm). Bar cutting lengths add SBC 304-18 hooks (12 Ø) where a bar ends at a free edge and split runs longer than 12 m with Class B laps."})
     assumptions.append({'text': f"Punching: RAM designed stud rails at {len(ram['ssr'])} columns (SSR sets); the design drawings convert them to the office stirrup detail (PS types) at those columns, the shop sheets show the minimum link arrangement to be confirmed against the RAM punching report." if (ram.get('ssr') or []) else 'Punching shear results are not stored in the RAM file (no stud rails designed): links are shown as the minimum detailing arrangement and are to be confirmed against the RAM punching report.'})

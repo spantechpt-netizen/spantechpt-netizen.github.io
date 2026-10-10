@@ -576,6 +576,89 @@ def mark_joints(model, cover):
                         l['uEnd'][k] = False
 
 
+def designer_items(level, bars, spec=None):
+    """
+    The consultant's / designer's bars given in the config (`spec.designerBars`, e.g. the slab reinforcement outside the
+    office's PT band beams kept as the consultant drew it): drawn as given - the call-out ("7T18/m", "3T16", "T12-150"),
+    the length and the distribution width of that drawing - in the office convention (one line, call-out above, length
+    under, the distribution DIMENSION with its dot, U / L ends at the boundary), scheduled under their zone, and left
+    alone by the office rules (`fixed`): the column rule neither re-lengthens them nor adds a group where they already run.
+    A bar with `beam` (a beam's support bars) carries no distribution and no end legs.
+    """
+    spec = spec or {}
+    outline = level['outline']
+    cover = spec.get('cover') or 25
+    # the bars are given in the model's (world) coordinates; the level draws its body in its own frame (turned on the sheet)
+    fr = level.get('frame') or {'cx': 0, 'cy': 0, 'angle': 0}
+
+    def to_local(p):
+        a = (-(fr.get('angle') or 0) * math.pi) / 180
+        sn, cs = math.sin(a), math.cos(a)
+        x, y = p['x'] - fr['cx'], p['y'] - fr['cy']
+        return {'x': fr['cx'] + x * cs - y * sn, 'y': fr['cy'] + x * sn + y * cs}
+
+    def P(p, d):
+        q = {'x': float(p['x']), 'y': float(p['y'])}
+        return q if d.get('frame') == 'level' else to_local(q)
+
+    # a bar end is "at a boundary" when the bar, continued 300 mm, would enter an opening (U) or leave the slab (the edge
+    # rule: U at a free edge, L into an edge beam); a bar running alongside an opening or an edge ends plain
+    def at_boundary(p, out):
+        beyond = add(p, out, 300)
+        if any(point_in_polygon(beyond, R.region_polygon(o)) for o in (level.get('openings') or [])):
+            return 'U'
+        return R.edge_end_at(level, spec, p)['type'] if not point_in_polygon(beyond, outline) and dist_to_polygon(p, outline) < cover + 300 else False
+    items = []
+    for d in bars or []:
+        if not d or not d.get('a') or not d.get('b'):
+            continue
+        a, b = P(d['a'], d), P(d['b'], d)
+        if not (dist(a, b) >= 100):
+            continue
+        face = 'B' if d.get('face') == 'B' else 'TB' if d.get('face') == 'TB' else 'T'
+        dia = _num(d.get('dia')) or 12
+        per_m = _num(d.get('perMetre')) or 0
+        spacing = _num(d.get('spacing')) if (_num(d.get('spacing')) or 0) > 0 else (js_round(1000 / per_m) if per_m else 0)
+        u = unit(a, b)
+        nn = perp(u)
+        L = js_round(dist(a, b) / 10) * 10
+        dist_rec, width = None, 0
+        if d.get('dist') and d['dist'].get('p') and d['dist'].get('q'):
+            dist_rec = {'p': P(d['dist']['p'], d), 'q': P(d['dist']['q'], d)}
+            width = dist(dist_rec['p'], dist_rec['q'])
+        elif (_num(d.get('width')) or 0) > 0:
+            width = _num(d['width'])
+            st = add(a, u, dist(a, b) * 0.35)
+            dist_rec = {'p': add(st, nn, -width / 2), 'q': add(st, nn, width / 2)}
+        given = _num(d.get('count')) if (_num(d.get('count')) or 0) > 0 else 0
+        count = given or (math.floor(width / spacing + 1e-6) + 1 if spacing and width else 1)
+        lay = 'T&B' if face == 'TB' else face
+        l1 = d.get('label') or (f"{fmt_num(given)}T{fmt_num(dia)} ({lay})" if given else f"{fmt_num(per_m)}T{fmt_num(dia)}/m ({lay})" if per_m else f"T{fmt_num(dia)}-{fmt_num(spacing)} ({lay})")
+        it = {'detail': None, 'designer': True, 'fixed': True, 'face': face, 'a': a, 'b': b, 'l1': l1, 'l2': f"L={fmt_num(L)}", 'side': 1, 'noTag': True, 'zone': d.get('zone') or 'DESIGNER', 'dia': dia, 'spacing': 0 if given else spacing, 'count': count, 'length': L}
+        if d.get('id'):
+            it['id'] = str(d['id'])
+        if d.get('beam'):
+            it['beam'] = str(d['beam'])
+        if dist_rec and not d.get('beam'):
+            it['dist'] = dist_rec
+        if face != 'B' and not d.get('beam'):
+            it['uEnd'] = {'start': at_boundary(a, unit(b, a)), 'end': at_boundary(b, u)}
+        items.append(it)
+    return items
+
+
+def _num(v):
+    """JS Number(v) for a config figure: a number or a numeric string; else None (NaN)."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    try:
+        return float(str(v).strip())
+    except ValueError:
+        return None
+
+
 def prepare_ram_design(model, options=None):
     options = options or {}
     wall_t = options.get('wallThickness') or 250
@@ -747,6 +830,14 @@ def prepare_ram_design(model, options=None):
         top_txt = f" and top mesh T{fmt_num(level['topMeshSpec'][0])}@{fmt_num(level['topMeshSpec'][1])}" if level['topMesh'] else ''
         src_txt = 'assumed' if (spec.get('sources') or {}).get('bottom') == 'assumed' or not spec.get('bottom') else 'from the settings'
         A(level, f"Reinforcement of {level['name']} is the RAM Concept design ({len(items)} bar bands drawn as designed, {n_prog} of them generated by the program for its design strips, {len(items) - n_prog} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T{fmt_num(mesh['dia'])}@{fmt_num(mesh['spacing'])}{top_txt} {src_txt}{' (slab mesh option: both faces)' if level['topMesh'] else ' (slab mesh option: bottom only)'}.")
+        # the consultant's / designer's bars given in the config, drawn as given and kept out of the office rules' way
+        dbars = [d for d in (ospec.get('designerBars') or spec.get('designerBars') or []) if d and (not d.get('level') or d.get('level') == level['id'])]
+        if dbars:
+            made = designer_items(level, dbars, spec)
+            items.extend(made)
+            cons = ospec.get('consultant') or spec.get('consultant') or None
+            who = f"the consultant's drawing ({', '.join(str(v) for v in [cons.get('name'), cons.get('drawing')] if v)})" if cons and cons.get('name') else "the designer's drawing"
+            A(level, f"{len(made)} bars of {who} are drawn in {level['name']} as given there (call-out, length and distribution width), scheduled under their zone and left alone by the office rules (not re-lengthed; no office bar added in a direction where they already run at a column).")
         if not level['walls']:
             A(level, f"No walls in the RAM model of {level['name']}: details 2 and 5 (core walls) not applied.")
         elif any(w.get('assumedT') for w in level['walls']):
@@ -913,12 +1004,31 @@ def apply_column_rule(level, spec, assumptions=None):
 
     def dot(u, v):
         return u['x'] * v['x'] + u['y'] * v['y']
+    # `topColumns.only`: the rule applies to the listed columns alone (the PT band columns of a slab whose other columns keep
+    # the consultant's bars); the designer's / consultant's bars given in the config (`fixed`) count as the designer's top bars
+    # ('bands' = the columns standing in a band beam; else column ids - the grid reference or the model's own number)
+    s_only = s.get('only')
+    only_bands = s_only == 'bands' or (isinstance(s_only, list) and any(str(v).lower() == 'bands' for v in s_only))
+    only = set(str(v).strip().upper() for v in s_only) if isinstance(s_only, list) and s_only else {s_only.strip().upper()} if isinstance(s_only, str) and s_only and not only_bands else None
+
+    def in_band(c):
+        return any(bm.get('band') and bm.get('polygon') and point_in_polygon({'x': c['cx'], 'y': c['cy']}, bm['polygon']) for bm in (level.get('beams') or []))
+
+    def listed(c):
+        return bool(only and (str(c.get('id')).upper() in only or (c.get('ramId') and str(c['ramId']).upper() in only))) or (only_bands and in_band(c))
+    keep_lines = [{'a': it['a'], 'b': it['b'], 'face': it['face'], 'fixed': True} for it in (ex.get('items') or []) if it.get('fixed') and is_top(it.get('face'))]
+    all_lines = [*ex['lines'], *keep_lines]
+    keep_only = {}
     added = []
     changed = added_dims = missing = rotated = 0
     for rc in res['columns']:
         col, per = rc['col'], rc['per']
         if col.get('isWall') and col.get('core'):
             continue  # a core wall keeps its U-bars; an isolated wall gets the column groups
+        if col.get('isBeam') and (spec.get('beams') or {}).get('topBars') is False:
+            continue  # the beam rule switched off
+        if (only or only_bands) and not col.get('isBeam') and not listed(col) and not any(listed(m) for m in (col.get('merged') or [])):
+            continue
         cc = {'x': col['cx'], 'y': col['cy']}
         # the two groups are perpendicular, along the column's own axes (a rotated column) or the tendon direction
         theta = _column_axis(level, col)
@@ -952,7 +1062,7 @@ def apply_column_rule(level, spec, assumptions=None):
                     return False
                 A_, B_ = loc(l['a']), loc(l['b'])
                 return abs(A_[across]) <= half_band and min(A_[dir_], B_[dir_]) < size[dir_] / 2 + 100 and max(A_[dir_], B_[dir_]) > -size[dir_] / 2 - 100
-            groups[dir_] = [l for l in ex['lines'] if in_group(l)]
+            groups[dir_] = [l for l in all_lines if in_group(l)]
         for dir_ in ['x', 'y']:
             across = 'y' if dir_ == 'x' else 'x'
             p = per[dir_]
@@ -962,8 +1072,13 @@ def apply_column_rule(level, spec, assumptions=None):
             def pt(along, t, dir_=dir_):
                 return glob(along, t) if dir_ == 'x' else glob(t, along)
             if groups[dir_]:
-                olds = [{'a': dict(l['a']), 'b': dict(l['b'])} for l in groups[dir_]]
-                for l in groups[dir_]:
+                # the consultant's bars (`fixed`) stay exactly as drawn: nothing re-lengthed, no dimension rewritten
+                movable = [l for l in groups[dir_] if not l.get('fixed')]
+                keep_only[f"{col.get('id')}|{dir_}"] = not movable
+                if not movable:
+                    continue
+                olds = [{'a': dict(l['a']), 'b': dict(l['b'])} for l in movable]
+                for l in movable:
                     old = {'a': dict(l['a']), 'b': dict(l['b'])}
                     t = loc(l['a'])[across]
                     fwd = dot(unit(old['a'], old['b']), U[dir_]) > 0  # keep the bar's own direction so its call-out stays on the same side
@@ -999,7 +1114,7 @@ def apply_column_rule(level, spec, assumptions=None):
                 missing += 1
         # the distribution of each direction = the crossing bars' extent
         for dir_ in ['x', 'y']:
-            if not groups[dir_]:
+            if not groups[dir_] or keep_only.get(f"{col.get('id')}|{dir_}"):
                 continue
             across = 'y' if dir_ == 'x' else 'x'
             c = {'lo': -size[across] / 2, 'hi': size[across] / 2} if col.get('isBeam') else span(across)  # the beam group is distributed along the beam itself
@@ -1461,6 +1576,9 @@ def design_additions(level, spec, opts=None):
     cover = spec.get('cover') or 25
     h = level['thickness']
     outline = level['outline']
+    # `spec.rules`: a General Details rule switched off (false) adds nothing - perimeter, walls, drops, corners, voids,
+    # pourStrips, blockBeam, punching (a slab whose reinforcement outside the office's PT bands is the consultant's)
+    rules = spec.get('rules') or {}
     has_ram = level.get('ram') is not None  # (JS: `level.ram` is truthy for any object, an empty one included)
 
     def in_slab(p):
@@ -1527,7 +1645,7 @@ def design_additions(level, spec, opts=None):
     for e in level.get('edges') or []:
         if e.get('wall') is None:
             e['wall'] = any(w.get('retaining') for w in (level.get('walls') or [])) and R.side_lining(level, e['a'], e['b']) == 'wall'
-    edges_in = [x for x in (level.get('edges') or []) if not x.get('joint') and not x['wall']]
+    edges_in = [] if rules.get('perimeter') is False else [x for x in (level.get('edges') or []) if not x.get('joint') and not x['wall']]
     chains = []
     for e in edges_in:
         last = chains[-1] if chains else None
@@ -1603,7 +1721,7 @@ def design_additions(level, spec, opts=None):
     # ---- D2 core walls: U-bars T12@200 + 10T12 (T&B) along the wall face
     lc = ceil_to(h - cover, 10)
     no_la = []
-    for w in [x for x in (level.get('walls') or []) if x.get('core')]:  # core walls only: an isolated wall is reinforced like a column
+    for w in [x for x in (level.get('walls') or []) if x.get('core') and rules.get('walls') is not False]:  # core walls only: an isolated wall is reinforced like a column
         poly = w['polygon']
         for i in range(len(poly)):
             a, b = poly[i], poly[(i + 1) % len(poly)]
@@ -1653,7 +1771,7 @@ def design_additions(level, spec, opts=None):
     # left, a horizontal one above it) unless that place is taken
     sd = spec.get('drops') or R.DEFAULT_SPEC['drops']
     sc = spec.get('topColumns') or R.DEFAULT_SPEC['topColumns']
-    for z in level.get('thickZones') or []:
+    for z in ([] if rules.get('drops') is False else level.get('thickZones') or []):
         b = bbox(z['polygon'])
         notes.append({'x': b['cx'], 'y': b['maxY'] + 350, 'text': f"LAP 500 TYP. AT {js_str(z['thickness']) if _t(z.get('thickness')) else 'THK.'} / {fmt_num(h)} STEP (DET.3)"})
         col = drop_column(level, spec, z)
@@ -1714,7 +1832,7 @@ def design_additions(level, spec, opts=None):
         items.append({'detail': 'D5', 'face': 'TB', 'a': add(ctr, dir_, -1000), 'b': add(ctr, dir_, 1000), 'l1': f"3T{fmt_num(dia)}-200 (T&B)", 'l2': 'L=2000', 'dist': {'p': add(st, dn, -200), 'q': add(st, dn, 200)}, 'side': 1, 'zone': zone, 'triple': True})
         add_bar('T', {'dia': dia, 'shape': 'STR', 'length': 2000, 'qty': 3, 'spacing': 200, 'zone': zone})
         add_bar('B', {'dia': dia, 'shape': 'STR', 'length': 2000, 'qty': 3, 'spacing': 200, 'zone': zone})
-    for w in ((level.get('walls') or []) if (spec.get('walls') or {}).get('cornerDiagonals') else []):  # wall-corner diagonals (detail 5) only when asked for
+    for w in ((level.get('walls') or []) if (spec.get('walls') or {}).get('cornerDiagonals') and rules.get('corners') is not False else []):  # wall-corner diagonals (detail 5) only when asked for
         poly = w['polygon']  # CCW
         for i in range(len(poly)):
             p0, p1, p2 = poly[(i + len(poly) - 1) % len(poly)], poly[i], poly[(i + 1) % len(poly)]
@@ -1726,7 +1844,7 @@ def design_additions(level, spec, opts=None):
             if not in_slab(add(p1, bis, 400)):
                 continue
             corner(p1, bis, 16, f"D5 {w['id']} CORNER")
-    for i in range(len(outline)):
+    for i in range(0 if rules.get('corners') is False else len(outline)):
         p0, p1, p2 = outline[(i + len(outline) - 1) % len(outline)], outline[i], outline[(i + 1) % len(outline)]
         if dist(p0, p1) < 300 or dist(p1, p2) < 300:
             continue
@@ -1742,7 +1860,7 @@ def design_additions(level, spec, opts=None):
         corner(p1, bis, 12, f"D5 SLAB CORNER {grid_ref(level, bbox([p1]))}")
 
     # ---- D7 MEP voids (openings not lined by walls)
-    for o in level.get('openings') or []:
+    for o in ([] if rules.get('voids') is False else level.get('openings') or []):
         poly = R.region_polygon(o)
         b = bbox(poly)
         # a RAM model without wall supports: an opening of shaft size (both sides >= `shaftMin`, 1.5 m) is a lift / stair
@@ -1842,7 +1960,7 @@ def design_additions(level, spec, opts=None):
     # and bottom lapping across each joint, U-bars T12@200 (2400 total) closed at each face with the legs into the
     # slab, T12@150 along the strip top and bottom (fixed before the infill pour)
     sp8 = spec.get('pourStrip') or R.DEFAULT_SPEC['pourStrip']
-    for ps in level.get('pourStrips') or []:
+    for ps in ([] if rules.get('pourStrips') is False else level.get('pourStrips') or []):
         b = bbox(ps['polygon'])
         along = {'x': 1, 'y': 0} if b['w'] >= b['h'] else {'x': 0, 'y': 1}
         acr = perp(along)
@@ -1941,7 +2059,7 @@ def design_additions(level, spec, opts=None):
     # 2T20 top and bottom along the strip, TA (tension anchorage) beyond each void end, T12@200 links along the strip
     bb9 = spec.get('blockBeam') or R.DEFAULT_SPEC['blockBeam']
     TA = R.development_length(spec, bb9['dia'], {'top': True})
-    ops = [{'o': o, 'b': bbox(R.region_polygon(o))} for o in (level.get('openings') or [])]
+    ops = [{'o': o, 'b': bbox(R.region_polygon(o))} for o in ([] if rules.get('blockBeam') is False else level.get('openings') or [])]
     for i in range(len(ops)):
         for j in range(i + 1, len(ops)):
             A_, B_ = ops[i]['b'], ops[j]['b']
@@ -1987,6 +2105,8 @@ def design_additions(level, spec, opts=None):
     override_ids = override_columns(level.get('punchingCheck'), override) if override else set()
     overridden = []
     for c in level['columns']:
+        if rules.get('punching') is False or R.column_on_beam(level, c):
+            continue  # a column on a beam does not punch the slab
         w = c['d'] if c.get('shape') == 'circle' else c['w']
         hh = c['d'] if c.get('shape') == 'circle' else c['h']
         set_ = next((st for st in ssr_sets if abs(st['loc']['x'] - c['cx']) < max(w, hh) and abs(st['loc']['y'] - c['cy']) < max(w, hh)), None)
@@ -2647,6 +2767,7 @@ def design_notes(model, level):
     zones_txt = f"; THICKENED ZONES {_join(list(dict.fromkeys(z.get('thickness') for z in level['thickZones'])), ' / ')} mm HATCHED" if level.get('thickZones') else ''
     return [
         common_notes(model, level)[0],
+        *[str(n).upper() for n in ((spec.get('consultant') or {}).get('notes') or [])],
         f"SLAB THICKNESS {js_str(level['thickness'])} mm{tos_txt}{zones_txt}. CONCRETE f'c = {js_str(spec.get('fc'))} MPa, REINFORCEMENT fy = {js_str(spec.get('fy'))} MPa, COVER {js_str(spec.get('cover'))} mm ({js_str((spec.get('sources') or {}).get('cover'))}).",
         'BAR CALL-OUT (OFFICE CONVENTION): "T10-200 (T)" = BAR SIZE - SPACING (LAYER), "L=2400" = BAR LENGTH; THE RED DIMENSION ACROSS THE BARS IS THE WIDTH OVER WHICH THEY ARE DISTRIBUTED; (T) TOP, (B) BOTTOM, T&B BOTH.',
         'THE REINFORCEMENT DESIGNED BY THE OFFICE IS SHOWN AS DRAWN ON THE DESIGN PLAN. BARS MARKED WITH A CIRCLED "D#" ARE ADDED FROM THE GENERAL DETAILS SHEET (DETAIL NUMBER IN THE CIRCLE) AT THE LOCATIONS THE DETAIL REFERS TO; THE DETAIL GOVERNS FOR SHAPE AND ANCHORAGE.',
@@ -2676,7 +2797,7 @@ def framing_sheet(model, level, meta, adds):
         # the beams live on the framing plan (office rule: no separate beam sheet): every typed beam carries its type,
         # section and bars beside it (drawBase), the beam schedule takes the table and the sections the detail boxes
         sch = level['beamSchedule'] if level.get('beamSchedule') and (level['beamSchedule'].get('types') or []) else None
-        design_label = ('OFFICE DESIGN' if sch.get('design') == 'office' else 'HEAVIER OF RAM AND OFFICE DESIGN' if sch.get('design') == 'max' else 'RAM DESIGN') if sch else ''
+        design_label = (str(sch.get('source') or "CONSULTANT'S SCHEDULE").upper() if sch.get('assigned') and len(sch['assigned']) == len(sch['beams']) else 'OFFICE DESIGN' if sch.get('design') == 'office' else 'HEAVIER OF RAM AND OFFICE DESIGN' if sch.get('design') == 'max' else 'RAM DESIGN') if sch else ''
         nxt = 0
         if sch:
             nxt = draw_beam_sections(sheet, sch, 0)
@@ -2796,8 +2917,8 @@ def rebar_sheet(model, level, meta, adds, face):
         drops = spec.get('drops') or R.DEFAULT_SPEC['drops']
         tmesh = spec.get('thicknessMesh') or R.DEFAULT_SPEC['thicknessMesh']
         return {
-            'rows': rows, 'totals': f"ADDED FROM THE GENERAL DETAILS: {_locale_en(tot['weight_kg'])} kg (DESIGNER'S BARS NOT SCHEDULED HERE)", 'weight': tot['weight_kg'],
-            'scheduleTitle': f"BAR SCHEDULE - GENERAL DETAILS ADDITIONS ({'BOTTOM' if face == 'B' else 'TOP'})",
+            'rows': rows, 'totals': (f"GENERAL DETAILS ADDITIONS + THE CONSULTANT'S BARS AS DRAWN: {_locale_en(tot['weight_kg'])} kg (RAM BANDS NOT SCHEDULED HERE)" if level.get('designerBars') else f"ADDED FROM THE GENERAL DETAILS: {_locale_en(tot['weight_kg'])} kg (DESIGNER'S BARS NOT SCHEDULED HERE)"), 'weight': tot['weight_kg'],
+            'scheduleTitle': f"BAR SCHEDULE - GENERAL DETAILS + CONSULTANT'S BARS ({'BOTTOM' if face == 'B' else 'TOP'})" if level.get('designerBars') else f"BAR SCHEDULE - GENERAL DETAILS ADDITIONS ({'BOTTOM' if face == 'B' else 'TOP'})",
             'planTitles': ['BOTTOM REINFORCEMENT PLAN' if face == 'B' else 'TOP REINFORCEMENT PLAN'],
             'general': design_notes(model, level) + [mesh_line,
                                                      f"BOTTOM SHEET: BOTTOM BARS ONLY. DETAIL 4 INSIDE A COLUMN DROP = THE DROP MESH T{fmt_num(drops['dia'])}@{fmt_num(drops['spacing'])} AS TWO GROUPS THROUGH THE COLUMN (AS LONG AS THE DROP, AT LEAST 1.5 m PAST THE COLUMN FACE); EXTRA BARS 50 dia BEYOND A THICKENED STRIP. THE BOTTOM MESH T{fmt_num(tmesh['dia'])}@{fmt_num(tmesh['spacing'])} IS WRITTEN AT EVERY CHANGE OF SLAB THICKNESS. T&B BARS (TRIMMERS, U-BARS, DIAGONALS) ARE DRAWN ON THE TOP SHEET; THEIR BOTTOM LAYER IS SCHEDULED HERE."
@@ -2886,10 +3007,13 @@ def punching_sheet(model, level, meta, adds):
             bypass = f"ENGINEER'S BYPASS: COLUMNS {', '.join(js_str(p['col'].get('id')) for p in ovs)} DO NOT PASS THE PUNCHING CHECK AND NO THICKENING WAS ADOPTED; THEIR PS TYPES ARE SIZED FROM THE OFFICE ESTIMATE AND PROVIDED AT THE DESIGN ENGINEER'S RESPONSIBILITY{by_txt}{date_txt}."
         check_line = None
         if check and check.get('columns'):
-            failing = [k for k in check['columns'] if k.get('status') != 'ok']
+            failing = [k for k in check['columns'] if k.get('status') != 'ok' and k.get('status') != 'on beam']
+            checked_cols = [k for k in check['columns'] if k.get('status') != 'on beam']
+            on_beam = [k for k in check['columns'] if k.get('status') == 'on beam']
             fpc = f", fpc {js_str(check['fpc_mpa'])} MPa" if check.get('fpc_mpa') is not None else ''
             over = ', '.join(f"{js_str(k.get('id'))} {js_str(k.get('ratio'))}" for k in failing) or 'NONE'
-            check_line = f"INDICATIVE PUNCHING CHECK (SBC 304 / ACI 318 TWO-WAY SHEAR ON RAM'S TRIBUTARY AREAS AND LOADS, f'c {js_str(check.get('fc'))} MPa{fpc}): {len(failing)} OF {len(check['columns'])} COLUMNS OVER phi.vc ({over}); THE RAM PUNCHING REPORT GOVERNS."
+            on_beam_txt = f"; {len(on_beam)} COLUMNS STAND ON BEAMS (NO PUNCHING OF THE SLAB)" if on_beam else ''
+            check_line = f"INDICATIVE PUNCHING CHECK (SBC 304 / ACI 318 TWO-WAY SHEAR ON RAM'S TRIBUTARY AREAS AND LOADS, f'c {js_str(check.get('fc'))} MPa{fpc}): {len(failing)} OF {len(checked_cols)} COLUMNS OVER phi.vc ({over}){on_beam_txt}; THE RAM PUNCHING REPORT GOVERNS."
         general = [g for g in [design_notes(model, level)[0], 'PUNCHING SHEAR REINFORCEMENT IS TAGGED PER COLUMN AS "ROWS - LEGS - BAR" (DETAIL 12): CLOSED STIRRUP STRIPS LEAVE EVERY COLUMN FACE, THE FIRST ROW AT S FROM THE FACE; STIRRUPS ENCLOSE THE TOP AND BOTTOM BARS.',
                                     'PS TYPES ARE DERIVED FROM THE STUD RAILS DESIGNED IN RAM CONCEPT (ROWS COVER THE RAIL LENGTH AT S, LEGS MATCH THE STUD AREA PER FACE); COLUMNS WITHOUT RAILS IN RAM CARRY NO PUNCHING REINFORCEMENT.' if ram_ps else 'PRELIMINARY: PS TYPES ARE PLACEHOLDERS (PS1 INTERIOR, PS2 EDGE / CORNER) UNTIL THE PUNCHING DESIGN OF EACH COLUMN IS AVAILABLE; THE DESIGN GOVERNS THE NUMBER OF ROWS AND LEGS.',
                                     bypass, check_line] if _t(g)]
@@ -3081,6 +3205,16 @@ def compose_design_package(model, meta_in=None):
             ex['lines'] = clip_to_slab(level, ex['lines'], spec)
             if ex.get('items'):
                 ex['items'] = clip_to_slab(level, ex['items'], spec)
+            # the consultant's / designer's bars of the config are scheduled (after the clipping) under their zone
+            n_designer = 0
+            for it in [x for x in (ex.get('items') or []) if x.get('designer')]:
+                L = js_round(dist(it['a'], it['b']) / 10) * 10
+                ue = it.get('uEnd') or {}
+                shape = 'STR (U AT OPENING)' if it.get('clippedOpening') else f"STR + {'/'.join(str(v) for v in [ue.get('start'), ue.get('end')] if v)}" if (ue.get('start') or ue.get('end')) else 'STR'
+                for f in (['T', 'B'] if it['face'] == 'TB' else [it['face']]):
+                    adds['bars'][f].add({'dia': it['dia'], 'shape': shape, 'length': L, 'qty': it['count'], 'spacing': it.get('spacing') or None, 'zone': it['zone'], 'note': 'DESIGNER'})
+                n_designer += 1
+            level['designerBars'] = n_designer
             # the designer's / the column rule's distribution DIMENSIONs stop before an opening as well
             for d in ex.get('dims') or []:
                 if d.get('x3') is None:

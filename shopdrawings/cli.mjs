@@ -96,7 +96,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
     const raw = ramToModel(ram, { levelName, levelId: meta.levelId, spec });
     useReferencePlan(raw, ram, spec);
-    for (const l of raw.levels) { l.beamCheck = designBeams(l, { ...raw.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck }); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
+    for (const l of raw.levels) { l.beamCheck = designBeams(l, { ...raw.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck, assign: spec.beamAssign || null, source: spec.beams?.source || null }); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
     model = prepareRamDesign(raw, { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
@@ -108,7 +108,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
     useReferencePlan(model, ram, spec);
-    for (const l of model.levels) { l.beamCheck = designBeams(l, { ...model.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck }); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
+    for (const l of model.levels) { l.beamCheck = designBeams(l, { ...model.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck, assign: spec.beamAssign || null, source: spec.beams?.source || null }); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {
@@ -203,7 +203,7 @@ function report(model, pack) {
   const total = pack.sheets.reduce((s, x) => s + (x.weight || 0), 0);
   L.push('');
   L.push(design
-    ? `Reinforcement added from the General Details: **${Math.round(total).toLocaleString('en-US')} kg** (the designer's own bars are kept as drawn and not scheduled here).`
+    ? (model.levels.some((l) => l.designerBars) ? `Reinforcement scheduled (the General Details additions and the consultant's bars as drawn): **${Math.round(total).toLocaleString('en-US')} kg** (the RAM bands are not scheduled here).` : `Reinforcement added from the General Details: **${Math.round(total).toLocaleString('en-US')} kg** (the designer's own bars are kept as drawn and not scheduled here).`)
     : `Total scheduled reinforcement: **${Math.round(total).toLocaleString('en-US')} kg** (cables excluded - template only).`);
   const checked = model.levels.filter((l) => l.punchingCheck && l.punchingCheck.columns.length);
   if (checked.length) {
@@ -212,7 +212,7 @@ function report(model, pack) {
     L.push('');
     L.push('| Level | Column | Location | h | Trib. m² | wu kN/m² | Vu kN | vu MPa | phi.vc MPa | Ratio | Status |');
     L.push('|---|---|---|---|---|---|---|---|---|---|---|');
-    for (const l of checked) for (const c of l.punchingCheck.columns) L.push(`| ${l.id} | ${c.id} | ${c.loc} | ${c.h} | ${c.trib_m2} | ${c.wu_kn_m2} | ${c.Vu_kn} | ${c.vu_mpa} | ${c.phi_vc_mpa} | ${c.ratio} | ${c.status}${c.ssr ? ' (SSR in RAM)' : ''}${c.ram_failed ? ' (FAILS IN RAM)' : ''}${(l.punchingOverridden || []).includes(c.id) ? ' (PS AT THE ENGINEER\'S RESPONSIBILITY)' : ''} |`);
+    for (const l of checked) for (const c of l.punchingCheck.columns) L.push(`| ${l.id} | ${c.id} | ${c.loc}${c.beam ? ' ' + c.beam : ''} | ${c.h} | ${c.trib_m2 ?? '-'} | ${c.wu_kn_m2 ?? '-'} | ${c.Vu_kn ?? '-'} | ${c.vu_mpa ?? '-'} | ${c.phi_vc_mpa ?? '-'} | ${c.ratio ?? '-'} | ${c.status}${c.ssr ? ' (SSR in RAM)' : ''}${c.ram_failed ? ' (FAILS IN RAM)' : ''}${(l.punchingOverridden || []).includes(c.id) ? ' (PS AT THE ENGINEER\'S RESPONSIBILITY)' : ''} |`);
     for (const l of checked) if (l.punchingCheck.flagged.length) L.push(`\n**${l.id}: columns to look at in the RAM punching report: ${l.punchingCheck.flagged.join(', ')}** (blocking: ${l.punchingCheck.blocking.join(', ') || 'none'}).`);
   }
   const beamLevels = model.levels.filter((l) => l.beamCheck && l.beamCheck.beams.length);

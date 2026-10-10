@@ -68,7 +68,11 @@ function dimensionMeasure(e) {
 
 /** The call-out figures: count (0 = a run), diameter, spacing. */
 export function parseCallout(text) {
-  const m = /(\d+)?\s*T(\d+)(?:-(\d+))?/i.exec(String(text || ''));
+  const str = String(text || '');
+  // the consultant's per-metre form "7T18/m": a run at 1000 / 7 spacing, not 7 bars
+  const pm = /(\d+)\s*T(\d+)\s*\/\s*m/i.exec(str);
+  if (pm) return { n: 0, dia: Number(pm[2]), s: Math.round(1000 / Number(pm[1])) };
+  const m = /(\d+)?\s*T(\d+)(?:-(\d+))?/i.exec(str);
   if (!m) return null;
   return { n: m[1] ? Number(m[1]) : 0, dia: Number(m[2]), s: m[3] ? Number(m[3]) : 0 };
 }

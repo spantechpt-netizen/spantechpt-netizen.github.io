@@ -209,7 +209,7 @@ export function typeCovers(t, r, tol = 10) {
  * type that carries it; the beams no type carries are grouped among themselves (one section, bars alike) into new
  * types numbered after the library's last mark. Library types are used as they are, never modified.
  */
-export function beamSchedule(ram, level = null, { library = [], design = 'ram', office = null } = {}) {
+export function beamSchedule(ram, level = null, { library = [], design = 'ram', office = null, assign = null, source = null } = {}) {
   const beams = (level?.beams || ram.beams || []).map((b) => ({ ...b }));
   if (!beams.length) return null;
   const officeOf = (id) => (office?.beams || []).find((b) => String(b.id).toUpperCase() === String(id).toUpperCase()) || null;
@@ -251,8 +251,21 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
   // the project's schedule first: a designed beam takes the lightest existing type that carries it
   const lib = (library || []).filter((t) => t && t.mark && t.width && t.depth).map((t) => ({ ...t, top: t.top ? { ...t.top, area: areaOf(t.top), text: t.top.text || barsText(t.top.n, t.top.dia) } : null, bottom: t.bottom ? { ...t.bottom, area: areaOf(t.bottom), text: t.bottom.text || barsText(t.bottom.n, t.bottom.dia) } : null, stirrups: t.stirrups ? { ...t.stirrups, text: t.stirrups.text || `T${t.stirrups.dia}-${t.stirrups.legs}L@${t.stirrups.spacing}` } : null, beams: [], existing: true }));
   const weight = (t) => areaOf(t.top) + areaOf(t.bottom) + stirrupCapacity(t.stirrups) * 1000;
+  // beams assigned a type by the engineer (`spec.beamAssign`, e.g. the consultant's schedule kept as it is): the beam
+  // takes that type's bars as they are - no RAM / office design, no typing - and the type is used even if unverified
+  const assigned = [], unassigned = [];
+  const assignOf = (id) => { if (!assign) return null; const k = Object.keys(assign).find((x) => String(x).trim().toUpperCase() === String(id).toUpperCase()); return k ? assign[k] : null; };
+  for (const r of rows) {
+    const mk = assignOf(r.id);
+    if (!mk) continue;
+    const t = lib.find((x) => String(x.mark).toUpperCase() === String(mk).trim().toUpperCase());
+    if (!t) { unassigned.push(`${r.id} -> ${mk}`); continue; }
+    t.beams.push(r.id);
+    Object.assign(r, { mark: t.mark, existing: true, assigned: true, designed: true, top: t.top, bottom: t.bottom, stirrups: t.stirrups, design: 'assigned' });
+    assigned.push(r.id);
+  }
   const uncovered = [];
-  for (const r of rows.filter((x) => x.designed)) {
+  for (const r of rows.filter((x) => x.designed && !x.assigned)) {
     const fits = lib.filter((t) => typeCovers(t, r)).sort((p, q) => weight(p) - weight(q))[0];
     if (fits) { fits.beams.push(r.id); r.mark = fits.mark; r.existing = true; } else uncovered.push(r);
   }
@@ -274,9 +287,10 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
   for (const r of rows) if (!r.designed) r.mark = null;
   const used = [...lib.filter((t) => t.beams.length), ...added].map((t) => ({ ...t, count: t.beams.length }));
   return {
-    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed).map((r) => r.id), ramUndesigned: rows.filter((r) => !r.ramDesigned).map((r) => r.id),
+    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed).map((r) => r.id), ramUndesigned: rows.filter((r) => !r.ramDesigned && !r.assigned).map((r) => r.id),
     added: added.map((t) => ({ mark: t.mark, width: t.width, depth: t.depth, section: t.section, top: t.top, bottom: t.bottom, stirrups: t.stirrups })),
     library: lib.length, design, office: office ? { beams: office.beams, failing: office.failing, blocking: office.blocking, warnings: office.warnings, assumed: office.assumed } : null,
+    assigned, unassigned, source: source || null,
   };
 }
 

@@ -8,8 +8,7 @@
  */
 import {
   bbox, ceilTo, chordsAtX, chordsAtY, circlePolygon, dist, edges, growRect,
-  perimeter, pointInPolygon, polygonArea, rectPolygon, subtractIntervals,
-} from './geometry.mjs';
+  perimeter, pointInPolygon, polygonArea, rectPolygon, subtractIntervals, distToPolygon } from './geometry.mjs';
 
 export const DEFAULT_SPEC = {
   fc: 30, // MPa — assumed if the drawing does not state concrete grade
@@ -319,6 +318,18 @@ export const U_BOTTOM_LEG = 500;
  * (`uEdge.beamLeg` down into the beam) where the outer edge carries a beam parallel to it. The
  * nearest outline segment to the bar end decides; an opening edge is always a U.
  */
+/**
+ * A column standing on a beam (an edge beam, an interior beam - not a band, which is slab) does not punch the slab:
+ * the beam carries it. True when the beam's body passes through the column (its centre inside the beam polygon, or
+ * the polygon within half the column's smaller side of the centre).
+ */
+export function columnOnBeam(level, c) {
+  const cc = { x: c.cx, y: c.cy };
+  const half = Math.min(c.shape === 'circle' ? c.d : c.w, c.shape === 'circle' ? c.d : c.h) / 2;
+  const bm = (level.beams || []).find((b) => b.polygon && !b.band && (pointInPolygon(cc, b.polygon) || distToPolygon(cc, b.polygon) < half));
+  return bm || null;
+}
+
 export function edgeEndAt(level, spec, p) {
   const u = topEdgeEnd(level, spec);
   if ((level.jointEdges || []).some((e) => { const L = dist(e.a, e.b) || 1; const t = Math.max(0, Math.min(L, ((p.x - e.a.x) * (e.b.x - e.a.x) + (p.y - e.a.y) * (e.b.y - e.a.y)) / L)); return Math.hypot(p.x - (e.a.x + (e.b.x - e.a.x) / L * t), p.y - (e.a.y + (e.b.y - e.a.y) / L * t)) < 600; })) return { type: null, leg: 0, label: '', note: 'continues into the neighbouring part' };

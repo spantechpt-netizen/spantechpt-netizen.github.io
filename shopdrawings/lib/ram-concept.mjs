@@ -447,14 +447,36 @@ export function ramToModel(ram, { levelName = '1ST FLOOR', levelId = null, spec:
       source: 'derived from column positions',
     };
     level.columns.forEach((c) => {
+      c.ramId = c.id; // the model's own column number (C8), kept beside the grid reference
       const gx = level.grid.x.find((g) => Math.abs(g.x - c.cx) < 400), gy = level.grid.y.find((g) => Math.abs(g.y - c.cy) < 400);
       if (gx && gy) c.id = `${gx.label}/${gy.label}`;
     });
+    // the project's own grid given in the config (`spec.grid`, model coordinates: x lines and y lines with their labels)
+    // replaces the derived one; the columns are re-labelled by it (letter row / number line as the drawing reads them)
+    const cfgGrid = specOverrides.grid;
+    let gridFromConfig = false;
+    if (cfgGrid && (Array.isArray(cfgGrid.x) || Array.isArray(cfgGrid.y))) {
+      const gx = [], gy = [];
+      const place = (label, p1, p2) => { const a = R(p1), b = R(p2); if (Math.abs(a.x - b.x) < 1) gx.push({ label, x: a.x, y1: ob.minY, y2: ob.maxY }); else gy.push({ label, y: a.y, x1: ob.minX, x2: ob.maxX }); };
+      for (const g of cfgGrid.x || []) if (g && g.label != null && Number.isFinite(Number(g.x))) place(String(g.label), { x: Number(g.x), y: 0 }, { x: Number(g.x), y: 1000 });
+      for (const g of cfgGrid.y || []) if (g && g.label != null && Number.isFinite(Number(g.y))) place(String(g.label), { x: 0, y: Number(g.y) }, { x: 1000, y: Number(g.y) });
+      if (gx.length && gy.length) {
+        level.grid = { x: gx.sort((p, q) => p.x - q.x), y: gy.sort((p, q) => p.y - q.y), source: 'config' };
+        const tol = Number(cfgGrid.tolerance) || 600;
+        level.columns.forEach((c) => {
+          const fx = level.grid.x.find((g) => Math.abs(g.x - c.cx) < tol), fy = level.grid.y.find((g) => Math.abs(g.y - c.cy) < tol);
+          if (fx && fy) c.id = /^[A-Z]+$/i.test(fy.label) && /^\d+$/.test(fx.label) ? `${fy.label}/${fx.label}` : `${fx.label}/${fy.label}`;
+          else c.id = c.ramId;
+        });
+        gridFromConfig = true;
+      }
+    }
     findings.push(`${level.id} ${level.name}: ${Math.round(Math.abs(polygonArea(outline)) / 1e6)} m², ${level.columns.length} columns, ${level.walls.length} wall segments, ${level.thickZones.length} thickened zones, ${level.pourStrips.length} pour strips, ${level.ram.bands.length} designed bar bands, ${level.ram.tendons.length} tendons, ${level.openings.length} openings${angleDeg ? `, rotated ${angleDeg}° to its local frame` : ''}.`);
     if (level.customZones.length) assumptions.push({ level: level.id, text: `${level.customZones.length} slab area(s) of "custom" behaviour wider than 1.5 m in ${level.name} (${level.customZones.map((z) => `${Math.round(bbox(z.polygon).w / 1000)} x ${Math.round(bbox(z.polygon).h / 1000)} m`).join(', ')}) are drawn as slab; if one is a pour strip or a ramp, set it on the plan.` });
     if (angleCols) assumptions.push({ level: level.id, text: `Body ${i + 1} is rotated ${angleCols}° on the site; the plan is drawn in its local frame (north arrow rotated accordingly).` });
     if (turn) assumptions.push({ level: level.id, text: `${level.name} is turned ${turn}° on the sheet (${rotOpt === 'auto' ? `its ${Math.round(bb0.h / 1000)} m side is longer than its ${Math.round(bb0.w / 1000)} m side: the long side lies along the sheet` : 'as set for the project'}); the north arrow follows.` });
-    assumptions.push({ level: level.id, text: 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.' });
+    if (gridFromConfig) assumptions.push({ level: level.id, text: `Grid lines and references are the project's own (${level.grid.x.map((g) => g.label).join(', ')} / ${level.grid.y.map((g) => g.label).join(', ')}, given in the config); the columns are labelled by them.` });
+    else assumptions.push({ level: level.id, text: 'Grid lines are not modelled in RAM Concept: the grid is derived from the column positions and lettered / numbered consecutively; to be replaced by the architectural grid references.' });
     return level;
   });
   assumptions.push({ text: `Reinforcement, tendons and materials are taken from the RAM Concept model (f'c ${spec.fc} MPa from ${ram.materials.concreteName || 'the model'}, fy ${spec.fy} MPa, cover ${spec.cover} mm). Bar cutting lengths add SBC 304-18 hooks (12 Ø) where a bar ends at a free edge and split runs longer than 12 m with Class B laps.` });
