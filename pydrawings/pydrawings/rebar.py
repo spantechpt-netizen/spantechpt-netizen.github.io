@@ -427,6 +427,54 @@ def _near_segment(p, a, b, tol):
     return math.hypot(p['x'] - (a['x'] + (b['x'] - a['x']) / L * t), p['y'] - (a['y'] + (b['y'] - a['y']) / L * t)) < tol
 
 
+def is_band_zone(z, spec=None):
+    """A thickened zone that is a band beam: a long strip (longer than `topColumns.dropMax` 6 m, up to `beams.bandMaxWidth` 3 m wide, at least 3 x as long as wide)."""
+    spec = spec or {}
+    b = bbox(z['polygon'])
+    long_, short = max(b['w'], b['h']), min(b['w'], b['h'])
+    return not (long_ <= ((spec.get('topColumns') or {}).get('dropMax') or 6000) or short > ((spec.get('beams') or {}).get('bandMaxWidth') or 3000) or long_ < 3 * short)
+
+
+def column_in_band(level, c, spec=None):
+    """
+    The band beam (a long thickened strip the office makes post-tensioned) a column stands in, if any: the marked band
+    (`level.beams`, after `mark_beams`) or, before the beams are marked, the thickened zone that qualifies as one.
+    """
+    spec = spec or {}
+    cc = {'x': c['cx'], 'y': c['cy']}
+    marked = next((b for b in (level.get('beams') or []) if b.get('band') and b.get('polygon') and point_in_polygon(cc, b['polygon'])), None)
+    if marked:
+        return marked
+    if any(b.get('band') for b in (level.get('beams') or [])):
+        return None
+    z = next((zz for zz in (level.get('thickZones') or []) if zz.get('polygon') and is_band_zone(zz, spec) and point_in_polygon(cc, zz['polygon'])), None)
+    return {'id': f"BB{z['id']}", 'polygon': z['polygon'], 'band': True, 'zone': z} if z else None
+
+
+def band_of_zone(level, z):
+    """The band beam a thickened zone is (its centre inside the band's polygon), if any."""
+    b = bbox(z['polygon'])
+    return next((bm for bm in (level.get('beams') or []) if bm.get('band') and bm.get('polygon') and point_in_polygon({'x': b['cx'], 'y': b['cy']}, bm['polygon'])), None)
+
+
+def beams_by_others(level, spec=None):
+    """
+    The beams that are not the office's (`spec.beams.byOthers`: 'rc' = every beam that is not a band, or a list of ids;
+    `spec.scope: 'bands'` implies 'rc'): drawn on the framing plan as the consultant's RC beams, never designed,
+    typed, checked or scheduled here.
+    """
+    spec = spec or {}
+    v = (spec.get('beams') or {}).get('byOthers')
+    if v is None:
+        v = 'rc' if spec.get('scope') == 'bands' else None
+    if not v:
+        return set()
+    beams = level.get('beams') or []
+    if v == 'rc' or v == 'all':
+        return set(str(b['id']).upper() for b in beams if not b.get('band') and b.get('id'))
+    return set(str(x).strip().upper() for x in (v if isinstance(v, list) else [v]))
+
+
 def column_on_beam(level, c):
     """
     A column standing on a beam (an edge beam, an interior beam - not a band, which is slab) does not punch the slab:

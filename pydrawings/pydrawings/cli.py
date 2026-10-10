@@ -127,7 +127,7 @@ def generate(input_dxf=None, input_text=None, out=None, meta=None, spec=None, sv
         _use_reference_plan(raw, ram, spec)
         for l in raw['levels']:
             l['beamCheck'] = design_beams(l, {**(raw.get('spec') or {}), **spec})
-            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'], assign=spec.get('beamAssign') or None, source=(spec.get('beams') or {}).get('source') or None)
+            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'], assign=spec.get('beamAssign') or None, source=(spec.get('beams') or {}).get('source') or None, by_others=sorted(R.beams_by_others(l, {**(raw.get('spec') or {}), **spec}), key=lambda v: v))
             l['punchingCheck'] = punching_check(l, {**(raw.get('spec') or {}), **spec, 'punching': {**((raw.get('spec') or {}).get('punching') or {}), **(spec.get('punching') or {})}})
         model = prepare_ram_design(raw, {'levelName': level_name, 'spec': spec, 'wallThickness': spec.get('wallThickness')})
         h = ram['project']
@@ -142,7 +142,7 @@ def generate(input_dxf=None, input_text=None, out=None, meta=None, spec=None, sv
         _use_reference_plan(model, ram, spec)
         for l in model['levels']:
             l['beamCheck'] = design_beams(l, {**(model.get('spec') or {}), **spec})
-            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'], assign=spec.get('beamAssign') or None, source=(spec.get('beams') or {}).get('source') or None)
+            l['beamSchedule'] = beam_schedule(ram, l, library=spec.get('beamTypes') or [], design=spec.get('beamDesign') or 'ram', office=l['beamCheck'], assign=spec.get('beamAssign') or None, source=(spec.get('beams') or {}).get('source') or None, by_others=sorted(R.beams_by_others(l, {**(model.get('spec') or {}), **spec}), key=lambda v: v))
             l['punchingCheck'] = punching_check(l, {**(model.get('spec') or {}), **spec, 'punching': {**((model.get('spec') or {}).get('punching') or {}), **(spec.get('punching') or {})}})
         h = ram['project']
         meta = {'project': ' - '.join([v for v in [h.get('name'), h.get('part')] if v]) or meta.get('project'), 'company': h.get('company') or meta.get('company'), 'revision': re.sub(r'^rev\.?\s*', '', h.get('revision') or '', flags=re.I) or meta.get('revision'), **meta}

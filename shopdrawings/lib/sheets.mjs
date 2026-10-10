@@ -122,10 +122,11 @@ export function drawBase(sheet, pl, level, o = {}) {
         const rot = sp.alongX ? 0 : 90;
         // a beam typed in the beam schedule reads its type mark with its section, its bars written on the other side
         const rec = (level.beamSchedule?.beams || []).find((b) => b.id === bm.id);
-        const label = rec?.mark ? `${bm.id} [${rec.mark}] BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}` : `${bm.id} BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}`;
+        // the consultant's RC beam (by others): named with its size and `BY OTHERS`, no type, no bars, no hatch
+        const label = rec?.byOthers ? `${bm.id} RC BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''} (BY OTHERS)` : rec?.mark ? `${bm.id} [${rec.mark}] BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}` : `${bm.id} BEAM ${size50(bm.t)}${bm.depth ? 'x' + size50(bm.depth) : ''}`;
         const chk = (level.beamSchedule?.office?.beams || []).find((x) => String(x.id).toUpperCase() === String(bm.id).toUpperCase());
-        const barsText = rec ? (rec.mark ? `${rec.top?.text || '-'} / ${rec.bottom?.text || '-'} / ${rec.stirrups?.text || '-'}` : `NOT DESIGNED${level.beamSchedule?.design === 'ram' ? ' IN RAM' : ''}`) + (chk && chk.status === 'fail' ? ` - NOT PASSING (${(chk.reasons.length ? chk.reasons : ['RAM']).join(', ').toUpperCase()})` : '') : null;
-        if (rec) pl.hatch([bm.polygon], { layer: rec.mark ? 'BEAM' : 'CALLOUT', pattern: 'ANSI31', spacing: 1.2 });
+        const barsText = rec && !rec.byOthers ? (rec.mark ? `${rec.top?.text || '-'} / ${rec.bottom?.text || '-'} / ${rec.stirrups?.text || '-'}` : `NOT DESIGNED${level.beamSchedule?.design === 'ram' ? ' IN RAM' : ''}`) + (chk && chk.status === 'fail' ? ` - NOT PASSING (${(chk.reasons.length ? chk.reasons : ['RAM']).join(', ').toUpperCase()})` : '') : null;
+        if (rec && !rec.byOthers) pl.hatch([bm.polygon], { layer: rec.mark ? 'BEAM' : 'CALLOUT', pattern: 'ANSI31', spacing: 1.2 });
         const off = (bm.t || 300) / 2 + 350;
         const side = sp.alongX ? { x: 0, y: 1 } : { x: -1, y: 0 };
         const H = 1.8, widthOf = (text) => text.length * H * sheet.S * 0.9; // the label's length on the plan (model mm)
@@ -157,7 +158,12 @@ export function drawBase(sheet, pl, level, o = {}) {
     // height along its right edge (DIM100 style, the value on the line)
     if (o.regionLabels) {
       const zb = bbox(z.polygon);
-      pl.text({ x: zb.minX + 300, y: zb.minY + 250 }, z.thickness ? `THK=${z.thickness}` : 'DROP', { layer: 'SLAB-THK', h: 2.2, align: 'L', valign: 'B' });
+      // the office's PT band beams (scope 'bands'): the band named as such over its thickness tag, both lifted 1 m
+      // clear of the label of the edge beam the band ends on
+      const band = level.scope === 'bands' ? R.bandOfZone(level, z) : null;
+      const y0 = zb.minY + 250 + (band ? 1000 : 0);
+      pl.text({ x: zb.minX + 300, y: y0 }, z.thickness ? `THK=${z.thickness}` : 'DROP', { layer: 'SLAB-THK', h: 2.2, align: 'L', valign: 'B' });
+      if (band) pl.text({ x: zb.minX + 300, y: y0 + 2.2 * sheet.S + 150 }, `POST TENSIONED BAND BEAM ${size50(band.t)}x${size50(band.depth || z.thickness)}`, { layer: 'SLAB-THK', h: 2.2, align: 'L', valign: 'B', bold: true });
       const S = sheet.S, inset = Math.min(700, zb.h / 4, zb.w / 4);
       const top = { y: zb.maxY - inset }, right = { x: zb.maxX - inset };
       pl.dimension({ x: zb.minX, y: top.y }, { x: zb.maxX, y: top.y }, { x: zb.minX, y: top.y }, { style: 'DIM100', styleDef: DIM_ZONE, layer: 'diamension', text: String(Math.round(zb.w)) });

@@ -99,3 +99,34 @@ class TestConsultantBars(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestScopeBands(unittest.TestCase):
+    """The office's scope limited to the PT band beams (spec.scope 'bands'): RC slab tag, no mesh, no slab rules, beams by
+    others, columns outside the bands not checked. Ported from test/shopdrawings.test.js."""
+
+    def test_scope_bands(self):
+        tmp = Path(tempfile.mkdtemp(prefix='scope-'))
+        try:
+            cpt = build_synthetic_cpt(str(tmp), beam=True)
+            r = generate(input_dxf=cpt, out=str(tmp / 'out'), meta={}, spec={'scope': 'bands', 'consultant': {'name': 'Quantum Group', 'drawing': 'dwg 4'}}, svg=False, level_names=['GROUND'], mode='design')
+            L = r['model']['levels'][0]
+            self.assertEqual([L.get('scope'), L.get('meshFaces'), L.get('meshSpec'), L.get('meshLabels')], ['bands', 'none', None, []])
+            self.assertIsNone(r['quantities']['levels'][0].get('mesh'), 'no mesh in the take-off')
+            spec = r['model']['spec']
+            self.assertEqual([spec['topColumns'].get('only'), spec['beams'].get('topBars'), spec['rules'].get('perimeter')], ['bands', False, False])
+            sch = L['beamSchedule']
+            self.assertEqual([sch['byOthers'], sch['undesigned'], len(sch['types'])], [['BM1', 'BM2'], [], 0])
+            self.assertEqual(len(L['beamCheck']['beams']), 0)
+            framing = Path(next(f for f in r['files'] if re.search(r'FRAMING.*\.dxf$', f))).read_text()
+            self.assertTrue('RC BEAM 300x600 (BY OTHERS)' in framing and '\n1\nRC SLAB\n' in framing and 'POST TENSION SLAB' not in framing, 'RC slab tag, beams by others')
+            pc = r['punching'][0]
+            self.assertTrue(all(c['status'] in ('on beam', 'out of scope') for c in pc['columns']) and not pc['blocking'], json.dumps([[c['id'], c['status']] for c in pc['columns']]))
+            top = Path(next(f for f in r['files'] if re.search(r'TOP_REINFORCEMENT.*\.dxf$', f))).read_text()
+            self.assertTrue('U-BAR\n' not in top and 'MESH T' not in top and 'SCOPE OF THESE DRAWINGS: THE POST-TENSIONED BAND BEAMS ONLY' in top and 'PT BAND BEAMS - TOP REINFORCEMENT PLAN' in top)
+            self.assertIn("NO SLAB MESH ON THIS SHEET: THE SLAB REINFORCEMENT IS THE CONSULTANT'S (BY OTHERS).", top)
+            bot = Path(next(f for f in r['files'] if re.search(r'BOTTOM_REINFORCEMENT.*\.dxf$', f))).read_text()
+            self.assertTrue('LAP 500' not in bot and 'BOTTOM MESH T' not in bot, 'no drop detail, no mesh indication')
+            self.assertTrue(any(re.search(r'scope in GROUND is the post-tensioned band beams only', a['text']) for a in r['model']['assumptions']))
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

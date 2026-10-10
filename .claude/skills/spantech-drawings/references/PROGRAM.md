@@ -67,7 +67,10 @@ longDia, longSpacing, wall {...}}`, `blockBeam`, `topMesh`, `mesh 'bottom'|'both
 drawn, model mm; `designerItems` in `design.mjs` / `designer_items`), `consultant {name, drawing, notes[]}`, `rules {perimeter, walls,
 drops, corners, voids, pourStrips, blockBeam, punching}` (false = off), `topColumns.only 'bands'|[ids]`, `beams.topBars false`,
 `beams.source`, `beamAssign {BMx: mark}` (a `beamTypes` record used as it is: `beamSchedule` marks the row `assigned`, `designBeams`
-skips it), `grid {x [{label, x}], y [{label, y}], tolerance}` (the project's grid in model coordinates; columns relabelled, `ramId` kept).
+skips it), `grid {x [{label, x}], y [{label, y}], tolerance}` (the project's grid in model coordinates; columns relabelled, `ramId` kept),
+`scope 'bands'` (the PT band beams only: `prepareRamDesign` sets rules off, `topColumns.only 'bands'`, `beams.topBars false`, `mesh 'none'`,
+no designer bars; `level.scope`; RAM bands outside the bands dropped; `slabTag` RC; `bandOfZone` labels; `beamsByOthers` / `beams.byOthers`
+'rc' | ids → `beamSchedule` rows `byOthers`, `designBeams` skips; `punchingCheck` status `out of scope` via `columnInBand` / `isBandZone`).
 
 `meta`: `project`, `projectAr`, `code`, `client`, `consultant`, `contractor`, `location`, `country`, `company`, `prefix`
 (`SPAN-DD` / `SPAN-SD`), `revision`, `date`, `prepared`, `designer`, `checked`, `approved`, `levelId`, `level`, `zone`,

@@ -323,6 +323,45 @@ export const U_BOTTOM_LEG = 500;
  * the beam carries it. True when the beam's body passes through the column (its centre inside the beam polygon, or
  * the polygon within half the column's smaller side of the centre).
  */
+/** A thickened zone that is a band beam: a long strip (longer than `topColumns.dropMax` 6 m, up to `beams.bandMaxWidth` 3 m wide, at least 3 x as long as wide). */
+export function isBandZone(z, spec = {}) {
+  const b = bbox(z.polygon);
+  const long = Math.max(b.w, b.h), short = Math.min(b.w, b.h);
+  return !(long <= (spec.topColumns?.dropMax || 6000) || short > (spec.beams?.bandMaxWidth || 3000) || long < 3 * short);
+}
+
+/**
+ * The band beam (a long thickened strip the office makes post-tensioned) a column stands in, if any: the marked band
+ * (`level.beams`, after `markBeams`) or, before the beams are marked, the thickened zone that qualifies as one.
+ */
+export function columnInBand(level, c, spec = {}) {
+  const cc = { x: c.cx, y: c.cy };
+  const marked = (level.beams || []).find((b) => b.band && b.polygon && pointInPolygon(cc, b.polygon));
+  if (marked) return marked;
+  if ((level.beams || []).some((b) => b.band)) return null;
+  const z = (level.thickZones || []).find((zz) => zz.polygon && isBandZone(zz, spec) && pointInPolygon(cc, zz.polygon));
+  return z ? { id: `BB${z.id}`, polygon: z.polygon, band: true, zone: z } : null;
+}
+
+/** The band beam a thickened zone is (its centre inside the band's polygon), if any. */
+export function bandOfZone(level, z) {
+  const b = bbox(z.polygon);
+  return (level.beams || []).find((bm) => bm.band && bm.polygon && pointInPolygon({ x: b.cx, y: b.cy }, bm.polygon)) || null;
+}
+
+/**
+ * The beams that are not the office's (`spec.beams.byOthers`: 'rc' = every beam that is not a band, or a list of ids;
+ * `spec.scope: 'bands'` implies 'rc'): drawn on the framing plan as the consultant's RC beams, never designed,
+ * typed, checked or scheduled here.
+ */
+export function beamsByOthers(level, spec = {}) {
+  const v = spec.beams?.byOthers ?? (spec.scope === 'bands' ? 'rc' : null);
+  if (!v) return new Set();
+  const beams = level.beams || [];
+  if (v === 'rc' || v === 'all') return new Set(beams.filter((b) => !b.band && b.id).map((b) => String(b.id).toUpperCase()));
+  return new Set((Array.isArray(v) ? v : [v]).map((x) => String(x).trim().toUpperCase()));
+}
+
 export function columnOnBeam(level, c) {
   const cc = { x: c.cx, y: c.cy };
   const half = Math.min(c.shape === 'circle' ? c.d : c.w, c.shape === 'circle' ? c.d : c.h) / 2;

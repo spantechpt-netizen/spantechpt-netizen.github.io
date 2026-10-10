@@ -96,7 +96,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const levelName = (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR';
     const raw = ramToModel(ram, { levelName, levelId: meta.levelId, spec });
     useReferencePlan(raw, ram, spec);
-    for (const l of raw.levels) { l.beamCheck = designBeams(l, { ...raw.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck, assign: spec.beamAssign || null, source: spec.beams?.source || null }); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
+    for (const l of raw.levels) { l.beamCheck = designBeams(l, { ...raw.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck, assign: spec.beamAssign || null, source: spec.beams?.source || null, byOthers: [...R.beamsByOthers(l, { ...raw.spec, ...spec })] }); l.punchingCheck = punchingCheck(l, { ...raw.spec, ...spec, punching: { ...(raw.spec?.punching || {}), ...(spec.punching || {}) } }); }
     model = prepareRamDesign(raw, { levelName, spec, wallThickness: spec.wallThickness });
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
@@ -108,7 +108,7 @@ export function generate({ inputDxf, inputText, out, meta = {}, spec = {}, svg =
     const ram = readRamConcept(inputDxf);
     model = ramToModel(ram, { levelName: (levelNames && levelNames[0]) || levelNameFromFile(inputDxf) || '1ST FLOOR', levelId: meta.levelId, spec });
     useReferencePlan(model, ram, spec);
-    for (const l of model.levels) { l.beamCheck = designBeams(l, { ...model.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck, assign: spec.beamAssign || null, source: spec.beams?.source || null }); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
+    for (const l of model.levels) { l.beamCheck = designBeams(l, { ...model.spec, ...spec }); l.beamSchedule = beamSchedule(ram, l, { library: spec.beamTypes || [], design: spec.beamDesign || 'ram', office: l.beamCheck, assign: spec.beamAssign || null, source: spec.beams?.source || null, byOthers: [...R.beamsByOthers(l, { ...model.spec, ...spec })] }); l.punchingCheck = punchingCheck(l, { ...model.spec, ...spec, punching: { ...(model.spec?.punching || {}), ...(spec.punching || {}) } }); }
     const h = ram.project;
     meta = { project: [h.name, h.part].filter(Boolean).join(' - ') || meta.project, company: h.company || meta.company, revision: (h.revision || '').replace(/^rev\.?\s*/i, '') || meta.revision, ...meta };
   } else {

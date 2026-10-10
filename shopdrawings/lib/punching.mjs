@@ -15,7 +15,7 @@
  * and the date printed on the sheets (`spec.punching.override`).
  */
 import { bbox, dist, polygonArea, pointInPolygon, distToPolygon } from './geometry.mjs';
-import { columnOnBeam } from './rebar.mjs';
+import { columnOnBeam, columnInBand } from './rebar.mjs';
 
 const PHI = 0.75;
 const GAMMA = { interior: 1.15, edge: 1.3, corner: 1.4 }; // unbalanced moment allowance on the direct shear
@@ -49,6 +49,12 @@ export function punchingCheck(level, spec = {}) {
     const beam = columnOnBeam(level, c);
     if (beam && !ramFailed.has(String(c.id).toUpperCase())) {
       out.columns.push({ id: c.id, loc: 'beam', h, d: null, trib_m2: null, wu_kn_m2: null, Vu_kn: null, bo_mm: null, vu_mpa: null, phi_vc_mpa: null, phi_vmax_mpa: null, ratio: null, fpc_mpa: null, rule: 'BEAM', ssr: false, trib_source: '-', ram_failed: false, ram_ok: false, status: 'on beam', beam: beam.id });
+      continue;
+    }
+    // the office's scope limited to the PT band beams (`spec.scope: 'bands'`): a column outside every band stands in the
+    // consultant's slab - its punching is the consultant's design, not checked here (the engineer's RAM report still wins)
+    if (spec.scope === 'bands' && !columnInBand(level, c, spec) && !ramFailed.has(String(c.id).toUpperCase())) {
+      out.columns.push({ id: c.id, loc: 'slab', h, d: null, trib_m2: null, wu_kn_m2: null, Vu_kn: null, bo_mm: null, vu_mpa: null, phi_vc_mpa: null, phi_vmax_mpa: null, ratio: null, fpc_mpa: null, rule: 'OTHERS', ssr: false, trib_source: '-', ram_failed: false, ram_ok: false, status: 'out of scope' });
       continue;
     }
     const pc = checks.find((p) => dist(p.p, cc) < Math.max(w, hh, 400));

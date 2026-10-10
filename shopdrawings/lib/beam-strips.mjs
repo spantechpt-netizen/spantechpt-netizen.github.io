@@ -209,7 +209,7 @@ export function typeCovers(t, r, tol = 10) {
  * type that carries it; the beams no type carries are grouped among themselves (one section, bars alike) into new
  * types numbered after the library's last mark. Library types are used as they are, never modified.
  */
-export function beamSchedule(ram, level = null, { library = [], design = 'ram', office = null, assign = null, source = null } = {}) {
+export function beamSchedule(ram, level = null, { library = [], design = 'ram', office = null, assign = null, source = null, byOthers = null } = {}) {
   const beams = (level?.beams || ram.beams || []).map((b) => ({ ...b }));
   if (!beams.length) return null;
   const officeOf = (id) => (office?.beams || []).find((b) => String(b.id).toUpperCase() === String(id).toUpperCase()) || null;
@@ -253,9 +253,14 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
   const weight = (t) => areaOf(t.top) + areaOf(t.bottom) + stirrupCapacity(t.stirrups) * 1000;
   // beams assigned a type by the engineer (`spec.beamAssign`, e.g. the consultant's schedule kept as it is): the beam
   // takes that type's bars as they are - no RAM / office design, no typing - and the type is used even if unverified
+  // the consultant's RC beams (`byOthers`: ids): on the plan as they are, never designed, typed or scheduled here
+  const othersSet = new Set((byOthers || []).map((v) => String(v).trim().toUpperCase()));
+  const others = [];
+  for (const r of rows) if (othersSet.has(String(r.id).toUpperCase())) { Object.assign(r, { byOthers: true, designed: false, mark: null, top: null, bottom: null, stirrups: null, design: 'others' }); others.push(r.id); }
   const assigned = [], unassigned = [];
   const assignOf = (id) => { if (!assign) return null; const k = Object.keys(assign).find((x) => String(x).trim().toUpperCase() === String(id).toUpperCase()); return k ? assign[k] : null; };
   for (const r of rows) {
+    if (r.byOthers) continue;
     const mk = assignOf(r.id);
     if (!mk) continue;
     const t = lib.find((x) => String(x.mark).toUpperCase() === String(mk).trim().toUpperCase());
@@ -287,10 +292,10 @@ export function beamSchedule(ram, level = null, { library = [], design = 'ram', 
   for (const r of rows) if (!r.designed) r.mark = null;
   const used = [...lib.filter((t) => t.beams.length), ...added].map((t) => ({ ...t, count: t.beams.length }));
   return {
-    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed).map((r) => r.id), ramUndesigned: rows.filter((r) => !r.ramDesigned && !r.assigned).map((r) => r.id),
+    beams: rows, types: used, undesigned: rows.filter((r) => !r.designed && !r.byOthers).map((r) => r.id), ramUndesigned: rows.filter((r) => !r.ramDesigned && !r.assigned && !r.byOthers).map((r) => r.id),
     added: added.map((t) => ({ mark: t.mark, width: t.width, depth: t.depth, section: t.section, top: t.top, bottom: t.bottom, stirrups: t.stirrups })),
     library: lib.length, design, office: office ? { beams: office.beams, failing: office.failing, blocking: office.blocking, warnings: office.warnings, assumed: office.assumed } : null,
-    assigned, unassigned, source: source || null,
+    assigned, unassigned, source: source || null, byOthers: others,
   };
 }
 

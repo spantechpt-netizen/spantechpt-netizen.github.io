@@ -258,17 +258,18 @@ def draw_base(sheet, pl, level, o=None, **kw):
                 bsch = level.get('beamSchedule') or {}
                 rec = next((b for b in (bsch.get('beams') or []) if b['id'] == bm['id']), None)
                 size = f"{_s(size50(bm.get('t')))}{('x' + _s(size50(bm['depth']))) if bm.get('depth') else ''}"
-                label = f"{bm['id']} [{rec['mark']}] BEAM {size}" if rec and rec.get('mark') else f"{bm['id']} BEAM {size}"
+                # the consultant's RC beam (by others): named with its size and `BY OTHERS`, no type, no bars, no hatch
+                label = f"{bm['id']} RC BEAM {size} (BY OTHERS)" if rec and rec.get('byOthers') else f"{bm['id']} [{rec['mark']}] BEAM {size}" if rec and rec.get('mark') else f"{bm['id']} BEAM {size}"
                 chk = next((x for x in ((bsch.get('office') or {}).get('beams') or []) if _upper(x['id']) == _upper(bm['id'])), None)
                 bars_text = None
-                if rec:
+                if rec and not rec.get('byOthers'):
                     if rec.get('mark'):
                         bars_text = f"{(rec.get('top') or {}).get('text') or '-'} / {(rec.get('bottom') or {}).get('text') or '-'} / {(rec.get('stirrups') or {}).get('text') or '-'}"
                     else:
                         bars_text = 'NOT DESIGNED' + (' IN RAM' if bsch.get('design') == 'ram' else '')
                     if chk and chk.get('status') == 'fail':
                         bars_text += f" - NOT PASSING ({', '.join(chk['reasons'] if len(chk['reasons']) else ['RAM']).upper()})"
-                if rec:
+                if rec and not rec.get('byOthers'):
                     pl.hatch([bm['polygon']], {'layer': 'BEAM' if rec.get('mark') else 'CALLOUT', 'pattern': 'ANSI31', 'spacing': 1.2})
                 off = (bm.get('t') or 300) / 2 + 350
                 side = {'x': 0, 'y': 1} if sp['alongX'] else {'x': -1, 'y': 0}
@@ -309,7 +310,13 @@ def draw_base(sheet, pl, level, o=None, **kw):
             # height along its right edge (DIM100 style, the value on the line)
             if o.get('regionLabels'):
                 zb = bbox(z['polygon'])
-                pl.text({'x': zb['minX'] + 300, 'y': zb['minY'] + 250}, f"THK={_s(z['thickness'])}" if z.get('thickness') else 'DROP', {'layer': 'SLAB-THK', 'h': 2.2, 'align': 'L', 'valign': 'B'})
+                # the office's PT band beams (scope 'bands'): the band named as such over its thickness tag, both lifted 1 m
+                # clear of the label of the edge beam the band ends on
+                band = R.band_of_zone(level, z) if level.get('scope') == 'bands' else None
+                y0 = zb['minY'] + 250 + (1000 if band else 0)
+                pl.text({'x': zb['minX'] + 300, 'y': y0}, f"THK={_s(z['thickness'])}" if z.get('thickness') else 'DROP', {'layer': 'SLAB-THK', 'h': 2.2, 'align': 'L', 'valign': 'B'})
+                if band:
+                    pl.text({'x': zb['minX'] + 300, 'y': y0 + 2.2 * sheet.S + 150}, f"POST TENSIONED BAND BEAM {_s(size50(band.get('t')))}x{_s(size50(band.get('depth') or z.get('thickness')))}", {'layer': 'SLAB-THK', 'h': 2.2, 'align': 'L', 'valign': 'B', 'bold': True})
                 inset = min(700, zb['h'] / 4, zb['w'] / 4)
                 top, right = {'y': zb['maxY'] - inset}, {'x': zb['maxX'] - inset}
                 pl.dimension({'x': zb['minX'], 'y': top['y']}, {'x': zb['maxX'], 'y': top['y']}, {'x': zb['minX'], 'y': top['y']}, {'style': 'DIM100', 'styleDef': DIM_ZONE, 'layer': 'diamension', 'text': _s(js_round(zb['w']))})

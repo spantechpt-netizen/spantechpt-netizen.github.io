@@ -316,7 +316,7 @@ def type_covers(t, r, tol=10):
     return True
 
 
-def beam_schedule(ram, level=None, library=None, design='ram', office=None, assign=None, source=None):
+def beam_schedule(ram, level=None, library=None, design='ram', office=None, assign=None, source=None, by_others=None):
     """
     The beams of a level typed against the project's unified schedule: `library` is the list of types the project
     already has (its own runs and the schedules imported from earlier projects). A beam takes the lightest library
@@ -396,6 +396,13 @@ def beam_schedule(ram, level=None, library=None, design='ram', office=None, assi
         return _area_of(t.get('top')) + _area_of(t.get('bottom')) + _stirrup_capacity(t.get('stirrups')) * 1000
     # beams assigned a type by the engineer (`spec.beamAssign`, e.g. the consultant's schedule kept as it is): the beam
     # takes that type's bars as they are - no RAM / office design, no typing - and the type is used even if unverified
+    # the consultant's RC beams (`by_others`: ids): on the plan as they are, never designed, typed or scheduled here
+    others_set = set(str(v).strip().upper() for v in (by_others or []))
+    others = []
+    for r in rows:
+        if str(r['id']).upper() in others_set:
+            r.update({'byOthers': True, 'designed': False, 'mark': None, 'top': None, 'bottom': None, 'stirrups': None, 'design': 'others'})
+            others.append(r['id'])
     assigned, unassigned = [], []
 
     def assign_of(id_):
@@ -404,6 +411,8 @@ def beam_schedule(ram, level=None, library=None, design='ram', office=None, assi
         k = next((x for x in assign.keys() if str(x).strip().upper() == str(id_).upper()), None)
         return assign[k] if k else None
     for r in rows:
+        if r.get('byOthers'):
+            continue
         mk = assign_of(r['id'])
         if not mk:
             continue
@@ -461,10 +470,10 @@ def beam_schedule(ram, level=None, library=None, design='ram', office=None, assi
             r['mark'] = None
     used = [{**t, 'count': len(t['beams'])} for t in [*[t for t in lib if t['beams']], *added]]
     return {
-        'beams': rows, 'types': used, 'undesigned': [r['id'] for r in rows if not r['designed']], 'ramUndesigned': [r['id'] for r in rows if not r['ramDesigned'] and not r.get('assigned')],
+        'beams': rows, 'types': used, 'undesigned': [r['id'] for r in rows if not r['designed'] and not r.get('byOthers')], 'ramUndesigned': [r['id'] for r in rows if not r['ramDesigned'] and not r.get('assigned') and not r.get('byOthers')],
         'added': [{'mark': t['mark'], 'width': t['width'], 'depth': t['depth'], 'section': t['section'], 'top': t['top'], 'bottom': t['bottom'], 'stirrups': t['stirrups']} for t in added],
         'library': len(lib), 'design': design, 'office': {'beams': office.get('beams'), 'failing': office.get('failing'), 'blocking': office.get('blocking'), 'warnings': office.get('warnings'), 'assumed': office.get('assumed')} if office else None,
-        'assigned': assigned, 'unassigned': unassigned, 'source': source or None,
+        'assigned': assigned, 'unassigned': unassigned, 'source': source or None, 'byOthers': others,
     }
 
 

@@ -17,7 +17,7 @@ and the date printed on the sheets (`spec.punching.override`).
 import math
 
 from .geometry import bbox, dist, polygon_area, point_in_polygon, dist_to_polygon, js_round
-from .rebar import column_on_beam
+from .rebar import column_on_beam, column_in_band
 
 PHI = 0.75
 GAMMA = {'interior': 1.15, 'edge': 1.3, 'corner': 1.4}  # unbalanced moment allowance on the direct shear
@@ -62,6 +62,11 @@ def punching_check(level, spec=None):
         beam = column_on_beam(level, c)
         if beam and str(c.get('id')).upper() not in ram_failed:
             out['columns'].append({'id': c.get('id'), 'loc': 'beam', 'h': h, 'd': None, 'trib_m2': None, 'wu_kn_m2': None, 'Vu_kn': None, 'bo_mm': None, 'vu_mpa': None, 'phi_vc_mpa': None, 'phi_vmax_mpa': None, 'ratio': None, 'fpc_mpa': None, 'rule': 'BEAM', 'ssr': False, 'trib_source': '-', 'ram_failed': False, 'ram_ok': False, 'status': 'on beam', 'beam': beam.get('id')})
+            continue
+        # the office's scope limited to the PT band beams (`spec.scope: 'bands'`): a column outside every band stands in the
+        # consultant's slab - its punching is the consultant's design, not checked here (the engineer's RAM report still wins)
+        if spec.get('scope') == 'bands' and not column_in_band(level, c, spec) and str(c.get('id')).upper() not in ram_failed:
+            out['columns'].append({'id': c.get('id'), 'loc': 'slab', 'h': h, 'd': None, 'trib_m2': None, 'wu_kn_m2': None, 'Vu_kn': None, 'bo_mm': None, 'vu_mpa': None, 'phi_vc_mpa': None, 'phi_vmax_mpa': None, 'ratio': None, 'fpc_mpa': None, 'rule': 'OTHERS', 'ssr': False, 'trib_source': '-', 'ram_failed': False, 'ram_ok': False, 'status': 'out of scope'})
             continue
         pc = next((p for p in checks if dist(p['p'], cc) < max(w, hh, 400)), None)
         d = max(h - ((pc or {}).get('coverToCgs') or (spec.get('cover') or 25) + 16), 0.6 * h)

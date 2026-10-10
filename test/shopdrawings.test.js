@@ -1306,3 +1306,28 @@ test('the consultant\'s bars kept as drawn: designerBars in the office conventio
   assert.deepEqual(parseCallout('7T18/m'), { n: 0, dia: 18, s: 143 });
   assert.deepEqual(parseCallout('3T12-150'), { n: 3, dia: 12, s: 150 });
 });
+
+test('the office\'s scope limited to the PT band beams (spec.scope \'bands\'): RC slab tag, no mesh, no slab rules, beams by others, columns outside the bands not checked', async () => {
+  const { generate } = await import('../shopdrawings/cli.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'scope-'));
+  const cpt = await buildSyntheticCpt(dir, { beam: true });
+  const r = generate({ inputDxf: cpt, out: join(dir, 'out'), meta: {}, spec: { scope: 'bands', consultant: { name: 'Quantum Group', drawing: 'dwg 4' } }, svg: false, levelNames: ['GROUND'], mode: 'design' });
+  const L = r.model.levels[0];
+  assert.equal(L.scope, 'bands'); assert.equal(L.meshFaces, 'none'); assert.equal(L.meshSpec, null); assert.deepEqual(L.meshLabels, []);
+  assert.equal(r.quantities.levels[0].mesh, null, 'no mesh in the take-off');
+  assert.equal(r.model.spec.topColumns.only, 'bands'); assert.equal(r.model.spec.beams.topBars, false); assert.equal(r.model.spec.rules.perimeter, false);
+  // the RC beams are the consultant's: on the plan by name, never designed, typed or scheduled
+  assert.deepEqual(L.beamSchedule.byOthers, ['BM1', 'BM2']); assert.deepEqual(L.beamSchedule.undesigned, []); assert.equal(L.beamSchedule.types.length, 0);
+  assert.equal(L.beamCheck.beams.length, 0);
+  const framing = readFileSync(r.files.find((f) => /FRAMING.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(framing.includes('RC BEAM 300x600 (BY OTHERS)') && framing.includes('\n1\nRC SLAB\n') && !framing.includes('POST TENSION SLAB'), 'RC slab tag, beams by others');
+  // no band in this model: every column off the beams is the consultant's slab (not checked), nothing drawn by the slab rules
+  const pc = r.punching[0];
+  assert.ok(pc.columns.every((c) => c.status === 'on beam' || c.status === 'out of scope') && pc.blocking.length === 0, JSON.stringify(pc.columns.map((c) => [c.id, c.status])));
+  const top = readFileSync(r.files.find((f) => /TOP_REINFORCEMENT.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(!top.includes('U-BAR\n') && !top.includes('MESH T') && top.includes('SCOPE OF THESE DRAWINGS: THE POST-TENSIONED BAND BEAMS ONLY') && top.includes('PT BAND BEAMS - TOP REINFORCEMENT PLAN'));
+  assert.ok(top.includes("NO SLAB MESH ON THIS SHEET: THE SLAB REINFORCEMENT IS THE CONSULTANT'S (BY OTHERS)."));
+  const bot = readFileSync(r.files.find((f) => /BOTTOM_REINFORCEMENT.*\.dxf$/.test(f)), 'utf8');
+  assert.ok(!bot.includes('LAP 500') && !bot.includes('BOTTOM MESH T'), 'no drop detail, no mesh indication');
+  assert.ok(r.model.assumptions.some((a) => /scope in GROUND is the post-tensioned band beams only/.test(a.text)));
+});

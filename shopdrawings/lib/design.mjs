@@ -31,6 +31,7 @@ import { bbox, dist, polygonArea, pointInPolygon, centroid, rectPolygon, asAxisR
 import * as R from './rebar.mjs';
 import * as D from './details.mjs';
 import { buildSheet, drawBase, commonNotes, levelAssumptions, gridRef, fmtMM, packSheets, ramCablesSheet, beamScheduleRows, BEAM_SCHEDULE_COLS, drawBeamSections, beamSteelKg, beamScheduleTotals, beamScheduleNotes } from './sheets.mjs';
+import { size50 } from './beam-strips.mjs';
 import { overrideColumns } from './punching.mjs';
 import * as RC from './ram-concept.mjs';
 /** The office's DIM100: 250 text, 150 oblique ticks, green number, text above the line, and no extension lines at all (dimse1/dimse2 on, dimexe 0). */
@@ -426,10 +427,23 @@ export function designerItems(level, bars, spec = {}) {
 export function prepareRamDesign(model, options = {}) {
   const wallT = options.wallThickness || 250;
   const spec = model.spec;
-  splitLevels(model, { ...spec, ...(options.spec || {}) });
+  const ospec = options.spec || {};
+  // the office's scope limited to the PT band beams (`spec.scope: 'bands'`): the slab, its mesh, the RC beams and every
+  // General Details rule are the consultant's - nothing of them is drawn, checked or scheduled; the column rule applies to
+  // the band columns only, no top bars across the beams, no consultant bars drawn
+  const scope = ospec.scope || spec.scope || null;
+  if (scope === 'bands') {
+    spec.scope = 'bands';
+    spec.rules = { perimeter: false, walls: false, drops: false, corners: false, voids: false, pourStrips: false, blockBeam: false, ...(ospec.rules || {}) };
+    spec.beams = { ...(spec.beams || {}), topBars: ospec.beams?.topBars ?? false };
+    spec.mesh = ospec.mesh === 'both' || ospec.mesh === 'bottom' ? ospec.mesh : 'none';
+    spec.designerBars = [];
+  }
+  splitLevels(model, { ...spec, ...ospec });
   // the office rules need their full parameter sets (perimeter U / L bars, column bars, mesh at thickness changes)
   // (the office rules, not the RAM file's G.A. assumptions; the user's config overrides them)
   for (const key of ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching', 'drops']) spec[key] = { ...R.DEFAULT_SPEC[key], ...(options.spec?.[key] || {}) };
+  if (scope === 'bands' && !spec.topColumns.only) spec.topColumns.only = 'bands';
   // the office reinforcement defaults from the settings: bottom mesh, top mesh (both-faces option), column bars, drop bars
   if (options.spec?.bottom) spec.bottom = { ...(spec.bottom || R.DEFAULT_SPEC.bottom), ...options.spec.bottom };
   if (options.spec?.topMesh) spec.topMesh = { ...(spec.bottom || R.DEFAULT_SPEC.bottom), ...options.spec.topMesh };
@@ -507,13 +521,17 @@ export function prepareRamDesign(model, options = {}) {
     level.meshSpec = [mesh.dia, mesh.spacing];
     // the slab mesh option: a bottom mesh only (default) or a mesh on both faces (spec.mesh = 'both'); the top mesh
     // takes its own diameter / spacing from the settings (spec.topMesh) or the bottom mesh's
-    level.meshFaces = (options.spec?.mesh || spec.mesh) === 'both' ? 'both' : 'bottom';
+    const meshOpt = scope === 'bands' ? spec.mesh : (options.spec?.mesh || spec.mesh);
+    level.meshFaces = meshOpt === 'both' ? 'both' : meshOpt === 'none' ? 'none' : 'bottom';
     level.topMesh = level.meshFaces === 'both';
     const tmesh = spec.topMesh || mesh;
     level.topMeshSpec = [tmesh.dia, tmesh.spacing];
     const sameMesh = tmesh.dia === mesh.dia && tmesh.spacing === mesh.spacing;
     const b0 = bbox(outline);
     level.meshLabels = [{ x: b0.minX + 600, y: b0.maxY - 700, lines: level.topMesh && !sameMesh ? [`BOTTOM MESH T${mesh.dia}@${mesh.spacing}`, `TOP MESH T${tmesh.dia}@${tmesh.spacing}`, 'TWO WAY'] : [`MESH T${mesh.dia}@${mesh.spacing}`, level.topMesh ? 'TOP & BOTTOM TWO WAY' : 'BOTTOM TWO WAY'] }];
+    // no slab mesh at all (`spec.mesh: 'none'`, the scope limited to the band beams): nothing labelled, nothing counted
+    if (level.meshFaces === 'none') { level.meshSpec = null; level.meshLabels = []; level.topMeshSpec = null; }
+    level.scope = scope === 'bands' ? 'bands' : null;
     // designed bands → office items
     const atBoundary = (p) => ((level.openings || []).some((o) => distToPolygon(p, R.regionPolygon(o)) < 300) ? 'U' : distToPolygon(p, outline) < (spec.cover || 25) + 300 ? R.edgeEndAt(level, spec, p).type : false);
     const items = [];
@@ -555,12 +573,20 @@ export function prepareRamDesign(model, options = {}) {
     if (replacedB.length) A(level, `${replacedB.length} RAM bottom bands local to the drop panels of ${level.name} replaced by the detail 4 extra bottom bars.`);
     const replaced = items.filter((it) => it.face === 'T' && inColumnZone(it));
     for (const it of replaced) items.splice(items.indexOf(it), 1);
+    // the scope limited to the band beams: a RAM band outside every band (the consultant's slab) is not the office's
+    let outside = [];
+    if (level.scope === 'bands') {
+      outside = items.filter((it) => !(level.beams || []).some((bm) => bm.band && bm.polygon && pointInPolygon(mid(it.a, it.b), bm.polygon)));
+      for (const it of outside) items.splice(items.indexOf(it), 1);
+    }
     if (tiny) A(level, `${tiny} RAM bands shorter than 1.2 m in ${level.name} ignored as export artefacts.`);
+    if (outside.length) A(level, `${outside.length} RAM bar bands of ${level.name} lie outside the post-tensioned band beams (the consultant's slab) and are not drawn.`);
     if (replaced.length) A(level, `${replaced.length} RAM top bands over the columns of ${level.name} replaced by the office column bars (one group each way, the drop panel length / 4 m, distributed over the crossing group).`);
     level.existing = { lines: [], callouts: [], dims: [], dots: [], items };
     model.findings.push(`${level.id} ${level.name}: ${level.walls.length} walls, ${(level.thickZones || []).length} thickness zones, ${level.edges.filter((e) => e.beam).length} of ${level.edges.length} slab edges with an edge beam, RAM designed reinforcement: ${items.length} bands (${items.filter((i) => i.face === 'T').length} top, ${items.filter((i) => i.face === 'B').length} bottom).`);
     const nProg = items.filter((i) => (level.ram?.bands || []).find((b) => b.id === i.ram)?.designedBy === 'program').length;
-    A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands drawn as designed, ${nProg} of them generated by the program for its design strips, ${items.length - nProg} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing}${level.topMesh ? ` and top mesh T${level.topMeshSpec[0]}@${level.topMeshSpec[1]}` : ''} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the settings'}${level.topMesh ? ' (slab mesh option: both faces)' : ' (slab mesh option: bottom only)'}.`);
+    if (level.scope === 'bands') A(level, `The office's scope in ${level.name} is the post-tensioned band beams only (${(level.beams || []).filter((b) => b.band).map((b) => b.id).join(', ') || 'none found'}): their tendons, their RAM designed reinforcement (${items.length} bar bands) and the top bars over their columns. The slab, its mesh, the RC beams and the General Details are the consultant's${spec.consultant?.name ? ` (${[spec.consultant.name, spec.consultant.drawing].filter(Boolean).join(', ')})` : ''} and are not drawn, checked or scheduled here.`);
+    else A(level, `Reinforcement of ${level.name} is the RAM Concept design (${items.length} bar bands drawn as designed, ${nProg} of them generated by the program for its design strips, ${items.length - nProg} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T${mesh.dia}@${mesh.spacing}${level.topMesh ? ` and top mesh T${level.topMeshSpec[0]}@${level.topMeshSpec[1]}` : ''} ${spec.sources?.bottom === 'assumed' || !spec.bottom ? 'assumed' : 'from the settings'}${level.topMesh ? ' (slab mesh option: both faces)' : ' (slab mesh option: bottom only)'}.`);
     // the consultant's / designer's bars given in the config, drawn as given and kept out of the office rules' way
     const dbars = (options.spec?.designerBars || spec.designerBars || []).filter((d) => d && (!d.level || d.level === level.id));
     if (dbars.length) {
@@ -596,7 +622,7 @@ export function markBeams(level, spec, A = () => {}) {
   for (const z of level.thickZones || []) {
     const b = bbox(z.polygon);
     const long = Math.max(b.w, b.h), short = Math.min(b.w, b.h);
-    if (long <= dropMax || short > bandMax || long < 3 * short) continue;
+    if (!R.isBandZone(z, spec)) continue;
     if (level.beams.some((bm) => bm.polygon && pointInPolygon({ x: b.cx, y: b.cy }, bm.polygon))) continue;
     const along = b.w >= b.h ? { x: 1, y: 0 } : { x: 0, y: 1 };
     level.beams.push({ id: `BB${z.id}`, a: add({ x: b.cx, y: b.cy }, along, -long / 2), b: add({ x: b.cx, y: b.cy }, along, long / 2), t: short, depth: z.thickness, polygon: z.polygon, band: true });
@@ -665,7 +691,7 @@ export function applyColumnRule(level, spec, assumptions = []) {
   // ('bands' = the columns standing in a band beam; else column ids - the grid reference or the model's own number)
   const onlyBands = s.only === 'bands' || (Array.isArray(s.only) && s.only.some((v) => String(v).toLowerCase() === 'bands'));
   const only = Array.isArray(s.only) && s.only.length ? new Set(s.only.map((v) => String(v).trim().toUpperCase())) : s.only && typeof s.only === 'string' && !onlyBands ? new Set([s.only.trim().toUpperCase()]) : null;
-  const inBand = (c) => (level.beams || []).some((bm) => bm.band && bm.polygon && pointInPolygon({ x: c.cx, y: c.cy }, bm.polygon));
+  const inBand = (c) => !!R.columnInBand(level, c);
   const listed = (c) => (only && (only.has(String(c.id).toUpperCase()) || (c.ramId && only.has(String(c.ramId).toUpperCase())))) || (onlyBands && inBand(c));
   const keepLines = (ex.items || []).filter((it) => it.fixed && isTop(it.face)).map((it) => ({ a: it.a, b: it.b, face: it.face, fixed: true }));
   const allLines = [...ex.lines, ...keepLines];
@@ -1501,6 +1527,7 @@ export function designAdditions(level, spec, opts = {}) {
   const overridden = [];
   for (const c of level.columns) {
     if (rules.punching === false || R.columnOnBeam(level, c)) continue; // a column on a beam does not punch the slab
+    if (spec.scope === 'bands' && !R.columnInBand(level, c)) continue; // the consultant's slab: its punching is theirs
     const w = c.shape === 'circle' ? c.d : c.w, hh = c.shape === 'circle' ? c.d : c.h;
     const set = ssrSets.find((st) => Math.abs(st.loc.x - c.cx) < Math.max(w, hh) && Math.abs(st.loc.y - c.cy) < Math.max(w, hh));
     const ov = !set && overrideIds.has(String(c.id).toUpperCase()) ? (level.punchingCheck?.columns || []).find((k) => String(k.id).toUpperCase() === String(c.id).toUpperCase()) : null;
@@ -1912,7 +1939,8 @@ function drawDesignerNotes(pl, S, level, o = {}) {
  * thickness `250 mm` - readable at a glance; the mesh labels of the reinforcement sheets go under the box (`t.below`).
  */
 function slabTag(pl, S, t, level) {
-  const pt = (level.pt?.zones?.length || 0) > 0 || (level.ram?.tendons?.length || 0) > 0;
+  // a slab whose band beams alone are post-tensioned (scope 'bands') is an RC slab: the bands carry the PT label
+  const pt = level.scope !== 'bands' && ((level.pt?.zones?.length || 0) > 0 || (level.ram?.tendons?.length || 0) > 0);
   const lines = [pt ? 'POST TENSION SLAB' : 'RC SLAB', `${t.thickness} mm`];
   const H = 260, gap = 140, pad = 200; // model mm at 1:100 (2.6 mm text on paper)
   const tw = Math.max(...lines.map((l) => l.length)) * H * 0.8 * 0.85 + 2 * pad;
@@ -1933,7 +1961,9 @@ function zoneLabels(pl, S, level, spec, face) {
   for (const z of level.thickZones || []) {
     const b = bbox(z.polygon);
     const lines = [[`THK ${z.thickness || 'DROP'}`, 'S-TEXT', 200]];
-    if (face === 'B') lines.push(dropColumn(level, spec, z) ? [`BOTTOM MESH T${sd.dia}@${sd.spacing} (D4)`, '9_TEXT', 170] : [`BOTTOM MESH T${tm.dia}@${tm.spacing}`, '9_TEXT', 170]);
+    const band = level.scope === 'bands' ? R.bandOfZone(level, z) : null;
+    if (band) lines.push([`POST TENSIONED BAND BEAM ${size50(band.t)}x${size50(band.depth || z.thickness)}`, 'S-TEXT', 200]);
+    if (face === 'B' && level.meshSpec) lines.push(dropColumn(level, spec, z) ? [`BOTTOM MESH T${sd.dia}@${sd.spacing} (D4)`, '9_TEXT', 170] : [`BOTTOM MESH T${tm.dia}@${tm.spacing}`, '9_TEXT', 170]);
     const wMax = Math.max(...lines.map(([t, , h]) => t.length * h * TEXT_W * 0.8));
     const hAll = lines.reduce((a, [, , h]) => a + h + 100, 0);
     const corners = [[b.minX + 150, b.maxY - 150], [b.maxX - 150 - wMax, b.maxY - 150], [b.minX + 150, b.minY + 150 + hAll], [b.maxX - 150 - wMax, b.minY + 150 + hAll], [b.minX + 150, b.maxY + 150 + hAll], [b.minX + 150, b.minY - 150]];
@@ -1961,6 +1991,7 @@ export const DESIGN_SHEETS = [
 
 const designNotes = (model, level) => [
   commonNotes(model, level)[0],
+  ...(level.scope === 'bands' ? [`SCOPE OF THESE DRAWINGS: THE POST-TENSIONED BAND BEAMS ONLY (${(level.beams || []).filter((b) => b.band).map((b) => b.id).join(', ') || '-'}) - THEIR TENDONS, THEIR REINFORCEMENT AND THE TOP BARS OVER THEIR COLUMNS. THE SLAB, ITS MESH, THE RC BEAMS (BY OTHERS) AND ALL OTHER REINFORCEMENT ARE PER THE CONSULTANT'S DRAWINGS${model.spec.consultant?.name ? ` (${[model.spec.consultant.name, model.spec.consultant.drawing].filter(Boolean).join(', ').toUpperCase()})` : ''} AND ARE NOT SHOWN HERE.`] : []),
   ...((model.spec.consultant?.notes || []).map((n) => String(n).toUpperCase())),
   `SLAB THICKNESS ${level.thickness} mm${level.tos ? `, ${level.levelTags[0].label} ${level.tos}` : ''}${level.thickZones?.length ? `; THICKENED ZONES ${[...new Set(level.thickZones.map((z) => z.thickness))].join(' / ')} mm HATCHED` : ''}. CONCRETE f'c = ${model.spec.fc} MPa, REINFORCEMENT fy = ${model.spec.fy} MPa, COVER ${model.spec.cover} mm (${model.spec.sources.cover}).`,
   'BAR CALL-OUT (OFFICE CONVENTION): "T10-200 (T)" = BAR SIZE - SPACING (LAYER), "L=2400" = BAR LENGTH; THE RED DIMENSION ACROSS THE BARS IS THE WIDTH OVER WHICH THEY ARE DISTRIBUTED; (T) TOP, (B) BOTTOM, T&B BOTH.',
@@ -2038,7 +2069,7 @@ function rebarSheet(model, level, meta, adds, face) {
     const faces = face === 'B' ? ['B'] : ['T', 'TB'];
     drawExisting(pl, S, level.existing, faces);
     if (face === 'B' || level.topMesh) drawMeshLabels(pl, S, level);
-    if (face === 'B') {
+    if (face === 'B' && level.meshSpec) {
       // office rule: the bottom mesh is written at every change of slab thickness (thickened zones, local RC thicknesses)
       const tm = model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh;
       const label = `BOTTOM MESH T${tm.dia}@${tm.spacing}`;
@@ -2075,13 +2106,13 @@ function rebarSheet(model, level, meta, adds, face) {
       : D.sectionUEdge({ h: level.thickness, cover: model.spec.cover, leg: 1200, dia: 12, edgeDia: 12, spacing: 200 });
     det2.draw(sheet.detailPen(d2, 20, det2.bbox));
     const tms = level.topMeshSpec || level.meshSpec;
-    const meshLine = level.meshSpec ? `${level.topMesh && tms && (tms[0] !== level.meshSpec[0] || tms[1] !== level.meshSpec[1]) ? `BOTTOM MESH T${level.meshSpec[0]}@${level.meshSpec[1]} AND TOP MESH T${tms[0]}@${tms[1]}` : `MESH T${level.meshSpec[0]}@${level.meshSpec[1]} ${level.topMesh ? 'TOP & BOTTOM (BOTH FACES)' : 'BOTTOM ONLY'}`} TWO WAY AS LABELLED ON THE PLAN (DESIGN)${level.topMesh && face === 'T' ? '; THE TOP MESH RUNS UNDER THE TOP BARS SHOWN, LAPPED AS THE BOTTOM MESH' : ''}.` : 'NO MESH LABEL FOUND ON THE DESIGN PLAN.';
+    const meshLine = level.meshSpec ? `${level.topMesh && tms && (tms[0] !== level.meshSpec[0] || tms[1] !== level.meshSpec[1]) ? `BOTTOM MESH T${level.meshSpec[0]}@${level.meshSpec[1]} AND TOP MESH T${tms[0]}@${tms[1]}` : `MESH T${level.meshSpec[0]}@${level.meshSpec[1]} ${level.topMesh ? 'TOP & BOTTOM (BOTH FACES)' : 'BOTTOM ONLY'}`} TWO WAY AS LABELLED ON THE PLAN (DESIGN)${level.topMesh && face === 'T' ? '; THE TOP MESH RUNS UNDER THE TOP BARS SHOWN, LAPPED AS THE BOTTOM MESH' : ''}.` : level.scope === 'bands' ? "NO SLAB MESH ON THIS SHEET: THE SLAB REINFORCEMENT IS THE CONSULTANT'S (BY OTHERS)." : 'NO MESH LABEL FOUND ON THE DESIGN PLAN.';
     return {
       rows, totals: level.designerBars ? `GENERAL DETAILS ADDITIONS + THE CONSULTANT'S BARS AS DRAWN: ${tot.weight_kg.toLocaleString('en-US')} kg (RAM BANDS NOT SCHEDULED HERE)` : `ADDED FROM THE GENERAL DETAILS: ${tot.weight_kg.toLocaleString('en-US')} kg (DESIGNER'S BARS NOT SCHEDULED HERE)`, weight: tot.weight_kg,
       scheduleTitle: level.designerBars ? `BAR SCHEDULE - GENERAL DETAILS + CONSULTANT'S BARS (${face === 'B' ? 'BOTTOM' : 'TOP'})` : `BAR SCHEDULE - GENERAL DETAILS ADDITIONS (${face === 'B' ? 'BOTTOM' : 'TOP'})`,
-      planTitles: [face === 'B' ? 'BOTTOM REINFORCEMENT PLAN' : 'TOP REINFORCEMENT PLAN'],
+      planTitles: [`${level.scope === 'bands' ? 'PT BAND BEAMS - ' : ''}${face === 'B' ? 'BOTTOM REINFORCEMENT PLAN' : 'TOP REINFORCEMENT PLAN'}`],
       general: [...designNotes(model, level), meshLine,
-        face === 'B' ? `BOTTOM SHEET: BOTTOM BARS ONLY. DETAIL 4 INSIDE A COLUMN DROP = THE DROP MESH T${(model.spec.drops || R.DEFAULT_SPEC.drops).dia}@${(model.spec.drops || R.DEFAULT_SPEC.drops).spacing} AS TWO GROUPS THROUGH THE COLUMN (AS LONG AS THE DROP, AT LEAST 1.5 m PAST THE COLUMN FACE); EXTRA BARS 50 dia BEYOND A THICKENED STRIP. THE BOTTOM MESH T${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).dia}@${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).spacing} IS WRITTEN AT EVERY CHANGE OF SLAB THICKNESS. T&B BARS (TRIMMERS, U-BARS, DIAGONALS) ARE DRAWN ON THE TOP SHEET; THEIR BOTTOM LAYER IS SCHEDULED HERE.`
+        face === 'B' && level.scope === 'bands' ? 'BOTTOM SHEET: THE BOTTOM BARS OF THE POST-TENSIONED BAND BEAMS ONLY (THE RAM CONCEPT DESIGN); NO SLAB MESH, NO DROP DETAIL, NO TRIMMERS - THE SLAB IS THE CONSULTANT\'S.' : face === 'T' && level.scope === 'bands' ? 'TOP SHEET: THE TOP BARS OVER THE COLUMNS OF THE POST-TENSIONED BAND BEAMS ONLY (OFFICE RULE, TWO GROUPS PER COLUMN); NO PERIMETER U-BARS, NO TRIMMERS, NO CORNER BARS - THE SLAB IS THE CONSULTANT\'S.' : face === 'B' ? `BOTTOM SHEET: BOTTOM BARS ONLY. DETAIL 4 INSIDE A COLUMN DROP = THE DROP MESH T${(model.spec.drops || R.DEFAULT_SPEC.drops).dia}@${(model.spec.drops || R.DEFAULT_SPEC.drops).spacing} AS TWO GROUPS THROUGH THE COLUMN (AS LONG AS THE DROP, AT LEAST 1.5 m PAST THE COLUMN FACE); EXTRA BARS 50 dia BEYOND A THICKENED STRIP. THE BOTTOM MESH T${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).dia}@${(model.spec.thicknessMesh || R.DEFAULT_SPEC.thicknessMesh).spacing} IS WRITTEN AT EVERY CHANGE OF SLAB THICKNESS. T&B BARS (TRIMMERS, U-BARS, DIAGONALS) ARE DRAWN ON THE TOP SHEET; THEIR BOTTOM LAYER IS SCHEDULED HERE.`
           : 'TOP SHEET: DETAIL 1 L-BARS ALONG EDGE BEAMS, DETAIL 2 U-BARS AND PARALLEL BARS AT CORE WALLS, DETAIL 5 CORNER DIAGONALS, DETAIL 7 VOID TRIMMERS (T&B); LAP 500 AT THICKNESS STEPS (DETAIL 3).'],
       assumptions: [...adds.assumptions, ...levelAssumptions(model, level), 'ANCHORAGE-DEPENDENT DETAILS (SLAB EDGE AT LIVE ANCHORS, BURSTING SPIRALS, PAN-BOX TRIMMERS) ARE NOT SHOWN: TO BE ADDED WITH THE TENDON LAYOUT.'],
       legend: [[face === 'B' ? 'REO-BOT' : 'REO-TOP', face === 'B' ? 'BOTTOM BAR (B)' : 'TOP BAR (T)', 'thick'], ['diamension', 'DISTRIBUTION WIDTH', 'line'], ['DOTS', 'BAR / DISTRIBUTION DOT', 'line'], ['DETAIL-REF', 'D# = GENERAL DETAIL REFERENCE', 'line'], ['s-hatch', 'COLUMN (SOLID GREY)', 'solid'], ['WALL-HATCH', 'WALL', 'hatch']],
@@ -2154,7 +2185,7 @@ function punchingSheet(model, level, meta, adds) {
       rows, cols, scheduleTitle: 'SCHEDULE OF PUNCHING SHEAR REINFORCEMENT',
       general: [designNotes(model, level)[0], 'PUNCHING SHEAR REINFORCEMENT IS TAGGED PER COLUMN AS "ROWS - LEGS - BAR" (DETAIL 12): CLOSED STIRRUP STRIPS LEAVE EVERY COLUMN FACE, THE FIRST ROW AT S FROM THE FACE; STIRRUPS ENCLOSE THE TOP AND BOTTOM BARS.', ramPS ? 'PS TYPES ARE DERIVED FROM THE STUD RAILS DESIGNED IN RAM CONCEPT (ROWS COVER THE RAIL LENGTH AT S, LEGS MATCH THE STUD AREA PER FACE); COLUMNS WITHOUT RAILS IN RAM CARRY NO PUNCHING REINFORCEMENT.' : 'PRELIMINARY: PS TYPES ARE PLACEHOLDERS (PS1 INTERIOR, PS2 EDGE / CORNER) UNTIL THE PUNCHING DESIGN OF EACH COLUMN IS AVAILABLE; THE DESIGN GOVERNS THE NUMBER OF ROWS AND LEGS.',
         ovs.length ? `ENGINEER'S BYPASS: COLUMNS ${ovs.map((p) => p.col.id).join(', ')} DO NOT PASS THE PUNCHING CHECK AND NO THICKENING WAS ADOPTED; THEIR PS TYPES ARE SIZED FROM THE OFFICE ESTIMATE AND PROVIDED AT THE DESIGN ENGINEER'S RESPONSIBILITY${ov?.by ? ` - ${String(ov.by).toUpperCase()}` : ''}${ov?.date ? `, ${ov.date}` : ''}.` : null,
-        check && check.columns.length ? `INDICATIVE PUNCHING CHECK (SBC 304 / ACI 318 TWO-WAY SHEAR ON RAM'S TRIBUTARY AREAS AND LOADS, f'c ${check.fc} MPa${check.fpc_mpa != null ? `, fpc ${check.fpc_mpa} MPa` : ''}): ${check.columns.filter((k) => k.status !== 'ok' && k.status !== 'on beam').length} OF ${check.columns.filter((k) => k.status !== 'on beam').length} COLUMNS OVER phi.vc (${check.columns.filter((k) => k.status !== 'ok' && k.status !== 'on beam').map((k) => `${k.id} ${k.ratio}`).join(', ') || 'NONE'})${check.columns.some((k) => k.status === 'on beam') ? `; ${check.columns.filter((k) => k.status === 'on beam').length} COLUMNS STAND ON BEAMS (NO PUNCHING OF THE SLAB)` : ''}; THE RAM PUNCHING REPORT GOVERNS.` : null].filter(Boolean),
+        check && check.columns.length ? `INDICATIVE PUNCHING CHECK (SBC 304 / ACI 318 TWO-WAY SHEAR ON RAM'S TRIBUTARY AREAS AND LOADS, f'c ${check.fc} MPa${check.fpc_mpa != null ? `, fpc ${check.fpc_mpa} MPa` : ''}): ${check.columns.filter((k) => k.status !== 'ok' && k.status !== 'on beam' && k.status !== 'out of scope').length} OF ${check.columns.filter((k) => k.status !== 'on beam' && k.status !== 'out of scope').length} COLUMNS OVER phi.vc (${check.columns.filter((k) => k.status !== 'ok' && k.status !== 'on beam' && k.status !== 'out of scope').map((k) => `${k.id} ${k.ratio}`).join(', ') || 'NONE'})${check.columns.some((k) => k.status === 'on beam') ? `; ${check.columns.filter((k) => k.status === 'on beam').length} COLUMNS STAND ON BEAMS (NO PUNCHING OF THE SLAB)` : ''}${check.columns.some((k) => k.status === 'out of scope') ? `; ${check.columns.filter((k) => k.status === 'out of scope').length} COLUMNS OUTSIDE THE PT BAND BEAMS STAND IN THE CONSULTANT'S SLAB (NOT CHECKED HERE)` : ''}; THE RAM PUNCHING REPORT GOVERNS.` : null].filter(Boolean),
       assumptions: [ramPS ? adds.assumptions.find((t) => /^D12 PUNCHING:/.test(t)) : 'PUNCHING DESIGN NOT AVAILABLE: PS1 = 10R-4-T12 @100 (INTERIOR), PS2 = 12R-4-T12 @100 (EDGE / CORNER) ASSUMED FROM THE GENERAL DETAILS SCHEDULE - TO BE CONFIRMED.', adds.assumptions.find((t) => /^D12 PUNCHING - ENGINEER/.test(t)), ...levelAssumptions(model, level).slice(0, 3)].filter(Boolean),
       legend: [['REBAR-PUNCH', 'STIRRUP STRIPS (LEGS / 2 PER FACE)', 'thick'], ['PS-ROW', 'ROWS OF STIRRUPS AT S', 'line'], ['PS-TAG', 'PS TYPE / TAG', 'line'], ['s-hatch', 'COLUMN (SOLID GREY)', 'solid']],
       detailsUsed: 2,

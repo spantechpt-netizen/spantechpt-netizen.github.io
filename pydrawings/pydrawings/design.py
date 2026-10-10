@@ -45,6 +45,7 @@ from .sheets import (
     beam_schedule_rows, BEAM_SCHEDULE_COLS, draw_beam_sections, beam_steel_kg, beam_schedule_totals, beam_schedule_notes,
 )
 from .punching import override_columns
+from .beam_strips import size50
 from . import ram_concept as RC
 from .canvas import opts as _opts, js_str
 
@@ -664,11 +665,24 @@ def prepare_ram_design(model, options=None):
     wall_t = options.get('wallThickness') or 250
     spec = model['spec']
     ospec = options.get('spec') or {}
+    # the office's scope limited to the PT band beams (`spec.scope: 'bands'`): the slab, its mesh, the RC beams and every
+    # General Details rule are the consultant's - nothing of them is drawn, checked or scheduled; the column rule applies to
+    # the band columns only, no top bars across the beams, no consultant bars drawn
+    scope = ospec.get('scope') or spec.get('scope') or None
+    if scope == 'bands':
+        spec['scope'] = 'bands'
+        spec['rules'] = {'perimeter': False, 'walls': False, 'drops': False, 'corners': False, 'voids': False, 'pourStrips': False, 'blockBeam': False, **(ospec.get('rules') or {})}
+        ob = (ospec.get('beams') or {})
+        spec['beams'] = {**(spec.get('beams') or {}), 'topBars': ob['topBars'] if ob.get('topBars') is not None else False}
+        spec['mesh'] = ospec.get('mesh') if ospec.get('mesh') in ('both', 'bottom') else 'none'
+        spec['designerBars'] = []
     split_levels(model, {**spec, **ospec})
     # the office rules need their full parameter sets (perimeter U / L bars, column bars, mesh at thickness changes)
     # (the office rules, not the RAM file's G.A. assumptions; the user's config overrides them)
     for key in ['uEdge', 'topColumns', 'thicknessMesh', 'openings', 'punching', 'drops']:
         spec[key] = {**R.DEFAULT_SPEC[key], **(ospec.get(key) or {})}
+    if scope == 'bands' and not spec['topColumns'].get('only'):
+        spec['topColumns']['only'] = 'bands'
     # the office reinforcement defaults from the settings: bottom mesh, top mesh (both-faces option), column bars, drop bars
     if ospec.get('bottom'):
         spec['bottom'] = {**(spec.get('bottom') or R.DEFAULT_SPEC['bottom']), **ospec['bottom']}
@@ -747,13 +761,20 @@ def prepare_ram_design(model, options=None):
         level['meshSpec'] = [mesh['dia'], mesh['spacing']]
         # the slab mesh option: a bottom mesh only (default) or a mesh on both faces (spec.mesh = 'both'); the top mesh
         # takes its own diameter / spacing from the settings (spec.topMesh) or the bottom mesh's
-        level['meshFaces'] = 'both' if (ospec.get('mesh') or spec.get('mesh')) == 'both' else 'bottom'
+        mesh_opt = spec.get('mesh') if scope == 'bands' else (ospec.get('mesh') or spec.get('mesh'))
+        level['meshFaces'] = 'both' if mesh_opt == 'both' else 'none' if mesh_opt == 'none' else 'bottom'
         level['topMesh'] = level['meshFaces'] == 'both'
         tmesh = spec.get('topMesh') or mesh
         level['topMeshSpec'] = [tmesh['dia'], tmesh['spacing']]
         same_mesh = tmesh['dia'] == mesh['dia'] and tmesh['spacing'] == mesh['spacing']
         b0 = bbox(outline)
         level['meshLabels'] = [{'x': b0['minX'] + 600, 'y': b0['maxY'] - 700, 'lines': [f"BOTTOM MESH T{fmt_num(mesh['dia'])}@{fmt_num(mesh['spacing'])}", f"TOP MESH T{fmt_num(tmesh['dia'])}@{fmt_num(tmesh['spacing'])}", 'TWO WAY'] if level['topMesh'] and not same_mesh else [f"MESH T{fmt_num(mesh['dia'])}@{fmt_num(mesh['spacing'])}", 'TOP & BOTTOM TWO WAY' if level['topMesh'] else 'BOTTOM TWO WAY']}]
+        # no slab mesh at all (`spec.mesh: 'none'`, the scope limited to the band beams): nothing labelled, nothing counted
+        if level['meshFaces'] == 'none':
+            level['meshSpec'] = None
+            level['meshLabels'] = []
+            level['topMeshSpec'] = None
+        level['scope'] = 'bands' if scope == 'bands' else None
 
         # designed bands → office items
         def at_boundary(p, level=level, outline=outline):
@@ -820,8 +841,16 @@ def prepare_ram_design(model, options=None):
         replaced = [it for it in items if it['face'] == 'T' and in_column_zone(it)]
         for it in replaced:
             items.remove(it)
+        # the scope limited to the band beams: a RAM band outside every band (the consultant's slab) is not the office's
+        outside = []
+        if level.get('scope') == 'bands':
+            outside = [it for it in items if not any(bm.get('band') and bm.get('polygon') and point_in_polygon(mid(it['a'], it['b']), bm['polygon']) for bm in (level.get('beams') or []))]
+            for it in outside:
+                items.remove(it)
         if tiny:
             A(level, f"{tiny} RAM bands shorter than 1.2 m in {level['name']} ignored as export artefacts.")
+        if outside:
+            A(level, f"{len(outside)} RAM bar bands of {level['name']} lie outside the post-tensioned band beams (the consultant's slab) and are not drawn.")
         if replaced:
             A(level, f"{len(replaced)} RAM top bands over the columns of {level['name']} replaced by the office column bars (one group each way, the drop panel length / 4 m, distributed over the crossing group).")
         level['existing'] = {'lines': [], 'callouts': [], 'dims': [], 'dots': [], 'items': items}
@@ -829,7 +858,12 @@ def prepare_ram_design(model, options=None):
         n_prog = len([i for i in items if (next((b for b in ram_bands if b.get('id') == i['ram']), None) or {}).get('designedBy') == 'program'])
         top_txt = f" and top mesh T{fmt_num(level['topMeshSpec'][0])}@{fmt_num(level['topMeshSpec'][1])}" if level['topMesh'] else ''
         src_txt = 'assumed' if (spec.get('sources') or {}).get('bottom') == 'assumed' or not spec.get('bottom') else 'from the settings'
-        A(level, f"Reinforcement of {level['name']} is the RAM Concept design ({len(items)} bar bands drawn as designed, {n_prog} of them generated by the program for its design strips, {len(items) - n_prog} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T{fmt_num(mesh['dia'])}@{fmt_num(mesh['spacing'])}{top_txt} {src_txt}{' (slab mesh option: both faces)' if level['topMesh'] else ' (slab mesh option: bottom only)'}.")
+        if level.get('scope') == 'bands':
+            cons = spec.get('consultant') or {}
+            cons_txt = f" ({', '.join(str(v) for v in [cons.get('name'), cons.get('drawing')] if v)})" if cons.get('name') else ''
+            A(level, f"The office's scope in {level['name']} is the post-tensioned band beams only ({', '.join(b['id'] for b in (level.get('beams') or []) if b.get('band')) or 'none found'}): their tendons, their RAM designed reinforcement ({len(items)} bar bands) and the top bars over their columns. The slab, its mesh, the RC beams and the General Details are the consultant's{cons_txt} and are not drawn, checked or scheduled here.")
+        else:
+            A(level, f"Reinforcement of {level['name']} is the RAM Concept design ({len(items)} bar bands drawn as designed, {n_prog} of them generated by the program for its design strips, {len(items) - n_prog} drawn by the engineer); the General Details additions are placed on top of it. Bottom mesh T{fmt_num(mesh['dia'])}@{fmt_num(mesh['spacing'])}{top_txt} {src_txt}{' (slab mesh option: both faces)' if level['topMesh'] else ' (slab mesh option: bottom only)'}.")
         # the consultant's / designer's bars given in the config, drawn as given and kept out of the office rules' way
         dbars = [d for d in (ospec.get('designerBars') or spec.get('designerBars') or []) if d and (not d.get('level') or d.get('level') == level['id'])]
         if dbars:
@@ -907,7 +941,7 @@ def mark_beams(level, spec, A=None):
     for z in level.get('thickZones') or []:
         b = bbox(z['polygon'])
         long, short = max(b['w'], b['h']), min(b['w'], b['h'])
-        if long <= drop_max or short > band_max or long < 3 * short:
+        if not R.is_band_zone(z, spec):
             continue
         if any(bm.get('polygon') and point_in_polygon({'x': b['cx'], 'y': b['cy']}, bm['polygon']) for bm in level['beams']):
             continue
@@ -1012,7 +1046,7 @@ def apply_column_rule(level, spec, assumptions=None):
     only = set(str(v).strip().upper() for v in s_only) if isinstance(s_only, list) and s_only else {s_only.strip().upper()} if isinstance(s_only, str) and s_only and not only_bands else None
 
     def in_band(c):
-        return any(bm.get('band') and bm.get('polygon') and point_in_polygon({'x': c['cx'], 'y': c['cy']}, bm['polygon']) for bm in (level.get('beams') or []))
+        return bool(R.column_in_band(level, c))
 
     def listed(c):
         return bool(only and (str(c.get('id')).upper() in only or (c.get('ramId') and str(c['ramId']).upper() in only))) or (only_bands and in_band(c))
@@ -2107,6 +2141,8 @@ def design_additions(level, spec, opts=None):
     for c in level['columns']:
         if rules.get('punching') is False or R.column_on_beam(level, c):
             continue  # a column on a beam does not punch the slab
+        if spec.get('scope') == 'bands' and not R.column_in_band(level, c):
+            continue  # the consultant's slab: its punching is theirs
         w = c['d'] if c.get('shape') == 'circle' else c['w']
         hh = c['d'] if c.get('shape') == 'circle' else c['h']
         set_ = next((st for st in ssr_sets if abs(st['loc']['x'] - c['cx']) < max(w, hh) and abs(st['loc']['y'] - c['cy']) < max(w, hh)), None)
@@ -2697,7 +2733,8 @@ def slab_tag(pl, S, t, level):
     The slab tag (office style): a boxed two-line label in the slab - `POST TENSION SLAB` (or `RC SLAB`) over the
     thickness `250 mm` - readable at a glance; the mesh labels of the reinforcement sheets go under the box (`t.below`).
     """
-    pt = (len(((level.get('pt') or {}).get('zones') or [])) or 0) > 0 or (len(((level.get('ram') or {}).get('tendons') or [])) or 0) > 0
+    # a slab whose band beams alone are post-tensioned (scope 'bands') is an RC slab: the bands carry the PT label
+    pt = level.get('scope') != 'bands' and ((len(((level.get('pt') or {}).get('zones') or [])) or 0) > 0 or (len(((level.get('ram') or {}).get('tendons') or [])) or 0) > 0)
     lines = ['POST TENSION SLAB' if pt else 'RC SLAB', f"{js_str(t['thickness'])} mm"]
     H, gap, pad = 260, 140, 200  # model mm at 1:100 (2.6 mm text on paper)
     tw = max(len(l) for l in lines) * H * 0.8 * 0.85 + 2 * pad
@@ -2720,7 +2757,10 @@ def zone_labels(pl, S, level, spec, face):
     for z in level.get('thickZones') or []:
         b = bbox(z['polygon'])
         lines = [[f"THK {js_str(z['thickness']) if _t(z.get('thickness')) else 'DROP'}", 'S-TEXT', 200]]
-        if face == 'B':
+        band = R.band_of_zone(level, z) if level.get('scope') == 'bands' else None
+        if band:
+            lines.append([f"POST TENSIONED BAND BEAM {fmt_num(size50(band.get('t')))}x{fmt_num(size50(band.get('depth') or z.get('thickness')))}", 'S-TEXT', 200])
+        if face == 'B' and level.get('meshSpec'):
             lines.append([f"BOTTOM MESH T{fmt_num(sd['dia'])}@{fmt_num(sd['spacing'])} (D4)", '9_TEXT', 170] if drop_column(level, spec, z) else [f"BOTTOM MESH T{fmt_num(tm['dia'])}@{fmt_num(tm['spacing'])}", '9_TEXT', 170])
         w_max = max(len(t) * h * TEXT_W * 0.8 for t, _, h in lines)
         h_all = sum(h + 100 for _, _, h in lines)
@@ -2765,8 +2805,12 @@ def design_notes(model, level):
     spec = model['spec']
     tos_txt = f", {level['levelTags'][0]['label']} {js_str(level['tos'])}" if _t(level.get('tos')) else ''
     zones_txt = f"; THICKENED ZONES {_join(list(dict.fromkeys(z.get('thickness') for z in level['thickZones'])), ' / ')} mm HATCHED" if level.get('thickZones') else ''
+    cons = spec.get('consultant') or {}
+    cons_up = f" ({', '.join(str(v) for v in [cons.get('name'), cons.get('drawing')] if v).upper()})" if cons.get('name') else ''
+    scope_note = [f"SCOPE OF THESE DRAWINGS: THE POST-TENSIONED BAND BEAMS ONLY ({', '.join(b['id'] for b in (level.get('beams') or []) if b.get('band')) or '-'}) - THEIR TENDONS, THEIR REINFORCEMENT AND THE TOP BARS OVER THEIR COLUMNS. THE SLAB, ITS MESH, THE RC BEAMS (BY OTHERS) AND ALL OTHER REINFORCEMENT ARE PER THE CONSULTANT'S DRAWINGS{cons_up} AND ARE NOT SHOWN HERE."] if level.get('scope') == 'bands' else []
     return [
         common_notes(model, level)[0],
+        *scope_note,
         *[str(n).upper() for n in ((spec.get('consultant') or {}).get('notes') or [])],
         f"SLAB THICKNESS {js_str(level['thickness'])} mm{tos_txt}{zones_txt}. CONCRETE f'c = {js_str(spec.get('fc'))} MPa, REINFORCEMENT fy = {js_str(spec.get('fy'))} MPa, COVER {js_str(spec.get('cover'))} mm ({js_str((spec.get('sources') or {}).get('cover'))}).",
         'BAR CALL-OUT (OFFICE CONVENTION): "T10-200 (T)" = BAR SIZE - SPACING (LAYER), "L=2400" = BAR LENGTH; THE RED DIMENSION ACROSS THE BARS IS THE WIDTH OVER WHICH THEY ARE DISTRIBUTED; (T) TOP, (B) BOTTOM, T&B BOTH.',
@@ -2859,7 +2903,7 @@ def rebar_sheet(model, level, meta, adds, face):
         draw_existing(pl, S, level['existing'], faces)
         if face == 'B' or level.get('topMesh'):
             draw_mesh_labels(pl, S, level)
-        if face == 'B':
+        if face == 'B' and level.get('meshSpec'):
             # office rule: the bottom mesh is written at every change of slab thickness (thickened zones, local RC thicknesses)
             tm = spec.get('thicknessMesh') or R.DEFAULT_SPEC['thicknessMesh']
             label = f"BOTTOM MESH T{fmt_num(tm['dia'])}@{fmt_num(tm['spacing'])}"
@@ -2912,6 +2956,8 @@ def rebar_sheet(model, level, meta, adds, face):
             else:
                 mesh_txt = f"MESH T{fmt_num(ms[0])}@{fmt_num(ms[1])} {'TOP & BOTTOM (BOTH FACES)' if level.get('topMesh') else 'BOTTOM ONLY'}"
             mesh_line = f"{mesh_txt} TWO WAY AS LABELLED ON THE PLAN (DESIGN){'; THE TOP MESH RUNS UNDER THE TOP BARS SHOWN, LAPPED AS THE BOTTOM MESH' if level.get('topMesh') and face == 'T' else ''}."
+        elif level.get('scope') == 'bands':
+            mesh_line = "NO SLAB MESH ON THIS SHEET: THE SLAB REINFORCEMENT IS THE CONSULTANT'S (BY OTHERS)."
         else:
             mesh_line = 'NO MESH LABEL FOUND ON THE DESIGN PLAN.'
         drops = spec.get('drops') or R.DEFAULT_SPEC['drops']
@@ -2919,8 +2965,10 @@ def rebar_sheet(model, level, meta, adds, face):
         return {
             'rows': rows, 'totals': (f"GENERAL DETAILS ADDITIONS + THE CONSULTANT'S BARS AS DRAWN: {_locale_en(tot['weight_kg'])} kg (RAM BANDS NOT SCHEDULED HERE)" if level.get('designerBars') else f"ADDED FROM THE GENERAL DETAILS: {_locale_en(tot['weight_kg'])} kg (DESIGNER'S BARS NOT SCHEDULED HERE)"), 'weight': tot['weight_kg'],
             'scheduleTitle': f"BAR SCHEDULE - GENERAL DETAILS + CONSULTANT'S BARS ({'BOTTOM' if face == 'B' else 'TOP'})" if level.get('designerBars') else f"BAR SCHEDULE - GENERAL DETAILS ADDITIONS ({'BOTTOM' if face == 'B' else 'TOP'})",
-            'planTitles': ['BOTTOM REINFORCEMENT PLAN' if face == 'B' else 'TOP REINFORCEMENT PLAN'],
+            'planTitles': [('PT BAND BEAMS - ' if level.get('scope') == 'bands' else '') + ('BOTTOM REINFORCEMENT PLAN' if face == 'B' else 'TOP REINFORCEMENT PLAN')],
             'general': design_notes(model, level) + [mesh_line,
+                                                     "BOTTOM SHEET: THE BOTTOM BARS OF THE POST-TENSIONED BAND BEAMS ONLY (THE RAM CONCEPT DESIGN); NO SLAB MESH, NO DROP DETAIL, NO TRIMMERS - THE SLAB IS THE CONSULTANT'S." if face == 'B' and level.get('scope') == 'bands' else
+                                                     "TOP SHEET: THE TOP BARS OVER THE COLUMNS OF THE POST-TENSIONED BAND BEAMS ONLY (OFFICE RULE, TWO GROUPS PER COLUMN); NO PERIMETER U-BARS, NO TRIMMERS, NO CORNER BARS - THE SLAB IS THE CONSULTANT'S." if face == 'T' and level.get('scope') == 'bands' else
                                                      f"BOTTOM SHEET: BOTTOM BARS ONLY. DETAIL 4 INSIDE A COLUMN DROP = THE DROP MESH T{fmt_num(drops['dia'])}@{fmt_num(drops['spacing'])} AS TWO GROUPS THROUGH THE COLUMN (AS LONG AS THE DROP, AT LEAST 1.5 m PAST THE COLUMN FACE); EXTRA BARS 50 dia BEYOND A THICKENED STRIP. THE BOTTOM MESH T{fmt_num(tmesh['dia'])}@{fmt_num(tmesh['spacing'])} IS WRITTEN AT EVERY CHANGE OF SLAB THICKNESS. T&B BARS (TRIMMERS, U-BARS, DIAGONALS) ARE DRAWN ON THE TOP SHEET; THEIR BOTTOM LAYER IS SCHEDULED HERE."
                                                      if face == 'B' else 'TOP SHEET: DETAIL 1 L-BARS ALONG EDGE BEAMS, DETAIL 2 U-BARS AND PARALLEL BARS AT CORE WALLS, DETAIL 5 CORNER DIAGONALS, DETAIL 7 VOID TRIMMERS (T&B); LAP 500 AT THICKNESS STEPS (DETAIL 3).'],
             'assumptions': list(adds['assumptions']) + list(level_assumptions(model, level)) + ['ANCHORAGE-DEPENDENT DETAILS (SLAB EDGE AT LIVE ANCHORS, BURSTING SPIRALS, PAN-BOX TRIMMERS) ARE NOT SHOWN: TO BE ADDED WITH THE TENDON LAYOUT.'],
@@ -3007,13 +3055,15 @@ def punching_sheet(model, level, meta, adds):
             bypass = f"ENGINEER'S BYPASS: COLUMNS {', '.join(js_str(p['col'].get('id')) for p in ovs)} DO NOT PASS THE PUNCHING CHECK AND NO THICKENING WAS ADOPTED; THEIR PS TYPES ARE SIZED FROM THE OFFICE ESTIMATE AND PROVIDED AT THE DESIGN ENGINEER'S RESPONSIBILITY{by_txt}{date_txt}."
         check_line = None
         if check and check.get('columns'):
-            failing = [k for k in check['columns'] if k.get('status') != 'ok' and k.get('status') != 'on beam']
-            checked_cols = [k for k in check['columns'] if k.get('status') != 'on beam']
+            failing = [k for k in check['columns'] if k.get('status') != 'ok' and k.get('status') != 'on beam' and k.get('status') != 'out of scope']
+            checked_cols = [k for k in check['columns'] if k.get('status') != 'on beam' and k.get('status') != 'out of scope']
             on_beam = [k for k in check['columns'] if k.get('status') == 'on beam']
+            out_scope = [k for k in check['columns'] if k.get('status') == 'out of scope']
             fpc = f", fpc {js_str(check['fpc_mpa'])} MPa" if check.get('fpc_mpa') is not None else ''
             over = ', '.join(f"{js_str(k.get('id'))} {js_str(k.get('ratio'))}" for k in failing) or 'NONE'
             on_beam_txt = f"; {len(on_beam)} COLUMNS STAND ON BEAMS (NO PUNCHING OF THE SLAB)" if on_beam else ''
-            check_line = f"INDICATIVE PUNCHING CHECK (SBC 304 / ACI 318 TWO-WAY SHEAR ON RAM'S TRIBUTARY AREAS AND LOADS, f'c {js_str(check.get('fc'))} MPa{fpc}): {len(failing)} OF {len(checked_cols)} COLUMNS OVER phi.vc ({over}){on_beam_txt}; THE RAM PUNCHING REPORT GOVERNS."
+            out_txt = f"; {len(out_scope)} COLUMNS OUTSIDE THE PT BAND BEAMS STAND IN THE CONSULTANT'S SLAB (NOT CHECKED HERE)" if out_scope else ''
+            check_line = f"INDICATIVE PUNCHING CHECK (SBC 304 / ACI 318 TWO-WAY SHEAR ON RAM'S TRIBUTARY AREAS AND LOADS, f'c {js_str(check.get('fc'))} MPa{fpc}): {len(failing)} OF {len(checked_cols)} COLUMNS OVER phi.vc ({over}){on_beam_txt}{out_txt}; THE RAM PUNCHING REPORT GOVERNS."
         general = [g for g in [design_notes(model, level)[0], 'PUNCHING SHEAR REINFORCEMENT IS TAGGED PER COLUMN AS "ROWS - LEGS - BAR" (DETAIL 12): CLOSED STIRRUP STRIPS LEAVE EVERY COLUMN FACE, THE FIRST ROW AT S FROM THE FACE; STIRRUPS ENCLOSE THE TOP AND BOTTOM BARS.',
                                     'PS TYPES ARE DERIVED FROM THE STUD RAILS DESIGNED IN RAM CONCEPT (ROWS COVER THE RAIL LENGTH AT S, LEGS MATCH THE STUD AREA PER FACE); COLUMNS WITHOUT RAILS IN RAM CARRY NO PUNCHING REINFORCEMENT.' if ram_ps else 'PRELIMINARY: PS TYPES ARE PLACEHOLDERS (PS1 INTERIOR, PS2 EDGE / CORNER) UNTIL THE PUNCHING DESIGN OF EACH COLUMN IS AVAILABLE; THE DESIGN GOVERNS THE NUMBER OF ROWS AND LEGS.',
                                     bypass, check_line] if _t(g)]
