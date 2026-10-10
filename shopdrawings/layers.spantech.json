@@ -1,0 +1,262 @@
+{
+  "_comment": "Span Tech layer standard for generated shop drawings. Keys are the generator's internal layer names; values are the names written to the DXF. Colors are ACI indexes (1 red, 2 yellow, 3 green, 4 cyan, 5 blue, 6 magenta, 7 white/black, 8 grey), lineweights in 1/100 mm.",
+  "prefix": "SPAN",
+  "layers": {
+    "0": {
+      "name": "0"
+    },
+    "FRAME": {
+      "name": "SPAN-SHEET-FRAME",
+      "color": 7,
+      "lw": 50
+    },
+    "TITLE": {
+      "name": "SPAN-SHEET-TITLE",
+      "color": 7,
+      "lw": 25
+    },
+    "TEXT-TITLE": {
+      "name": "SPAN-SHEET-TEXT",
+      "color": 2
+    },
+    "NOTES": {
+      "name": "SPAN-SHEET-NOTES",
+      "color": 7
+    },
+    "SCHEDULE": {
+      "name": "SPAN-SHEET-SCHEDULE",
+      "color": 7
+    },
+    "SCHEDULE-TEXT": {
+      "name": "SPAN-SHEET-SCHEDULE-TEXT",
+      "color": 7
+    },
+    "DETAIL": {
+      "name": "SPAN-DETAIL",
+      "color": 7
+    },
+    "DETAIL-HATCH": {
+      "name": "SPAN-DETAIL-HATCH",
+      "color": 8
+    },
+    "HATCH": {
+      "name": "SPAN-HATCH",
+      "color": 8
+    },
+    "XREF": {
+      "name": "SPAN-XREF",
+      "color": 7
+    },
+    "TEXT": {
+      "name": "SPAN-TEXT",
+      "color": 7
+    },
+    "DIM": {
+      "name": "SPAN-DIM",
+      "color": 8
+    },
+    "CALLOUT": {
+      "name": "SPAN-CALLOUT",
+      "color": 3
+    },
+    "GRID": {
+      "name": "SPAN-GRID",
+      "color": 8,
+      "ltype": "CENTER"
+    },
+    "GRID-BUBBLE": {
+      "name": "SPAN-GRID-BUBBLE",
+      "color": 8
+    },
+    "OUTLINE": {
+      "name": "SPAN-SLAB-EDGE",
+      "color": 3,
+      "lw": 35
+    },
+    "COLUMN": {
+      "name": "SPAN-COL",
+      "color": 7,
+      "lw": 35
+    },
+    "COLUMN-HATCH": {
+      "name": "SPAN-COL-HATCH",
+      "color": 8
+    },
+    "BEAM": {
+      "name": "SPAN-BEAM",
+      "color": 3,
+      "lw": 25
+    },
+    "STAIR": {
+      "name": "SPAN-STAIR",
+      "color": 8
+    },
+    "OPENING": {
+      "name": "SPAN-OPENING",
+      "color": 6
+    },
+    "OPENING-HATCH": {
+      "name": "SPAN-OPENING-HATCH",
+      "color": 6
+    },
+    "VOID": {
+      "name": "SPAN-VOID",
+      "color": 30,
+      "ltype": "DASHED"
+    },
+    "VOID-HATCH": {
+      "name": "SPAN-VOID-HATCH",
+      "color": 30
+    },
+    "SUNKEN": {
+      "name": "SPAN-SUNKEN",
+      "color": 4
+    },
+    "SUNKEN-HATCH": {
+      "name": "SPAN-SUNKEN-HATCH",
+      "color": 8
+    },
+    "PT-ZONE": {
+      "name": "SPAN-PT-ZONE",
+      "color": 4,
+      "ltype": "DASHDOT"
+    },
+    "PT-TENDON": {
+      "name": "SPAN-PT-TENDON",
+      "color": 3
+    },
+    "PT-HATCH": {
+      "name": "SPAN-PT-HATCH",
+      "color": 4
+    },
+    "CABLE": {
+      "name": "SPAN-PT-CABLE",
+      "color": 3,
+      "lw": 50
+    },
+    "CABLE-TEXT": {
+      "name": "SPAN-PT-TEXT",
+      "color": 3
+    },
+    "REBAR": {
+      "name": "SPAN-RB",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-B1": {
+      "name": "SPAN-RB-B1",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-B2": {
+      "name": "SPAN-RB-B2",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-T1": {
+      "name": "SPAN-RB-T1",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-T2": {
+      "name": "SPAN-RB-T2",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-BOT": {
+      "name": "SPAN-RB-BOT",
+      "color": 1,
+      "lw": 20
+    },
+    "REBAR-TOP": {
+      "name": "SPAN-RB-TOP",
+      "color": 5,
+      "lw": 20
+    },
+    "REBAR-U": {
+      "name": "SPAN-RB-UBAR",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-TRIM": {
+      "name": "SPAN-RB-TRIM",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-PUNCH": {
+      "name": "SPAN-RB-PUNCH",
+      "color": 6,
+      "lw": 20
+    },
+    "REBAR-EXTENT": {
+      "name": "SPAN-RB-RANGE",
+      "color": 6
+    },
+    "REBAR-TEXT": {
+      "name": "SPAN-RB-TEXT",
+      "color": 7
+    },
+    "REBAR-MESH": {
+      "name": "SPAN-RB-MESH",
+      "color": 4
+    },
+    "REBAR-RED": {
+      "name": "SPAN-RB-TYPE",
+      "color": 1
+    },
+    "WALL": {
+      "name": "SPAN-WALL",
+      "color": 8,
+      "lw": 50
+    },
+    "WALL-HATCH": {
+      "name": "SPAN-WALL-HATCH",
+      "color": 8
+    },
+    "POUR-STRIP": {
+      "name": "SPAN-POUR-STRIP",
+      "color": 30,
+      "ltype": "DASHED"
+    },
+    "POUR-STRIP-HATCH": {
+      "name": "SPAN-POUR-STRIP-HATCH",
+      "color": 30
+    },
+    "LEVEL": {
+      "name": "SPAN-LEVEL",
+      "color": 4
+    },
+    "SLAB-THK": {
+      "name": "SPAN-SLAB-THK",
+      "color": 3,
+      "ltype": "DASHED"
+    },
+    "SLAB-THK-HATCH": {
+      "name": "SPAN-SLAB-THK-HATCH",
+      "color": 8
+    },
+    "CABLE-LIVE": {
+      "name": "SPAN-PT-ANCHOR",
+      "color": 3
+    },
+    "CABLE-HL": {
+      "name": "SPAN-PT-PROFILE",
+      "color": 1
+    },
+    "CABLE-CHAIR": {
+      "name": "SPAN-PT-CHAIR",
+      "color": 6
+    }
+  },
+  "textStyles": {
+    "STANDARD": {
+      "font": "arial.ttf"
+    },
+    "SPAN-REBAR": {
+      "font": "romans.shx"
+    },
+    "SPAN-TITLE": {
+      "font": "arial.ttf"
+    }
+  }
+}

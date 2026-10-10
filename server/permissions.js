@@ -54,6 +54,11 @@ export const PERMISSIONS = [
   { key: 'mail.view_all', group: 'mail', ar: 'يشوف كل رسايل صندوق الوارد', en: 'Browse the whole mailbox' },
   { key: 'mail.manage', group: 'mail', ar: 'إعداد حسابات البريد والذكاء الاصطناعي', en: 'Configure mailboxes and AI' },
 
+  // ----------------------------------------------------------------- drawings
+  { key: 'drawings.view', group: 'drawings', ar: 'عرض مشاريع لوحات التسليح', en: 'View drawing projects' },
+  { key: 'drawings.create', group: 'drawings', ar: 'إضافة مشاريع وإخراج لوحات', en: 'Create projects and generate drawings' },
+  { key: 'drawings.delete', group: 'drawings', ar: 'مسح مشاريع ولوحات', en: 'Delete projects and runs' },
+
   // ----------------------------------------------------------------- settings
   { key: 'settings.view', group: 'settings', ar: 'عرض الإعدادات', en: 'View settings' },
   { key: 'settings.edit', group: 'settings', ar: 'تعديل إعدادات الشركة والأسعار', en: 'Edit company settings and prices' },
@@ -70,6 +75,7 @@ export const PERMISSION_GROUPS = [
   { key: 'analytics', ar: 'التحليلات', en: 'Analytics' },
   { key: 'messages', ar: 'الرسايل', en: 'Messages' },
   { key: 'mail', ar: 'طلبات الإيميل', en: 'Email requests' },
+  { key: 'drawings', ar: 'لوحات التسليح', en: 'Reinforcement drawings' },
   { key: 'settings', ar: 'الإعدادات', en: 'Settings' },
 ];
 
@@ -77,7 +83,7 @@ export const PERMISSION_GROUPS = [
 export const ROLE_DEFAULTS = {
   viewer: [
     'customers.view', 'opportunities.view', 'quotations.view',
-    'activities.view', 'analytics.view',
+    'activities.view', 'analytics.view', 'drawings.view',
   ],
   engineer: [
     'customers.view', 'customers.create', 'customers.edit',
@@ -88,6 +94,7 @@ export const ROLE_DEFAULTS = {
     'analytics.view',
     'messages.send',
     'mail.view',
+    'drawings.view', 'drawings.create',
     'settings.view',
   ],
   manager: [

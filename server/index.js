@@ -18,6 +18,7 @@ import * as settingsRoutes from './routes/settings.js';
 import * as notificationRoutes from './routes/notifications.js';
 import * as calendarRoutes from './routes/calendar.js';
 import * as mailRoutes from './routes/mail.js';
+import * as drawingRoutes from './routes/drawings.js';
 
 import { runReminderSweep, purgeOldNotifications } from './notifications.js';
 import { userByCalendarToken, buildUserCalendar } from './calendar.js';
@@ -27,7 +28,7 @@ const router = new Router();
 for (const module of [
   authRoutes, userRoutes, customerRoutes, opportunityRoutes,
   activityRoutes, quotationRoutes, analyticsRoutes, settingsRoutes,
-  notificationRoutes, calendarRoutes, mailRoutes,
+  notificationRoutes, calendarRoutes, mailRoutes, drawingRoutes,
 ]) {
   module.register(router);
 }

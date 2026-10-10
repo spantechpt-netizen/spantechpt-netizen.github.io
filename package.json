@@ -15,7 +15,9 @@
     "seed": "node --no-warnings server/seed.js",
     "reset": "node --no-warnings server/seed.js --reset",
     "backup": "node --no-warnings scripts/backup.mjs",
-    "test": "node --no-warnings --test test/*.test.js"
+    "test": "node --no-warnings --test test/*.test.js",
+    "shopdrawings": "node --no-warnings shopdrawings/cli.mjs",
+    "shopdrawings:sample": "node --no-warnings shopdrawings/samples/make-sample-input.mjs && node --no-warnings shopdrawings/cli.mjs --sample --out shopdrawings/samples/output --project \"PROPOSED MIXED-USE BUILDING\" --client \"DEMO CLIENT\" --location \"RIYADH, KSA\" --prepared \"SPAN TECH DESIGN OFFICE\" --date 2026-09-26"
   },
   "dependencies": {},
   "license": "UNLICENSED"

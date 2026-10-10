@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pydrawings"
+version = "1.0.0"
+description = "Span Tech reinforcement / PT drawings generator - standalone Python version (RAM Concept .cpt, structural DXF, RFT plan -> AutoCAD DXF packages)"
+requires-python = ">=3.11"
+dependencies = []
+readme = "README.md"
+
+[project.scripts]
+pydrawings = "pydrawings.cli:main"
+
+[tool.setuptools]
+packages = ["pydrawings"]
+
+[tool.setuptools.package-data]
+pydrawings = ["layers.spantech.json"]
