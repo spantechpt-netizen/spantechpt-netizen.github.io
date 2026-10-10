@@ -202,5 +202,46 @@
    "pcL": 2100,
    "pcW": 2100
   }
- }
+ },
+ "core_outline_layer": "CORE-COLS-CONC",
+ "core_cover": 40,
+ "core_types": {
+  "CORE A": {
+   "W": 2500,
+   "H": 2700,
+   "t": 250,
+   "ret": 800,
+   "corner": [
+    6,
+    16
+   ],
+   "end": [
+    4,
+    16
+   ],
+   "web": [
+    12,
+    150
+   ],
+   "hor": [
+    10,
+    150
+   ],
+   "link": [
+    8,
+    300
+   ],
+   "ctie": [
+    8,
+    150
+   ]
+  }
+ },
+ "core_pairs": [
+  [
+   "CORE A",
+   "F1",
+   1
+  ]
+ ]
 }

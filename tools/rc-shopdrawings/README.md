@@ -97,6 +97,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `mats_scan.py`, `mats_build.py` | combined footings / rafts from the FND plan → `mats.json` for `gen_f.py @mats` |
 | `gen_st.py` | strip footing under walls: typical section (+ BBS per metre when run alone) |
 | `strip_net.py`, `gen_st_plan.py` | strip network from the foundation plan → strip detailed on plan (bars through / into footings, junctions, laps) + real BBS |
+| `pair_cores.py`, `gen_core.py` | core (shear-wall) necks from the SHEAR WALLS SCHEDULE + the cores found on the foundation plan |
 | `pair_necks.py` | foundation plan → column / footing pairs → `neck_pairs.txt` for `gen_n.py @neck_pairs.txt` |
 | `topdf.py` | DXF sheets → multi-page PDF |
 | `rend.py` | fast PNG render of a window of a big source DXF |

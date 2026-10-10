@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `pair_cores.py`, `gen_core.py` | core (shear-wall) necks: cores on the FND plan → plan section + wall section + bar details + BBS (§7a) |
 | `strip_net.py`, `gen_st_plan.py` | strip footing network from the plan → strip detailed on plan + real BBS (§6) |
 | `cd_scan.py`, `cd_axes.py`, `gen_cd.py` | concrete dimensions of the foundations: plan in parts + sections along every grid line (§7b) |
 | `extract.py` | DXF → beam runs, columns, axes |
@@ -311,6 +312,23 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
 - Tie bending sketches: out-to-out shape, curved corners, hook drawn with `100`, **only one or two sides
   dimensioned** (+ one slanted side for polygons), hexagon mark + size, `L=…` on the next line, one note
   "TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)".
+
+## 7a. Core (shear-wall) necks (`pair_cores.py` → `gen_core.py`)
+
+- Read the consultant's **SHEAR WALLS SCHEDULE** (it is a block; render it with `rend.py`, dump its entities in the
+  window, scale = outline / real size, e.g. 1:25 drawn ×4): outline (U core: W across the door, H, wall t, return
+  length), boundary bars (`nTd` per corner in a 3×3 box, `nTd` per return end), web verticals (`Td@s` with a leader
+  to a dot - the dots may be drawn at another spacing: the TEXT governs), horizontals (`Td@s`, leader ends on the
+  face line), links (`Td@s VERTICAL / HORIZONTAL`). → `project.json → core_types`.
+- `pair_cores.py`: core outlines on the FND plan (12-vertex polylines on `core_outline_layer` of a core-type size,
+  copies dropped) + the footing / raft under each → `core_pairs` (a "?" footing is named by hand).
+- `gen_core.py` → `out/CORE_NECKS.dxf`, per (core, footing): sheet 1 PLAN SECTION 1:25 with every bar (verticals
+  inside the horizontals, cover `core_cover`), outer / inner horizontal bars hooked across the wall at the return
+  ends, links every second web bar, corner ties; horizontal bar / link / tie detailed with out-to-out lengths;
+  sheet 2 SECTION through the wall (footing, feet, Ld, lap 60 d above T.O.GB, levels) + the vertical bars
+  detailed outside with every length. BBS at the end (`OPEN` symbol = open bar to its own proportions).
+- Vertical bars: Ld in the footing = straight part + foot ≥ 60 d, feet turned INTO the core (always room).
+  Horizontal bars T.O.F + 50 … T.O.GB − 50 @ s + 2 in the footing; links @300 both ways.
 
 ## 7b. Concrete dimensions of the foundations (`cd_scan.py` → `cd_axes.py` → `gen_cd.py`)
 Engineer (Oct 2026): one setting-out package for the site — RC and PC footings with their sizes and their distances

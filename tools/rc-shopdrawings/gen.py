@@ -333,6 +333,19 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in pts], 'S-RFT-TXT', 0, True, r=40)
         sh.text(str(int(bw)), x0 + bw * kk / 2, y0 - 40, 120, 'S-RFT-TXT', align=TA.TOP_CENTER)
         sh.text(str(int(bh)), x0 + bw * kk + 160, y0 + bh * kk / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
+    elif kind == 'OPEN':      # open bar of any shape (wall horizontal bar with its hooks), to its own proportions
+        pts = [(a, b) for a, b in seg]
+        x0_, y0_ = min(p[0] for p in pts), min(p[1] for p in pts)
+        bw = (max(p[0] for p in pts) - x0_) or 1; bh = (max(p[1] for p in pts) - y0_) or 1
+        kk = min(w * 0.5 / bw, h * 0.62 / bh)
+        X, Y = x + w * 0.25, y + h * 0.18
+        q = [(X + (a - x0_) * kk, Y + (b - y0_) * kk) for a, b in pts]
+        sh.pline(q, 'S-RFT-TXT', 0, False, r=25)
+        big = max(math.dist(a, b) for a, b in zip(pts, pts[1:]))
+        for (a, b), (qa, qb) in zip(zip(pts, pts[1:]), zip(q, q[1:])):
+            if math.dist(a, b) < 0.3 * big: continue
+            sh.text(str(int(round(math.dist(a, b)))), (qa[0] + qb[0]) / 2, (qa[1] + qb[1]) / 2 + 40, 110, 'S-RFT-TXT',
+                    rot=90 if abs(qa[0] - qb[0]) < 1 else 0, align=TA.BOTTOM_CENTER)
     elif kind == 'CH':        # chair: foot / leg / top / leg / foot
         f_, lg, top = seg
         u = w * 0.13; hh = h * 0.42; x0 = x + w * 0.12; y0 = y + h * 0.18
