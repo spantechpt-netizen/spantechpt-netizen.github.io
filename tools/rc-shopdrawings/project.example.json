@@ -1,0 +1,247 @@
+{
+ "dxf": "drawing.dxf",
+ "layout": "4-SOG",
+ "beam_layer": "CORE-FNDN-GRBM",
+ "label_layer": "$0$CORE-COLS-IDEN",
+ "col_layers": [
+  "CORE-COLS-CONC",
+  "COLUMN MAIN"
+ ],
+ "axis_block": "A-AX",
+ "axis_attr": "00",
+ "axis_family_attr": "X",
+ "widths": [
+  200,
+  350,
+  400
+ ],
+ "schedule": {
+  "GB1": {
+   "b": 200,
+   "h": 700,
+   "nb": 4,
+   "db": 16,
+   "nt": 4,
+   "dt": 16,
+   "ds": 10,
+   "s": 125
+  }
+ },
+ "meta": {
+  "project": "PROJECT NAME",
+  "client": "",
+  "consultant": "",
+  "contractor": "",
+  "ref": "consultant drawing name - rev - date",
+  "author": "",
+  "checker": "",
+  "approver": "",
+  "date": "",
+  "prefix": "SDW-STR-GB"
+ },
+ "levels": {
+  "founding": -3.0,
+  "top_gb": 0.85
+ },
+ "column_sizes": {
+  "C1": [
+   300,
+   800
+  ]
+ },
+ "fnd_view": [
+  0,
+  0,
+  160000
+ ],
+ "fnd_layers": [
+  "CORE-FNDN"
+ ],
+ "fnd_col_layers": [
+  "CORE-COLS-CONC"
+ ],
+ "footing_label_re": "(F\\d*A?|Fx|CF\\d+|FF\\d+|RAFT-?\\d*|ST-?\\d*)",
+ "col_keys": [
+  "COL"
+ ],
+ "col_block_keys": [
+  "COLS-CONC"
+ ],
+ "column_schedule_block": "COLUMN SCH",
+ "sched_outline_layers": [
+  "S-COLS-IDEN",
+  "CORE-COLS",
+  "CORE-COLS-CONC-SEC"
+ ],
+ "_title_block_example (rename to title_block once titleblock.dxf exists)": {
+  "dxf": "titleblock.dxf",
+  "block": "LAY",
+  "paper": [
+   2.58,
+   3.25,
+   1191.58,
+   844.25
+  ],
+  "style": "Calibri_1",
+  "size": "A3",
+  "code": {
+   "project_id": "PRJ",
+   "dwg_type": "SD",
+   "orig": "STCO.",
+   "doc_type": "STR",
+   "area": "Z00"
+  },
+  "venue_by_title": [
+   [
+    "GRADE BEAM",
+    "GB"
+   ],
+   [
+    "NECK",
+    "NK"
+   ],
+   [
+    "STRIP",
+    "SF"
+   ],
+   [
+    "RAFT",
+    "CF"
+   ],
+   [
+    "COMBINED",
+    "CF"
+   ],
+   [
+    "FOUNDATION",
+    "FD"
+   ]
+  ],
+  "seq_start": {
+   "GB": 20001,
+   "FD": 21001,
+   "NK": 22001,
+   "CF": 23001,
+   "SF": 24001
+  },
+  "fields": {
+   "title": [
+    1106.2,
+    140.7,
+    4.08,
+    146
+   ],
+   "ref": [
+    1106.2,
+    115.7,
+    3.4,
+    146
+   ],
+   "scale": [
+    1147.6,
+    49.6,
+    3.0,
+    19
+   ],
+   "size": [
+    1169.7,
+    49.6,
+    3.4,
+    20
+   ],
+   "dwg": [
+    1084.0,
+    48.0,
+    3.2,
+    104
+   ],
+   "area": [
+    1119.3,
+    21.3,
+    3.4,
+    18
+   ],
+   "venue": [
+    1139.5,
+    21.3,
+    3.4,
+    18
+   ],
+   "seq": [
+    1157.8,
+    21.3,
+    3.4,
+    14
+   ],
+   "rev": [
+    1172.9,
+    21.3,
+    3.4,
+    14
+   ],
+   "date": [
+    1130.6,
+    392.0,
+    2.68,
+    24
+   ]
+  }
+ },
+ "fnd_pc_layers": [
+  "CORE-FNDN-FTNG-PC"
+ ],
+ "grid_layers": [
+  "A-AXIS-ST"
+ ],
+ "pc_thickness": 100,
+ "fence_footings": {
+  "FF1": {
+   "L": 1900,
+   "W": 1900,
+   "h": 600,
+   "pcL": 2100,
+   "pcW": 2100
+  }
+ },
+ "core_outline_layer": "CORE-COLS-CONC",
+ "core_cover": 40,
+ "core_types": {
+  "CORE A": {
+   "W": 2500,
+   "H": 2700,
+   "t": 250,
+   "ret": 800,
+   "corner": [
+    6,
+    16
+   ],
+   "end": [
+    4,
+    16
+   ],
+   "web": [
+    12,
+    150
+   ],
+   "hor": [
+    10,
+    150
+   ],
+   "link": [
+    8,
+    300
+   ],
+   "ctie": [
+    8,
+    150
+   ]
+  }
+ },
+ "core_pairs": [
+  [
+   "CORE A",
+   "F1",
+   1
+  ]
+ ]
+}

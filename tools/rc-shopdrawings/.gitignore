@@ -1,0 +1,8 @@
+__pycache__/
+*.dwg
+*.dxf
+*.pdf
+*.pkl
+out/
+project.json
+axes.json
