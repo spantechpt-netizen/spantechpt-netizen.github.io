@@ -33,8 +33,23 @@ else:
             labs.append((e.dxf.text.strip(), e.dxf.insert.x + DX, e.dxf.insert.y + DY))
     pickle.dump(labs, open(cache, 'wb'))
 FT = json.load(open('footings.json')); MT = json.load(open('mats.json'))
+import zone_util as ZU
 iso = collections.defaultdict(collections.Counter)
-for s, x, y in labs: iso[zone_of(x, y)][s] += 1
+INST = []                                   # every isolated footing: (type name, x, y); a footing the wall strip runs
+variants = {}                               # through is its own type (-ST): the strip bars carry on, its bars stop
+for s, x, y in labs:
+    name = s
+    if s in FT:
+        kind, fn, poly = ZU.footing_at(x, y)
+        bands = ZU.strip_bands(poly, FT[s]['L'], FT[s]['W']) if kind == 'iso' else []
+        if bands:
+            key = (s, tuple(bands))
+            if key not in variants:
+                k_ = sum(1 for kk in variants if kk[0] == s) + 1
+                variants[key] = f'{s}-ST' + ('' if k_ == 1 else str(k_))
+                FT[variants[key]] = dict(FT[s], name=variants[key], strip_bands=list(bands))
+            name = variants[key]
+    INST.append((name, x, y)); iso[zone_of(x, y)][name] += 1
 mats = collections.defaultdict(collections.Counter)
 for n, f in MT.items():
     for x, y in f.get('at') or []: mats[zone_of(x, y)][n] += 1
@@ -70,7 +85,7 @@ def key_plan(doc, idx, zn, meta):
         sh.pline([Q(*p) for p in g.exterior.coords], 'S-GB-CONC', 15)
         c_ = Point(*e) if e and g.contains(Point(*e)) else g.representative_point()
         hit = [n for n, x, y in at if g.buffer(300).contains(Point(x, y))]
-        lab = hit[0] if hit else (min(((s, (x - c_.x) ** 2 + (y - c_.y) ** 2) for s, x, y in labs), key=lambda t: t[1])[0] if labs else '')
+        lab = hit[0] if hit else (min(((s, (x - c_.x) ** 2 + (y - c_.y) ** 2) for s, x, y in INST), key=lambda t: t[1])[0] if INST else '')
         if True:
             sh.text(lab, *Q(c_.x, c_.y), max(120, min(260, 0.18 * min(g.bounds[2] - g.bounds[0], g.bounds[3] - g.bounds[1]) * k)), 'S-RFT-TXT', align=TA.MIDDLE_CENTER)
     sh.text(f'{zn} - KEY PLAN: EVERY FOOTING WITH THE TYPE IT IS DETAILED AS  (1:{round(100 / k)})', 2500, 1500, ST['panel'], 'S-SEC')
@@ -102,6 +117,25 @@ for zn in want:
             gen_f.draw_sheet(doc, idx, f, meta, bl); idx += 2 if f.get('adds') else 1
         else:
             idx += gen_mat.draw_mat(doc, idx, f, meta, bl, rep)
+    # slabs written as a note on the plan (slab_scan.py): mesh on the real outline, bars anchored 60 d into the
+    # strips around, laps staggered, A0 1:200 (engineer: "the raft of AREA 1 was not made")
+    if os.path.exists('slabs.json'):
+        for si, sl in enumerate(json.load(open('slabs.json'))):
+            pg = Polygon(sl['poly'])
+            if zone_of(pg.centroid.x, pg.centroid.y) != zn: continue
+            x0, y0, x1, y1 = pg.bounds
+            cov = PRJ.get('slab_cover', 50); anc = 60 * sl['d']
+            loc = [[round(x - x0), round(y - y0)] for x, y in sl['poly']]
+            bar_poly = [list(p) for p in Polygon(loc).buffer(anc + cov, join_style=2).exterior.coords][:-1]
+            per = [sl['n'], sl['d'], sl['n'], sl['d']]
+            name = f"SLAB-{CODES[zn]}" + ('' if si == 0 else f'-{si + 1}')
+            f = dict(name=name, L=round(x1 - x0), W=round(y1 - y0), h=sl['h'], no=1, bot=per, top=per if sl['top'] else [0, 0, 0, 0],
+                     poly=loc, bar_poly=bar_poly, cover=cov, leg=0, big=True, mesh_only=True, cols=[], adds=[])
+            meta = dict(base); meta['title'] = f"FOUNDATION SLAB {sl['h']} - {zn}\nREINFORCEMENT - {name}"; meta['dwg'] = f'SDW-STR-FDN-{name}'
+            meta['notes'] = project_notes(f"SLAB {sl['h']} CAST WITH THE FOOTINGS AND STRIPS; COVER {cov}.",
+                                          f'BARS ANCHORED {anc} (60d) INTO THE STRIPS; LAPS 60d STAGGERED.')
+            idx += gen_mat.draw_mat(doc, idx, f, meta, bl, rep)
+            rep.append(f"{name}: {sl['note']} - ramp starter bars / sump pit / stair starters: see their details (not in this sheet)")
     meta = dict(base); meta['title'] = f'STRUCTURAL FOUNDATION - {zn}\nBBS'; meta['dwg'] = f'SDW-STR-FDN-{CODES[zn]}'
     nb = draw_bbs(doc, idx, bl.sorted(), meta)
     fn = f"out/ZONES/{zn.replace(' ', '_')}_FOUNDATIONS.dxf"

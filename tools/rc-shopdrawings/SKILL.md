@@ -325,6 +325,27 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   findable on site), then the isolated footings (`gen_f.draw_sheet`, NO = count in the zone), CF / rafts (rect
   `gen_f`, other `gen_mat`), BBS of the zone. Title block Area field = zone code (`meta.area`, `zone_codes` or Z01…).
 
+### Engineer notes on the zone packages (Oct 2026) — keep applying
+
+- **Laps are staggered, never all in one section** ("the laps of the raft are all in its middle"): a bar > 12 m
+  is split in two alternating patterns A / B (`gen.lap_patterns`, `gen.lapped_marks`): lap centres of A and B at
+  least 1.3 lp apart, every piece its own mark with its length in the BBS and the call-out (`… -STG`). The plan
+  draws pattern A on the bar line and pattern B beside it ("ALTERNATE BARS"), with every piece length and
+  "LAP n" written — never only the cut between two bars. Same rule in `gen_f` (rect), `gen_mat` (any outline)
+  and `gen_st_plan` (strip).
+- **Legs are drawn on every polygon raft bar** (`gen_f.draw_bar` with the folded leg and its length), not only
+  in the section.
+- **Footing on the wall strip** ("the strip bars carry on, the footing bars stop"): `zone_util.strip_bands`
+  finds the strips passing THROUGH an isolated footing (≥ 95 % of its extent; a strip that only ends in it does
+  not count); the footing becomes a variant `<mark>-ST` (`-ST2` …) whose bars parallel to the strip inside its
+  band are omitted, the band is drawn dashed with a note, the call-out says "(n OMITTED IN THE STRIP BAND)".
+- **Foundation slab** (a zone with a mat that is not a CF / RAFT): `slab_scan.py` polygonizes the plan, a face
+  > 500 m² with a "nnn MM THICK" and an "n T d /m" note is the slab → `slabs.json` (thickness, mesh, outline).
+  Ramp corridors (thin parts next to a RAMP text) are cut out; a ramp's own starters are NOT detailed (say so).
+  `gen_zones.py` details it with `gen_mat` (`mesh_only`, no legs, slab cover, anchorage 60 d into the strips) on
+  A0 BigSheets at a standard scale (1:100 … 1:250, the largest that fits; A3 sheets use 1:50 … 1:250).
+  Title-block text of a big sheet keeps its own size (only the drawing text is doubled).
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

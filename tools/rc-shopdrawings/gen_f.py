@@ -4,7 +4,7 @@
 Panels: BOTTOM REINFORCEMENT PLAN @ X&Y, TOP REINFORCEMENT PLAN @ X&Y (when the schedule has top bars),
 FOUNDATION SIDE REINFORCEMENT, and a section through the footing."""
 import json, math, pickle, sys
-from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes
+from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, lap_patterns, lapped_marks
 
 PRJ = json.load(open('project.json'))
 COVER = PRJ.get('footing_cover', 70)
@@ -36,10 +36,17 @@ def bars_for(f):
             is_long = (along == 'X') == long_is_x
             tag = (layer + ('1' if is_long else '2')) if layer == 'B' else (layer + ('2' if is_long else '1'))
             tot = run + 2 * lg; lp = 60 * d
-            p = 1 if tot <= 12000 else math.ceil((tot - lp) / (12000 - lp))       # equal pieces lapped 60 d
-            Lp = int(math.ceil((tot + (p - 1) * lp) / p / 10) * 10)
-            out.append(dict(layer=layer, tag=tag, along=along, d=d, s=s, n=count(across, s),
-                            straight=run, leg=lg, L=run + 2 * lg if p == 1 else Lp, up=up, pieces=p, lap=lp))
+            pats = lap_patterns(tot, lp)                 # > 12 m: pieces lapped 60 d, laps STAGGERED (2 patterns)
+            p = len(pats[0])
+            n_ = count(across, s)
+            omit = 0
+            for al_, z0, z1 in f.get('strip_bands') or []:   # the wall strip runs through: its bars carry on, the
+                if al_ != along: continue                      # footing bars along it stop - none inside its band
+                pos = [COVER + j * (across - 2 * COVER) / max(1, n_ - 1) for j in range(n_)]
+                omit += sum(1 for p_ in pos if z0 - 20 <= p_ <= z1 + 20)
+            out.append(dict(layer=layer, tag=tag, along=along, d=d, s=s, n=n_ - omit, omit=omit,
+                            straight=run, leg=lg, L=tot if p == 1 else max(t1 - t0 for t0, t1 in pats[0] + pats[-1]),
+                            up=up, pieces=p, lap=lp, pats=pats, T=tot))
     return out
 
 
@@ -109,36 +116,52 @@ def pieces_of_loop(lx, ly, lp, stock=12000):
     return list(types.values())
 
 
-def draw_bar(sh, pts, b, lay, k, across):
-    """A main bar on the plan: one U, or its real pieces (engineer: "مش مقطع السيخين") - equal pieces lapped 60 d,
-    the end pieces with their leg, the middle ones straight; every second piece offset `across` (sheet units) so each
-    lap shows, LAP written at every lap. pts = [leg end, corner, corner, leg end] in sheet units."""
+def draw_bar(sh, pts, b, lay, k, across, legs=None):
+    """A main bar on the plan: one U, or its real pieces in the TWO staggered lap patterns (engineer: "the laps were
+    all in the middle and the bars had no lengths"): pattern A on the bar line (every second piece offset so each lap
+    shows), pattern B (alternate bars) on a parallel line; every piece with its length, LAP at every lap.
+    pts = [leg end, corner, corner, leg end] (sheet units); legs = (start leg, end leg) real lengths."""
     r = 3 * b['d'] * k
-    if b['pieces'] == 1:
+    pats = b.get('pats') or [[(0, 1)]]
+    if len(pats[0]) == 1:
         sh.pline(pts, lay, 30, r=r); return
     import math as _m
-    lens = [b['leg'], b['straight'], b['leg']]                     # real lengths of the three segments
-    T = sum(lens); Lp, lp = b['L'], b['lap']
-    def at(t):                                                      # developed length (mm) -> sheet point
-        for i, (L_, (p, q)) in enumerate(zip(lens, zip(pts, pts[1:]))):
-            if t <= L_ or i == 2:
+    la, lb = legs or (b['leg'], b['leg'])
+    lens = [la, b['straight'], lb]
+    segs = list(zip(pts, pts[1:]))
+    if not la: lens, segs = lens[1:], segs[1:] if len(segs) == 3 else segs
+    if not lb: lens = lens[:-1]; segs = segs[:len(lens)]
+    def at(t):
+        for i, (L_, (p, q)) in enumerate(zip(lens, segs)):
+            if t <= L_ or i == len(lens) - 1:
                 u = min(max(t / L_, 0), 1) if L_ else 0
                 return (p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u)
             t -= L_
-    starts = [i * (T - Lp) / (b['pieces'] - 1) for i in range(b['pieces'])]       # equal pieces over the bar
-    dx, dy = pts[2][0] - pts[1][0], pts[2][1] - pts[1][1]; n = _m.hypot(dx, dy) or 1
-    ox, oy = -dy / n * across, dx / n * across                       # offset normal to the straight part
-    for i, t0 in enumerate(starts):
-        t1 = t0 + Lp
-        cuts = [t0] + [c for c in (lens[0], lens[0] + lens[1]) if t0 < c < t1] + [t1]
-        q = [at(t) for t in cuts]
-        if i % 2: q = [(x + ox, y + oy) for x, y in q]
-        sh.pline(q, lay, 30, r=r)
-        if i:                                                       # lap between piece i-1 and i
-            a_, b_ = at(t0), at(starts[i - 1] + Lp)
-            mx, my = (a_[0] + b_[0]) / 2 - ox * 2.0, (a_[1] + b_[1]) / 2 - oy * 2.0       # outside: clear of the length text
-            ang = _m.degrees(_m.atan2(dy, dx))
-            sh.text(f'LAP {lp}', mx, my, ST['len'] * 0.8, 'S-DIM', rot=ang if abs(ang) < 91 else ang - 180, align=TA.MIDDLE_CENTER)
+    i0 = 1 if la else 0
+    dx, dy = segs[i0][1][0] - segs[i0][0][0], segs[i0][1][1] - segs[i0][0][1]; n = _m.hypot(dx, dy) or 1
+    nx, ny = -dy / n, dx / n
+    ang = _m.degrees(_m.atan2(dy, dx)); ang = ang if abs(ang) < 91 else ang - 180
+    corners = [sum(lens[:j]) for j in range(1, len(lens))]
+    for pi, pat in enumerate(pats):
+        base = 0 if pi == 0 else -4.2                  # alternate bars on the other side (clear of the call-out)
+        for i, (t0, t1) in enumerate(pat):
+            off = (base + (1 if i % 2 else 0)) * across
+            cuts = [t0] + [c for c in corners if t0 < c < t1] + [t1]
+            q = [(x + nx * off, y + ny * off) for x, y in (at(t) for t in cuts)]
+            sh.pline(q, lay, 30, r=r)
+            mx, my = at((t0 + t1) / 2)
+            tg = off + (1.6 if pi == 0 else -1.6) * across
+            sh.text(str(int(round(t1 - t0))), mx + nx * tg, my + ny * tg, ST['len'] * 0.8, 'S-DIM',
+                    rot=ang, align=TA.MIDDLE_CENTER)
+            if i:
+                a_, b_ = at(t0), at(pat[i - 1][1])
+                mx, my = (a_[0] + b_[0]) / 2, (a_[1] + b_[1]) / 2
+                sh.text(f"LAP {int(round(pat[i - 1][1] - t0))}", mx + nx * (base + (-1.6 if base < 0 else -2.2)) * across, my + ny * (base + (-1.6 if base < 0 else -2.2)) * across,
+                        ST['len'] * 0.7, 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
+        if pi == 1:
+            sx, sy = at(pat[0][0])
+            sh.text('ALTERNATE BARS', sx + nx * (base - 1.6) * across, sy + ny * (base - 1.6) * across, ST['len'] * 0.7, 'S-DIM',
+                    rot=ang, align=TA.MIDDLE_LEFT)
 
 
 def draw_sheet(doc, idx, f, meta, bl):
@@ -146,17 +169,17 @@ def draw_sheet(doc, idx, f, meta, bl):
     bars = bars_for(f)
     strip = f['L'] / f['W'] > 3.2                    # long narrow raft / combined footing: full-width panels stacked
     k = min(4.0, 23000 / f['L'], 4000 / f['W']) if strip else min(4.0, 9300 / f['W'], 14500 / f['L'])       # leaves room for the panel names between the rows     # drawing factor: 4 = 1:25 on the 1:100 frame
-    for b in bars:
-        if b['pieces'] == 1:
-            b['mk'] = bl.add(b['d'], ('U', b['leg'], b['straight'], b['leg']), b['L'], b['n'], f['no'], b['tag'])
-        else:                                    # end pieces with one leg, middle pieces straight
-            b['mk'] = bl.add(b['d'], ('L', b['leg'], b['L'] - b['leg'], 0), b['L'], 2 * b['n'], f['no'], b['tag'])
-            if b['pieces'] > 2: b['mk2'] = bl.add(b['d'], ('S', b['L']), b['L'], (b['pieces'] - 2) * b['n'], f['no'], b['tag'])
-    def cot(b):                                  # call-out(s) of a main bar
+    for b in bars:                               # one mark per piece (end pieces with their leg); laps staggered
+        b['pats'], b['marks'] = lapped_marks(bl, b['d'], b['T'], b['leg'], b['leg'], b['n'], f['no'], b['tag'], b['lap'])
+        b['mk'] = b['marks'][0][0]
+    def cot(b):                                  # call-out(s) of a main bar: every piece with its own length
+        if b.get('omit'):
+            return (callout(b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag']) if b['pieces'] == 1 else
+                    ' + '.join(callout(c, b['d'], m_, L_, b['s'] if not i else None, b['tag']) for i, (m_, c, L_) in enumerate(b['marks']))) + \
+                   f"  ({b['omit']} OMITTED IN THE STRIP BAND)"
         if b['pieces'] == 1: return callout(b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag'])
-        t = callout(2 * b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag'])
-        if b['pieces'] > 2: t += ' + ' + callout((b['pieces'] - 2) * b['n'], b['d'], b['mk2'], b['L'], b['s'], b['tag']) + f" (MARK {b['mk2']:02d})"
-        return t
+        return ' + '.join(callout(c, b['d'], m_, L_, b['s'] if not i else None, b['tag']) + (' -STG' if not i else '')
+                          for i, (m_, c, L_) in enumerate(b['marks']))
     # additional bars written on the consultant's plan (ADD TOP / ADD BOT): straight, in their zone
     for a in f.get('adds', []):
         a['mk'] = bl.add(a['d'], ('S', a['L']), a['L'], a['n'], f['no'], 'ADD-' + a['layer'])
@@ -199,6 +222,15 @@ def draw_sheet(doc, idx, f, meta, bl):
         sh.dim(P(0, 0), P(f['L'], 0), (ox, oy - 450), text=str(f['L']))
         sh.dim(P(0, 0), P(0, f['W']), (ox - 450, oy), angle=90, text=str(f['W']))
         obst_ = [(f['L'] * tpos[0] - 400 / k, f['W'] * tpos[1] - 400 / k, f['L'] * tpos[0] + 400 / k, f['W'] * tpos[1] + 400 / k)]   # thickness tag
+        if kind in 'BT':                                 # the wall strip through the footing: its band, its bars carry on
+            for al_, z0, z1 in f.get('strip_bands') or []:
+                if al_ == 'X': q0, q1 = P(0, z0), P(f['L'], z1)
+                else: q0, q1 = P(z0, 0), P(z1, f['W'])
+                e_ = sh.m.add_lwpolyline([sh.P(*q0), sh.P(q1[0], q0[1]), sh.P(*q1), sh.P(q0[0], q1[1])], dxfattribs={'layer': 'S-SEC'})
+                e_.closed = True; e_.dxf.linetype = 'DASHED'; e_.dxf.ltscale = 60
+                tx_ = 'STRIP ST-01: ITS BARS CARRY ON THROUGH THE FOOTING' if kind == 'B' else 'STRIP ST-01 (TOP BARS CARRY ON)'
+                if al_ == 'X': sh.text(tx_, q0[0] + 150, (q0[1] + q1[1]) / 2, 150, 'S-SEC', align=TA.MIDDLE_LEFT)
+                else: sh.text(tx_, (q0[0] + q1[0]) / 2, q0[1] + 150, 150, 'S-SEC', rot=90, align=TA.MIDDLE_LEFT)
         if kind in 'BT':
             for b in [b for b in bars if b['layer'] == kind]:
                 m = mk(b)
@@ -223,7 +255,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                     x0, x1 = COVER, f['L'] - COVER
                     pts = [(P(x0, y)[0], P(x0, y)[1] + sgn * lgk), P(x0, y), P(x1, y), (P(x1, y)[0], P(x1, y)[1] + sgn * lgk)]
                     draw_bar(sh, pts, b, lay, k, sgn * 110)
-                    sh.text(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']})" if b['pieces'] > 1 else ''), P((x0 + x1) / 2, y)[0], P(0, y)[1] + 150, ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
+                    sh.text(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']}, LAPS STAGGERED)" if b['pieces'] > 1 else ''), P((x0 + x1) / 2, y)[0], P(0, y)[1] + 150 + (560 if b['pieces'] > 1 and not b['up'] else 0), ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
                     sh.text(mm(b['leg']), P(x0, y)[0] + 100, P(0, y)[1] + sgn * lgk / 2, ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
                     sh.text(mm(b['leg']), P(x1, y)[0] - 100, P(0, y)[1] + sgn * lgk / 2, ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
                     # distribution line across Y with the dot at the bar
@@ -240,7 +272,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                             if bx_[2] < f['L'] and all(cc[2] < bx_[0] or cc[0] > bx_[2] or cc[3] < bx_[1] or cc[1] > bx_[3] for cc in ccs_):
                                 tx = P(bx_[0], 0)[0]; break
                     obst_.append((x0, y - 60 / k, x1, y + 60 / k))                                 # the bar itself
-                    lt_ = len(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']})" if b['pieces'] > 1 else '')) * ST['len'] * 0.9 / k
+                    lt_ = len(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']}, LAPS STAGGERED)" if b['pieces'] > 1 else '')) * ST['len'] * 0.9 / k
                     obst_.append(((x0 + x1) / 2 - lt_ / 2, y + 100 / k, (x0 + x1) / 2 + lt_ / 2, y + (150 + ST['len'] + 80) / k))   # its length text
                 else:
                     cx_ = (0.84, 0.92, 0.76, 0.68, 0.6, 0.5) if kind == 'B' else (0.16, 0.08, 0.24, 0.32, 0.4, 0.5)
@@ -264,7 +296,7 @@ def draw_sheet(doc, idx, f, meta, bl):
                     y0, y1 = COVER, f['W'] - COVER
                     pts = [(P(x, y0)[0] - sgn * lgk, P(x, y0)[1]), P(x, y0), P(x, y1), (P(x, y1)[0] - sgn * lgk, P(x, y1)[1])]
                     draw_bar(sh, pts, b, lay, k, sgn * 110)
-                    sh.text(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']})" if b['pieces'] > 1 else ''), P(x, 0)[0] + 200, P(x, (y0 + y1) / 2)[1], ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
+                    sh.text(mm(b['straight']) + (f"  ({b['pieces']} PIECES, LAP {b['lap']}, LAPS STAGGERED)" if b['pieces'] > 1 else ''), P(x, 0)[0] + 200 + (560 if b['pieces'] > 1 and b['up'] else 0), P(x, (y0 + y1) / 2)[1], ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
                     sh.text(mm(b['leg']), P(x, 0)[0] - sgn * lgk / 2, P(x, y0)[1] + 100, ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
                     sh.text(mm(b['leg']), P(x, 0)[0] - sgn * lgk / 2, P(x, y1)[1] - 100, ST['len'], 'S-DIM', align=TA.TOP_CENTER)
                     yd = f['W'] * 0.10

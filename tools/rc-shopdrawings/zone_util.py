@@ -90,3 +90,38 @@ def base_meta(zn, prefix, scale='AS SHOWN', extra_note=''):
     m.update(PRJ.get('meta', {})); m['area'] = CODES[zn]; m['scale'] = scale
     m['notes'] = project_notes(extra_note, f'{zn}: QUANTITIES OF THIS ZONE ONLY.') if extra_note else project_notes(f'{zn}: QUANTITIES OF THIS ZONE ONLY.')
     return m
+
+
+_RUNS = None
+def strip_runs():
+    global _RUNS
+    if _RUNS is None:
+        import gen_st_plan
+        E, _c = els()
+        _RUNS, _F = gen_st_plan.model(E)
+    return _RUNS
+
+
+def strip_bands(rc, L, W, minarea=0.2e6):
+    """The wall strip through an isolated footing (engineer: "the strip bars carry on, the footing bars stop"):
+    -> [(along, z0, z1)] in the footing's own axes (L along x of the sheet; the plan footing may be turned), the band
+    of the strip ACROSS its direction, clipped to the footing."""
+    import gen_st_plan
+    x0, y0, x1, y1 = rc.bounds
+    turned = abs((x1 - x0) - L) > abs((x1 - x0) - W) + 1 and L != W
+    out = []
+    for r in strip_runs():
+        bd = gen_st_plan.band(r, r['lo'], r['hi'])           # the run itself: a run ending at the footing face does not count
+        g = bd.intersection(rc)
+        if g.is_empty or g.area < minarea: continue
+        gx0, gy0, gx1, gy1 = g.bounds
+        through = (gx1 - gx0) >= 0.95 * (x1 - x0) if r['o'] == 'H' else (gy1 - gy0) >= 0.95 * (y1 - y0)
+        if not through: continue     # the strip only ENDS in the footing (anchored 60 d): the footing bars stay
+        if r['o'] == 'H':            # strip along plan x: band across = plan y
+            along, z0, z1 = 'X', gy0 - y0, gy1 - y0
+        else:
+            along, z0, z1 = 'Y', gx0 - x0, gx1 - x0
+        if turned:                   # footing drawn turned: plan x = sheet y  (x, y) -> (y, x)
+            along = 'Y' if along == 'X' else 'X'
+        out.append((along, round(z0), round(z1)))
+    return sorted(set(out))

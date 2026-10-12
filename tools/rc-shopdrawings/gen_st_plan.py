@@ -18,7 +18,7 @@ usage: python3 gen_st_plan.py         (after cd_scan.py; project.json -> strip)
 import json, math
 from shapely.geometry import box, Point, LineString
 import gen_cd, strip_net
-from gen import new_doc, Sheet, TA, ST, BarList, callout, draw_bbs, draw_legend, project_notes
+from gen import new_doc, Sheet, TA, ST, BarList, callout, draw_bbs, draw_legend, project_notes, lapped_marks
 
 PRJ = json.load(open('project.json')); SP = PRJ.get('strip', {})
 C = PRJ.get('footing_cover', 70)
@@ -112,22 +112,15 @@ def bars_of(r, bl):
     """Bar marks of a run -> list of call-out lines (mark, text) and the drawing data."""
     L = r['b'] - r['a']
     ga, gb = r['ends'][0]['leg'], r['ends'][1]['leg']
-    p, Lp = pieces(L + ga + gb, LP)
-    out = dict(p=p, Lp=Lp, L=L)
-    # piece shapes: bent leg at a free end only
-    marks = []
-    for i in range(p):
-        la = ga if i == 0 else 0; lb = gb if i == p - 1 else 0
-        run_ = Lp - la - lb
-        shp = ('U', la, run_, lb) if la and lb else ('L', la, run_) if la else ('L', lb, run_) if lb else ('S', Lp)
-        marks.append((shp, Lp))
+    T = L + ga + gb
+    out = dict(L=L, T=T)
     lines = []
-    seen = {}
-    for shp, Lp_ in marks: seen[(shp, Lp_)] = seen.get((shp, Lp_), 0) + 1
-    for lay in ('B', 'T'):
-        for (shp, Lp_), n in seen.items():
-            mk = bl.add(d, shp, Lp_, n * NL, 1, f'{lay}-LG')
-            lines.append((mk, callout(n * NL, d, mk, Lp_, None, lay) + ('' if p == 1 else f'  ({p} PCS LAP {LP})' if lay == 'B' and (shp, Lp_) == marks[0] else '')))
+    for lay in ('B', 'T'):                       # laps STAGGERED: two piece patterns on alternate bars
+        pats, marks = lapped_marks(bl, d, T, ga, gb, NL, 1, f'{lay}-LG', LP)
+        out['pats'] = pats
+        lines.append((marks[0][0], ' + '.join(callout(c, d, m_, L_, None, lay) for m_, c, L_ in marks) +
+                      ('' if len(pats[0]) == 1 else f'  (LAP {LP} STAGGERED)')))
+    out['p'] = len(out['pats'][0])
     ps, Ls = pieces(L, LPS)
     mk = bl.add(ds, ('S', Ls), Ls, 2 * ps, 1, 'SB')
     lines.append((mk, callout(2 * ps, ds, mk, Ls, None, 'SB') + ('' if ps == 1 else f'  LAP {LPS}')))
@@ -180,25 +173,25 @@ def plan_prims(runs, els, bl):
         a, b = r['a'], r['b']
         # ---- longitudinal: bottom (continuous) at -B/4, top (dashed) at +B/4, pieces offset 90 so each lap shows
         for u, lay, lt in ((-B / 4, 'S-RFT-BOT', None), (B / 4, 'S-RFT-TOP', 'DASHED')):
-            p, Lp = bb['p'], bb['Lp']
             ea, eb = r['ends']; ga, gb = ea['leg'], eb['leg']
-            T = (b - a) + ga + gb
-            starts = [0] if p == 1 else [i * (T - Lp) / (p - 1) for i in range(p)]
-            off0 = ga
-            for i, t0 in enumerate(starts):
-                t1 = t0 + Lp
-                s0, s1 = a + max(t0 - off0, 0), a + min(t1 - off0, b - a)
-                uu = u + (90 if i % 2 else 0) * (1 if u < 0 else -1)
-                pts = [at(r, s0, uu), at(r, s1, uu)]
-                if i == 0 and ea['ldir']: pts.insert(0, at(r, s0, uu + ea['ldir'] * ea['leg']))     # plan leg into the footing
-                if i == p - 1 and eb['ldir']: pts.append(at(r, s1, uu + eb['ldir'] * eb['leg']))
-                P.pl(pts, lay, 25, lt)
-                for tt, fl in ((s0, i == 0 and ea['kind'] == 'free'), (s1, i == p - 1 and eb['kind'] == 'free')):   # bent end: tick across the bar
-                    if fl: P.pl([at(r, tt, uu - 120), at(r, tt, uu + 120)], lay, 25)
-                if i and u < 0:
-                    la, lb_ = a + t0 - off0, a + starts[i - 1] + Lp - off0
-                    mx = (la + lb_) / 2
-                    P.tx(f'LAP {LP}', *at(r, mx, u - 330), 150, 'S-DIM', 0 if o == 'H' else 90, TA.MIDDLE_CENTER)
+            pats = bb['pats']
+            for pi, pat in enumerate(pats):
+                ub = u + (0 if pi == 0 else (-260 if u < 0 else 260))      # alternate bars: second line
+                for i, (t0, t1) in enumerate(pat):
+                    s0, s1 = a + max(t0 - ga, 0), a + min(t1 - ga, b - a)
+                    uu = ub + (90 if i % 2 else 0) * (1 if u < 0 else -1)
+                    first, last = t0 <= 1, t1 >= bb['T'] - 1
+                    pts = [at(r, s0, uu), at(r, s1, uu)]
+                    if first and ea['ldir']: pts.insert(0, at(r, s0, uu + ea['ldir'] * ea['leg']))     # plan leg into the footing
+                    if last and eb['ldir']: pts.append(at(r, s1, uu + eb['ldir'] * eb['leg']))
+                    P.pl(pts, lay, 25, lt)
+                    for tt, fl in ((s0, first and ea['kind'] == 'free'), (s1, last and eb['kind'] == 'free')):
+                        if fl: P.pl([at(r, tt, uu - 120), at(r, tt, uu + 120)], lay, 25)
+                    if u < 0 and len(pat) > 1:                     # every piece with its length, LAP at every lap
+                        P.tx(str(int(round(t1 - t0))), *at(r, (s0 + s1) / 2, uu + (-200 if pi else 150)), 120, 'S-DIM', 0 if o == 'H' else 90, TA.MIDDLE_CENTER)
+                        if i:
+                            mx = a + (t0 + pat[i - 1][1]) / 2 - ga
+                            P.tx(f'LAP {int(round(pat[i - 1][1] - t0))}', *at(r, mx, uu - 330), 120, 'S-DIM', 0 if o == 'H' else 90, TA.MIDDLE_CENTER)
         # ---- transverse U: one bar drawn per clear stretch + the distribution line with its count
         for a_, b_, n, mk in bb['tr']:
             m = (a_ + b_) / 2
@@ -438,7 +431,7 @@ def main():
     tot = sum(r['n_in'] * r['L'] / 1000 * r['d'] ** 2 / 162 for r in bl.sorted())
     print(f'strip: {len(runs)} runs {sum(r["hi"] - r["lo"] for r in runs) / 1000:.1f} m, plan parts {nt}, BBS sheets {nb}, steel {tot / 1000:.2f} t')
     for r in runs:
-        print(r['name'], r['o'], round(r['c']), round(r['hi'] - r['lo']), [e['kind'] + ('/' + str(e['what'].get('lab') or e['what'].get('name')) if e['what'] else '') for e in r['ends']], 'bar', r['bars']['p'], 'x', r['bars']['Lp'],
+        print(r['name'], r['o'], round(r['c']), round(r['hi'] - r['lo']), [e['kind'] + ('/' + str(e['what'].get('lab') or e['what'].get('name')) if e['what'] else '') for e in r['ends']], 'bar', r['bars']['p'], 'pcs of', r['bars']['T'],
               'stretches', [(round(b - a), n) for a, b, n, m in r['bars']['tr']])
 
 

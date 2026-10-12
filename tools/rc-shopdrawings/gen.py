@@ -279,23 +279,23 @@ class BarList:
         return sorted(self.rows.values(), key=lambda r: r['mark'])
 
 
-def draw_legend(sh, x, y):
-    """Key of the call-out, as on the office sheets."""
+def draw_legend(sh, x, y, g=1):
+    """g: geometry factor of a big sheet whose text() already scales the heights."""
     parts = [('15', 'No. OF\nBARS'), ('T', '( HIGH\nTENSILE)'), ('12-', 'BAR\nDIAMETER'),
              ('12000-', 'LENGTH\nOF BAR\nMM'), ('150', 'SPACING\nMM'), ('-STG', 'STAGGERED RFT'), ('- B1', 'LAYER\nPOSITION')]
-    sh.mark(x + 280, y + 130, 0, 260)                     # the bar mark: hexagon in front of the call-out
-    sh.line((x + 280, y - 180), (x + 280, y - 1450), 'S-RFT-TXT')
+    sh.mark(x + 280 * g, y + 130 * g, 0, 260)                     # the bar mark: hexagon in front of the call-out
+    sh.line((x + 280 * g, y - 180 * g), (x + 280 * g, y - 1450 * g), 'S-RFT-TXT')
     for j, part in enumerate(('BAR', 'MARK')):
-        sh.text(part, x + 280, y - 1550 - j * 230, 160, 'S-RFT-TXT', align=TA.TOP_CENTER)
-    cx = x + 700
+        sh.text(part, x + 280 * g, y - (1550 + j * 230) * g, 160, 'S-RFT-TXT', align=TA.TOP_CENTER)
+    cx = x + 700 * g
     for i, (v, lab) in enumerate(parts):
-        w = 400 + 230 * len(v)
+        w = (400 + 230 * len(v)) * g
         sh.text(v, cx + w / 2, y, 260, 'S-RFT-TXT', align=TA.BOTTOM_CENTER)
-        ly = y - 700 - (i % 2) * 500
-        sh.line((cx + w / 2, y - 80), (cx + w / 2, ly + 250), 'S-RFT-TXT')
+        ly = y - (700 + (i % 2) * 500) * g
+        sh.line((cx + w / 2, y - 80 * g), (cx + w / 2, ly + 250 * g), 'S-RFT-TXT')
         for j, part in enumerate(lab.split('\n')):
-            sh.text(part, cx + w / 2, ly - j * 230, 160, 'S-RFT-TXT', align=TA.TOP_CENTER)
-        cx += w + 250
+            sh.text(part, cx + w / 2, ly - j * 230 * g, 160, 'S-RFT-TXT', align=TA.TOP_CENTER)
+        cx += w + 250 * g
 
 
 def _symbol(sh, x, y, w, h, shape, d):
@@ -405,3 +405,51 @@ def draw_bbs(doc, first_idx, rows, meta, Sheet_=None):
             y = hy - head - rh * len(page) - 700
             sh.text(f"TOTAL STEEL WEIGHT = {grand:,.2f} kg  ({grand / 1000:.3f} t)", x0 + W, y, 260, 'S-TITLE', align=TA.MIDDLE_RIGHT)
     return len(pages)
+
+
+# ---------------------------------------------------------------- bars longer than a stock bar (engineer, Oct 2026)
+def lap_patterns(T, lp, stock=12000):
+    """A bar of developed length T (legs included) longer than the stock: pieces lapped lp, in TWO patterns used on
+    alternate bars so that the laps of neighbouring bars are STAGGERED (lap centres >= 1.3 lp apart) - never all the
+    laps in one line (engineer: "the laps were all in the middle of the raft").
+    -> [pattern A, pattern B], each a list of (t0, t1) along the developed bar; [[(0, T)]] when no lap is needed."""
+    if T <= stock: return [[(0, T)]]
+    up = lambda v: math.ceil(v / 10) * 10
+    def ivs(cuts):
+        b = [0] + cuts + [T]
+        return [(max(0, b[i] - (lp / 2 if i else 0)), min(T, b[i + 1] + (lp / 2 if i + 1 < len(b) - 1 else 0))) for i in range(len(b) - 1)]
+    p = math.ceil((T - lp) / (stock - lp))
+    while True:
+        cA = [i * T / p for i in range(1, p)]
+        for dl in (1.3 * lp, -1.3 * lp, 1.6 * lp, -1.6 * lp):
+            cB = [c + dl for c in cA]
+            A, B = ivs(cA), ivs(cB)
+            if all(0 < t1 - t0 <= stock for t0, t1 in A + B):
+                return [[(t0, t0 + up(t1 - t0)) if t1 < T else (T - up(T - t0), T) for t0, t1 in A],
+                        [(t0, t0 + up(t1 - t0)) if t1 < T else (T - up(T - t0), T) for t0, t1 in B]]
+        p += 1
+
+
+def piece_shape(t0, t1, T, leg_a, leg_b):
+    """BBS shape of a piece of a bar with legs leg_a (start) / leg_b (end)."""
+    L = int(round(t1 - t0))
+    a = leg_a if t0 <= 1 and leg_a else 0; b = leg_b if t1 >= T - 1 and leg_b else 0
+    if a and b: return ('U', a, L - a - b, b), L
+    if a: return ('L', a, L - a, 0), L
+    if b: return ('L', b, L - b, 0), L
+    return ('S', L), L
+
+
+def lapped_marks(bl, d, T, leg_a, leg_b, n, n_el, tag, lp=None, stock=12000):
+    """BarList marks of n bars of developed length T: one pattern = one mark set; pattern A on half the bars,
+    B on the other half. -> (patterns, [(mark, count, L)])"""
+    lp = lp or 60 * d
+    pats = lap_patterns(T, lp, stock)
+    counts = [math.ceil(n / len(pats)), n - math.ceil(n / len(pats))] if len(pats) == 2 else [n]
+    tot = {}
+    for pat, c in zip(pats, counts):
+        for t0, t1 in pat:
+            shp, L = piece_shape(t0, t1, T, leg_a, leg_b)
+            tot[(shp, L)] = tot.get((shp, L), 0) + c
+    marks = [(bl.add(d, shp, L, c, n_el, tag), c, L) for (shp, L), c in tot.items()]
+    return pats, marks
