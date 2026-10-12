@@ -433,6 +433,26 @@ from / between the grid lines, plan + sections along EVERY grid line (both direc
   grid; stretches with nothing are shortened with a break (dimensions keep the real distance); long lines in parts
   cut in a gap between footings; parts with no footing dropped; 3 strips per sheet.
 
+## 7c. Swimming pool / open tank with a sloped floor (`gen_pool.py pool.json`)
+
+- Read the pool sheets first (survey.py → the layouts named POOL; render the plan, the reinforcement plan and the
+  sections): inner L × W, wall t, floor h, blinding, and the FLOOR PROFILE = depth of the floor top below the wall top
+  at every slope change (from the section dimensions, not from the slope text: on Roya the plan said 0.07, the section
+  0.10 and the levels gave 0.10 — report every such clash). Bars from the texts (B1 / B2 / T1 / T2, V E.F., H E.F.,
+  UBAR). Write `pool.json` (see `pool.example.json`) in the scratch folder — never in the repo.
+- Floor: bars along the length follow the profile, bent at every slope change, developed length + U legs
+  h − cb − ct (bottom up, top down; a 500 leg in a 500 floor is impossible — say so), staggered laps (pattern A / B);
+  BBS symbol `PROF` draws the bent piece with every part written. Bars across: straight + legs, counted along the
+  developed floor.
+- Walls: vertical bars each face = C bar over the wall top (t − 2c) + foot on the floor bottom mesh (max(t − 2c, 12d));
+  the long walls follow the slope → one length per `step_v` of depth (the foot rises < step inside the floor), never
+  one length for the whole wall. Horizontal bars at every level that lies ≥ 100 above the floor, full wall length,
+  staggered laps; U bar (legs ≥ 60d) at every wall end and level.
+- Sheets: concrete dimensions (plan + long section + both end sections), floor bottom, floor top (plan with A / B
+  pieces + section on the profile + developed patterns), long wall elevation 1:50 in two halves, end sections 1:50,
+  typical corner 1:20, BBS. Remarks (`out/POOL/REMARKS.txt`): every clash with the consultant and what is NOT on his
+  sheets (waterstops, joints, gutter, fittings).
+
 ## 8. Changing a rule
 
 1. Find the drawing code: style/notes/hexagon/bends/hooks/break line → `gen.py`; GB → `gen2.py`;

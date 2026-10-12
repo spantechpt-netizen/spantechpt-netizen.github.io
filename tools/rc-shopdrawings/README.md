@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `zone_util.py`, `gen_zone_*.py` | necks, core necks, strip, grade beams, concrete dimensions per zone |
 | `mats_scan2.py`, `gen_mat.py`, `gen_zones.py` | rafts / CF of any outline (exact ADD zones from the drawn bars), packages per zone |
 | `rev_compare.py`, `zones.py` | final / new foundation plan vs the working one; zones (AREA n) for packages per zone |
+| `gen_pool.py`, `pool.example.json` | swimming pool / open tank with a sloped floor: concrete dims, floor meshes on the profile, walls, corners, BBS |
 | `slab_scan.py` | foundation slab of a zone (outline, thickness, mesh from the notes; ramp corridors cut) → slabs.json, detailed by `gen_zones.py` on A0 sheets. Laps staggered (patterns A / B), footings crossed by the strip as `-ST` variants: SKILL.md |
 | `pair_cores.py`, `gen_core.py` | core (shear-wall) necks from the SHEAR WALLS SCHEDULE + the cores found on the foundation plan |
 | `pair_necks.py` | foundation plan → column / footing pairs → `neck_pairs.txt` for `gen_n.py @neck_pairs.txt` |

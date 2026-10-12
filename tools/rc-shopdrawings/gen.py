@@ -346,6 +346,22 @@ def _symbol(sh, x, y, w, h, shape, d):
             if math.dist(a, b) < 0.3 * big: continue
             sh.text(str(int(round(math.dist(a, b)))), (qa[0] + qb[0]) / 2, (qa[1] + qb[1]) / 2 + 40, 110, 'S-RFT-TXT',
                     rot=90 if abs(qa[0] - qb[0]) < 1 else 0, align=TA.BOTTOM_CENTER)
+    elif kind == 'PROF':      # bar following a sloped profile (pool floor) + its legs: x / z scaled apart, every part written
+        pts = [(a, b) for a, b in seg]
+        x0_, y0_ = min(p[0] for p in pts), min(p[1] for p in pts)
+        bw = (max(p[0] for p in pts) - x0_) or 1; bh = (max(p[1] for p in pts) - y0_) or 1
+        kx = w * 0.6 / bw; ky = min(h * 0.5 / bh, 40 * kx) if bh > 1 else 0
+        X, Y = x + w * 0.2, y + h * 0.22
+        q = [(X + (a - x0_) * kx, Y + (b - y0_) * ky) for a, b in pts]
+        if ky * bh < h * 0.15:                                   # flat bar: lift the legs so they show
+            q = [(qx, Y + (h * 0.3 if (i in (0, len(q) - 1) and abs(pts[i][0] - pts[1 if i == 0 else -2][0]) < 1) else 0)) for i, (qx, qy) in enumerate(q)]
+        sh.pline(q, 'S-RFT-TXT', 0, False, r=20)
+        for (a, b), (qa, qb) in zip(zip(pts, pts[1:]), zip(q, q[1:])):
+            Ls = math.dist(a, b)
+            if Ls < 100: continue
+            vert = abs(a[0] - b[0]) < 1
+            sh.text(str(int(round(Ls))), (qa[0] + qb[0]) / 2 + (-50 if vert else 0), (qa[1] + qb[1]) / 2 + (0 if vert else 40), 110,
+                    'S-RFT-TXT', rot=90 if vert else 0, align=TA.BOTTOM_CENTER)
     elif kind == 'CH':        # chair: foot / leg / top / leg / foot
         f_, lg, top = seg
         u = w * 0.13; hh = h * 0.42; x0 = x + w * 0.12; y0 = y + h * 0.18
