@@ -37,6 +37,34 @@ python -m rcshop --help     # command line
 
 **Reading profiles** remember how one consultant draws: layers, blocks, label patterns and views. They are saved from a finished project in `~/.rcshop/profiles/` and applied to that consultant's next project. A profile never holds project data such as schedules, levels or title-block values.
 
+## Drawing reader (Phase 2)
+
+The reader page is where the program learns how this consultant draws. It shows the drawing itself, and you can zoom with the wheel at the cursor, pan with the middle or right button, use **Fit**, **Zoom window** and the **View** list (a layout's viewport), and **Find text**.
+
+- **Roles.** The left column lists the cards of what the engine has to find:
+  - the GB plan layout
+  - GB edges and GB labels
+  - columns
+  - grid bubbles, with the attribute that holds the axis name
+  - the foundation plan window
+  - footing / raft outlines
+  - PC outlines
+  - columns on the foundation plan
+  - footing labels
+  - grid lines
+  - core walls
+
+  Pick a card, then click an example on the drawing. A layer, block or text pattern is learned from that click. Each further click on a label widens the pattern, for example `F6A`, `CF2`, `RAFT-1` give `(F\d+[A-Z]?|CF\d+[A-Z]?|RAFT\-?\d+[A-Z]?)`.
+- **Live check.** Everything a role catches is highlighted in the role's colour, and the card counts it, for example "219 labels, 32 distinct: CF1, CF2, ...". **Matches** lists what was caught; double-click an entry to zoom to each instance in turn. **Focus** greys the rest of the drawing.
+- **Suggest** fills the empty roles from layer names, label texts, blocks and layout names. A suggestion is marked **?** until you confirm it.
+- **Inspector and Layers.** The inspector shows the clicked entity: type, layer, text and block attributes. The Layers tab shows counts and lets you hide, show or isolate layers, or use the selected layers for the active role.
+- **Save to project.json** writes the keys the engine reads. **Save as profile** keeps them for this consultant's next project.
+- **Shortcuts on the drawing:** `f` fit, `z` zoom window, `1`-`9` pick a role, `Esc` back to pick mode, `Ctrl+S` save.
+
+The drawing is flattened once and cached in `work/.rcshop_cache/`. A 70 MB plan takes about 75 s the first time and opens at once after that. Rendering runs in the background, and while it runs the last image is moved and scaled straight away.
+
+**Review** previews every output DXF sheet by sheet, next to its check result.
+
 ## Build for Windows
 
 `build_windows.bat` (Nuitka) produces `RCShop.exe` with the engine in an `engine\` folder beside it. The program runs the engine scripts itself through `RCShop.exe engine <script>`, so no Python is needed on the user's machine.

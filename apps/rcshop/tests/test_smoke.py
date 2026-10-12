@@ -30,6 +30,22 @@ def main():
         assert run_step(ws, 'package', log=lambda s: None) == 0
         zips = list(ws.deliveries.glob('*.zip'))
         assert len(zips) == 1 and zips[0].stat().st_size > 10000, zips
+        # the reader's model, roles and render on the generated sheets (no consultant drawing needed)
+        from rcshop.drawing import DrawingModel, render
+        from rcshop import roles as R
+        m = DrawingModel(ws.outputs()[0], log=lambda s: None)
+        assert len(m.p_layer) > 1000 and len(m.t_text) > 100
+        buf, size = render(m, m.extents(), (800, 600))
+        assert len(buf) == size[0] * size[1] * 4
+        t = next(i for i, s in enumerate(m.t_text) if s.startswith('TOTAL STEEL'))
+        assert m.pick(*m.t_xy[t], 50) == ('text', t)
+        role = R.BY_KEY['fnd_layers']
+        i = int(next(k for k, l in enumerate(m.p_layer) if m.layers[l] == 'S-GB-CONC'))
+        v, _ = R.value_from_click(m, role, ('poly', i), None)
+        assert v == ['S-GB-CONC'], v
+        pis, tis, info = R.matches(m, role, v)
+        assert len(pis) > 10, info
+        assert R.text_pattern('F6A') == r'F\d+[A-Z]?' and R.compile_full(R.text_pattern('RAFT-2')).match('RAFT-12')
         P = json.loads((ws.work / 'project.json').read_text())
         P['beam_layer'] = 'S-GB'; (ws.work / 'project.json').write_text(json.dumps(P))
         profiles.save_from(ws, 'Test consultant')
