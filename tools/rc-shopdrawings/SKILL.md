@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `rev_compare.py`, `zones.py` | a new / final foundation plan vs the working one (shift, renamed / gone / new labels); zones (AREA n clouds) → `zones.json` (§8b) |
 | `pair_cores.py`, `gen_core.py` | core (shear-wall) necks: cores on the FND plan → plan section + wall section + bar details + BBS (§7a) |
 | `strip_net.py`, `gen_st_plan.py` | strip footing network from the plan → strip detailed on plan + real BBS (§6) |
 | `cd_scan.py`, `cd_axes.py`, `gen_cd.py` | concrete dimensions of the foundations: plan in parts + sections along every grid line (§7b) |
@@ -392,6 +393,38 @@ from / between the grid lines, plan + sections along EVERY grid line (both direc
 6. Render the changed areas old | new side by side and send them to the engineer with a short list; ask which
    governs when the drawn size and the schedule disagree (default: the schedule). Then switch the project data to
    the new revision (`meta.ref`), regenerate the samples and continue.
+
+### The FINAL foundation plan (engineer's edits on the package) — what changes and how to read it
+
+- It may come as a **separate, re-based file** (local coordinates). `python3 rev_compare.py final.dxf` (run where the
+  OLD `cd_scan.pkl` is): shift by voting over same-size RC rectangles (hundreds agree = pure translation), then per
+  label by position: RENAMED / GONE / NEW (a GONE + NEW pair a few metres apart = the label moved = renamed).
+- What the edits were last time (expect the same kind):
+  - **types re-assigned on the plan** (a footing keeps its outline, gets another mark: F6 → F6A / F6B, F15 → F15A…D);
+    **new schedule rows** for them, an existing row's depth changed → read the new schedule (`table_dump.py`) and
+    diff it against `footings.json` row by row, never assume the old values;
+  - **an unknown plan label we had mapped to a type is answered** (e.g. a raft label not in the schedule that we took
+    as the deepest raft turned out to be the other one) → every mapping we assumed must be listed in the remarks
+    and re-checked on each revision;
+  - **mat variants named like the program names them**: same label, different additional bars → `NAME-B`, `-C`, `-D`
+    (or `1A`, `1B`): keep this naming (`mats_build.py`), it is what the final plan uses;
+  - elements of **another package** (fence footings) are left out of the foundation plan: keep them in their own
+    package, do not mix.
+- Outlines that look GONE in a rectangle diff are usually the same footing drawn in another way (open lines,
+  pieces) — compare labels, not raw rectangles.
+
+### Zones (packages per zone: sheets + BBS of that zone only)
+
+- The final plan is cut into zones: **closed polylines (revision clouds, hundreds of vertices, layer 0) with a
+  big "AREA n" text inside; one zone has NO outline = everything not inside another zone** (`zones.py final.dxf
+  dx,dy` → `zones.json`, `_rest` = that zone).
+- Describe each zone to the engineer by its grid range (axes inside its bounds) and its element counts.
+- An element belongs to the zone that contains its label / centroid. Elements that CROSS a zone line (strip
+  footing runs, grade beams along a zone edge, a raft cut by the cloud) are listed and the engineer decides
+  (default: the zone holding the larger part; a run split at the zone line only if he says so).
+- Per zone: own sheets (title "… - AREA n"), own BBS with the bars of that zone's elements only; bar marks restart
+  per zone; the drawing number carries the zone in the Area field of the title block (`title_block.code.area`).
+- **Do not start the zone packages before the engineer says so** (he sends the zones first, the go comes later).
 
 ## 9. Verification checklist (every sheet)
 
