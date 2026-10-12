@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `zone_util.py`, `gen_zone_necks.py`, `gen_zone_cores.py`, `gen_zone_strip.py`, `gen_zone_gb.py`, `gen_zone_cd.py` | the other packages per zone (§6b) |
 | `mats_scan2.py`, `gen_mat.py`, `gen_zones.py` | mats from a plan in pieces (polygonize) with exact ADD zones; rafts of any outline; packages per zone with key plan + BBS (§6b) |
 | `rev_compare.py`, `zones.py` | a new / final foundation plan vs the working one (shift, renamed / gone / new labels); zones (AREA n clouds) → `zones.json` (§8b) |
 | `pair_cores.py`, `gen_core.py` | core (shear-wall) necks: cores on the FND plan → plan section + wall section + bar details + BBS (§7a) |
@@ -301,7 +302,22 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   corners; chairs 1 / m². Sheets per type: BOTTOM X, BOTTOM Y, TOP X, TOP Y, ADD + CORNER BARS, SIDE BARS + SECTION;
   every edge of the outline dimensioned, re-entrant corners circled.
 
-### Zone packages (`gen_zones.py`)
+### Zone packages (`gen_zones.py` + `gen_zone_*.py`, shared `zone_util.py`)
+
+- Every package is cut per zone, one DXF each: FOUNDATIONS (`gen_zones.py`), NECKS, CORE_NECKS, STRIP, GRADE_BEAMS,
+  CONCRETE_DIM (`gen_zone_necks / _cores / _strip / _gb / _cd.py`), each with the BBS of that zone and the zone code
+  in the title block. PDFs only when the engineer asks.
+- Necks: every column of `neck_pairs.pkl → cl` takes the footing TYPE under it ON THE FINAL PLAN (`zone_util.
+  footing_at`: mat type from mats.json, isolated mark of the final plan, else the strip; within 1.5 m of an isolated
+  footing = attached + reported); columns on nothing (fence line, removed footings) are listed, not drawn.
+- Grade beams: runs (GB plan coordinates) moved to the foundation plan by `gb_to_fnd` (grid lines matched); the
+  gaps between the zone clouds belong to the outline-less zone, so a run goes to the CLOUD zone with the larger
+  part (≥ 15 %), else to the rest; every run crossing a zone line is listed in REMARKS (split only on request).
+- Strip: the whole network is modelled once (ends need neighbours), runs go to the zone with the larger part.
+- Concrete dimensions: the plan scan is RELABELLED with the final plan's marks (a re-assigned footing gets its new
+  schedule size), footings gone from the final plan are dropped, wall-strip cuts only inside the zone.
+
+### Zone packages - foundations sheet order
 
 - Footings of a zone: labels of the final plan (`…IDEN` layer) inside the zone outline (`zones.json`, `_rest` = the
   zone without one); mats: `mats.json → at` (label positions per type) → count per zone. One DXF per zone:

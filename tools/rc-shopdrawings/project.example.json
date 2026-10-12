@@ -254,5 +254,10 @@
  },
  "zone_codes": {
   "AREA 1": "Z01"
- }
+ },
+ "gb_to_fnd": [
+  0,
+  0
+ ],
+ "core_default_footing": "F1"
 }
