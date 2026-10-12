@@ -227,7 +227,7 @@ def _tb_frame(self):
     seqs[venue] = seqs.get(venue, int(TB.get('seq_start', {}).get(venue, 1)) - 1) + 1
     rev = m.get('rev', '00')
     val = dict(title=m.get('title', ''), ref=' '.join(m.get('ref', '').split('\n')), scale=m.get('scale', 'AS SHOWN'),
-               size=m.get('size') or TB.get('size', 'A3'), area=c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,
+               size=m.get('size') or TB.get('size', 'A3'), area=m.get('area') or c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,
                date=m.get('date', ''))
     val['dwg'] = '-'.join(str(v) for v in (c.get('project_id', ''), c.get('dwg_type', ''), c.get('orig', ''),
                                           c.get('doc_type', ''), val['area'], venue, val['seq'], rev))

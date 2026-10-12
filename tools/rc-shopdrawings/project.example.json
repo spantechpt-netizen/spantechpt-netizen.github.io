@@ -243,5 +243,16 @@
    "F1",
    1
   ]
- ]
+ ],
+ "fnd_final": {
+  "dxf": "final_foundation.dxf",
+  "shift": [
+   0,
+   0
+  ],
+  "zones": "zones.json"
+ },
+ "zone_codes": {
+  "AREA 1": "Z01"
+ }
 }

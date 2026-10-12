@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `mats_scan2.py`, `gen_mat.py`, `gen_zones.py` | mats from a plan in pieces (polygonize) with exact ADD zones; rafts of any outline; packages per zone with key plan + BBS (§6b) |
 | `rev_compare.py`, `zones.py` | a new / final foundation plan vs the working one (shift, renamed / gone / new labels); zones (AREA n clouds) → `zones.json` (§8b) |
 | `pair_cores.py`, `gen_core.py` | core (shear-wall) necks: cores on the FND plan → plan section + wall section + bar details + BBS (§7a) |
 | `strip_net.py`, `gen_st_plan.py` | strip footing network from the plan → strip detailed on plan + real BBS (§6) |
@@ -276,6 +277,37 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
     dimensions, end notes (TO FAR FACE / 840 INTO F5 / TURN …), one call-out block per run placed clear of the
     footings and other blocks; a run whose block is on another part gets "R10 - BARS: SEE PART n".
 - `BarList`: the same bar in elements with different NO keeps the right total (n_in × n_el summed).
+
+### Rafts / combined footings on their REAL outline — read with care (engineer: "the raft had execution errors")
+
+- `mats_scan2.py` (project.json → `fnd_final {dxf, shift}`): ALL line work of the foundation layers (closed rings,
+  open polylines, LINEs, duplicates) is noded and polygonized; each CF / RAFT label takes the smallest face holding it
+  = the true outline (stepped / L / skewed). The old `mats_scan.py` needed closed outlines and silently MISSED mats
+  drawn in pieces — never trust a mat count without checking every label found a face.
+- ADD bars: read from the DRAWN bar (layer `…RBAR…`, 2-point polyline/line, inside the ADD block) = exact length and
+  place, and its DIMENSION across = the distribution zone (n = zone / s + 1). NEVER from the text position: the
+  consultant writes "T20@100 ADD TOP" about 1 m off the zone (the old generator put the bars there - an execution
+  error). Zones come out centred on the columns (check: < 50 mm).
+- `mats_build.py`: same mark + same size + same shape + same ADD bars = one type; another variant of a plan mark gets
+  **`-T2`, `-T3` …** (never a letter: the consultant's own marks are RAFT-1A, RAFT-2-B; our RAFT-1-B was read as his
+  RAFT-1B). Non-rectangular → `gen_mat.py`, rectangles stay in `gen_f.py` (approved sheets; ADD bars now exact).
+- `gen_mat.py` (any outline): the polygon eroded by the cover is cut by the bar lines; consecutive rows with the same
+  piece(s) (± 50 mm) = one RANGE = one mark + one distribution line; the range changes exactly where the outline
+  steps; a row crossing a notch = two separate bars; a row lying ON a step face belongs to the side it stops at.
+  Every bar face to face − cover, U legs h − 2c (top U = bottom U), > 12 m equal pieces lapped 60 d drawn as pieces.
+  ADD bars clipped to the concrete: shortened bars get their own mark, bars < 60 d dropped — REPORT both to the
+  engineer (a design-side error to raise). Re-entrant corners: 2 T16 L=1500 diagonal, bottom (+ top), placed where
+  the whole bar is in concrete (Span Tech proposal - say so). Side bars along the real perimeter, laps away from the
+  corners; chairs 1 / m². Sheets per type: BOTTOM X, BOTTOM Y, TOP X, TOP Y, ADD + CORNER BARS, SIDE BARS + SECTION;
+  every edge of the outline dimensioned, re-entrant corners circled.
+
+### Zone packages (`gen_zones.py`)
+
+- Footings of a zone: labels of the final plan (`…IDEN` layer) inside the zone outline (`zones.json`, `_rest` = the
+  zone without one); mats: `mats.json → at` (label positions per type) → count per zone. One DXF per zone:
+  sheet 1 = **KEY PLAN of the zone with the TYPE of every footing** (a plan mark detailed as several types must be
+  findable on site), then the isolated footings (`gen_f.draw_sheet`, NO = count in the zone), CF / rafts (rect
+  `gen_f`, other `gen_mat`), BBS of the zone. Title block Area field = zone code (`meta.area`, `zone_codes` or Z01…).
 
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
