@@ -450,7 +450,11 @@ from / between the grid lines, plan + sections along EVERY grid line (both direc
   staggered laps; U bar (legs ≥ 60d) at every wall end and level.
 - Sheets: concrete dimensions (plan + long section + both end sections), floor bottom, floor top (plan with A / B
   pieces + section on the profile + developed patterns), long wall elevation 1:50 in two halves, end sections 1:50,
-  typical corner 1:20, BBS. Remarks (`out/POOL/REMARKS.txt`): every clash with the consultant and what is NOT on his
+  typical corner 1:20, sleeves 1:25 (`sleeves` + `sleeve_bars`: the consultant's diagonal trimming bars per side,
+  each face, at every sleeve of the plan; other sleeves come from MEP — say so), BBS.
+- Check the whole DWG, not only the named views: small typical details sit outside the viewports (the sleeve detail
+  did), and layouts can point at an EMPTY model space (tanks / ramp layouts of the Roya pool file) — report it and
+  ask for the drawing instead of skipping silently. Remarks (`out/POOL/REMARKS.txt`): every clash with the consultant and what is NOT on his
   sheets (waterstops, joints, gutter, fittings).
 
 ## 8. Changing a rule

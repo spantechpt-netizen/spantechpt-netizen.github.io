@@ -173,6 +173,25 @@ for wall, x in (('SHALLOW', 0), ('DEEP', L)):
 # U bar at every wall end and every level: legs lapped with both faces, base across the wall at the far face
 nU = 2 * (len(SHORT_LV['SHALLOW']) + len(SHORT_LV['DEEP'])) * 2          # long walls (2) x 2 ends + short walls x 2 ends
 mkU = bl.add(dU, ('U', legU, t - 2 * cw, legU), 2 * legU + t - 2 * cw, nU, 1, 'U')
+# trimming bars around every sleeve: per_side bars on each of the 4 sides of a diamond, each face
+SLV = P.get('sleeves') or []
+SB = P.get('sleeve_bars') or {}
+nS = len(SLV) * SB.get('per_side', 2) * 4 * SB.get('faces', 2)
+mkS = bl.add(SB['d'], ('S', SB['L']), SB['L'], nS, 1, 'SLV') if SLV else None
+
+
+def sleeve_bars(cx, cy, r, gap):
+    """the diagonal trimming bars of one sleeve -> [((x0, y0), (x1, y1))] (sleeve centre cx, cy)"""
+    out, Lb = [], SB['L']
+    for ang in (45, 135):
+        ux, uy = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+        nx, ny = -uy, ux
+        for side in (-1, 1):
+            for j in range(SB.get('per_side', 2)):
+                o = side * (gap / 2 + j * 60)
+                mx, my = cx + nx * o, cy + ny * o
+                out.append(((mx - ux * Lb / 2, my - uy * Lb / 2), (mx + ux * Lb / 2, my + uy * Lb / 2)))
+    return out
 
 # ---------------------------------------------------------------- sheets
 meta0 = dict(client='', project='', consultant='', contractor='', ref=P.get('ref', ''), author='', checker='', approver='',
@@ -275,6 +294,11 @@ def floor_sheet(lay):
     sh.pline([X(0, 0), X(L, 0), X(L, W), X(0, W)], 'S-GB-CONC', 0, True)
     for xk in KINKS: sh.pline([X(xk, 0), X(xk, W)], 'S-DIM', 0)
     lyr = 'S-RFT-BOT' if lay == 'B' else 'S-RFT-TOP'
+    for sv in SLV:
+        sh.circle(*X(sv['x'], sv['y']), sv['d'] / 2, 'S-GB-CONC')
+        for a_, b_ in sleeve_bars(sv['x'], sv['y'], sv['d'] / 2, SB.get('gap', 600)):
+            sh.pline([X(*a_), X(*b_)], lyr, 20)
+        sh.ctext(mkS, f"SLEEVE: {SB.get('per_side', 2)}x4 T{SB['d']}-{SB['L']} EACH FACE (SEE SLEEVE DETAIL)", *X(sv['x'] + 800, sv['y'] + 300), ST['call'] * 0.7)
     # Y bars (outer layer) - one bar drawn, distribution along the developed floor
     bx = L * 0.12
     y0, y1 = -t + cw, W + t - cw
@@ -466,6 +490,25 @@ sh.text(f'LONG-WALL BARS RUN TO THE FAR FACE OF THE SHORT WALL; SHORT-WALL BARS 
         *X(-t, -t - 420), ST['note'], 'S-DIM')
 sh.dim(X(-t, -t), X(0, -t), (0, X(0, -t)[1] - 500), text=str(t))
 sh.dim(X(-t, -t), X(-t, 0), (X(-t, 0)[0] - 500, 0), angle=90, text=str(t))
+
+# ---- sheet 7: trimming bars around sleeves 1:25
+if SLV:
+    sh = sheet('REINFORCEMENT AROUND SLEEVES (TYPICAL)', '1:25')
+    k = 4
+    X = T_(9000, 15500, k)
+    r = SLV[0]['d'] / 2; gap = SB.get('gap', 600)
+    sh.circle(*X(0, 0), r * k, 'S-GB-CONC')
+    for a_, b_ in sleeve_bars(0, 0, r, gap):
+        sh.pline([X(*a_), X(*b_)], 'S-RFT-BOT', 30)
+    for ang in (45, 135):
+        ux, uy = math.cos(math.radians(ang)), math.sin(math.radians(ang))
+        sh.text(str(SB['L']), *X(ux * 350 - uy * (gap / 2 + 250), uy * 350 + ux * (gap / 2 + 250)), ST['len'], 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
+    sh.dim(X(-gap / 2 * 1.414, -1400), X(gap / 2 * 1.414, -1400), (0, X(0, -1400)[1] - 300), text=f'{gap} x {gap} (BETWEEN BAR PAIRS)')
+    sh.ctext(mkS, callout(nS, SB['d'], mkS, SB['L']) + f"  = {SB.get('per_side', 2)} BARS x 4 SIDES x {SB.get('faces', 2)} FACES x {len(SLV)} SLEEVE(S)", 1500, 5600, ST['call'])
+    sh.text('BARS PLACED DIAGONALLY ON THE MAIN MESH OF EACH FACE, CENTRED ON THE SLEEVE; MAIN BARS CUT BY THE SLEEVE ARE BENT AROUND IT, NOT CUT, WHERE POSSIBLE.', 1500, 4800, ST['note'], 'S-DIM')
+    for i, sv in enumerate(SLV):
+        sh.text(f"SLEEVE {i + 1}: {sv.get('in', '')} x={sv['x']} y={sv['y']} (FROM THE INNER CORNER SHALLOW END / FIRST LONG WALL)  DIA {sv['d']}  {sv.get('note', '')}", 1500, 4100 - i * 400, ST['note'], 'S-RFT-TXT')
+    sh.text('REINFORCEMENT AROUND SLEEVES (TYP.)  1:25', *X(0, -2200), ST['sub'], 'S-SEC', align=TA.MIDDLE_CENTER)
 
 # ---- BBS
 m = dict(meta0); m['title'] = f"{P['name']}\nBBS"; m['dwg'] = 'SDW-STR-SP-BBS'
