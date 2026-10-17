@@ -385,7 +385,10 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   leader to the tie call-outs**, **section cut A-A** marked, dims (neck H, LAP), levels, break line on top.
 - Section A-A 1:10: column outline, hooked curved ties, bars inside, dims.
 - Tie bending sketches: out-to-out shape, curved corners, **every side of every tie written** (engineer, Oct 2026;
-  the BBS shape column writes every side too), hexagon mark + size, `L=…` on the next line, one note
+  the BBS shape column writes every side too), **drawn OPENED at the hook corner** (`gen.opened_tie`): the side
+  going down from the hook corner is swung out (25°, less for a long side) so the two 135° hooks stand apart and
+  the closing point shows, the swung side's length written along it, `100` along the hook tail — on the sheet and
+  in the BBS. Section A-A keeps the tie closed (as fixed). Hexagon mark + size, `L=…` on the next line, one note
   "TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)".
 
 ## 7a. Core (shear-wall) necks (`pair_cores.py` → `gen_core.py`)

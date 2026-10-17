@@ -5,7 +5,7 @@ the grade beams plus the column lap. Call-outs in the office format, BBS sheet a
 import json, math, pickle, re, sys
 import ezdxf
 from ezdxf import recover
-from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, fillet, tie_bar_centres, ST, mm, project_notes
+from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, opened_tie, fillet, tie_bar_centres, ST, mm, project_notes
 
 PRJ = json.load(open('project.json'))
 LEV = PRJ['levels']
@@ -400,23 +400,33 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.dim(P(0, 0), P(0, Hh), (P(0, 0)[0] - 600, P(0, 0)[1]), angle=90, text=str(round(Hh)))
     sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # tie shapes with their lengths
-    tx = 23500; by = 8400
+    TX0 = max(23500, Q(-fx0, 0)[0] + 900) if Q(-fx0, 0)[0] < 30000 else 23500   # clear of a wide footing
+    tx = TX0; by = 8400
     sh.text('TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)', 23500, 11500, ST['note'], 'S-RFT-TXT', maxw=9500)
     for t in ties:
         kk = min(9.0, 2700 / max(1, t['hh']), 5500 / max(1, t['w']))
         nm = t['norm']; nn = len(nm)
         cb = tie_bar_centres(nm, d / 2 + 10)              # bar centres for the out-to-out shape
-        Z = lambda p: (tx + p[0] * kk, by + p[1] * kk)
-        segs = hooked_tie(nm, cb, tail=100, rc=d / 2 + 10)
+        segs, moved = opened_tie(nm, cb, tail=100, rc=d / 2 + 10)      # opened at the hooks (engineer's sample)
+        xa_ = min(p[0] for sg_ in segs for p in sg_); xb_ = max(p[0] for sg_ in segs for p in sg_)
+        if tx > TX0 and tx + (xb_ - xa_) * kk > 35600: tx = TX0; by -= 4300          # next row (title block at 36000)
+        Z = lambda p: (tx + (p[0] - xa_) * kk, by + p[1] * kk)
         for sg_ in segs:
-            sh.pline([Z(*[p]) if False else Z(p) for p in sg_], 'S-RFT-STIR', 20)
+            sh.pline([Z(p) for p in sg_], 'S-RFT-STIR', 20)
+        ta_, tb_ = moved['tail']                                       # the hook tail written 100 along it
+        tang = math.degrees(math.atan2(tb_[1] - ta_[1], tb_[0] - ta_[0]))
+        if tang > 90.5 or tang <= -89.5: tang += 180
+        pm_ = Z(((ta_[0] + tb_[0]) / 2, (ta_[1] + tb_[1]) / 2))
+        nrm = math.radians(tang + 90)
+        sh.text('100', pm_[0] + 130 * math.cos(nrm), pm_[1] + 130 * math.sin(nrm), ST['len'], 'S-DIM', rot=tang, align=TA.MIDDLE_CENTER)
         # one or two sides dimensioned (engineer's note): the top side and the vertical side, plus one slanted side
         ed = [(nm[j], nm[(j + 1) % nn]) for j in range(nn)]
         hor = max((e_ for e_ in ed if abs(e_[0][1] - e_[1][1]) < 2), key=lambda e_: (e_[0][1], math.dist(*e_)), default=None)
         ver = max((e_ for e_ in ed if abs(e_[0][0] - e_[1][0]) < 2), key=lambda e_: (math.dist(*e_), -e_[0][0]), default=None)
         sl = [e_ for e_ in ed if abs(e_[0][1] - e_[1][1]) >= 2 and abs(e_[0][0] - e_[1][0]) >= 2 and math.dist(*e_) > 25]
         for e_ in [x for x in ed if math.dist(*x) > 25]:                 # every side written (engineer, Oct 2026)
-            a_, b_ = e_
+            k_ = (tuple(e_[0]), tuple(e_[1]))
+            a_, b_ = moved.get(k_) or tuple(reversed(moved.get((k_[1], k_[0]), ()))) or e_   # the swung side where it is drawn
             pa_, pb_ = Z(a_), Z(b_)
             mx, my = (pa_[0] + pb_[0]) / 2, (pa_[1] + pb_[1]) / 2
             ang = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
@@ -426,8 +436,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
             sh.text(mm(math.dist(a_, b_)), mx + nx_ / hn * 200, my + ny_ / hn * 200, ST['len'], 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
         sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 800, ST['call'], 'S-RFT-TXT')
         sh.text(f"L={mm(t['L'])}", tx, by - 1400, ST['call'], 'S-RFT-TXT')
-        tx += max(t['w'] * kk, 3700) + 900
-        if tx > 29500: tx = 23500; by -= 4300
+        tx += max((xb_ - xa_) * kk, 3700) + 900
     return Hn, (emb, foot, LD, ld_ok, inward)
 
 

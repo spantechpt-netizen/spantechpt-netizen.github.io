@@ -148,6 +148,45 @@ def hooked_tie(pts, bars, tail=75, rc=0):
     return [fillet(body, rc) if rc else body, ha, hb]                # every bend curved, never a sharp corner
 
 
+def opened_tie(pts, bars=None, tail=100, rc=0, swing=25):
+    """Tie for the bending sketch / BBS, OPENED at its hook corner (engineer's sample): the side at the hook
+    corner (the one going down from it) is swung out by `swing` degrees about its far end, so the two 135-deg hooks stand apart and the closing
+    point shows. bars=None: the corner bar is put at rc from both faces. -> (polylines, moved) where moved maps the
+    swung side (P, V) -> (P, V') for writing its length along it."""
+    if bars is None:                                  # corner bars only: one inside every corner
+        bars = []
+        n0 = len(pts)
+        for j in range(n0):
+            a, v, b = pts[j - 1], pts[j], pts[(j + 1) % n0]
+            la, lb = math.dist(a, v), math.dist(b, v)
+            if la < 1e-6 or lb < 1e-6: continue
+            bs = ((a[0] - v[0]) / la + (b[0] - v[0]) / lb, (a[1] - v[1]) / la + (b[1] - v[1]) / lb)
+            hb_ = math.hypot(*bs) or 1
+            cosg = max(-1, min(1, ((a[0] - v[0]) * (b[0] - v[0]) + (a[1] - v[1]) * (b[1] - v[1])) / la / lb))
+            dc = max(rc, 20) / max(math.sin(math.acos(cosg) / 2), 0.2)
+            bars.append((v[0] + bs[0] / hb_ * dc, v[1] + bs[1] / hb_ * dc))
+    body, ha, hb = hooked_tie(pts, bars, tail=tail, rc=0)
+    n = len(pts)
+    V = min(pts, key=lambda p: math.dist(p, body[0]) + math.dist(p, body[-1]))     # the hook corner
+    Pb, Pa = body[1], body[-2]                        # far ends of the two sides meeting at the hook corner
+    cx, cy = sum(p[0] for p in pts) / n, sum(p[1] for p in pts) / n
+    def rot(p, c, a):
+        ca, sa = math.cos(a), math.sin(a)
+        return (c[0] + (p[0] - c[0]) * ca - (p[1] - c[1]) * sa, c[1] + (p[0] - c[0]) * sa + (p[1] - c[1]) * ca)
+    lo_a, lo_b = V[1] - Pa[1], V[1] - Pb[1]           # swing the side going DOWN from the corner (the sample's left side)
+    end_a = lo_a > lo_b + 1 if abs(lo_a - lo_b) > 1 else math.dist(Pa, V) <= math.dist(Pb, V)
+    P = Pa if end_a else Pb
+    sh_ = min(math.dist(Pa, V), math.dist(Pb, V))
+    sw = min(math.radians(swing), math.atan2(max(tail, 0.45 * sh_), math.dist(P, V)))   # long side: a smaller angle
+    a = max((sw, -sw), key=lambda a: math.dist(rot(V, P, a), (cx, cy)))
+    mvh = lambda h, T: [(q[0] + rot(T, P, a)[0] - T[0], q[1] + rot(T, P, a)[1] - T[1]) for q in h]   # hook moved, not turned
+    if end_a:
+        body = body[:-1] + [rot(body[-1], P, a)]; ha = mvh(ha, ha[0]); fixed = hb
+    else:
+        body = [rot(body[0], P, a)] + body[1:]; hb = mvh(hb, hb[0]); fixed = ha
+    return [fillet(body, rc) if rc else body, ha, hb], {(tuple(P), tuple(V)): (P, rot(V, P, a)), 'tail': (fixed[-2], fixed[-1])}
+
+
 
 class Sheet:
     W, H = 42000, 29700      # A3 at 1:100
@@ -345,18 +384,25 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.text(str(bh), x0 + sw + 160, y0 + shh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
     elif kind == 'POLY':      # tie of any shape, drawn to its own proportions
         pts = [(a, b) for a, b in seg]
-        bw = max(p[0] for p in pts) or 1; bh = max(p[1] for p in pts) or 1
-        kk = min(w * 0.45 / bw, h * 0.7 / bh)
-        x0, y0 = x + w * 0.3, y + h * 0.15
-        sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in pts], 'S-RFT-TXT', 0, True, r=40)
+        segs, moved = opened_tie(pts, None, tail=100, rc=15)          # opened at the hooks, as on the sheet
+        xa_ = min(p[0] for sg_ in segs for p in sg_)
+        bw = (max(p[0] for sg_ in segs for p in sg_) - xa_) or 1; bh = max(p[1] for p in pts) or 1
+        kk = min(w * 0.5 / bw, h * 0.5 / bh)
+        x0, y0 = x + w * 0.25 - xa_ * kk, y + h * 0.25
+        for sg_ in segs:
+            sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in sg_], 'S-RFT-TXT', 0, False)
         q = [(x0 + a * kk, y0 + b * kk) for a, b in pts]
         cx, cy = sum(p[0] for p in q) / len(q), sum(p[1] for p in q) / len(q)
+        swq = {}                                                          # the swung side written where it is drawn
+        for (P_, V_), (_, W_) in [(k_, v_) for k_, v_ in moved.items() if k_ != 'tail']:
+            swq[frozenset((pts.index(P_), pts.index(V_)))] = {pts.index(P_): q[pts.index(P_)], pts.index(V_): (x0 + W_[0] * kk, y0 + W_[1] * kk)}
         nt = 120 if len(pts) <= 4 else 95
         for i in range(len(pts)):                      # every side written (engineer's rule)
             a, b = pts[i], pts[(i + 1) % len(pts)]
             Ls = math.dist(a, b)
             if Ls < 25: continue
-            qa, qb = q[i], q[(i + 1) % len(q)]
+            i2 = (i + 1) % len(q); o_ = swq.get(frozenset((i, i2)))
+            qa, qb = (o_[i], o_[i2]) if o_ else (q[i], q[i2])
             mx, my = (qa[0] + qb[0]) / 2, (qa[1] + qb[1]) / 2
             vert = abs(qa[0] - qb[0]) < abs(qa[1] - qb[1])
             if vert:
