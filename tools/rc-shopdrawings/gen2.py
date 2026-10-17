@@ -363,7 +363,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=
             W_ = tw(t, hC) + 2.6 * hC
             xs = [U(a) + 300 + k * 350 for k in range(60) if U(a) + 300 + k * 350 + W_ <= max(U(c), U(a) + 300 + W_)]
             # short bars: the call-out may also start left of the bar (a leader then points to the bar)
-            xs_out = [U(a) + 300 - k * 350 for k in range(1, int(W_ / 350) + 1)]
+            xs_out = [x for x in (U(a) + 300 - k * 350 for k in range(1, int(W_ / 350) + 1)) if x >= 700]   # never off the sheet
             # call-out on the outer side of the bar (above top bars, below bottom bars), lengths on the inner side
             yc = (lambda dy: base + 80 + dy) if off > 0 else (lambda dy: base - 80 - hC * 1.9 - dy)     # box holds the hexagon
             # stay next to the bar: slide along it first, then just beside its end, and move outwards (away from the
