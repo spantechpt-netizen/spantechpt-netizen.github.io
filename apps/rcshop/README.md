@@ -20,7 +20,7 @@ python -m rcshop --help     # command line
 <project>/deliveries/   zip parts (under the size limit in Settings)
 ```
 
-1. **New project**, then tick the **modules** you need: grade beams, footings, rafts / CF, necks, concrete dims, packages per zone, cores, strip, pool.
+1. **New project**, then tick the **modules** you need: grade beams, footings, rafts / CF, necks, concrete dims, packages per zone, cores, stair starters, slab on grade, strip, pool.
 2. **Add DWG / DXF.** The DWG is converted with ODA File Converter or LibreDWG, whichever is set in Settings. A DXF saved from AutoCAD is taken as it is.
 3. Run **survey**. It writes `survey/survey.md` and a draft `project.json`.
 4. **project.json from survey draft**, or apply a **reading profile** for a consultant you have worked with before. Check the values, then add the schedules (`footings.json`, `footings_ext.json`, `pool.json`).
@@ -36,6 +36,17 @@ python -m rcshop --help     # command line
 7. **check** audits every DXF and looks for objects AutoCAD rejects. **package** zips the delivery.
 
 **Reading profiles** remember how one consultant draws: layers, blocks, label patterns and views. They are saved from a finished project in `~/.rcshop/profiles/` and applied to that consultant's next project. A profile never holds project data such as schedules, levels or title-block values.
+
+## What's new in 0.3
+
+- **Stair starters** and **slab on grade** modules. The reader has cards for the stair starter outlines and bars, the
+  S.O.G tags, the slab thickness tags and the window of the plan that carries them. They are saved into the `stairs`
+  and `sog` objects of project.json, and kept in reading profiles.
+- Sheet numbers continue across the areas for every package: necks 20100, cores 30100, stairs 40100, grade beams 50100,
+  S.O.G 60100.
+- The **check** step fails a file with anything drawn outside its sheet frame.
+- Core walls: horizontal U-bars per wall face, and starter + neck bar verticals. Grade beams: top legs 600, bottom
+  legs 200, grey grid.
 
 ## What's new in 0.2
 
@@ -61,6 +72,8 @@ The reader page is where the program learns how this consultant draws. It shows 
   - footing labels
   - grid lines
   - core walls
+  - stair starter outlines and their bars
+  - S.O.G tags, slab thickness tags and the window of their plan
 
   Pick a card, then click an example on the drawing. A layer, block or text pattern is learned from that click. Each further click on a label widens the pattern, for example `F6A`, `CF2`, `RAFT-1` give `(F\d+[A-Z]?|CF\d+[A-Z]?|RAFT\-?\d+[A-Z]?)`.
 - **Live check.** Everything a role catches is highlighted in the role's colour, and the card counts it, for example "219 labels, 32 distinct: CF1, CF2, ...". **Matches** lists what was caught; double-click an entry to zoom to each instance in turn. **Focus** greys the rest of the drawing.

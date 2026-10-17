@@ -293,7 +293,9 @@ class Sheet:
         self.m.add_circle(self.P(x, y), r, dxfattribs={'layer': layer})
     def dim(self, a, b, base, angle=0, text='<>'):
         M = 300                                     # a dimension that would leave the sheet frame is not drawn
-        if any(not (M <= p[0] <= self.W - M and M <= p[1] <= self.H - M) for p in (a, b, base)): return None
+        inside = lambda x, y: M <= x <= self.W - M and M <= y <= self.H - M
+        line_ok = (M <= base[1] <= self.H - M) if angle % 180 == 0 else (M <= base[0] <= self.W - M)   # the dimension line
+        if not (inside(*a) and inside(*b) and line_ok): return None
         d = self.m.add_linear_dim(base=self.P(*base), p1=self.P(*a), p2=self.P(*b), angle=angle,
                                   dimstyle=getattr(self, 'dimstyle', 'GB100'), text=text, dxfattribs={'layer': 'S-DIM'})
         d.render()

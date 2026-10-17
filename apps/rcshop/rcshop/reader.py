@@ -155,7 +155,7 @@ class ReaderPage(ttk.Frame):
         self.cmb['values'] = dw
         P = ws.project()
         if not self.dirty:
-            self.values = {r.key: P.get(r.key) for r in R.ROLES}
+            self.values = {r.key: R.get_value(P, r.key) for r in R.ROLES}
             self.extra = {k: P.get(k) for k in ('axis_attr', 'axis_family_attr')}
         cur = P.get('dxf') or ws.meta.get('main_dxf')
         if cur in dw and (self.model is None or self.model.path.name != cur):
@@ -195,14 +195,14 @@ class ReaderPage(ttk.Frame):
         self.active = key
         r = R.BY_KEY[key]
         self.how.config(text=f'  {r.title}:  {r.how}')
-        self.view.set_mode('rect' if r.kind == 'window' else 'pick')
+        self.view.set_mode('rect' if r.kind in ('window', 'rect') else 'pick')
         for w in self.tools.winfo_children(): w.destroy()
         if r.kind == 'textre':
             ttk.Label(self.tools, text='pattern').pack(side='left')
             self.re_ent = ttk.Entry(self.tools, width=48, font=(T.MONO, 9)); self.re_ent.pack(side='left', padx=4)
             self.re_ent.insert(0, self.values.get(key) or '')
             ttk.Button(self.tools, text='Apply', style='Tool.TButton', command=self.apply_re).pack(side='left')
-        if r.kind == 'block':
+        if r.kind == 'block' and key == 'axis_block':
             ttk.Label(self.tools, text='axis name in').pack(side='left')
             self.cb_num = ttk.Combobox(self.tools, width=10, state='readonly'); self.cb_num.pack(side='left', padx=3)
             ttk.Label(self.tools, text='family (X/Y) in').pack(side='left')
@@ -263,9 +263,11 @@ class ReaderPage(ttk.Frame):
                     ok = (len(pis) + len(tis)) > 0
                 elif r.kind == 'window':
                     info, ok = f'{v[2]:.0f} high around ({v[0]:.0f}, {v[1]:.0f})', True
+                elif r.kind == 'rect':
+                    info, ok = f'{v[2] - v[0]:.0f} x {v[3] - v[1]:.0f} from ({v[0]:.0f}, {v[1]:.0f})', True
                 elif r.kind == 'layout':
                     ok = v in self.model.layouts; info = 'layout found' if ok else 'no such layout in this drawing'
-                if r.kind == 'block':
+                if r.key == 'axis_block':
                     info += f"   name: {self.extra.get('axis_attr') or '?'}  family: {self.extra.get('axis_family_attr') or '?'}"
             elif v not in (None, '', [], {}):
                 ok = True; info = 'open the drawing to see what it catches'
@@ -280,7 +282,7 @@ class ReaderPage(ttk.Frame):
         hl = []
         for r in R.ROLES:
             v = self.values.get(r.key)
-            if v in (None, '', [], {}) or r.kind in ('window', 'layout'): continue
+            if v in (None, '', [], {}) or r.kind in ('window', 'layout', 'rect'): continue
             if r.key != self.active and not self.v_all.get(): continue
             pis, tis, _ = R.matches(self.model, r, v, self.extra)
             hl.append((pis, tis, r.color, 2.4 if r.key == self.active else 1.2))
@@ -304,7 +306,7 @@ class ReaderPage(ttk.Frame):
     def assign_picked(self, quiet=False):
         if not self.picked or not self.model: return
         r = R.BY_KEY[self.active]
-        if r.kind in ('window', 'layout'):
+        if r.kind in ('window', 'layout', 'rect'):
             self.refresh_overlays(); return
         v, msg = R.value_from_click(self.model, r, self.picked, self.values.get(r.key))
         if v != self.values.get(r.key):
@@ -317,6 +319,8 @@ class ReaderPage(ttk.Frame):
         r = R.BY_KEY[self.active]
         if r.kind == 'window':
             self._set(r.key, R.window_value(rect), 'window set')
+        elif r.kind == 'rect':
+            self._set(r.key, R.rect_value(rect), 'window set')
 
     def on_hover(self, xy, d):
         self.st_xy.config(text=f'x {xy[0]:,.0f}   y {xy[1]:,.0f}')
@@ -367,7 +371,7 @@ class ReaderPage(ttk.Frame):
         if not hasattr(self, 'mlist'): return
         self.mlist.delete(*self.mlist.get_children()); self._mcycle = {}
         r = R.BY_KEY[self.active]; v = self.values.get(r.key)
-        if not self.model or v in (None, '', [], {}) or r.kind in ('window', 'layout'):
+        if not self.model or v in (None, '', [], {}) or r.kind in ('window', 'layout', 'rect'):
             self.match_info.config(text=''); return
         pis, tis, info = R.matches(self.model, r, v, self.extra)
         self.match_info.config(text=info[:200])
@@ -456,6 +460,8 @@ class ReaderPage(ttk.Frame):
         if not self.model or v in (None, '', [], {}): return
         if r.kind == 'window':
             self.view.fit(R.window_rect(v)); return
+        if r.kind == 'rect':
+            self.view.fit(tuple(v)); return
         pis, tis, _ = R.matches(self.model, r, v, self.extra)
         xs, ys = [], []
         if len(pis):

@@ -8,6 +8,8 @@ kind:  layer   one layer, exact name          (engine compares with ==)
        textre  a text pattern (regex), built from the clicked texts
        block   a block name + which attribute holds the number / the family
        window  a rectangle dragged on the drawing  -> [centre x, centre y, height]
+       rect    a rectangle dragged on the drawing  -> [x0, y0, x1, y1]
+A key with a dot ('stairs.outline_layer') is stored inside that object of project.json.
        layout  a paper layout whose biggest viewport frames the plan
 """
 import json, re
@@ -39,6 +41,11 @@ ROLES = [
     Role('footing_label_re', 'Footing labels', 'textre', '#ef476f', 'cd', 'Click footing labels (F1, F6A, CF2, RAFT-1 ...): each click widens the pattern.'),
     Role('grid_layers', 'Grid lines', 'suffix', '#8ecae6', 'cd', 'Click a grid line.'),
     Role('core_outline_layer', 'Core walls', 'layer', '#c77dff', 'cores', 'Click the outline of a core (shear walls).'),
+    Role('stairs.outline_layer', 'Stair starter outlines', 'layer', '#ffbe0b', 'stairs', 'Click the outline of a stair starter (the strip its bars stand in).'),
+    Role('stairs.bar_layer', 'Stair starter bars', 'layer', '#fb5607', 'stairs', 'Click one bar (circle) inside a stair starter.'),
+    Role('sog.window', 'S.O.G plan window', 'rect', '#90be6d', 'sog', 'Drag a rectangle around the plan that carries the S.O.G tags.'),
+    Role('sog.tag_block', 'S.O.G mesh tags', 'block', '#43aa8b', 'sog', 'Click an S.O.G tag (the mesh symbol in a slab panel).'),
+    Role('sog.thk_block', 'Slab thickness tags', 'block', '#4d908e', 'sog', 'Click a slab thickness tag (100 / 150).'),
 ]
 BY_KEY = {r.key: r for r in ROLES}
 
@@ -106,6 +113,8 @@ def matches(model, role, value, extra=None):
         ii = [j for j, b in enumerate(model.ins) if b[0] == value]
         pis = np.nonzero(np.isin(model.p_ins, ii))[0]
         tis = np.nonzero(np.isin(model.t_ins, ii))[0]
+        if role.key != 'axis_block':
+            return pis, tis, f'{len(ii)} inserts of {value}'
         tag = (extra or {}).get('axis_attr')
         names = sorted({model.ins[j][4].get(tag, '') for j in ii}) if tag else []
         return pis, tis, f'{len(ii)} bubbles' + (f', axes: {", ".join(n for n in names if n)[:200]}' if names else '')
@@ -171,13 +180,32 @@ def window_rect(v, aspect=1.6):
 
 
 # ---------------------------------------------------------------------------- project.json
+def get_value(P, key):
+    """a role's value in project.json ('a.b' = key b inside object a)"""
+    if '.' not in key: return P.get(key)
+    a, b = key.split('.', 1)
+    return (P.get(a) or {}).get(b) if isinstance(P.get(a), dict) else None
+
+
+def rect_value(rect):
+    x0, y0, x1, y1 = rect
+    return [round(min(x0, x1)), round(min(y0, y1)), round(max(x0, x1)), round(max(y0, y1))]
+
+
 def save(ws, values):
     """merge the taught keys into work/project.json -> keys written"""
     pj = ws.work / 'project.json'
     P = ws.project()
     for k, v in values.items():
         if v not in (None, '', [], {}):
-            P[k] = v
+            if '.' in k:
+                a, b = k.split('.', 1)
+                if not isinstance(P.get(a), dict): P[a] = {}
+                P[a][b] = v
+                if a in ('stairs', 'sog') and not P[a].get('dxf'):
+                    P[a]['dxf'] = ws.project().get('dxf') or ws.meta.get('main_dxf', '')   # the plan being read
+            else:
+                P[k] = v
     pj.write_text(json.dumps(P, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     return [k for k, v in values.items() if v not in (None, '', [], {})]
 

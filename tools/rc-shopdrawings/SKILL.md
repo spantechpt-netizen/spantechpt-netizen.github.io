@@ -1,6 +1,6 @@
 ---
 name: rc-shopdrawings
-description: Span Tech RC shop drawings (grade beams per grid axis, isolated / combined footings, rafts, strip footings, column necks) generated from ANY consultant's structural DWG/DXF in the office style approved on the Roya school package, including how to read a new consultant's drawing (layers, blocks, grid, columns, beams, footings, schedules) with survey.py / probe.py / table_dump.py. Use whenever the user (Span Tech) sends a consultant structural drawing and asks for شوب درونج / shop drawings of الجريد بيم / grade beams / tie beams, القواعد / footings, رقاب الأعمدة / column necks, a BBS / جدول تفريد, or sends a screenshot of one of these sheets saying a bar, a tie, a hook, a text, a length or a level is wrong. Covers the pipeline (DWG -> DXF -> extract -> generators -> PDF), every drafting rule the engineer has fixed so far, how to change a rule, how to verify a sheet and how to talk and deliver.
+description: Span Tech RC shop drawings (grade beams per grid axis, isolated / combined footings, rafts, strip footings, column necks, core-wall necks, stair starter bars, slab on grade X / Y) generated from ANY consultant's structural DWG/DXF in the office style approved on the Roya school package, including how to read a new consultant's drawing (layers, blocks, grid, columns, beams, footings, schedules) with survey.py / probe.py / table_dump.py. Use whenever the user (Span Tech) sends a consultant structural drawing and asks for شوب درونج / shop drawings of الجريد بيم / grade beams / tie beams, القواعد / footings, رقاب الأعمدة / column necks, الكور / core walls, أشاير السلم / stair starters, بلاطة على التربة / SOG, ترقيم اللوحات / sheet numbering, a BBS / جدول تفريد, or sends a screenshot of one of these sheets saying a bar, a tie, a hook, a text, a length or a level is wrong. Covers the pipeline (DWG -> DXF -> extract -> generators -> PDF), every drafting rule the engineer has fixed so far, how to change a rule, how to verify a sheet and how to talk and deliver.
 ---
 
 # RC shop drawings (Span Tech) — grade beams / footings / column necks
@@ -101,13 +101,18 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
 | `zone_util.py`, `gen_zone_necks.py`, `gen_zone_cores.py`, `gen_zone_strip.py`, `gen_zone_gb.py`, `gen_zone_cd.py` | the other packages per zone (§6b) |
+| `gen_zone_stairs.py` | stair starter bars per zone: outlines + bars on the plans → footing under each → sheets like the necks + BBS (§6c) |
+| `gen_zone_sog.py` | slab on grade per zone: panels between the GB faces with an S.O.G tag → one X sheet + one Y sheet + BBS (§6c) |
+| `fitcheck.py` | every entity that leaves its sheet frame (run before every delivery) (§6c) |
+| `run_all.sh` | all packages for all zones in zone order (rebuilds the running sheet numbers) |
+| `rev_check.py` | what the engineer changed in a corrected plan: labels, outlines, column labels, red marks, levels |
 | `mats_scan2.py`, `gen_mat.py`, `gen_zones.py` | mats from a plan in pieces (polygonize) with exact ADD zones; rafts of any outline; packages per zone with key plan + BBS (§6b) |
 | `rev_compare.py`, `zones.py` | a new / final foundation plan vs the working one (shift, renamed / gone / new labels); zones (AREA n clouds) → `zones.json` (§8b) |
 | `pair_cores.py`, `gen_core.py` | core (shear-wall) necks: cores on the FND plan → plan section + wall section + bar details + BBS (§7a) |
 | `strip_net.py`, `gen_st_plan.py` | strip footing network from the plan → strip detailed on plan + real BBS (§6) |
 | `cd_scan.py`, `cd_axes.py`, `gen_cd.py` | concrete dimensions of the foundations: plan in parts + sections along every grid line (§7b) |
 | `extract.py` | DXF → beam runs, columns, axes |
-| `gen.py` | shared: `SCHED`, `COVER`, `leg()`, `lap()`, `new_doc()` (layers, dim style GB100), **style** `ST`, `mm()`, `project_notes()`, `fillet()`, `hooked_tie()`, `tie_bar_centres()`, `Sheet` (frame + title block, `pline(r=)`, `text(maxw=)`, `ctext()`, `mark()`, `break_line()`, `dim()`, `hatch_rect()`), `callout()`, `BarList`, `draw_legend()`, `draw_bbs()` |
+| `gen.py` | shared: `SCHED`, `COVER`, `leg(d, pos)` (GB legs: bottom 200 / top 600), `lap()`, `new_doc()`, `seq_zone()` / `seq_save()` / `seq_none()` (running sheet numbers) (layers, dim style GB100), **style** `ST`, `mm()`, `project_notes()`, `fillet()`, `hooked_tie()`, `opened_tie()` / `draw_open_tie()` (ties opened at the hooks), `tie_bar_centres()`, `Sheet` (frame + title block, `pline(r=)`, `text(maxw=)`, `ctext()`, `mark()`, `break_line()`, `dim()` (never outside the frame), `hatch_rect()`), `callout()`, `BarList`, `draw_legend()`, `draw_bbs()` |
 | `gen2.py` | GB per axis: supports, bar splitting & laps, plan strip (auto label placement), longitudinal section, cross sections |
 | `gen_f.py` | footings: bars, side bars, plan panels (bottom / top / side), section 1-1 |
 | `gen_n.py` | column necks: reads the `COLUMN SCH` block (bars + ties as drawn), elevation, section A-A, tie bending sketches |

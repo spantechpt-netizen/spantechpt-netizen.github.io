@@ -9,7 +9,9 @@ from .paths import PROFILES_DIR
 READING_KEYS = ['layout', 'beam_layer', 'label_layer', 'col_layers', 'axis_block', 'axis_attr', 'axis_family_attr',
                 'widths', 'fnd_layers', 'fnd_col_layers', 'fnd_pc_layers', 'footing_label_re', 'col_keys',
                 'col_block_keys', 'column_schedule_block', 'sched_outline_layers', 'grid_layers',
-                'core_outline_layer', 'cd_rc_layers_extra', 'pc_thickness', 'core_cover']
+                'core_outline_layer', 'cd_rc_layers_extra', 'pc_thickness', 'core_cover',
+                'stairs.outline_layer', 'stairs.bar_layer', 'stairs.size', 'sog.tag_block', 'sog.thk_block',
+                'sog.beam_layer', 'sog.col_layers']        # 'a.b' = key b inside object a
 
 
 def _file(name):
@@ -22,7 +24,8 @@ def list_profiles():
 
 def save_from(ws, name, note=''):
     P = ws.project()
-    prof = {k: P[k] for k in READING_KEYS if k in P}
+    from .roles import get_value
+    prof = {k: get_value(P, k) for k in READING_KEYS if get_value(P, k) not in (None, '', [], {})}
     if not prof:
         raise ValueError('project.json has no reading keys to save')
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -35,8 +38,14 @@ def apply_to(ws, name, overwrite=False):
     prof = json.loads(_file(name).read_text(encoding='utf-8'))['keys']
     pj = ws.work / 'project.json'
     P = ws.project()
-    wrote = [k for k in prof if overwrite or k not in P]
+    from .roles import get_value
+    wrote = [k for k in prof if overwrite or get_value(P, k) is None]
     for k in wrote:
-        P[k] = prof[k]
+        if '.' in k:
+            a, b = k.split('.', 1)
+            if not isinstance(P.get(a), dict): P[a] = {}
+            P[a][b] = prof[k]
+        else:
+            P[k] = prof[k]
     pj.write_text(json.dumps(P, indent=1, ensure_ascii=False), encoding='utf-8')
     return wrote

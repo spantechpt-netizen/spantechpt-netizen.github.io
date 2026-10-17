@@ -97,7 +97,9 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 | `mats_scan.py`, `mats_build.py` | combined footings / rafts from the FND plan → `mats.json` for `gen_f.py @mats` |
 | `gen_st.py` | strip footing under walls: typical section (+ BBS per metre when run alone) |
 | `strip_net.py`, `gen_st_plan.py` | strip network from the foundation plan → strip detailed on plan (bars through / into footings, junctions, laps) + real BBS |
-| `zone_util.py`, `gen_zone_*.py` | necks, core necks, strip, grade beams, concrete dimensions per zone |
+| `zone_util.py`, `gen_zone_*.py` | necks, core necks, stair starters, strip, grade beams, slab on grade, concrete dimensions per zone; sheet numbers run on across the zones |
+| `fitcheck.py` | anything drawn outside its sheet frame |
+| `run_all.sh` | every package for every zone, in zone order |
 | `mats_scan2.py`, `gen_mat.py`, `gen_zones.py` | rafts / CF of any outline (exact ADD zones from the drawn bars), packages per zone |
 | `rev_check.py` | what the engineer changed in a corrected plan: labels, outlines, column labels, red marks, levels |
 | `rev_compare.py`, `zones.py` | final / new foundation plan vs the working one; zones (AREA n) for packages per zone |

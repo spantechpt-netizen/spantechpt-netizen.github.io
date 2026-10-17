@@ -13,8 +13,17 @@ REQUIRED = {
     'zones': [('fnd_final', '{dxf, shift} of the final foundation plan with the AREA clouds')],
     'cores': [('core_types', 'core types (walls, bars)')],
     'strip': [('strip', 'strip footing section and bars')],
+    'stairs': [('stairs', 'stair starters {dxf, outline_layer, bar_layer, size, to_work, plans, d, tie} - teach the layers in the reader')],
+    'sog': [('sog', 'slab on grade {dxf, window, tag_block, to_gb, d, s, cover} - teach the tags in the reader'),
+            ('gb_to_fnd', 'shift from the GB plan to the foundation plan (zones)')],
     'pool': [],
 }
+SUBKEYS = {'stairs': [('outline_layer', 'layer of the stair starter outlines'), ('bar_layer', 'layer of their bar circles'),
+                      ('size', 'outline size [b, h] mm'), ('to_work', 'shift of that plan to the working coordinates'),
+                      ('d', 'bar diameter (not on the plans: confirm)'), ('tie', 'tie [d, spacing]')],
+           'sog': [('tag_block', 'block of the S.O.G tags'), ('window', 'rectangle around the plan with the tags'),
+                   ('to_gb', 'shift of that plan to the GB plan (runs.pkl)'), ('d', 'mesh bar diameter'), ('s', 'mesh spacing'),
+                   ('cover', 'start of the mesh from the beam faces (50)')]}
 FILES = {'footings': ['footings.json'], 'necks': ['footings.json'], 'mats': ['footings_ext.json'],
          'zones': ['footings.json'], 'pool': ['pool.json']}
 
@@ -32,12 +41,15 @@ def problems(ws):
         for k, what in REQUIRED.get(m, []):
             if k not in P or P[k] in ('', [], {}):
                 out.append(f'[{m}] project.json "{k}": {what}')
+        for sk, what in SUBKEYS.get(m, []):
+            if isinstance(P.get(m), dict) and P[m].get(sk) in (None, '', [], {}):
+                out.append(f'[{m}] project.json "{m}.{sk}": {what}')
         for f in FILES.get(m, []):
             if not (ws.work / f).exists():
                 out.append(f'[{m}] {f} missing')
     if P.get('dxf') and not (ws.work / P['dxf']).exists():
         out.append(f'project.json "dxf": {P["dxf"]} is not in work/ (add the drawing)')
-    for k, sub in (('fnd_final', 'dxf'), ('fnd_final', 'zones'), ('title_block', 'dxf')):
+    for k, sub in (('fnd_final', 'dxf'), ('fnd_final', 'zones'), ('title_block', 'dxf'), ('stairs', 'dxf'), ('sog', 'dxf')):
         v = (P.get(k) or {}).get(sub, '')
         if v and os.path.isabs(v):
             out.append(f'project.json {k}.{sub} is an absolute path ({v}) - put the file in work/ and give its name only')

@@ -48,8 +48,18 @@ def main():
         assert R.text_pattern('F6A') == r'F\d+[A-Z]?' and R.compile_full(R.text_pattern('RAFT-2')).match('RAFT-12')
         P = json.loads((ws.work / 'project.json').read_text())
         P['beam_layer'] = 'S-GB'; (ws.work / 'project.json').write_text(json.dumps(P))
+        # roles stored inside an object of project.json (stairs / sog) and kept in the profile
+        wrote = R.save(ws, {'stairs.outline_layer': 'S-GB-CONC', 'sog.window': [0, 0, 100, 100]})
+        P = json.loads((ws.work / 'project.json').read_text())
+        assert P['stairs']['outline_layer'] == 'S-GB-CONC' and P['sog']['window'] == [0, 0, 100, 100], P
+        assert R.get_value(P, 'stairs.outline_layer') == 'S-GB-CONC' and wrote
+        from rcshop import validate
+        ws.set_modules(['pool', 'stairs'])
+        assert any('stairs.bar_layer' in x for x in validate.problems(ws)), validate.problems(ws)
         profiles.save_from(ws, 'Test consultant')
         assert 'Test consultant' in profiles.list_profiles()
+        prof = json.loads(profiles._file('Test consultant').read_text())['keys']
+        assert prof.get('stairs.outline_layer') == 'S-GB-CONC' and 'sog.window' not in prof, prof
         # ties drawn opened at the hooks (two hooks apart) for the sketches and the BBS
         sys.path.insert(0, str(engine_dir())); os.environ['RC_PROJECT'] = str(ws.work / 'project.json')
         import gen as G

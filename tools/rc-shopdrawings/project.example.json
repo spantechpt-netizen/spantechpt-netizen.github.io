@@ -118,11 +118,14 @@
    ]
   ],
   "seq_start": {
-   "GB": 20001,
+   "GB": 50100,
    "FD": 21001,
-   "NK": 22001,
+   "NK": 20100,
    "CF": 23001,
-   "SF": 24001
+   "SF": 24001,
+   "CW": 30100,
+   "SC": 40100,
+   "SG": 60100
   },
   "fields": {
    "title": [
@@ -259,5 +262,65 @@
   0,
   0
  ],
- "core_default_footing": "F1"
+ "core_default_footing": "F1",
+ "neck_lap_d": 65,
+ "neck_ld_d": 60,
+ "gb_leg_bot": 200,
+ "gb_leg_top": 600,
+ "stairs": {
+  "dxf": "plan.dxf",
+  "outline_layer": "STAIR-STARTER",
+  "bar_layer": "STAIR-RFT",
+  "size": [
+   300,
+   1400
+  ],
+  "to_work": [
+   0,
+   0
+  ],
+  "plans": [
+   {
+    "y_min": 0,
+    "shift": [
+     0,
+     0
+    ]
+   }
+  ],
+  "name": "STAIR STARTER",
+  "b": 300,
+  "h": 1400,
+  "d": 12,
+  "tie": [
+   10,
+   200
+  ]
+ },
+ "sog": {
+  "dxf": "plan.dxf",
+  "window": [
+   0,
+   0,
+   200000,
+   200000
+  ],
+  "tag_block": "SOG-TAG",
+  "thk_block": "SLAB-THK",
+  "to_gb": [
+   0,
+   0
+  ],
+  "beam_layer": "GB-EDGE",
+  "col_layers": [
+   "COLS-CONC"
+  ],
+  "d": 10,
+  "s": 150,
+  "cover": 50,
+  "lap_d": 40,
+  "layer": "BOTTOM",
+  "h": 100,
+  "close_gap": 650
+ }
 }
