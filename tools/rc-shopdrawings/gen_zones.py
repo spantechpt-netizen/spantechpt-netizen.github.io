@@ -8,7 +8,7 @@ import json, os, re, sys, collections, pickle
 from ezdxf import recover
 from shapely.geometry import Polygon, Point
 import gen_f, gen_mat, gen_cd
-from gen import new_doc, BarList, draw_bbs, project_notes, Sheet, TA, ST
+from gen import new_doc, seq_zone, seq_save, BarList, draw_bbs, project_notes, Sheet, TA, ST
 
 PRJ = json.load(open('project.json'))
 SRC = PRJ['fnd_final']; DX, DY = SRC['shift']
@@ -99,6 +99,7 @@ summary = []
 for zn in want:
     gen_f.ZONE = zn
     doc = new_doc(); bl = BarList(); idx = 0; rep = []
+    seq_zone(doc, zn, 'FOUNDATIONS', names)                      # running sheet numbers across the zones
     base = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                 rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='AS SHOWN', prefix='SDW-STR-FDN')
     base.update(PRJ.get('meta', {})); base['area'] = CODES[zn]
@@ -140,6 +141,7 @@ for zn in want:
     meta = dict(base); meta['title'] = f'STRUCTURAL FOUNDATION - {zn}\nBBS'; meta['dwg'] = f'SDW-STR-FDN-{CODES[zn]}'
     nb = draw_bbs(doc, idx, bl.sorted(), meta)
     fn = f"out/ZONES/{zn.replace(' ', '_')}_FOUNDATIONS.dxf"
+    seq_save(doc)
     doc.saveas(fn)
     kg = sum(r['n_in'] * r['n_el'] * r['L'] / 1000 * r['d'] ** 2 / 162 for r in bl.sorted())
     summary.append((zn, CODES[zn], dict(iso[zn]), dict(mats[zn]), idx, nb, round(kg / 1000, 2)))

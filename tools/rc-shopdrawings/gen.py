@@ -12,11 +12,17 @@ COVER = 40          # grade beams, contact with soil
 STOCK = 12000
 LAP = 60            # x d
 HOOK = 135
-def leg(d): return 200 if d <= 16 else 250
+def leg(d, pos=None):
+    """GB end leg (hook down / up into the support). Engineer, Oct 2026: bottom bars >= 200, top bars >= 600
+    (project.json gb_leg_bot / gb_leg_top)."""
+    base = 200 if d <= 16 else 250
+    if pos == 'T': return max(base, _PRJ.get('gb_leg_top', 600))
+    if pos == 'B': return max(base, _PRJ.get('gb_leg_bot', 200))
+    return base
 def lap(d): return LAP * d
 
 LAYERS = {  # name: color
-    'S-GB-CONC': 7, 'S-GB-COL': 8, 'S-AXIS': 1, 'S-AXIS-TXT': 1,
+    'S-GB-CONC': 7, 'S-GB-COL': 8, 'S-AXIS': 8, 'S-AXIS-TXT': 1,
     'S-RFT-TOP': 1, 'S-RFT-BOT': 5, 'S-RFT-STIR': 3, 'S-RFT-TXT': 7,
     'S-DIM': 2, 'S-SEC': 4, 'S-TITLE': 7, 'S-FRAME': 7,
 }
@@ -36,6 +42,48 @@ def new_doc():
         ld = xref.Loader(tpl, doc); ld.load_block_layout(tpl.blocks.get(TB['block'])); ld.execute()
     doc._tb_seq = {}                          # running sheet number per venue code
     return doc
+
+
+
+# ---- running sheet numbers across the zones (engineer, Oct 2026): every package continues its numbering from the
+# last sheet of the zone before (AREA 1 .. AREA 7), from title_block.seq_start (necks 20100, cores 30100, ...).
+SEQ_FILE = _os.path.join('out', 'ZONES', 'sheet_seq.json')
+
+
+def seq_zone(doc, zone, kind, names):
+    """Start this zone's numbering after the sheets of the zones before it (counts kept in SEQ_FILE)."""
+    data = _json.load(open(SEQ_FILE)) if _os.path.exists(SEQ_FILE) else {}
+    rec = data.get(kind, {}); base = {}
+    for z in names:
+        if z == zone: break
+        if z not in rec: print(f'(!) sheet numbers: {kind} of {z} not generated yet - numbers of {zone} assume 0 sheets there')
+        for v, n in rec.get(z, {}).items(): base[v] = base.get(v, 0) + n
+    st = TB.get('seq_start', {}) if TB else {}
+    for v, n in base.items(): doc._tb_seq[v] = int(st.get(v, 1)) - 1 + n
+    doc._seq_key = (kind, zone, names); doc._seq_from = dict(doc._tb_seq)
+
+
+def seq_none(kind, zone):
+    """A zone with no sheet of this package: record 0 so the zones after it number on."""
+    data = _json.load(open(SEQ_FILE)) if _os.path.exists(SEQ_FILE) else {}
+    data.setdefault(kind, {})[zone] = {}
+    _os.makedirs(_os.path.dirname(SEQ_FILE), exist_ok=True)
+    _json.dump(data, open(SEQ_FILE, 'w'), indent=1)
+
+
+def seq_save(doc):
+    """Record how many sheets of each code this zone used (call before saving)."""
+    if not getattr(doc, '_seq_key', None): return
+    kind, zone, names = doc._seq_key
+    st = TB.get('seq_start', {}) if TB else {}
+    cnt = {v: n - doc._seq_from.get(v, int(st.get(v, 1)) - 1) for v, n in doc._tb_seq.items()}
+    data = _json.load(open(SEQ_FILE)) if _os.path.exists(SEQ_FILE) else {}
+    old = data.setdefault(kind, {}).get(zone)
+    data[kind][zone] = cnt
+    _os.makedirs(_os.path.dirname(SEQ_FILE), exist_ok=True)
+    _json.dump(data, open(SEQ_FILE, 'w'), indent=1)
+    if old is not None and old != cnt and zone != names[-1]:
+        print(f'(!) sheet numbers: {kind} {zone} now has {cnt} sheets (was {old}) - regenerate the zones after it')
 
 
 # ---- one project, one style: the same text sizes, length format and notes on every element sheet

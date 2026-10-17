@@ -222,7 +222,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     dx0, dy0 = min(p[0] for p in col['dots']), min(p[1] for p in col['dots'])
     dx1, dy1 = max(p[0] for p in col['dots']), max(p[1] for p in col['dots'])
     e = COLC + ds + d / 2
-    T = lambda p: (e + (p[0] - dx0) * (W - 2 * e) / (dx1 - dx0), e + (p[1] - dy0) * (H - 2 * e) / (dy1 - dy0))
+    T = lambda p: (e + (p[0] - dx0) * (W - 2 * e) / (dx1 - dx0) if dx1 > dx0 else W / 2,         # one row of bars (stair starter): on the centre line
+                   e + (p[1] - dy0) * (H - 2 * e) / (dy1 - dy0) if dy1 > dy0 else H / 2)
     col['bars'] = [T(p) for p in col['dots']]
     hall = MultiPoint(col['bars']).convex_hull
     lim_cl, lim_oo = hall.buffer(d / 2 + ds / 2, join_style=2), hall.buffer(d / 2 + ds, join_style=2)
@@ -234,6 +235,10 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         hull = MultiPoint(held).convex_hull
         cl = hull.buffer(d / 2 + ds / 2, join_style=2).intersection(lim_cl).simplify(1)   # centre line, cut flat at the outer tie
         oo = hull.buffer(d / 2 + ds, join_style=2).intersection(lim_oo).simplify(1)                      # out-to-out (bending dimensions)
+        if col.get('perimeter_tie'):                     # one row of bars (stair starter): a tie round the section at the cover
+            from shapely.geometry import box as _box
+            cl = _box(COLC + ds / 2, COLC + ds / 2, W - COLC - ds / 2, H - COLC - ds / 2)
+            oo = _box(COLC, COLC, W - COLC, H - COLC)
         poly = [(round(x, 1), round(y, 1)) for x, y in list(cl.exterior.coords)[:-1]]
         out = [(round(x), round(y)) for x, y in list(oo.exterior.coords)[:-1]]
         xs = [p[0] for p in out]; ys = [p[1] for p in out]
@@ -259,7 +264,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], (n_neck + n_ftg) * t['k'], no, '')
 
     title = f"{col['name']}  {col['b']}x{col['h']}  ON  {f['name']}"
-    sh.text(('STARTER BARS ' if starter else 'NECK ') + title, 2000, 27900, ST['name'], 'S-AXIS-TXT')
+    sh.text(col.get('title_prefix', 'STARTER BARS ' if starter else 'NECK ') + title, 2000, 27900, ST['name'], 'S-AXIS-TXT')
     sh.text(f"FOOTING {f['name']} " + (f"(COMBINED / RAFT / STRAP - SEE PLAN)  h={f['h']}" if f.get('part') else f"{f['L']}x{f['W']}x{f['h']}")
             + (f"  - {f['note']}" if f.get('note') else ''), 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
     sh.text(f"NO={no}   T.O.F {tof:+.2f}   " + ("COLUMN STARTS AT THE FOOTING (T.O.F = T.O.SLAB): STARTER BARS, NO NECK" if starter else
@@ -271,22 +276,33 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     Q = lambda x, y: (ex + x * k, ey + y * k)
     Lf = f['L']; cw = col['h'] if col['h'] >= col['b'] else col['b']          # wide face of the column
     fx0 = -Lf / 2
-    sh.pline([Q(fx0 - 100, -100), Q(-fx0 + 100, -100), Q(-fx0 + 100, 0), Q(fx0 - 100, 0)], 'S-GB-CONC', 0, True)
-    sh.pline([Q(fx0, 0), Q(-fx0, 0), Q(-fx0, f['h']), Q(fx0, f['h'])], 'S-GB-CONC', 0, True)
+    # a wide footing is cut with break lines so the elevation stays inside the frame (engineer, Oct 2026)
+    fxl, fxr = max(fx0, -(ex - 3200) / k), min(-fx0, (22300 - ex) / k)
+    cutl, cutr = fxl > fx0 + 1, fxr < -fx0 - 1
+    pl_, pr_ = fxl - (0 if cutl else 100), fxr + (0 if cutr else 100)
+    sh.pline([Q(pl_, -100), Q(pr_, -100)], 'S-GB-CONC'); sh.pline([Q(pl_, 0), Q(pr_, 0)], 'S-GB-CONC')
+    sh.pline([Q(fxl, f['h']), Q(fxr, f['h'])], 'S-GB-CONC')
+    for xx_, cut_, pp_ in ((fxl, cutl, pl_), (fxr, cutr, pr_)):
+        if cut_:
+            yb0, yb1 = Q(0, -100)[1] - 150, Q(0, f['h'])[1] + 150; xs0 = Q(xx_, 0)[0]
+            m_ = (yb0 + yb1) / 2; a_ = min(180, (yb1 - yb0) / 6)
+            sh.pline([(xs0, yb0), (xs0, m_ - a_), (xs0 + 160, m_ - a_ / 3), (xs0 - 160, m_ + a_ / 3), (xs0, m_ + a_), (xs0, yb1)], 'S-SEC')
+        else:
+            sh.pline([Q(pp_, -100), Q(pp_, 0)], 'S-GB-CONC'); sh.pline([Q(xx_, 0), Q(xx_, f['h'])], 'S-GB-CONC')
     top = f['h'] + Hn
     sh.pline([Q(-cw / 2, f['h']), Q(-cw / 2, top), Q(cw / 2, top), Q(cw / 2, f['h'])], 'S-GB-CONC')
     gb_h = 700
     if starter:                                                      # the slab on the footing (top flush)
         gb_h = 200
         for sx in (-1, 1):
-            sh.pline([Q(sx * cw / 2, top), Q(sx * (Lf / 2 + 1500), top)], 'S-SEC')
+            sh.pline([Q(sx * cw / 2, top), Q(max(fxl - 600, -(ex - 1500) / k) if sx < 0 else min(fxr + 600, (22300 - ex) / k), top)], 'S-SEC')
     else:
         for sx in (-1, 1):                                           # grade beams framing in (dashed outline)
             sh.pline([Q(sx * cw / 2, top), Q(sx * (cw / 2 + 1500), top), Q(sx * (cw / 2 + 1500), top - gb_h), Q(sx * cw / 2, top - gb_h)], 'S-SEC')
     sh.break_line(Q(-cw / 2 - 300, top + lp + 200), Q(cw / 2 + 300, top + lp + 200))            # break line of the column above
     sh.pline([Q(-cw / 2, top), Q(-cw / 2, top + lp + 200)], 'S-GB-CONC'); sh.pline([Q(cw / 2, top), Q(cw / 2, top + lp + 200)], 'S-GB-CONC')
     # bottom mesh of the footing
-    sh.pline([Q(fx0 + FC, FC + 10), Q(-fx0 - FC, FC + 10)], 'S-RFT-BOT', 30)
+    sh.pline([Q(fxl + (0 if cutl else FC), FC + 10), Q(fxr - (0 if cutr else FC), FC + 10)], 'S-RFT-BOT', 30)
     # vertical bars (two outer ones drawn), foot outwards on the mesh
     for sx in (-1, 1):
         x = sx * (cw / 2 - COLC - 10 - d / 2)
@@ -325,13 +341,13 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     if not starter:
         sh.dim(Q(XD - 900, f['h']), Q(XD - 900, f['h'] + lp), Q(XD - 500, f['h']), angle=90, text=f'LAP {lp}')
     sh.text('FIRST TIE 50 FROM T.O.F' + ('' if starter else ' / T.O.GB'), Q(-cw / 2, 0)[0] - 200, Q(0, f['h'] + 60)[1], ST['note'] * 0.8, 'S-DIM', align=TA.BOTTOM_RIGHT)
-    sh.dim(Q(fx0, 0), Q(fx0, f['h']), Q(fx0 - 400, 0), angle=90, text=str(f['h']))
+    sh.dim(Q(fxl, 0), Q(fxl, f['h']), Q(fxl - 400, 0), angle=90, text=str(f['h']))
     marks_ = ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F = T.O.SLAB {tof:+.2f}")) if starter else \
              ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F {tof:+.2f}"),
               (top - gb_h, f"B.O.GB {tgb - gb_h / 1000:+.2f}"), (top, f"T.O.GB {tgb:+.2f}"))
     for yy, lab in marks_:
-        xl = max(Q(fx0 - 1600, 0)[0], 1300)                      # level marks stay on the sheet (wide footings)
-        sh.line((xl, Q(0, yy)[1]), Q(fx0 - 150, yy), 'S-DIM')
+        xl = max(Q(fxl - 1600, 0)[0], 1300)                      # level marks stay on the sheet (wide footings)
+        sh.line((xl, Q(0, yy)[1]), Q(fxl - 150, yy), 'S-DIM')
         sh.text(lab, xl, Q(0, yy)[1] + 50, 170, 'S-DIM')
     # call-outs
     if starter:
@@ -348,7 +364,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     # Ld in the footing on the elevation
     sh.dim(Q(-cw / 2 - 250, yb), Q(-cw / 2 - 250, f['h']), Q(-cw / 2 - 650, yb), angle=90, text=f'{emb}')
     sh.text(f"Ld = {emb} + {foot} = {emb + foot} {'>=' if emb + foot >= LD else '<'} {LDN}d = {LD}" + ('' if ld_ok else '  (!) SEE NOTE'),
-            *((1500, Q(0, f['h'])[1] + 1500) if not starter else (Q(-fx0 + 250, 0)[0], Q(0, f['h'] * 0.45)[1])), ST['note'], 'S-DIM')
+            *((1500, Q(0, f['h'])[1] + 1500) if not starter else (Q(fxr, 0)[0] - 5200, Q(0, f['h'] * 0.45)[1])), ST['note'], 'S-DIM')
     # ---------- the bar detailed outside (bending detail with every length) ----------
     bx0, by0 = 2600, 18100
     kb = min(6300 / (max(vert, 0 if starter else Ln) + 600), 2.0)
@@ -380,7 +396,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     yt_ = Q(0, f['h'] + Hn * 0.55)[1] - len(ties) * 520 - 100
     sh.text(f"TIES {col['sets']} SETS @{s}", Q(cw / 2 + 200, 0)[0], yt_, ST['note'])
     sh.text(f"{n_neck} IN THE NECK + {n_ftg} IN THE FOOTING", Q(cw / 2 + 200, 0)[0], yt_ - 260, ST['note'])
-    sh.text('ELEVATION  (STARTER BARS - THE COLUMN TIES CONTINUE ABOVE THE SLAB)' if starter else 'ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)', Q(0, 0)[0], Q(0, -100)[1] - 700, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
+    sh.text(col.get('elev_title') or ('ELEVATION  (STARTER BARS - THE COLUMN TIES CONTINUE ABOVE THE SLAB)' if starter else 'ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)'), Q(0, 0)[0], Q(0, -100)[1] - 700, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
 
     # ---------- SECTION A-A 1:10 (k=10) ----------
     ks = min(10.0, 9000 / max(col['b'], col['h']))
@@ -391,7 +407,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.pline([P(0, 0), P(W, 0), P(W, Hh), P(0, Hh)], 'S-GB-CONC', 0, True)
     for t in ties:
         for pts, closed in t['draw']:
-            for seg in hooked_tie(pts, col['bars'], rc=d / 2 + ds / 2):
+            hb_ = col['bars'] if not col.get('perimeter_tie') else [(x_, y_) for x_ in (min(p[0] for p in pts) + d / 2 + ds / 2, max(p[0] for p in pts) - d / 2 - ds / 2)
+                                                                   for y_ in (min(p[1] for p in pts) + d / 2 + ds / 2, max(p[1] for p in pts) - d / 2 - ds / 2)]
+            for seg in hooked_tie(pts, hb_, rc=d / 2 + ds / 2):
                 sh.pline([P(*p) for p in seg], 'S-RFT-STIR', 25)
     for (x, y) in col['bars']:
         hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'})
@@ -400,7 +418,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     sh.dim(P(0, 0), P(0, Hh), (P(0, 0)[0] - 600, P(0, 0)[1]), angle=90, text=str(round(Hh)))
     sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # tie shapes with their lengths
-    TX0 = max(23500, Q(-fx0, 0)[0] + 900) if Q(-fx0, 0)[0] < 30000 else 23500   # clear of a wide footing
+    TX0 = max(23500, Q(fxr, 0)[0] + 900)                       # clear of the footing
     tx = TX0; by = 8400
     sh.text('TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)', 23500, 11500, ST['note'], 'S-RFT-TXT', maxw=9500)
     for t in ties:

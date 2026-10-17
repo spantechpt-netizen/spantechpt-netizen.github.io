@@ -6,7 +6,7 @@ import sys, re, math
 from shapely.geometry import Point
 import zone_util as Z
 import gen_cd
-from gen import new_doc
+from gen import new_doc, seq_zone, seq_save
 
 old = list(gen_cd.SCAN['lab'])
 newlabs = [(s, x, y) for s, x, y in Z.LABS] + [(m['lab'], m['lx'], m['ly']) for m in Z.MP] + \
@@ -41,6 +41,7 @@ for zn in (sys.argv[1:] or Z.NAMES):
     if not ez: continue
     cz = [c for c in cols if any(e['rc'].buffer(200).contains(Point(*c['c'])) for e in ez)]
     doc = new_doc()
+    seq_zone(doc, zn, 'CD', Z.NAMES)                      # running sheet numbers across the zones
     for n, col in gen_cd.LAYERS.items():
         if n not in doc.layers: doc.layers.add(n, color=col)
     m0 = Z.base_meta(zn, 'SDW-STR-CD', '1:100')
@@ -48,6 +49,7 @@ for zn in (sys.argv[1:] or Z.NAMES):
     gen_cd.TF = 1.0
     idx, nt = gen_cd.draw_plan(doc, ez, cz, 0, m0)
     idx2, ns = gen_cd.draw_sections(doc, ez, cz, idx, m0)
+    seq_save(doc)
     doc.saveas(f"out/ZONES/{zn.replace(' ', '_')}_CONCRETE_DIM.dxf")
     ch = [f"{e['lab']} drawn {e['drawn']}" for e in ez if e.get('changed')]
     print(zn, 'elements', len(ez), 'plan parts', nt, 'section strips', ns, 'sheets', idx2, '| schedule size differs from drawn:', ch)

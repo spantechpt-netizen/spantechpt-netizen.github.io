@@ -6,7 +6,7 @@ from ezdxf import recover
 from shapely.geometry import Polygon
 import zone_util as Z
 import gen_core
-from gen import new_doc, BarList, draw_bbs
+from gen import new_doc, seq_zone, seq_save, seq_none, BarList, draw_bbs
 
 P = Z.PRJ
 LAY = P.get('core_outline_layer', 'CORE-COLS-CONC')
@@ -41,15 +41,18 @@ for (x, y), (typ, pg) in sorted(found.items()):
 L = Z.lib()
 for zn in (sys.argv[1:] or Z.NAMES):
     gen_core.ZONE = zn
-    if not pairs[zn]: continue
+    if not pairs[zn]: seq_none('CORES', zn); continue
     d = new_doc(); bl = BarList(); idx = 0
+    seq_zone(d, zn, 'CORES', Z.NAMES)                      # running sheet numbers across the zones
     m0 = Z.base_meta(zn, 'SDW-STR-NCK', '1:25', 'COVER CORE WALLS 40; Ld IN THE FOOTING >= 60d, FEET INTO THE CORE.')
+    m0['venue'] = P.get('core_venue', 'CW')                  # core walls numbered apart (30100 ...)
     for (typ, fn), no in sorted(pairs[zn].items()):
         f = dict(L[fn]); f.setdefault('name', fn)
         m = dict(m0); m['title'] = f'CORE NECKS - {zn}'
         gen_core.draw_pair(d, idx, typ, P['core_types'][typ], f, no, bl, m); idx += 2
     m = dict(m0); m['title'] = f'CORE NECKS - {zn}\nBBS'; m['dwg'] = f'SDW-STR-NCK-CORES-{Z.CODES[zn]}'
     nb = draw_bbs(d, idx, bl.sorted(), m)
+    seq_save(d)
     d.saveas(f"out/ZONES/{zn.replace(' ', '_')}_CORE_NECKS.dxf")
     print(zn, dict(pairs[zn]), 'sheets', idx, '+ BBS', nb)
 print('\n'.join(notes))

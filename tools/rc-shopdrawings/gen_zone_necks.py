@@ -5,7 +5,7 @@ usage: python3 gen_zone_necks.py [AREA 2 ...]"""
 import sys, pickle, collections, json
 import zone_util as Z
 import gen_n
-from gen import new_doc, BarList, draw_bbs
+from gen import new_doc, seq_zone, seq_save, BarList, draw_bbs
 
 np_ = pickle.load(open('neck_pairs.pkl', 'rb'))
 pairs = collections.defaultdict(collections.Counter); lost = []; flagged = []
@@ -40,6 +40,7 @@ for zn in want:
     from gen import zone_levels
     _L = zone_levels(zn); WHAT = 'COLUMN STARTER BARS' if _L.get('tof') is not None and _L.get('top_gb', 1e9) <= _L['tof'] else 'COLUMN NECKS'
     doc = new_doc(); bl = BarList(); i = 0; checks = []
+    seq_zone(doc, zn, 'NECKS', Z.NAMES)                      # running sheet numbers across the zones
     for (cn, fn), no in sorted(pairs[zn].items()):
         if fn not in L: checks.append(f'{cn} on {fn}: footing type unknown'); continue
         f = dict(L[fn]); f.setdefault('name', fn)
@@ -58,6 +59,7 @@ for zn in want:
         if ld[4]: checks.append(f'{cn} on {fn}: feet turned inwards')
     meta = Z.base_meta(zn, 'SDW-STR-NCK'); meta['venue'] = 'NK'; meta['title'] = f'{WHAT} - {zn}\nBBS'; meta['dwg'] = f'SDW-STR-NCK-{Z.CODES[zn]}'
     nb = draw_bbs(doc, i, bl.sorted(), meta)
+    seq_save(doc)
     doc.saveas(f"out/ZONES/{zn.replace(' ', '_')}_NECKS.dxf")
     n_cols = sum(pairs[zn].values())
     summary[zn] = dict(sheets=i, bbs=nb, columns=n_cols, pairs={f'{a}:{b}': c for (a, b), c in sorted(pairs[zn].items())}, checks=checks)

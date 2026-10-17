@@ -122,7 +122,7 @@ def detail(groups, sup):
             def bot_ok(x):   # bottom bars: lap at supports (within L/4 of a support face)
                 return any(a - 50 <= x <= b + 50 for a, b, _ in inner) or any(abs(x - a) < (b - a) / 4 or abs(x - b) < (b - a) / 4 for a, b in spans)
             for pos, n, d, ok in (('T', p['nt'], p['dt'], top_ok), ('B', p['nb'], p['db'], bot_ok)):
-                lg, lp = leg(d), lap(d)
+                lg, lp = leg(d, pos), lap(d)
                 total = eb - ea + 2 * lg
                 nbar = 1 if total <= STOCK else math.ceil((total - lp) / (STOCK - lp))
                 # equal pieces (engineer: no short filler bar): every cut is re-aimed at an equal share of what is left,
@@ -160,7 +160,7 @@ def detail(groups, sup):
             b['row'] = 0 if b['x0'] > last_end[0] + 2500 else 1 if b['x0'] > last_end[1] + 2500 else 0
             last_end[b['row']] = b['x1']
     for b in bars:
-        b['L'] = round(b['x1'] - b['x0'] + (leg(b['d']) if b['legL'] else 0) + (leg(b['d']) if b['legR'] else 0))
+        b['L'] = round(b['x1'] - b['x0'] + (leg(b['d'], b['pos']) if b['legL'] else 0) + (leg(b['d'], b['pos']) if b['legR'] else 0))
     return bars, stirs, secs
 
 
@@ -240,7 +240,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=
     own_bbs = bl is None                       # one BBS per axis, or one package-wide BBS at the end (combined file)
     if own_bbs: bl = BarList()
     for b in bars:
-        lg = leg(b['d'])
+        lg = leg(b['d'], b['pos'])
         shape = ('U' if b['legL'] and b['legR'] else 'L', lg if b['legL'] else 0, round(b['x1'] - b['x0']), lg if b['legR'] else 0)
         b['mk'] = bl.add(b['d'], shape, b['L'], b['n'], 1, b['pos'])
     for g in groups:
@@ -285,12 +285,12 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=
                                  (Y_ELEV + 1100, Y_ELEV + 1650), (Y_ELEV - 1000, Y_ELEV + 250)):
                     sh.line((x, y0_), (x, y1_), 'S-AXIS')
             xb = sum(x for x, k in g_) / len(g_)
-            for yb in (Y_PLAN + 3900, Y_ELEV + 2100):
-                sh.circle(xb, yb, 450, 'S-AXIS')
-                if len(g_) == 1: sh.text(g_[0][1], xb, yb, 380, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
+            for yb in (Y_PLAN + 3750, Y_ELEV + 1950):                # small grey bubbles (engineer, Oct 2026)
+                sh.circle(xb, yb, 300, 'S-AXIS')
+                if len(g_) == 1: sh.text(g_[0][1], xb, yb, 230, 'S-AXIS', align=TA.MIDDLE_CENTER)
                 else:
                     for j, (x, k) in enumerate(g_):
-                        sh.text(k, xb, yb + (len(g_) - 1) * 120 - j * 240, 210, 'S-AXIS-TXT', align=TA.MIDDLE_CENTER)
+                        sh.text(k, xb, yb + (len(g_) - 1) * 80 - j * 160, 140, 'S-AXIS', align=TA.MIDDLE_CENTER)
         # beams + supports on plan
         for g in groups:
             for r in g['runs']:
@@ -328,7 +328,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=
             if min(b['x1'], w1) - max(b['x0'], w0) < 1500 and (b['x0'] < w0 or b['x1'] > w1): continue   # tiny continuation stub
             off = 1 if b['pos'] == 'T' else -1
             base = ROW(b['pos'], b['row'])
-            lg = leg(b['d'])
+            lg = leg(b['d'], b['pos'])
             a, c = max(b['x0'], w0), min(b['x1'], w1)
             pts = []
             if b['legL'] and b['x0'] >= w0: pts.append((U(a), base - off * lg))
@@ -408,7 +408,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=
                     if s['a'] - 1500 <= b['x0'] <= s['b']: p = SCHED[s['t']]
             dy = -1 if b['pos'] == 'T' else 1
             y = Y_ELEV - COVER - 20 - 25 * b['row'] if b['pos'] == 'T' else Y_ELEV - p['h'] + COVER + 20 + 25 * b['row']
-            lg = min(leg(b['d']), p['h'] - 150)
+            lg = min(leg(b['d'], b['pos']), p['h'] - 2 * COVER - 60)
             a, c = max(b['x0'], w0), min(b['x1'], w1)
             pts = []
             if b['legL'] and b['x0'] >= w0: pts.append((U(a), y + dy * lg))

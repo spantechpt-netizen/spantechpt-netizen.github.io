@@ -7,7 +7,7 @@ from shapely.geometry import LineString
 import zone_util as Z
 sys_argv = sys.argv[:]; sys.argv = sys.argv[:1]
 import gen2
-from gen import new_doc, BarList, draw_bbs, Sheet, ST
+from gen import new_doc, seq_zone, seq_save, BarList, draw_bbs, Sheet, ST
 sys.argv = sys_argv
 
 runs = pickle.load(open('runs.pkl', 'rb')); cols = pickle.load(open('cols.pkl', 'rb'))
@@ -28,6 +28,7 @@ for zn in (sys.argv[1:] or Z.NAMES):
     if not rz: continue
     meta0 = Z.base_meta(zn, 'SDW-STR-GB', '1:100 / SEC 1:20', 'COVER GRADE BEAMS 40; GB STIRRUPS STOP AT THE COLUMN FACE.')
     doc = new_doc(); bl = BarList(); reg = []
+    seq_zone(doc, zn, 'GB', Z.NAMES)                      # running sheet numbers across the zones
     st = dict(n=0, open=[]); cur = {}
     def finish(o):
         if o['types']:
@@ -59,6 +60,7 @@ for zn in (sys.argv[1:] or Z.NAMES):
     n = st['n'] + 1
     meta = dict(meta0); meta['title'] = f'GRADE BEAMS - {zn}\nBAR BENDING SCHEDULE (BBS)'; meta['dwg'] = f'{meta0["prefix"]}-{Z.CODES[zn]}-BBS'
     nb = draw_bbs(doc, n - 1, bl.sorted(), meta, Sheet)
+    seq_save(doc)
     doc.saveas(f"out/ZONES/{zn.replace(' ', '_')}_GRADE_BEAMS.dxf")
     print(zn, 'runs', len(rz), 'axes', len(axes), 'sheets', n - 1, '+ BBS', nb)
 print(len(notes), 'beam runs cross a zone line (put in the zone with the larger part):')
