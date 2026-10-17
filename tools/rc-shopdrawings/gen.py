@@ -42,6 +42,24 @@ def new_doc():
 ST = dict(name=500, sub=280, panel=260, call=250, len=220, note=170, level=170)
 
 
+def zone_levels(zone=None):
+    """project.json levels, with the zone's own values on top: levels = {founding, top_gb, zones: {"AREA 1": {tof, top_gb}}}.
+    founding = bottom of PC (all footings on one level); tof = top of footing fixed (footings drop below it, e.g. a
+    basement where the slab, strips and footings share one top level)."""
+    L = dict(_PRJ.get('levels', {}))
+    L.update((L.pop('zones', None) or {}).get(zone or '', {}))
+    return L
+
+
+def footing_levels(h, L):
+    """-> (F.L = bottom of PC, T.O.PC, T.O.F) of a footing h mm deep"""
+    if L.get('tof') is not None:
+        tof = L['tof']; fl = tof - h / 1000 - 0.10
+    else:
+        fl = L.get('founding', -3.0); tof = fl + 0.10 + h / 1000
+    return round(fl, 3), round(fl + 0.10, 3), round(tof, 3)
+
+
 def mm(v):
     """Lengths are always written in mm (engineer's rule): integer, no unit."""
     return str(int(round(v)))

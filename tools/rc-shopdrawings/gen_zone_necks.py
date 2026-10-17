@@ -36,17 +36,27 @@ L = Z.lib()
 want = sys.argv[1:] or Z.NAMES
 summary = {}
 for zn in want:
+    gen_n.ZONE = zn
+    from gen import zone_levels
+    _L = zone_levels(zn); WHAT = 'COLUMN STARTER BARS' if _L.get('tof') is not None and _L.get('top_gb', 1e9) <= _L['tof'] else 'COLUMN NECKS'
     doc = new_doc(); bl = BarList(); i = 0; checks = []
     for (cn, fn), no in sorted(pairs[zn].items()):
         if fn not in L: checks.append(f'{cn} on {fn}: footing type unknown'); continue
         f = dict(L[fn]); f.setdefault('name', fn)
-        col = dict(sched[cn]); col['name'] = cn; col['b_draw'], col['h_draw'] = col['dw'], col['dh']
+        base, _, var = cn.partition('@')               # size variant 'C8@300x1000': the C8 section on the drawn size
+        col = dict(sched[base]); col['name'] = cn
+        if var:
+            a_, b_ = sorted(int(v) for v in var.split('x'))
+            col['b'], col['h'] = a_, b_
+            col['dw'], col['dh'] = (b_, a_) if col['dw'] >= col['dh'] else (a_, b_)
+            checks.append(f'{cn} on {fn}: column drawn {a_}x{b_}, schedule {base} {min(sched[base]["dw"], sched[base]["dh"])}x{max(sched[base]["dw"], sched[base]["dh"])} - bars of {base} on the drawn size')
+        col['b_draw'], col['h_draw'] = col['dw'], col['dh']
         meta = Z.base_meta(zn, 'SDW-STR-NCK', 'ELEV 1:25 / SEC 1:10', 'COVER COLUMNS 40; Ld IN THE FOOTING >= 60d (STRAIGHT + FOOT).')
-        meta['title'] = f'COLUMN NECKS - {zn}\n{cn} ON {fn}'; meta['dwg'] = f'SDW-STR-NCK-{cn}-{fn}'
+        meta['venue'] = 'NK'; meta['title'] = f'{WHAT} - {zn}\n{cn} ON {fn}'; meta['dwg'] = f'SDW-STR-NCK-{cn}-{fn}'
         Hn, ld = gen_n.draw_neck(doc, i, col, f, meta, bl, int(no)); i += 1
         if not ld[3]: checks.append(f'{cn} on {fn}: Ld does not fit - see sheet')
         if ld[4]: checks.append(f'{cn} on {fn}: feet turned inwards')
-    meta = Z.base_meta(zn, 'SDW-STR-NCK'); meta['title'] = f'COLUMN NECKS - {zn}\nBBS'; meta['dwg'] = f'SDW-STR-NCK-{Z.CODES[zn]}'
+    meta = Z.base_meta(zn, 'SDW-STR-NCK'); meta['venue'] = 'NK'; meta['title'] = f'{WHAT} - {zn}\nBBS'; meta['dwg'] = f'SDW-STR-NCK-{Z.CODES[zn]}'
     nb = draw_bbs(doc, i, bl.sorted(), meta)
     doc.saveas(f"out/ZONES/{zn.replace(' ', '_')}_NECKS.dxf")
     n_cols = sum(pairs[zn].values())

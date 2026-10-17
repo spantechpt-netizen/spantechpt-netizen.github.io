@@ -21,6 +21,7 @@ from gen import new_doc, Sheet, TA, ST, mm
 PRJ = json.load(open('project.json'))
 LEV = PRJ.get('levels', {})
 FL = LEV.get('founding', -3.0)                      # bottom of PC
+ZONE = None                                         # set per zone by gen_zone_cd (zone levels)
 PCH = PRJ.get('pc_thickness', 100)
 SCH = json.load(open('footings.json'))
 EXT = json.load(open('footings_ext.json'))
@@ -601,34 +602,44 @@ def draw_strip(sh, X, Ytop, nm, fam, c, cuts, crossing, win, wi):
         bubble(sh, x, Ytop - 600, n)
     # PC, RC, necks
     rcs = []; labelled = {}; lab_x = []
+    from gen import zone_levels, footing_levels
+    ZL = zone_levels(ZONE)
+    fixed_top = ZL.get('tof') is not None                    # footings drop below one top level (basement)
+    FLz = ZL.get('founding', FL)
+    HREF = max([e['h'] or 600 for k_, a_, b_, e in cuts if k_ == 'rc'] or [600])
+    dz = (lambda e: HREF - (e['h'] or 600)) if fixed_top else (lambda e: 0)
     for kind, u0, u1, e in cuts:
         a, b = max(u0, lo_r), min(u1, hi_r)
         if b - a < 30: continue
         xa, xb = U(a), U(b)
         if xa is None or xb is None: continue
         if kind == 'pc':
-            sh.pline([(xa, Y(-PCH)), (xb, Y(-PCH)), (xb, Y(0)), (xa, Y(0))], 'S-CD-PC', 0, True)
+            z0 = dz(e) if e.get('h') is not None or fixed_top else 0
+            sh.pline([(xa, Y(z0 - PCH)), (xb, Y(z0 - PCH)), (xb, Y(z0)), (xa, Y(z0))], 'S-CD-PC', 0, True)
         elif kind == 'rc':
             h = e['h'] or 600
-            sh.pline([(xa, Y(0)), (xb, Y(0)), (xb, Y(h)), (xa, Y(h))], 'S-CD-RC', 30, True)
+            z0 = dz(e)
+            sh.pline([(xa, Y(z0)), (xb, Y(z0)), (xb, Y(z0 + h)), (xa, Y(z0 + h))], 'S-CD-RC', 30, True)
             rcs.append((a, b, e))
             kl = (id(e), round(a)) if e is STRIP_EL else id(e)     # every strip cut labelled, other footings once
             if kl in labelled: continue
             labelled[kl] = 1
-            tof = FL + PCH / 1000 + h / 1000
+            tof = footing_levels(h, ZL)[2] if fixed_top else FLz + PCH / 1000 + h / 1000
             lab = (e['lab'] or ('ST-01' if e['kind'] == 'ST' else '')) + (f" h={h}" if e['h'] else ' h=?')
             xm = (xa + xb) / 2
             row = sum(1 for q in lab_x if abs(q - xm) < 2000)            # stagger labels of close footings
             lab_x.append(xm)
-            yl = Y(h) + 650 + row * 520
+            yl = Y(z0 + h) + 650 + row * 520
             sh.text(lab, xm, yl + 250, 170, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
             sh.text(f'T.O.F {tof:+.2f}', xm, yl, 150, 'S-CD-TXT', align=TA.BOTTOM_CENTER)
         else:
-            h = e['h'] or 600
-            sh.hatch_rect(xa, Y(h), xb, Y(h) + 600, 'S-CD-COL')
-            sh.break_line((xa - 120, Y(h) + 600), (xb + 120, Y(h) + 600), 'S-CD-SEC', amp=120)
+            h = e['h'] or 600; z0 = dz(e)
+            sh.hatch_rect(xa, Y(z0 + h), xb, Y(z0 + h) + 600, 'S-CD-COL')
+            sh.break_line((xa - 120, Y(z0 + h) + 600), (xb + 120, Y(z0 + h) + 600), 'S-CD-SEC', amp=120)
     # levels at the left
-    for lev, txt, dy in ((-PCH, f'F.L {FL:+.2f}', -60), (0, f'T.O.PC {FL + PCH / 1000:+.2f}', 60)):
+    levs_ = ((HREF, f"T.O.F = T.O.SLAB {ZL['tof']:+.2f} (FOOTINGS DROP BELOW)", 60),) if fixed_top else \
+            ((-PCH, f'F.L {FLz:+.2f}', -60), (0, f'T.O.PC {FLz + PCH / 1000:+.2f}', 60))
+    for lev, txt, dy in levs_:
         sh.line((X - 2100, Y(lev)), (X - 150, Y(lev)), 'S-CD-SEC')
         sh.text(txt, X - 2100, Y(lev) + dy, 140, 'S-CD-TXT', align=TA.BOTTOM_LEFT if dy > 0 else TA.TOP_LEFT)
     # chain 1: RC edges + grid lines; chain 2: grid line to grid line (real distances)

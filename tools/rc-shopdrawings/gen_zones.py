@@ -97,6 +97,7 @@ os.makedirs('out/ZONES', exist_ok=True)
 want = sys.argv[1:] or names
 summary = []
 for zn in want:
+    gen_f.ZONE = zn
     doc = new_doc(); bl = BarList(); idx = 0; rep = []
     base = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                 rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='AS SHOWN', prefix='SDW-STR-FDN')

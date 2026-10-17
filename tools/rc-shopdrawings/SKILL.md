@@ -506,6 +506,24 @@ from / between the grid lines, plan + sections along EVERY grid line (both direc
 - Outlines that look GONE in a rectangle diff are usually the same footing drawn in another way (open lines,
   pieces) — compare labels, not raw rectangles.
 
+### The engineer's corrected final plan (Oct 2026) — check what was fixed before regenerating
+
+- `python3 rev_check.py old.dxf new.dxf dx,dy` → shift (0,0 when the file was only edited), footing labels renamed /
+  gone / new (plan labels only), outlines resized, column labels, **new red texts** (engineers mark corrections in red),
+  level tags and elevation notes. Then re-read the schedule (`table_dump.py`) and diff it with the JSON schedules.
+- **Columns:** a final plan may label every column (`C3 35X80`) and draw corrected columns as outlines of their own
+  (red / yellow, model space) over a generic column block, or as four loose LINEs. `project.json → column_labels
+  {dxf, shift}` makes `pair_necks.py` read that plan's labels and outlines: an outline drawn on its own wins over the
+  block under it, a nearby label wins over both (reported as a conflict), loose lines are assembled into rectangles, a
+  drawn size not in `column_sizes` but written on its label becomes a size variant (`C8@300x1000`: the C8 section on
+  the drawn size; the neck sheet says so). Roya: 7 columns C3 → C1, 3 columns C8 30x100 that had been missed.
+- **Levels per zone:** `levels = {founding, top_gb, zones: {"AREA 1": {tof, top_gb}}}` (`gen.zone_levels`,
+  `gen.footing_levels`). `founding` = bottom of PC (all footings on one level); `tof` = one top level for the slab,
+  strips and footings of a basement zone ("drops shall be provided"): every footing drops below it, the concrete
+  sections draw the drops, and with `top_gb = tof` the neck sheet becomes **starter bars, no neck** (the column starts
+  at the footing). The zone generators set `ZONE` on gen_n / gen_core / gen_f / gen_st / gen_cd before each zone.
+- A zone cloud added for the zone that had none (AREA 1): keep `_rest` = that zone so the gaps still go to it.
+
 ### Zones (packages per zone: sheets + BBS of that zone only)
 
 - The final plan is cut into zones: **closed polylines (revision clouds, hundreds of vertices, layer 0) with a

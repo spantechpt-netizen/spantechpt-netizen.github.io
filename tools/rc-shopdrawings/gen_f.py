@@ -7,6 +7,7 @@ import json, math, pickle, sys
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, lap_patterns, lapped_marks
 
 PRJ = json.load(open('project.json'))
+ZONE = None                       # set per zone by gen_zones (zone levels)
 COVER = PRJ.get('footing_cover', 70)
 PHI = '%%c'                       # AutoCAD diameter symbol
 
@@ -433,11 +434,12 @@ def draw_sheet(doc, idx, f, meta, bl):
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
     sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')
     sh.text(f'COVER {c}', Q(L / 2, 0)[0], Q(0, c / 2)[1], 150, 'S-DIM', align=TA.MIDDLE_CENTER)
-    lev = PRJ.get('levels', {})
-    if 'founding' in lev:
-        fl = lev['founding']; tpc = fl + 0.10; tof = tpc + h / 1000
+    from gen import zone_levels, footing_levels
+    lev = zone_levels(ZONE)
+    if 'founding' in lev or 'tof' in lev:
+        fl, tpc, tof = footing_levels(h, lev)
         marks_ = [(-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (h, f"T.O.F {tof:+.2f}")]
-        if 'top_gb' in lev and not strip:
+        if 'top_gb' in lev and not strip and lev['top_gb'] > tof + 0.05:
             neck = lev['top_gb'] - tof
             sh.text(f"NECK UP TO T.O.GB {lev['top_gb']:+.2f}", Q(cx1, 0)[0] + 300, Q(0, h + 560)[1], 170, 'S-DIM')
             sh.text(f"NECK H = {mm(neck * 1000)}", Q(cx1, 0)[0] + 300, Q(0, h + 300)[1], 170, 'S-DIM')

@@ -15,6 +15,7 @@ for r in runs:
     if len(sh) > 1 and min(sh.values()) > 0.02:
         notes.append(f"{G.NAME} {r['name']} crosses {', '.join(f'{k} {v:.0%}' for k, v in sh.items())} -> {zn}")
 for zn in (sys.argv[1:] or Z.NAMES):
+    gen_st.ZONE = zn; gen_cd.ZONE = zn
     rs = by.get(zn)
     if not rs: continue
     bl = BarList(); doc = new_doc()

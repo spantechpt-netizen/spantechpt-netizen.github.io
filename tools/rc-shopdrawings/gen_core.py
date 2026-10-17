@@ -16,6 +16,7 @@ from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST,
 
 PRJ = json.load(open('project.json'))
 LEV = PRJ['levels']
+ZONE = None                       # set per zone by gen_zone_cores
 CC = PRJ.get('core_cover', 40)
 FC = PRJ.get('footing_cover', 70)
 HOOK = 100                                                  # 135-deg hook tail of ties / links
@@ -74,9 +75,12 @@ def ootl(p, d):
 
 def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     W, H, t, R = ct['W'], ct['H'], ct['t'], ct['ret']
-    tof = LEV['founding'] + 0.10 + f['h'] / 1000
-    tgb = LEV['top_gb']
-    Hn = round((tgb - tof) * 1000)
+    from gen import zone_levels, footing_levels
+    ZL = zone_levels(ZONE)
+    fl, tpc, tof = footing_levels(f['h'], ZL)
+    tgb = ZL['top_gb']
+    Hn = max(0, round((tgb - tof) * 1000))
+    starter = Hn == 0                   # wall starts at the footing (basement): starter bars, no neck
     yb = FC + max(f['bot'][1], f['bot'][3]) * 2              # verticals stand on the bottom mesh
     emb = f['h'] - yb
     V, nw, outer, inner = bars_of(ct)
@@ -106,7 +110,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     links += ['ret'] * (math.ceil(min(nw['ret'][0], nw['ret'][1]) / 2) + math.ceil(min(nw['ret'][2], nw['ret'][3]) / 2))
     rows_l = math.floor((Hn - 100) / sl) + 1
     lw = t - 2 * CC
-    ml = bl.add(dl, ('U', HOOK, lw, HOOK), lw + 2 * HOOK, len(links) * rows_l, no, 'LINK')
+    ml = bl.add(dl, ('U', HOOK, lw, HOOK), lw + 2 * HOOK, len(links) * rows_l, no, 'LINK') if rows_l > 0 else None
     dt, stt = ct['ctie']
     tw = t - 2 * CC
     n_ct = math.floor((Hn - 100) / stt) + 1 + 2
@@ -117,8 +121,8 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     meta['dwg'] = f"{meta['prefix']}-{name.replace(' ', '')}-{f['name']}-1"
     s1 = Sheet(doc, 0, -idx * 32000, meta)
     draw_legend(s1, 21000, 27900)
-    s1.text(f'NECK {name}  {W}x{H}  t={t}  ON  {f["name"]}', 2000, 27900, ST['name'], 'S-AXIS-TXT')
-    s1.text(f'NO={no}   T.O.F {tof:+.2f}   T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}', 2000, 27100, ST['sub'], 'S-SEC')
+    s1.text(f'{"STARTER BARS" if starter else "NECK"} {name}  {W}x{H}  t={t}  ON  {f["name"]}', 2000, 27900, ST['name'], 'S-AXIS-TXT')
+    s1.text(f'NO={no}   T.O.F {tof:+.2f}   ' + ('WALL STARTS AT THE FOOTING (T.O.F = T.O.SLAB): STARTER BARS, NO NECK' if starter else f'T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}'), 2000, 27100, ST['sub'], 'S-SEC')
     s1.text(f'FOOTING {f["name"]}  h={f["h"]}   (SCHEDULE: SHEAR WALLS SCHEDULE - FROM FOUNDATION TO UPPER ROOF)', 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
     k = 4.0; ox, oy = 3200, 25200 - H * k
     P = lambda x, y: (ox + x * k, oy + y * k)
@@ -163,7 +167,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
              (mo, callout(n_h, dh, mo, sum(Ho), sh_, 'H') + '  OUTER FACE', (W - CC - dh / 2, H * 0.72)),
              (vw['mk'], callout(vw['n'], vw['d'], vw['mk'], vw['L'], ct['web'][1], 'V') + '  EACH FACE',
               min((v for v in V if v[3] == 'W' and abs(v[0] - (W - ew_)) < 1), key=lambda v: abs(v[1] - H * 0.6))[:2]),
-             (ml, callout(len(links) * rows_l, dl, ml, lw + 2 * HOOK, sl, 'LINK') + f'  ({len(links)} PER ROW, {rows_l} ROWS)', (W - t / 2, H * 0.45)),
+             ] + ([(ml, callout(len(links) * rows_l, dl, ml, lw + 2 * HOOK, sl, 'LINK') + f'  ({len(links)} PER ROW, {rows_l} ROWS)', (W - t / 2, H * 0.45))] if ml else []) + [
              (mi, callout(n_h, dh, mi, sum(Hi), sh_, 'H') + '  INNER FACE', (W - t + CC + dh / 2, H * 0.3))]
     for i, (mk, txt, at) in enumerate(items):
         y = cy - i * 900
@@ -192,7 +196,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     s1.pline(fillet([(lx, ly + HOOK * 4), (lx, ly), (lx + lw * 4, ly), (lx + lw * 4, ly + HOOK * 4)], 40), 'S-RFT-STIR', 25)
     s1.text(str(lw), lx + lw * 2, ly - 80, ST['len'] * 0.8, 'S-DIM', align=TA.TOP_CENTER)
     s1.text(f'{HOOK} (135 DEG)', lx + lw * 4 + 120, ly + HOOK * 2, ST['len'] * 0.7, 'S-DIM')
-    s1.ctext(ml, f'LINK  L={lw + 2 * HOOK}', lx, ly - 900, ST['call'] * 0.85)
+    if ml: s1.ctext(ml, f'LINK  L={lw + 2 * HOOK}', lx, ly - 900, ST['call'] * 0.85)
     tx_, ty_ = 28800, 8700
     s1.pline([(tx_, ty_), (tx_ + tw * 5, ty_), (tx_ + tw * 5, ty_ + tw * 5), (tx_, ty_ + tw * 5)], 'S-RFT-STIR', 25, True, r=60)
     s1.line((tx_ + 60, ty_ + tw * 5 - 60), (tx_ + 400, ty_ + tw * 5 - 400), 'S-RFT-STIR')
@@ -206,7 +210,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     meta['dwg'] = f"{meta['prefix']}-{name.replace(' ', '')}-{f['name']}-2"
     s2 = Sheet(doc, 0, -(idx + 1) * 32000, meta)
     draw_legend(s2, 21000, 27900)
-    s2.text(f'NECK {name}  ON  {f["name"]}  - SECTION THROUGH THE WALL', 2000, 27900, ST['name'] * 0.8, 'S-AXIS-TXT')
+    s2.text(f'{"STARTER BARS" if starter else "NECK"} {name}  ON  {f["name"]}  - SECTION THROUGH THE WALL', 2000, 27900, ST['name'] * 0.8, 'S-AXIS-TXT')
     top = f['h'] + Hn
     lpv = 60 * vw['d']
     k2 = next(kk_ for kk_ in (4.0, 10 / 3, 2.5, 2.0) if kk_ * (f['h'] + Hn + 60 * vc['d'] + 900) <= 20500)
@@ -240,12 +244,12 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
         s2.line(Q(xh[0], y + 30), Q(xh[1], y + 30), 'S-RFT-STIR'); y += sl
     # levels, dims
     XD = t + 1500
-    s2.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 450, f['h']), angle=90, text=str(Hn))
+    if not starter: s2.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 450, f['h']), angle=90, text=str(Hn))
     s2.dim(Q(XD, top), Q(XD, top + lpv), Q(XD + 450, top), angle=90, text=f'LAP {lpv}')
     s2.dim(Q(xo - 160, yb), Q(xo - 160, f['h']), Q(fx0 + 400, yb), angle=90, text=str(emb))
     s2.dim(Q(xi, yb + vw['d']), Q(xi + vw['foot'], yb + vw['d']), Q(xi, yb + 260), text=str(vw['foot']))
-    for yy_, lab in ((-100, f"F.L (B.O.PC) {LEV['founding']:+.2f}"), (0, f"T.O.PC {LEV['founding'] + .1:+.2f}"),
-                     (f['h'], f"T.O.F {tof:+.2f}"), (top, f"T.O.GB {tgb:+.2f}")):
+    for yy_, lab in ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"),
+                     (f['h'], f"T.O.F = T.O.SLAB {tof:+.2f}" if starter else f"T.O.F {tof:+.2f}")) + (() if starter else ((top, f"T.O.GB {tgb:+.2f}"),)):
         xl_ = Q(fx0, 0)[0]
         s2.line((xl_ - 3600, Q(0, yy_)[1]), (xl_ - 150, Q(0, yy_)[1]), 'S-DIM'); s2.text(lab, xl_ - 3600, Q(0, yy_)[1] + 50, 170, 'S-DIM')
     s2.text(f"Ld = {emb} + {vw['foot']} = {emb + vw['foot']} >= 60d = {vw['LD']}  (T{vw['d']});  "
@@ -253,7 +257,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     s2.text('FEET TURNED INTO THE CORE, ON THE BOTTOM MESH', Q(fx0, 0)[0] - 3600, Q(0, -100)[1] - 1250, ST['note'], 'S-DIM')
     s2.ctext(vw['mk'], callout(vw['n'], vw['d'], vw['mk'], vw['L'], ct['web'][1], 'V'), Q(t + 300, 0)[0], Q(0, top + lpv * 0.5)[1], ST['call'] * 0.85)
     s2.ctext(mo, callout(n_h, dh, mo, sum(Ho), sh_, 'H'), Q(t + 300, 0)[0], Q(0, f['h'] + Hn * 0.55)[1], ST['call'] * 0.85)
-    s2.ctext(ml, callout(len(links) * rows_l, dl, ml, lw + 2 * HOOK, sl, 'LINK'), Q(t + 300, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - 600, ST['call'] * 0.85)
+    if ml: s2.ctext(ml, callout(len(links) * rows_l, dl, ml, lw + 2 * HOOK, sl, 'LINK'), Q(t + 300, 0)[0], Q(0, f['h'] + Hn * 0.55)[1] - 600, ST['call'] * 0.85)
     s2.text(f'SECTION THROUGH THE WALL  1:{round(100 / k2)}', Q(t / 2, 0)[0], Q(0, -100)[1] - 1600, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # vertical bars detailed outside (every length)
     for j, (key, ttl) in enumerate((('C', 'BOUNDARY BAR (CORNERS / RETURN ENDS)'), ('W', 'WEB BAR (EACH FACE)'))):
@@ -265,7 +269,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
         s2.pline([B_(fx_, 0), B_(0, 0), B_(0, v['vert'])], 'S-RFT-TOP', max(v['d'] * kb, 30), r=3 * v['d'] * kb)
         s2.text(str(v['foot']), *B_(fx_ / 2, -100 / kb), ST['len'], 'S-DIM', align=TA.TOP_CENTER)
         s2.text(str(v['vert']), *B_(-150 / kb, v['vert'] / 2), ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-        for yy_, tt in ((emb, f'T.O.F ({emb} IN FOOTING)'), (emb + Hn, f'T.O.GB (NECK {Hn})'), (emb + Hn + 60 * v['d'], f'LAP {60 * v["d"]}')):
+        for yy_, tt in ((emb, f'T.O.F ({emb} IN FOOTING)'),) + (() if starter else ((emb + Hn, f'T.O.GB (NECK {Hn})'),)) + ((emb + Hn + 60 * v['d'], f'LAP {60 * v["d"]}'),):
             s2.line(B_(-60 / kb, yy_), B_(350 / kb, yy_), 'S-DIM'); s2.text(tt, B_(400 / kb, 0)[0], B_(0, yy_)[1] - 60, ST['note'], 'S-DIM')
         s2.ctext(v['mk'], callout(v['n'], v['d'], v['mk'], v['L'], layer='V'), bx0, by0 + v['vert'] * kb + 700, ST['call'] * 0.85)
         s2.text(f"L = {v['foot']} + {v['vert']} = {v['L']}", bx0, by0 + v['vert'] * kb + 300, ST['note'], 'S-RFT-TXT')

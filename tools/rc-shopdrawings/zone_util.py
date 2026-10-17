@@ -8,7 +8,7 @@ SRC = PRJ['fnd_final']; DX, DY = SRC['shift']
 _Z = json.load(open(SRC.get('zones', 'zones.json')))
 REST = _Z.pop('_rest', None)
 ZP = {k: Polygon(v) for k, v in _Z.items()}
-NAMES = sorted(list(ZP) + ([REST] if REST else []), key=lambda s: int(re.sub(r'\D', '', s) or 0))
+NAMES = sorted(set(list(ZP) + ([REST] if REST else [])), key=lambda s: int(re.sub(r'\D', '', s) or 0))
 CODES = PRJ.get('zone_codes') or {n: f"Z{int(re.sub(r'[^0-9]', '', n) or 0):02d}" for n in NAMES}
 
 

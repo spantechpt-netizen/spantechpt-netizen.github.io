@@ -4,6 +4,7 @@ file gives the section + a BBS per metre run (when the foundation plan is not av
 import json, math
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes
 PRJ = json.load(open('project.json')); LEV = PRJ.get('levels', {})
+ZONE = None                       # set per zone by gen_zone_strip
 C = PRJ.get('footing_cover', 70)
 
 
@@ -71,9 +72,11 @@ def section_sheet(doc, idx, bl, B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12, nam
     sh.dim(Q(0, -100), Q(B, -100), (Q(0, 0)[0], Q(0, -100)[1] - 450), text=str(B))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 500, Q(0, 0)[1]), angle=90, text=str(h))
     sh.text(f'COVER {C}', Q(B / 2, 0)[0], Q(0, C / 2)[1], 150, 'S-DIM', align=TA.MIDDLE_CENTER)
-    if 'founding' in LEV:
-        fl = LEV['founding']
-        for yy, lab in ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {fl + .1:+.2f}"), (h, f"T.O.F {fl + .1 + h / 1000:+.2f}")):
+    from gen import zone_levels, footing_levels
+    ZL = zone_levels(ZONE)
+    if 'founding' in ZL or 'tof' in ZL:
+        fl, tpc, tof = footing_levels(h, ZL)
+        for yy, lab in ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (h, f"T.O.F {tof:+.2f}")):
             sh.line((ox - 2300, Q(0, yy)[1]), (ox - 750, Q(0, yy)[1]), 'S-DIM'); sh.text(lab, ox - 2300, Q(0, yy)[1] + 50, 150, 'S-DIM')
     sh.text(f'TYPICAL CROSS SECTION  {name}  1:20', Q(B / 2, 0)[0], Q(0, -100)[1] - 1000, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # ---- typical stretch on plan 1:50 (factor 2): transverse bars @s, longitudinal bars lapped 60d staggered ----

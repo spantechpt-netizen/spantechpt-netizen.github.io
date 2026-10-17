@@ -35,6 +35,7 @@ def cuts_zone(nm, fam, c, lo, hi, els_, cols_):
     return keep_, crossing
 gen_cd.cuts_along = cuts_zone
 for zn in (sys.argv[1:] or Z.NAMES):
+    gen_cd.ZONE = zn
     CUR['zn'] = zn
     ez = [e for e in keep if Z.zone_of(e['rc'].centroid.x, e['rc'].centroid.y) == zn]
     if not ez: continue

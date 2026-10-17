@@ -40,6 +40,7 @@ for (x, y), (typ, pg) in sorted(found.items()):
     pairs[Z.zone_of(c.x, c.y)][(typ, fn)] += 1
 L = Z.lib()
 for zn in (sys.argv[1:] or Z.NAMES):
+    gen_core.ZONE = zn
     if not pairs[zn]: continue
     d = new_doc(); bl = BarList(); idx = 0
     m0 = Z.base_meta(zn, 'SDW-STR-NCK', '1:25', 'COVER CORE WALLS 40; Ld IN THE FOOTING >= 60d, FEET INTO THE CORE.')
