@@ -29,6 +29,8 @@ MODULES = {
     'zones': 'Packages per zone (foundations, necks, cores, strip, GB, concrete)',
     'cores': 'Core (shear-wall) necks',
     'strip': 'Strip footing under walls',
+    'stairs': 'Stair starter bars (from the footing, like the necks)',
+    'sog': 'Slab on grade between the grade beams (X and Y sheets)',
     'pool': 'Swimming pool / open tank with a sloped floor',
 }
 
@@ -75,6 +77,10 @@ STEPS = [
          [], ['zones.json', 'neck_pairs.pkl'], ['out/ZONES/*_NECKS.dxf']),
     Step('zone_cores', 'Per zone: core necks + BBS', 'generate', 'cores', 'gen_zone_cores.py',
          [], ['zones.json', 'core_pairs.json'], ['out/ZONES/*_CORE_NECKS.dxf']),
+    Step('zone_stairs', 'Per zone: stair starter bars + BBS', 'generate', 'stairs', 'gen_zone_stairs.py',
+         [], ['zones.json', 'project.json'], ['out/ZONES/*_STAIRS.dxf'], 'project.json: stairs (plan, outline layer, bars)'),
+    Step('zone_sog', 'Per zone: slab on grade X / Y + BBS', 'generate', 'sog', 'gen_zone_sog.py',
+         [], ['zones.json', 'project.json'], ['out/ZONES/*_SOG.dxf'], 'project.json: sog (plan with the S.O.G tags, mesh)'),
     Step('zone_strip', 'Per zone: strip footing + BBS', 'generate', 'strip', 'gen_zone_strip.py',
          [], ['zones.json', 'cd_scan.pkl'], ['out/ZONES/*_STRIP.dxf']),
     Step('zone_gb', 'Per zone: grade beams + BBS', 'generate', 'zones', 'gen_zone_gb.py',

@@ -346,6 +346,33 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   A0 BigSheets at a standard scale (1:100 … 1:250, the largest that fits; A3 sheets use 1:50 … 1:250).
   Title-block text of a big sheet keeps its own size (only the drawing text is doubled).
 
+## 6c. Round of 17-10-2026 (necks, cores, stairs, GB, SOG, numbering)
+
+- **Sheet numbers run on across the zones**: every package continues from the last sheet of the zone before it
+  (`gen.seq_zone` / `seq_save` / `seq_none`, counts in `out/ZONES/sheet_seq.json`; `run_all.sh` deletes it and runs
+  the zones in order). Codes and starts in `title_block.seq_start`: necks `NK` 20100, cores `CW` 30100, stairs `SC`
+  40100, grade beams `GB` 50100, S.O.G `SG` 60100 (the other packages keep theirs). A single-zone rerun warns when
+  the zone's sheet count changed (regenerate the zones after it).
+- **Nothing outside the frame**: `fitcheck.py out/ZONES/*.dxf` lists every entity that leaves its sheet; RC Shop's
+  check step fails such a file. Neck elevations cut a wide footing with break lines (the footing never runs past the
+  sheet), tie sketches start clear of it and wrap by width.
+- **Grade beams**: the schedule governs the section (GB2 = 350x700 on the 17-10 schedule; all external beams 350).
+  End legs: bottom bars >= 200, **top bars >= 600** (`gen.leg(d, pos)`, `gb_leg_bot` / `gb_leg_top`). Grid lines,
+  bubbles and their names in grey (`S-AXIS` colour 8), bubbles r 300, text 230.
+- **Core walls** (`gen_core.py`): verticals as the column necks (starter with full Ld in the footing + 65 d above
+  T.O.F, straight neck bar T.O.F -> T.O.GB + 65 d). Horizontal bars as the approved core detail: per wall (back,
+  sides, returns) **two U-bars** (outer face + inner face), legs across the wall (t - 2 x cover), long side = wall
+  length - 2 x cover, overlapping at the corners; links and corner ties unchanged.
+- **Stair starters** (`gen_zone_stairs.py`, project.json `stairs`): every stair-starter outline drawn on the plans
+  (layer, size, bar circles inside) -> the footing under it (nearest within 1 m, flagged) -> a sheet like a neck:
+  starters from the footing (Ld) + bars to T.O.GB + lap, a perimeter tie (one row of bars). Bar size and tie are not
+  on the plans: taken from `stairs.d` / `stairs.tie` and reported.
+- **Slab on grade** (`gen_zone_sog.py`, project.json `sog`): panels = rooms between the grade beams (every pair of
+  parallel GB edge lines 140..460 apart = a beam; gaps at joints up to 2 x `close_gap` closed; a room still open is
+  found by rays from its S.O.G tag) that carry an S.O.G tag. Bars start `cover` (50) from the inner beam faces, at
+  the tag's spacing; per zone one sheet with every X bar group and one with every Y group (bar, range, count, length
+  on the plan), then the BBS. Bars over 12 m: equal pieces lapped `lap_d` x d.
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

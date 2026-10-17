@@ -14,7 +14,8 @@ from .paths import engine_dir
 
 # the generator each per-zone script runs (its rules live there)
 USES = {'gen_zone_necks.py': ('gen_n.py',), 'gen_zone_cores.py': ('gen_core.py',), 'gen_zone_gb.py': ('gen2.py',),
-        'gen_zones.py': ('gen_f.py', 'gen_mat.py', 'gen_cd.py'), 'gen_zone_cd.py': ('gen_cd.py',), 'gen_zone_strip.py': ('gen_st.py',)}
+        'gen_zones.py': ('gen_f.py', 'gen_mat.py', 'gen_cd.py'), 'gen_zone_cd.py': ('gen_cd.py',), 'gen_zone_strip.py': ('gen_st.py',),
+        'gen_zone_stairs.py': ('gen_n.py',)}
 
 DATA_FILES = {
     'project.json': 'drawing reading (layers, blocks, views), GB schedule, title block, levels, zones',
