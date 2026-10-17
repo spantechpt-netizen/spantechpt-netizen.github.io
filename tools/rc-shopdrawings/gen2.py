@@ -1,7 +1,7 @@
 """Grade-beam shop drawings, one set of A3 sheets per grid axis (Roya-style call-outs).
 Each sheet: plan strip (top bars above the beam, bottom bars below), longitudinal section, cross sections."""
 import math, pickle, sys, json
-from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, hooked_tie, tie_bar_centres, ST, mm, project_notes
+from gen import SCHED, COVER, STOCK, leg, lap, new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, hooked_tie, draw_open_tie, tie_bar_centres, ST, mm, project_notes
 LEV = json.load(open('project.json')).get('levels', {})
 
 WIN = 29500          # beam length per sheet at 1:100
@@ -222,10 +222,7 @@ def draw_gb_section(sh, bx, by, t, label):
     sx2 = bx + W_ + 3000                                      # stirrup sketch clear of the call-outs
     a_, b_ = (p['b'] - 2 * c) * f * 0.6, (p['h'] - 80) * f * 0.6
     kk_ = 0.6 * f; sk = [(0, 0), (a_ / kk_, 0), (a_ / kk_, b_ / kk_), (0, b_ / kk_)]
-    for seg in hooked_tie(sk, tie_bar_centres(sk, dm / 2 + ds), tail=100, rc=dm / 2 + ds):
-        sh.pline([(sx2 + q[0] * kk_, by + 300 + q[1] * kk_) for q in seg], 'S-RFT-STIR', 30)
-    sh.text(mm(p['b'] - 2 * c), sx2 + a_ / 2, by + 150, ST['len'], 'S-DIM', align=TA.TOP_CENTER)
-    sh.text(mm(p['h'] - 80), sx2 + a_ + 150, by + 300 + b_ / 2, ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
+    a_ = draw_open_tie(sh, sk, sx2, by + 300, kk_, tie_bar_centres(sk, dm / 2 + ds), rc=dm / 2 + ds, width=30)   # opened at the hooks
     sh.text(f"SEC {label}", bx + W_ / 2, by - 700, 300, 'S-SEC', align=TA.TOP_CENTER)
     sh.text(f"{t} {p['b']}x{p['h']}", bx + W_ / 2, by - 1150, 200, 'S-SEC', align=TA.TOP_CENTER)
     return W_ + 3000 + a_ + 1600
@@ -251,7 +248,7 @@ def draw_axis(doc, axis, runs, cols, meta0, start_sheet=1, off=0, bl=None, slot=
             ss = [s for s in stirs if sg['a'] - 1500 <= s['a'] and s['b'] <= sg['b'] + 1500 and s['t'] == sg['t']]
             for s in ss:
                 p = SCHED[s['t']]; c = 30 if p['b'] <= 300 else 40
-                s['mk'] = bl.add(s['d'], ('ST', p['b'] - 2 * c, p['h'] - 80), s['L'], s['n'], 1)
+                s['mk'] = bl.add(s['d'], ('HT', p['b'] - 2 * c, p['h'] - 80), s['L'], s['n'], 1)
     out = []
     wins = windows(groups, sup)
     perp = {k: v for k, v in AX.items() if (k[0] == 'Y') == hor}

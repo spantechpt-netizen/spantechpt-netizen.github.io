@@ -37,6 +37,14 @@ python -m rcshop --help     # command line
 
 **Reading profiles** remember how one consultant draws: layers, blocks, label patterns and views. They are saved from a finished project in `~/.rcshop/profiles/` and applied to that consultant's next project. A profile never holds project data such as schedules, levels or title-block values.
 
+## What's new in 0.2
+
+- Ties, stirrups and core corner ties are drawn **opened at the hook corner** (the two 135° hooks apart, the closing
+  point visible) on the sheets and in the BBS, with every side written. This covers column necks, grade beams and core necks.
+- Column necks: starter bars (full Ld in the footing + 65 d above T.O.F) and separate straight neck bars (T.O.F to
+  T.O.GB + 65 d), ties through the whole footing, first tie 50 from T.O.F / T.O.GB.
+- When the program is updated, the sheets drawn before the update show as **stale**, so you know to run them again.
+
 ## Drawing reader (Phase 2)
 
 The reader page is where the program learns how this consultant draws. It shows the drawing itself, and you can zoom with the wheel at the cursor, pan with the middle or right button, use **Fit**, **Zoom window** and the **View** list (a layout's viewport), and **Find text**.

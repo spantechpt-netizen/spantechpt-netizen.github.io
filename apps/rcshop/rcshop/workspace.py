@@ -10,6 +10,11 @@ import glob, json, os, shutil, time
 from pathlib import Path
 
 from .steps import STEPS, BY_ID, MODULES
+from .paths import engine_dir
+
+# the generator each per-zone script runs (its rules live there)
+USES = {'gen_zone_necks.py': ('gen_n.py',), 'gen_zone_cores.py': ('gen_core.py',), 'gen_zone_gb.py': ('gen2.py',),
+        'gen_zones.py': ('gen_f.py', 'gen_mat.py', 'gen_cd.py'), 'gen_zone_cd.py': ('gen_cd.py',), 'gen_zone_strip.py': ('gen_st.py',)}
 
 DATA_FILES = {
     'project.json': 'drawing reading (layers, blocks, views), GB schedule, title block, levels, zones',
@@ -89,6 +94,15 @@ class Workspace:
         hits = glob.glob(str(self.work / rel))
         return max((os.path.getmtime(h) for h in hits), default=None) if hits else None
 
+    def _engine_mtime(self, step):
+        """Newest of the step's engine script and the shared drawing library (gen.py): an updated rule makes the
+        sheets drawn before it stale."""
+        if not step.script: return 0
+        try: eng = engine_dir()
+        except FileNotFoundError: return 0
+        files = (step.script, 'gen.py') + USES.get(step.script, ())
+        return max((os.path.getmtime(eng / f) for f in files if (eng / f).exists()), default=0)
+
     def status(self, step):
         """-> (state, detail): blocked / ready / done / stale / failed"""
         v = self.vars()
@@ -111,6 +125,8 @@ class Workspace:
         newest_need = max(self._mtime(n) for n in needs) if needs else 0
         if min(made) + 1 < newest_need:
             return 'stale', 'an input changed after the last run'
+        if min(made) + 1 < self._engine_mtime(step):
+            return 'stale', 'the program was updated after the last run (new drafting rules) - run it again'
         return 'done', h.get('when', '') if h else ''
 
     def record(self, step_id, rc, seconds):

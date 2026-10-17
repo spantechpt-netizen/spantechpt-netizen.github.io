@@ -12,7 +12,7 @@ lengths; (2) SECTION through the wall 1:25 (footing, feet, Ld, lap, levels) + th
 every length. BBS at the end. Vertical bars: Ld in the footing = straight part + foot >= 60 d; feet turned into the
 core (always room there)."""
 import json, math, sys
-from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, fillet
+from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, fillet, draw_open_tie
 
 PRJ = json.load(open('project.json'))
 LEV = PRJ['levels']
@@ -114,7 +114,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     dt, stt = ct['ctie']
     tw = t - 2 * CC
     n_ct = math.floor((Hn - 100) / stt) + 1 + 2
-    mt = bl.add(dt, ('ST', tw, tw), 4 * tw + 2 * HOOK, 4 * n_ct, no, 'TIE')
+    mt = bl.add(dt, ('HT', tw, tw), 4 * tw + 2 * HOOK, 4 * n_ct, no, 'TIE')
 
     # ================= sheet 1: plan section =================
     meta = dict(meta0); meta['title'] = f'CORE NECKS - {name} ON {f["name"]}\nPLAN SECTION'
@@ -198,9 +198,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     s1.text(f'{HOOK} (135 DEG)', lx + lw * 4 + 120, ly + HOOK * 2, ST['len'] * 0.7, 'S-DIM')
     if ml: s1.ctext(ml, f'LINK  L={lw + 2 * HOOK}', lx, ly - 900, ST['call'] * 0.85)
     tx_, ty_ = 28800, 8700
-    s1.pline([(tx_, ty_), (tx_ + tw * 5, ty_), (tx_ + tw * 5, ty_ + tw * 5), (tx_, ty_ + tw * 5)], 'S-RFT-STIR', 25, True, r=60)
-    s1.line((tx_ + 60, ty_ + tw * 5 - 60), (tx_ + 400, ty_ + tw * 5 - 400), 'S-RFT-STIR')
-    s1.text(f'{tw}x{tw}', tx_ + tw * 2.5, ty_ - 80, ST['len'] * 0.8, 'S-DIM', align=TA.TOP_CENTER)
+    draw_open_tie(s1, [(0, 0), (tw, 0), (tw, tw), (0, tw)], tx_, ty_, 5, None, rc=12, tail=HOOK, width=25, th=ST['len'] * 0.8)   # opened at the hooks
     s1.ctext(mt, f'CORNER TIE  L={4 * tw + 2 * HOOK}', tx_, ty_ - 900, ST['call'] * 0.85)
     s1.text('HORIZONTAL BARS: OUT-TO-OUT LENGTHS; HOOKED ACROSS THE WALL AT THE RETURN ENDS. LINKS @%d BOTH WAYS.' % sl,
             22300, 6600, ST['note'], 'S-RFT-TXT', maxw=12000)

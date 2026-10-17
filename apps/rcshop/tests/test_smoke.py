@@ -50,6 +50,17 @@ def main():
         P['beam_layer'] = 'S-GB'; (ws.work / 'project.json').write_text(json.dumps(P))
         profiles.save_from(ws, 'Test consultant')
         assert 'Test consultant' in profiles.list_profiles()
+        # ties drawn opened at the hooks (two hooks apart) for the sketches and the BBS
+        sys.path.insert(0, str(engine_dir())); os.environ['RC_PROJECT'] = str(ws.work / 'project.json')
+        import gen as G
+        segs, moved = G.opened_tie([(0, 0), (720, 0), (720, 220), (0, 220)], None, 100, 15)
+        assert len(segs) == 3 and 'tail' in moved
+        (P, V), (_, W) = next((k, v) for k, v in moved.items() if k != 'tail')
+        assert V == (0, 220) and W[0] < -50, (V, W)            # the left side swung out
+        # an engine update makes the sheets drawn before it stale
+        st = next(s for s in ws.steps() if s.id == 'gen_pool')
+        os.utime(engine_dir() / 'gen.py')
+        assert ws.status(st)[0] == 'stale', ws.status(st)
         print('smoke test OK:', zips[0].name)
     finally:
         shutil.rmtree(root, ignore_errors=True)

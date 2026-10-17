@@ -187,6 +187,37 @@ def opened_tie(pts, bars=None, tail=100, rc=0, swing=25):
     return [fillet(body, rc) if rc else body, ha, hb], {(tuple(P), tuple(V)): (P, rot(V, P, a)), 'tail': (fixed[-2], fixed[-1])}
 
 
+def draw_open_tie(sh, pts, x0, y0, k, bars=None, rc=0, tail=100, layer='S-RFT-STIR', width=20, th=None, lab_layer='S-DIM'):
+    """Bending sketch of a tie / stirrup, opened at its hook corner (opened_tie), every side written along it and
+    100 along the hook tail. pts = out-to-out shape (mm); drawn at scale k with its left edge at x0, bottom at y0.
+    Returns the drawn width."""
+    th = th or ST['len']
+    segs, moved = opened_tie(pts, bars, tail=tail, rc=rc)
+    xa = min(p[0] for sg in segs for p in sg); xb = max(p[0] for sg in segs for p in sg)
+    Z = lambda p: (x0 + (p[0] - xa) * k, y0 + p[1] * k)
+    for sg in segs:
+        sh.pline([Z(p) for p in sg], layer, width)
+    n = len(pts); cx = sum(p[0] for p in pts) / n; cy = sum(p[1] for p in pts) / n
+    for j in range(n):
+        e = (tuple(pts[j]), tuple(pts[(j + 1) % n]))
+        Ls = math.dist(*e)
+        if Ls < 25: continue
+        a, b = moved.get(e) or tuple(reversed(moved.get((e[1], e[0]), ()))) or e
+        pa, pb = Z(a), Z(b); mx, my = (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2
+        ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
+        if ang > 90.5 or ang <= -89.5: ang += 180
+        nx, ny = (a[0] + b[0]) / 2 - cx, (a[1] + b[1]) / 2 - cy; hn = math.hypot(nx, ny) or 1
+        sh.text(mm(Ls), mx + nx / hn * th * 1.4, my + ny / hn * th * 1.4, th, lab_layer, rot=ang, align=TA.MIDDLE_CENTER)
+    ta, tb = moved['tail']
+    tang = math.degrees(math.atan2(tb[1] - ta[1], tb[0] - ta[0]))
+    if tang > 90.5 or tang <= -89.5: tang += 180
+    pm = Z(((ta[0] + tb[0]) / 2, (ta[1] + tb[1]) / 2)); zc = Z((cx, cy))
+    nr = min((math.radians(tang + 90), math.radians(tang - 90)),            # on the side towards the inside of the tie
+             key=lambda r: math.dist((pm[0] + math.cos(r), pm[1] + math.sin(r)), zc))
+    sh.text(str(int(tail)), pm[0] + th * 1.1 * math.cos(nr), pm[1] + th * 1.1 * math.sin(nr), th * 0.85, lab_layer, rot=tang, align=TA.MIDDLE_CENTER)
+    return (xb - xa) * k
+
+
 
 class Sheet:
     W, H = 42000, 29700      # A3 at 1:100
@@ -358,6 +389,11 @@ def draw_legend(sh, x, y, g=1):
 def _symbol(sh, x, y, w, h, shape, d):
     """Small bar sketch with segment lengths, inside a BBS cell (x, y = lower-left, w x h)."""
     kind, seg = shape[0], shape[1:]
+    lens = None
+    if kind == 'HT':          # rectangular tie / stirrup with 135-deg hooks: drawn opened at the hooks like POLY,
+        a_, b_ = seg[0], seg[1]                   # proportions kept within 1:2.5 so a narrow stirrup still reads
+        da, db = max(a_, b_ / 2.5), max(b_, a_ / 2.5)
+        kind, seg, lens = 'POLY', ((0, 0), (da, 0), (da, db), (0, db)), [a_, b_, a_, b_]
     m = 1
     cy, cx = y + h * 0.45, x + w * 0.2
     if kind == 'S':
@@ -399,7 +435,7 @@ def _symbol(sh, x, y, w, h, shape, d):
         nt = 120 if len(pts) <= 4 else 95
         for i in range(len(pts)):                      # every side written (engineer's rule)
             a, b = pts[i], pts[(i + 1) % len(pts)]
-            Ls = math.dist(a, b)
+            Ls = lens[i] if lens else math.dist(a, b)
             if Ls < 25: continue
             i2 = (i + 1) % len(q); o_ = swq.get(frozenset((i, i2)))
             qa, qb = (o_[i], o_[i2]) if o_ else (q[i], q[i2])

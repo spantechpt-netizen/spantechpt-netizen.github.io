@@ -388,7 +388,10 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   the BBS shape column writes every side too), **drawn OPENED at the hook corner** (`gen.opened_tie`): the side
   going down from the hook corner is swung out (25°, less for a long side) so the two 135° hooks stand apart and
   the closing point shows, the swung side's length written along it, `100` along the hook tail — on the sheet and
-  in the BBS. Section A-A keeps the tie closed (as fixed). Hexagon mark + size, `L=…` on the next line, one note
+  in the BBS. Section A-A keeps the tie closed (as fixed). The same for **grade-beam stirrups** (`gen2.py`, sketch
+  beside each section) and **core corner ties** (`gen_core.py`) through `gen.draw_open_tie`; their BBS shape is
+  `('HT', a, b)` (opened rectangle, drawn within 1:2.5 so a narrow stirrup reads; real lengths written). `('ST', …)`
+  stays the closed lapped loop of the footing side bars. Hexagon mark + size, `L=…` on the next line, one note
   "TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)".
 
 ## 7a. Core (shear-wall) necks (`pair_cores.py` → `gen_core.py`)
