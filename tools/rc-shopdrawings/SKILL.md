@@ -359,8 +359,12 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
 - Bar arrangement and tie set read from the consultant's **`COLUMN SCH`** block (to-scale section per type);
   sizes from `column_sizes`. Some types use other layers inside the block (check each row: outline layer,
   tie layer, bar circles) — extend `read_schedule()` when a type comes back empty.
-- **Neck = same size as the column.** Vertical bars stand on the footing bottom mesh with a 90° foot, run to T.O.GB
-  + **lap 60 d**.
+- **Neck = same size as the column.** Two bars per position (engineer's corrected neck, Oct 2026 — this replaced
+  the single bar from the mesh to T.O.GB):
+  - **starter (أشاير)**: 90° foot on the bottom mesh, full Ld inside the footing, up to T.O.F + **65 d** (lap);
+  - **neck bar (عدلة)**: straight, from T.O.F to T.O.GB + **65 d** (lap with the column bars).
+  Both laps are dimensioned on the elevation. `project.json → neck_lap_d` (default 65) and `neck_ld_d` (default 60)
+  change the multiples. Starter mode (T.O.F = T.O.GB, e.g. a basement slab zone): the starter alone.
 - **Development inside the footing (engineer):** Ld = straight part in the footing (T.O.F → bar on the mesh) + foot
   ≥ 60 d (general note "LENGTH DEVELOPMENT ≥ 60 BAR DIAMETER"); foot = max(12 d, 300, 60 d − straight part). Foot
   outwards when it fits inside the footing (½ min(L, W) − cover − bar offset), else turned INWARDS (under the column);
@@ -368,19 +372,20 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   straight part + "Ld = 402 + 560 = 962 ≥ 60d = 960".
 - **The bar detailed outside ("تفرد السيخ برة"):** BAR DETAIL at the top left of every neck sheet: the L bar to scale
   with the foot and vertical lengths written on it, T.O.F / T.O.GB / LAP marks along it, call-out + "L = foot +
-  vertical = total".
+  vertical = total", and the straight neck bar beside it with T.O.F / T.O.GB / LAP marks.
 - **Bars inside the ties**: corner bars centred at cover 40 + tie dia + d/2 from the faces; the others spaced
   as the designer drew them.
 - **Every tie keeps the designer's exact shape and size**: each tie wraps exactly the bars it holds in the
   designer's section (convex hull of those bars buffered by d/2 + tie radius, mitred), cut flat at the outer tie
   (hexagons stay hexagons). L = out-to-out perimeter + 2 × 100 hooks. Mirrored ties share one mark (`x2/SET`).
-- Ties: n sets × 8/m → @125 from T.O.F + 50 to T.O.GB − 50 (ties continue through the GB joint) + 2 ties inside
-  the footing.
+- Ties: n sets @ s, the **first tie 50 from T.O.F** (and 50 from T.O.GB), through the neck and the GB joint, and
+  **through the whole footing depth at the same spacing** (from T.O.F − 50 down; at least 2). The call-out counts
+  both ("26 IN THE NECK + 4 IN THE FOOTING") and the sheet writes "FIRST TIE 50 FROM T.O.F / T.O.GB".
 - Elevation 1:25: footing, PC, neck, GBs framing in, curved L bars, ties, a **distribution line with ticks and a
   leader to the tie call-outs**, **section cut A-A** marked, dims (neck H, LAP), levels, break line on top.
 - Section A-A 1:10: column outline, hooked curved ties, bars inside, dims.
-- Tie bending sketches: out-to-out shape, curved corners, hook drawn with `100`, **only one or two sides
-  dimensioned** (+ one slanted side for polygons), hexagon mark + size, `L=…` on the next line, one note
+- Tie bending sketches: out-to-out shape, curved corners, **every side of every tie written** (engineer, Oct 2026;
+  the BBS shape column writes every side too), hexagon mark + size, `L=…` on the next line, one note
   "TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)".
 
 ## 7a. Core (shear-wall) necks (`pair_cores.py` → `gen_core.py`)

@@ -349,8 +349,24 @@ def _symbol(sh, x, y, w, h, shape, d):
         kk = min(w * 0.45 / bw, h * 0.7 / bh)
         x0, y0 = x + w * 0.3, y + h * 0.15
         sh.pline([(x0 + a * kk, y0 + b * kk) for a, b in pts], 'S-RFT-TXT', 0, True, r=40)
-        sh.text(str(int(bw)), x0 + bw * kk / 2, y0 - 40, 120, 'S-RFT-TXT', align=TA.TOP_CENTER)
-        sh.text(str(int(bh)), x0 + bw * kk + 160, y0 + bh * kk / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
+        q = [(x0 + a * kk, y0 + b * kk) for a, b in pts]
+        cx, cy = sum(p[0] for p in q) / len(q), sum(p[1] for p in q) / len(q)
+        nt = 120 if len(pts) <= 4 else 95
+        for i in range(len(pts)):                      # every side written (engineer's rule)
+            a, b = pts[i], pts[(i + 1) % len(pts)]
+            Ls = math.dist(a, b)
+            if Ls < 25: continue
+            qa, qb = q[i], q[(i + 1) % len(q)]
+            mx, my = (qa[0] + qb[0]) / 2, (qa[1] + qb[1]) / 2
+            vert = abs(qa[0] - qb[0]) < abs(qa[1] - qb[1])
+            if vert:
+                sgn = 1 if mx >= cx else -1
+                sh.text(str(int(round(Ls))), mx + sgn * 50, my, nt, 'S-RFT-TXT', rot=90,
+                        align=TA.TOP_CENTER if sgn > 0 else TA.BOTTOM_CENTER)
+            else:
+                sgn = 1 if my >= cy else -1
+                sh.text(str(int(round(Ls))), mx, my + sgn * 50, nt, 'S-RFT-TXT',
+                        align=TA.BOTTOM_CENTER if sgn > 0 else TA.TOP_CENTER)
     elif kind == 'OPEN':      # open bar of any shape (wall horizontal bar with its hooks), to its own proportions
         pts = [(a, b) for a, b in seg]
         x0_, y0_ = min(p[0] for p in pts), min(p[1] for p in pts)

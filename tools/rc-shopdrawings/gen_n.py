@@ -194,21 +194,26 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     tgb = ZL['top_gb']
     Hn = max(0, round((tgb - tof) * 1000))
     starter = Hn == 0                  # column starts at the footing (basement): starter bars, no neck
-    d, lp = col['d'], lap(col['d'])
+    LAPN, LDN = PRJ.get('neck_lap_d', 65), PRJ.get('neck_ld_d', 60)
+    d = col['d']; lp = LAPN * d                                  # lap of the starters above T.O.F and of the neck bars above T.O.GB
     yb = FC + max(f['bot'][1], f['bot'][3]) * 2                 # bars stand on the bottom mesh
     # development inside the footing (engineer + general note: Ld >= 60 d, measured along the bar from T.O.F):
     # straight part in the footing + the 90-degree foot on the bottom mesh; the foot is lengthened to make it up
     emb = f['h'] - yb                                            # T.O.F -> bar on the mesh
-    LD = 60 * d
+    LD = LDN * d
     foot = max(12 * d, 300, int(math.ceil((LD - emb) / 10) * 10))
     xbar = (max(col['b'], col['h']) / 2 - COLC - 10 - d / 2)
     room = min(f.get('L', 1e9), f.get('W', 1e9)) / 2 - FC - xbar   # foot must stay inside the footing (cover)
     inward = foot > room                                          # no room outwards: feet turned inwards (under the column)
     room_in = min(f.get('L', 1e9), f.get('W', 1e9)) / 2 - FC + xbar
     ld_ok = emb + foot >= LD and foot <= (room_in if inward else room)
-    vert = (f['h'] - yb) + Hn + lp                               # up to T.O.GB + column lap
+    # engineer (Oct 2026): STARTER bars anchored in the footing (Ld) and out 65 d above T.O.F; separate straight NECK
+    # bars from T.O.F up to T.O.GB + 65 d (lapped with the starters above the footing, with the column above the GB)
+    vert = emb + lp
     Lv = int(round((vert + foot) / 10) * 10)
     mv = bl.add(d, ('L', foot, vert, 0), Lv, col['n'], no, 'V')
+    Ln = int(round((Hn + lp) / 10) * 10)
+    mn = None if starter else bl.add(d, ('S', Ln), Ln, col['n'], no, 'V')
     # bars: corner bars centred at cover + tie dia + d/2 from the faces, the others spaced as the designer drew them;
     # every tie wraps exactly the bars it holds in the designer's section, keeping its shape (rectangle, hexagon ...)
     from shapely.geometry import Polygon, MultiPoint, Point
@@ -235,8 +240,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         ties.append(dict(poly=out, w=round(max(xs) - min(xs)), hh=round(max(ys) - min(ys)),
                          L=int(round((oo.exterior.length + 2 * 100) / 10) * 10), draw=[(poly, True)]))   # out-to-out perimeter + two 135-deg hooks
     s = int(1000 / col['per_m'])
-    n_neck = math.floor((Hn - 100) / s) + 1                      # T.O.F + 50 .. T.O.GB - 50 (ties continue through the GB joint)
-    n_ftg = 2                                                    # two ties inside the footing to hold the starters
+    n_neck = max(0, math.floor((Hn - 100) / s) + 1)              # first 50 above T.O.F .. last >= 50 below T.O.GB
+    n_ftg = max(2, math.floor((emb - 100) / s) + 1)              # the footing at the same spacing: first 50 below T.O.F
     merged = {}
     def shape_key(t, flip):
         mnx = min(p[0] for p in t['poly']); mny = min(p[1] for p in t['poly']); mxx = max(p[0] for p in t['poly'])
@@ -285,19 +290,24 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     # vertical bars (two outer ones drawn), foot outwards on the mesh
     for sx in (-1, 1):
         x = sx * (cw / 2 - COLC - 10 - d / 2)
-        sh.pline([Q(x + (-sx if inward else sx) * foot, yb - (0 if sx < 0 or not inward else d)), Q(x, yb - (0 if sx < 0 or not inward else d)), Q(x, top + lp)],
-                 'S-RFT-TOP', max(d * k, 25), r=3 * d * k)
+        xs_ = x if starter else x - sx * d * 1.6                     # starter just inside the neck bar it laps with
+        yb_ = yb - (0 if sx < 0 or not inward else d)
+        sh.pline([Q(xs_ + (-sx if inward else sx) * foot, yb_), Q(xs_, yb_), Q(xs_, f['h'] + lp)], 'S-RFT-TOP', max(d * k, 25), r=3 * d * k)
+        if not starter:
+            sh.pline([Q(x, f['h']), Q(x, top + lp)], 'S-RFT-TOP', max(d * k, 25))
     # ties
     y = f['h'] + 50
     while y <= top - 50:
         sh.line(Q(-cw / 2 + COLC, y), Q(cw / 2 - COLC, y), 'S-RFT-STIR'); y += s
-    for y in (f['h'] - 150, f['h'] - 350):
+    yf_low = f['h'] - 50 - (n_ftg - 1) * s
+    for j in range(n_ftg):                                       # ties in the footing at the same spacing
+        y = f['h'] - 50 - j * s
         sh.line(Q(-cw / 2 + COLC, y), Q(cw / 2 - COLC, y), 'S-RFT-STIR')
     # distribution line of the ties: vertical line over the tie zone, ticks at the ties, leader to the call-outs
     xd = -cw / 2 + cw * 0.3
     y0d, y1d = f['h'] + 50, f['h'] + 50 + (n_neck - 1) * s
-    sh.line(Q(xd, f['h'] - 350), Q(xd, y1d), 'S-DIM')
-    for yy in (f['h'] - 350, f['h'] - 150, y0d, (y0d + y1d) / 2, y1d):
+    sh.line(Q(xd, yf_low), Q(xd, max(y1d, f['h'] - 50)), 'S-DIM')
+    for yy in (yf_low, f['h'] - 50) + ((y0d, (y0d + y1d) / 2, y1d) if n_neck else ()):
         sh.line(Q(xd - 25, yy - 25), Q(xd + 25, yy + 25), 'S-DIM')
     ylead = f['h'] + Hn * 0.55
     sh.line(Q(xd, ylead), (Q(cw / 2 + 120, 0)[0], Q(0, ylead)[1] + 100), 'S-DIM')
@@ -311,6 +321,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
     XD = cw / 2 + 2500                                               # dimension line clear of the call-outs
     sh.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 400, f['h']), angle=90, text=f'{Hn}')
     sh.dim(Q(XD, top), Q(XD, top + lp), Q(XD + 400, top), angle=90, text=f'LAP {lp}')
+    if not starter:
+        sh.dim(Q(XD - 900, f['h']), Q(XD - 900, f['h'] + lp), Q(XD - 500, f['h']), angle=90, text=f'LAP {lp}')
+    sh.text('FIRST TIE 50 FROM T.O.F' + ('' if starter else ' / T.O.GB'), Q(-cw / 2, 0)[0] - 200, Q(0, f['h'] + 60)[1], ST['note'] * 0.8, 'S-DIM', align=TA.BOTTOM_RIGHT)
     sh.dim(Q(fx0, 0), Q(fx0, f['h']), Q(fx0 - 400, 0), angle=90, text=str(f['h']))
     marks_ = ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F = T.O.SLAB {tof:+.2f}")) if starter else \
              ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F {tof:+.2f}"),
@@ -320,26 +333,43 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         sh.line((xl, Q(0, yy)[1]), Q(fx0 - 150, yy), 'S-DIM')
         sh.text(lab, xl, Q(0, yy)[1] + 50, 170, 'S-DIM')
     # call-outs
-    sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
-    sh.text(f"(FOOT {foot} {'TURNED INWARDS ' if inward else ''}ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
+    if starter:
+        sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V') + '  STARTER', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
+        sh.text(f"(FOOT {foot} {'TURNED INWARDS ' if inward else ''}ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
+    else:
+        sh.ctext(mn, callout(col['n'], d, mn, Ln, layer='V') + '  NECK BARS', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
+        sh.text(f"(T.O.F TO T.O.GB + LAP {lp})", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
+        ys_ = Q(0, f['h'])[1] + 2600                                # left of the neck, between T.O.F and B.O.GB
+        xs_ = 1500
+        sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V') + '  STARTERS', xs_, ys_, ST['call'])
+        sh.text(f"(FOOT {foot} {'TURNED INWARDS ' if inward else ''}ON THE BOTTOM MESH", xs_, ys_ - 400, ST['note'])
+        sh.text(f"+ LAP {lp} ABOVE T.O.F)", xs_, ys_ - 700, ST['note'])
     # Ld in the footing on the elevation
     sh.dim(Q(-cw / 2 - 250, yb), Q(-cw / 2 - 250, f['h']), Q(-cw / 2 - 650, yb), angle=90, text=f'{emb}')
-    sh.text(f"Ld = {emb} + {foot} = {emb + foot} {'>=' if emb + foot >= LD else '<'} 60d = {LD}" + ('' if ld_ok else '  (!) SEE NOTE'),
-            Q(-fx0 + 250, 0)[0], Q(0, f['h'] * 0.45)[1], ST['note'], 'S-DIM')
+    sh.text(f"Ld = {emb} + {foot} = {emb + foot} {'>=' if emb + foot >= LD else '<'} {LDN}d = {LD}" + ('' if ld_ok else '  (!) SEE NOTE'),
+            *((1500, Q(0, f['h'])[1] + 1500) if not starter else (Q(-fx0 + 250, 0)[0], Q(0, f['h'] * 0.45)[1])), ST['note'], 'S-DIM')
     # ---------- the bar detailed outside (bending detail with every length) ----------
     bx0, by0 = 2600, 18100
-    kb = min(6300 / (vert + 600), 2.0)
+    kb = min(6300 / (max(vert, 0 if starter else Ln) + 600), 2.0)
     B_ = lambda x, y: (bx0 + x * kb, by0 + y * kb)
     fx_ = min(foot * kb, 3500) / kb                                  # drawn foot (long feet shortened on the sketch)
     sh.pline([B_(fx_, 0), B_(0, 0), B_(0, vert)], 'S-RFT-TOP', max(d * kb, 30), r=3 * d * kb)
     sh.text(str(foot), *B_(fx_ / 2, -120 / kb * 1.0), ST['len'], 'S-DIM', align=TA.TOP_CENTER)
     sh.text(str(vert), *B_(-140 / kb, vert / 2), ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-    for yy, t in (((emb, f'T.O.F = T.O.SLAB (IN FOOTING {emb})'),) if starter else ((emb, f'T.O.F (IN FOOTING {emb})'), (emb + Hn, f'T.O.GB (NECK {Hn})'))):
+    for yy, t in (((emb, f'T.O.F = T.O.SLAB (IN FOOTING {emb})'),) if starter else ((emb, f'T.O.F (IN FOOTING {emb})'),)):
         sh.line(B_(-60, yy), B_(380 / kb, yy), 'S-DIM'); sh.text(t, B_(420 / kb, 0)[0], B_(0, yy)[1] - 60, ST['note'], 'S-DIM')
-    sh.text(f'LAP {lp}', B_(420 / kb, 0)[0], B_(0, emb + Hn + lp / 2)[1], ST['note'], 'S-DIM')
+    sh.text(f'LAP {lp}', B_(420 / kb, 0)[0], B_(0, emb + lp / 2)[1], ST['note'], 'S-DIM')
     sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), bx0, by0 + vert * kb + 700, ST['call'])
     sh.text(f'L = {foot} + {vert} = {Lv}', bx0, by0 + vert * kb + 300, ST['note'], 'S-RFT-TXT')
-    sh.text('BAR DETAIL (VERTICAL BAR)', bx0, by0 - 850, ST['panel'], 'S-SEC', maxw=7000)
+    if not starter:                                                  # the neck bar beside it, from T.O.F
+        nx0 = bx0 + 5200
+        N_ = lambda y: (nx0, by0 + (emb + y) * kb)
+        sh.pline([N_(0), N_(Ln)], 'S-RFT-TOP', max(d * kb, 30))
+        sh.text(str(Ln), N_(Ln / 2)[0] - 140, N_(Ln / 2)[1], ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
+        for yy, t in ((0, 'T.O.F'), (Hn, f'T.O.GB ({Hn})'), (Hn + lp / 2, f'LAP {lp}')):
+            sh.line((N_(yy)[0] - 60, N_(yy)[1]), (N_(yy)[0] + 300, N_(yy)[1]), 'S-DIM'); sh.text(t, N_(yy)[0] + 340, N_(yy)[1] - 60, ST['note'], 'S-DIM')
+        sh.ctext(mn, callout(col['n'], d, mn, Ln, layer='V'), nx0, by0 + (emb + Ln) * kb + 700, ST['call'])
+    sh.text('BAR DETAIL (STARTER' + ('' if starter else ' + NECK BAR') + ')', bx0, by0 - 850, ST['panel'], 'S-SEC', maxw=7000)
     if inward: sh.text('FOOT TURNED INWARDS (NO ROOM OUTWARDS)', bx0, by0 - 1250, ST['note'], 'S-RFT-TXT')
     if not ld_ok:
         sh.text(f'(!) FOOT {foot} DOES NOT FIT IN THE FOOTING EVEN TURNED INWARDS: CONSULTANT TO CONFIRM',
@@ -384,7 +414,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
         hor = max((e_ for e_ in ed if abs(e_[0][1] - e_[1][1]) < 2), key=lambda e_: (e_[0][1], math.dist(*e_)), default=None)
         ver = max((e_ for e_ in ed if abs(e_[0][0] - e_[1][0]) < 2), key=lambda e_: (math.dist(*e_), -e_[0][0]), default=None)
         sl = [e_ for e_ in ed if abs(e_[0][1] - e_[1][1]) >= 2 and abs(e_[0][0] - e_[1][0]) >= 2 and math.dist(*e_) > 25]
-        for e_ in [x for x in (hor, ver, sl[0] if sl else None) if x]:
+        for e_ in [x for x in ed if math.dist(*x) > 25]:                 # every side written (engineer, Oct 2026)
             a_, b_ = e_
             pa_, pb_ = Z(a_), Z(b_)
             mx, my = (pa_[0] + pb_[0]) / 2, (pa_[1] + pb_[1]) / 2
@@ -393,10 +423,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no):
             cx_ = sum(p[0] for p in nm) / nn; cy_ = sum(p[1] for p in nm) / nn
             nx_, ny_ = (a_[0] + b_[0]) / 2 - cx_, (a_[1] + b_[1]) / 2 - cy_; hn = math.hypot(nx_, ny_) or 1
             sh.text(mm(math.dist(a_, b_)), mx + nx_ / hn * 200, my + ny_ / hn * 200, ST['len'], 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
-        e_ = segs[1][-1]
-        sh.text('100', Z(e_)[0] + 60, Z(e_)[1] - 60, ST['len'], 'S-DIM', align=TA.TOP_LEFT)
-        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 550, ST['call'], 'S-RFT-TXT')
-        sh.text(f"L={mm(t['L'])}", tx, by - 1150, ST['call'], 'S-RFT-TXT')
+        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 800, ST['call'], 'S-RFT-TXT')
+        sh.text(f"L={mm(t['L'])}", tx, by - 1400, ST['call'], 'S-RFT-TXT')
         tx += max(t['w'] * kk, 3700) + 900
         if tx > 29500: tx = 23500; by -= 4300
     return Hn, (emb, foot, LD, ld_ok, inward)
