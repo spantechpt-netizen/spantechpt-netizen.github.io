@@ -378,6 +378,30 @@ sheet of the package whose frame must be used (Roya: `10503 - 10506.dwg`, block 
   the tag's spacing; per zone one sheet with every X bar group and one with every Y group (bar, range, count, length
   on the plan), then the BBS. Bars over 12 m: equal pieces lapped `lap_d` x d.
 
+## 6d. Project options for another consultant / project (Al Ruya, 24-10-2026)
+
+Nothing here changes the Roya defaults; each option is set in the project's `project.json`.
+- **Drawing number format**: `title_block.code.format`, e.g. `"{project_id}-{dwg_type}-{orig}-{doc_type}-{venue}-{seq}-{rev}"`
+  → `BSC-sd-stco-str-fd-10100-00` (venues `fd` 10100, `ncol` 20100 in `seq_start`, mapped by `venue_by_title`).
+  Constant texts of the template (project ID / type / orig cells, "PROJECT CODE - …") are replaced in a project copy
+  of the template (`titleblock_<code>.dxf`), never in the original. The key plan inside the block belongs to the
+  template's project - say so to the engineer.
+- **`side_bars: false`**: footings without side bars (the design has none): no SB marks, no side panel.
+- **`neck_mode: "single"`** (+ `neck_foot` 300, `neck_lap_d` 65): ONE L bar per position - foot on the bottom mesh,
+  straight up to T.O.GB + lap (no starter + separate neck bar, no 60d Ld rule). Vertical part dimensioned from the
+  foot to T.O.GB on the elevation and in the bar detail.
+- **`column_sections`**: column sections typed / read for the project when the schedule has no `nTd` texts (Revit
+  exports: bars as hatched dots, "DIMENSION = 100X30 CM, NO BARS = 18, DIM BARS = 18 MM" text): `{type: {b, h, dw, dh, n,
+  d, sets, per_m, dots: [[x, y] mm], ties: [[[x, y] …] per tie], note}}`; bars equally spaced per face, every tie holds the
+  bars it held in the consultant's sketch. `note` is written on the neck sheet (e.g. an open RFI).
+- **Footing `note`** (footings.json): written under the footing title (columns sitting on the type, open RFIs).
+- **BBS Excel**: every generator run writes `out/<FILE>.bbs.json` (`BarList.export`: marks, shapes, counts per element,
+  element → drawing number); `python3 bbs_xlsx.py BBS.xlsx out/*.bbs.json` → one sheet per group, quantity × cutting
+  length × d²/162 as Excel formulas, summary per diameter with SUMIFS. Net quantities, no waste.
+- When a prompt / the engineer gives rules and the drawing disagrees (neck 2200 vs 2300, missing tie spacing, top bars
+  not clear): keep an **RFI register** (Excel), draw the samples with the stated default, and write the open RFI on the
+  sheet itself.
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

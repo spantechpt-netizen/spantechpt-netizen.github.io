@@ -6,7 +6,7 @@ from ezdxf.enums import TextEntityAlignment as TA
 import json as _json, os as _os
 # beam schedule comes from the project file: {"schedule": {"GB1": {"b":200,"h":700,"nb":4,"db":16,"nt":4,"dt":16,"ds":10,"s":125}, ...}}
 _PRJ = _json.load(open(_os.environ.get('RC_PROJECT', 'project.json')))
-SCHED = _PRJ['schedule']
+SCHED = _PRJ.get('schedule', {})      # GB schedule (none for a footings-only package)
 TB = _PRJ.get('title_block')       # office / client title block (tb_template.py); None -> the built-in frame
 COVER = 40          # grade beams, contact with soil
 STOCK = 12000
@@ -369,8 +369,11 @@ def _tb_frame(self):
     val = dict(title=m.get('title', ''), ref=' '.join(m.get('ref', '').split('\n')), scale=m.get('scale', 'AS SHOWN'),
                size=m.get('size') or TB.get('size', 'A3'), area=m.get('area') or c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,
                date=m.get('date', ''))
-    val['dwg'] = '-'.join(str(v) for v in (c.get('project_id', ''), c.get('dwg_type', ''), c.get('orig', ''),
-                                          c.get('doc_type', ''), val['area'], venue, val['seq'], rev))
+    if c.get('format'):              # project's own numbering, e.g. "{project_id}-{dwg_type}-{orig}-{doc_type}-{venue}-{seq}-{rev}"
+        val['dwg'] = c['format'].format(**{**c, **val})
+    else:
+        val['dwg'] = '-'.join(str(v) for v in (c.get('project_id', ''), c.get('dwg_type', ''), c.get('orig', ''),
+                                              c.get('doc_type', ''), val['area'], venue, val['seq'], rev))
     self.meta['dwg_no'] = val['dwg']
     for key, (px, py, h, w) in TB['fields'].items():
         lines = str(val.get(key, '')).split('\n')
@@ -405,11 +408,14 @@ class BarList:
     """Package-wide bar marks: one mark per (diameter, shape, length); counts accumulate for the BBS."""
     def __init__(self):
         self.rows = {}
+        self.cur = None                       # element being drawn (set by the generator): BBS export per element
     def add(self, d, shape, L, n_in, n_el=1, layer=''):
         key = (d, tuple(shape), int(round(L)))
         r = self.rows.get(key)
         if r is None:
             r = self.rows[key] = dict(mark=len(self.rows) + 1, d=d, shape=shape, L=int(round(L)), n_in=0, n_el=n_el, layer=layer)
+        u = r.setdefault('use', {})
+        u[str(self.cur)] = u.get(str(self.cur), 0) + n_in * n_el      # bars of this mark in this element type (all of them)
         if r['n_el'] != n_el:                 # the same bar in elements with different counts: keep the TOTAL right
             r['n_in'] = r['n_in'] * r['n_el'] + n_in * n_el; r['n_el'] = 1
         else:
@@ -417,6 +423,10 @@ class BarList:
         return r['mark']
     def sorted(self):
         return sorted(self.rows.values(), key=lambda r: r['mark'])
+    def export(self, path, dwg=None):
+        """BBS rows (mark, d, shape, L, counts, use per element) + element -> drawing number, for the Excel BBS."""
+        import json as _j
+        _j.dump(dict(rows=[dict(r, shape=list(r['shape'])) for r in self.sorted()], dwg=dwg or {}), open(path, 'w'), indent=1)
 
 
 def draw_legend(sh, x, y, g=1):

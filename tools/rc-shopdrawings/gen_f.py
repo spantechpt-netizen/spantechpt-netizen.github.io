@@ -7,6 +7,7 @@ import json, math, pickle, sys
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, lap_patterns, lapped_marks
 
 PRJ = json.load(open('project.json'))
+_SIDE_BARS = PRJ.get('side_bars', True)   # footing side bars (Roya rule); false when the design has none
 ZONE = None                       # set per zone by gen_zones (zone levels)
 COVER = PRJ.get('footing_cover', 70)
 PHI = '%%c'                       # AutoCAD diameter symbol
@@ -185,9 +186,11 @@ def draw_sheet(doc, idx, f, meta, bl):
     for a in f.get('adds', []):
         a['mk'] = bl.add(a['d'], ('S', a['L']), a['L'], a['n'], f['no'], 'ADD-' + a['layer'])
     sb = side_bars(f)
+    if not _SIDE_BARS:                           # project without footing side bars in the design (project.json side_bars: false)
+        sb['pieces'], sb['rows'] = [], 0
     for p in sb['pieces']:                       # one mark per side-bar piece type (loop / U / corner L / straight)
         p['mk'] = bl.add(sb['ds'], p['shape'], p['L'], sb['rows'] * p['n'], f['no'], 'SB')
-    sb['mk'] = sb['pieces'][0]['mk']
+    sb['mk'] = sb['pieces'][0]['mk'] if sb['pieces'] else None
     sb_txt = lambda p: callout(sb['rows'] * p['n'], sb['ds'], p['mk'], p['L'], layer='SB')
     # chairs only carry a top mesh: none when the footing has no top reinforcement (engineer)
     sb['mk_ch'] = bl.add(16, ('CH', sb['ch_foot'], sb['ch_h'], sb['ch_top']), sb['chair_L'], sb['chairs'], f['no'], 'CH') if f['top'][0] else None
@@ -198,12 +201,13 @@ def draw_sheet(doc, idx, f, meta, bl):
     sh.circle(xc_, 28150, 520, 'S-SEC'); sh.text(str(f['h']), xc_, 28150, 380, 'S-SEC', align=TA.MIDDLE_CENTER)
     sh.text(f"NO={f['no']}", xc_ + 900, 27900, 500, 'S-AXIS-TXT')
     sh.text(f"PC {f['pcL']}x{f['pcW']}x{f['pcH']}   RC {f['L']}x{f['W']}x{f['h']}", xc_ + 4200, 27950, ST['sub'], 'S-SEC')
+    if f.get('note'): sh.text(f['note'], 2000, 27200, ST['note'], 'S-SEC', maxw=18500)   # project remark (columns on the type, RFI)
 
     R1, R2 = 14300, 2300
     panels = [('B', 'FOUNDATION BOTTOM REINFORCEMENT PLAN @ X&Y DIRECTION', 2000, R1)]
     if any(b['layer'] == 'T' for b in bars):
         panels.append(('T', 'FOUNDATION TOP REINFORCEMENT PLAN @ X&Y DIRECTION', 18200, R1))
-    panels.append(('S', 'FOUNDATION SIDE REINFORCEMENT', 2000 if len(panels) == 2 else 18200, R2 if len(panels) == 2 else R1))
+    if _SIDE_BARS: panels.append(('S', 'FOUNDATION SIDE REINFORCEMENT', 2000 if len(panels) == 2 else 18200, R2 if len(panels) == 2 else R1))
     if strip:                                        # rows: bottom / top / side, one above the other
         rows_y = [21300, 14300, 7300]
         panels = [(kd, tt, 2000, rows_y[i]) for i, (kd, tt, ox_, oy_) in enumerate(panels)]
@@ -616,7 +620,7 @@ if __name__ == '__main__':
     names = sys.argv[1:] or list(lib)
     if names and names[0] == '@mats': names = list(json.load(open('mats.json')))
     doc = new_doc()
-    bl = BarList()
+    bl = BarList(); dwgmap = {}
     idx = 0
     for i, n in enumerate(names):
         f = lib[n]
@@ -627,11 +631,13 @@ if __name__ == '__main__':
         kind_ = 'RAFT' if n.startswith('RAFT') else 'COMBINED FOOTING' if n.startswith('CF') else 'FOUNDATION'
         meta['title'] = f"STRUCTURAL {kind_}\nREINFORCEMENT - {n}  (NO={f['no']})"
         meta['dwg'] = f"{meta['prefix'].replace('GB', 'FDN')}-{n}"
+        bl.cur = n
         draw_sheet(doc, idx, f, meta, bl)
+        dwgmap[n] = meta.get('dwg_no', '')
         idx += 2 if f.get('adds') else 1
     mats_only = all(n.startswith(('CF', 'RAFT')) for n in names)
     meta['title'] = 'STRUCTURAL COMBINED FOOTINGS / RAFTS' if mats_only else 'STRUCTURAL FOUNDATION'
     meta['dwg'] = meta['prefix'].replace('GB', 'FDN')
     nb = draw_bbs(doc, idx, bl.sorted(), meta)
-    doc.saveas('out/FOOTINGS.dxf')
+    doc.saveas('out/FOOTINGS.dxf'); bl.export('out/FOOTINGS.bbs.json', dwgmap)
     print('sheets', idx, '+ BBS', nb)

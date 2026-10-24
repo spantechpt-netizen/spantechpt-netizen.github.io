@@ -163,6 +163,11 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 - No text on lines: panel names above the outlines, leg lengths inside the bends, Y-bar call-outs along the bar, title
   block values squeezed to the box (`Sheet.text(maxw=)`).
 
+## Project options (another project / consultant)
+`title_block.code.format` (drawing number pattern), `side_bars: false`, `neck_mode: "single"` (+ `neck_foot`,
+`neck_lap_d`), `column_sections` (sections typed when the schedule has no bar texts), footing `note`, and the BBS Excel
+(`bbs_xlsx.py BBS.xlsx out/*.bbs.json`, formulas, summary per diameter). See SKILL.md §6d.
+
 ## Column necks (`gen_n.py`, sample Oct 2026)
 
 - Arrangement of the vertical bars and the tie set are read from the consultant's `COLUMN SCH` block (to-scale
