@@ -1,0 +1,8 @@
+# Span Tech PT program - UI stack (all Qt, all compatible together)
+PySide6==6.12.0
+PySide6-QtAds==5.1.1.1          # dockable panels (Qt-Advanced-Docking-System)
+pyqtribbon==0.7.8               # Revit-style ribbon
+PySide6-Fluent-Widgets==1.11.3  # modern Fluent (Win11) widgets + dark mode
+pyvista==0.49.1
+pyvistaqt==0.13.1               # 3D viewport (VTK) inside Qt
+pyqtgraph==0.14.0               # fast interactive 2D plan / tendon canvas
