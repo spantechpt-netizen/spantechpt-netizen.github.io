@@ -119,7 +119,7 @@ for lay in doc.layouts:
                 s = txt_of(a)
                 if s: paper_txt.append((s, lay.name + '/' + e.dxf.name + '@' + a.dxf.tag, theight(a)))
 
-with open(os.path.join(out, 'texts.csv'), 'w', newline='') as f:
+with open(os.path.join(out, 'texts.csv'), 'w', newline='', encoding='utf-8', errors='replace') as f:
     w = csv.writer(f); w.writerow(['text', 'x', 'y', 'layer', 'height', 'space', 'block_path'])
     for t in texts: w.writerow([t[0], round(t[1]), round(t[2]), t[3], round(t[4], 1), t[5], t[6]])
     for s, lay, h in paper_txt: w.writerow([s, '', '', '', round(h, 1), 'paper:' + lay, ''])
@@ -411,9 +411,9 @@ if cb: draft['column_schedule_block'] = cb.most_common(1)[0][0]
 draft['schedule'] = {'GB1': dict(b=0, h=0, nb=0, db=0, nt=0, dt=0, ds=0, s=0)}
 draft['levels'] = dict(founding=None, top_gb=None)
 draft['meta'] = dict(project='', client='', consultant='', contractor='', ref='', prefix='SDW-STR-GB')
-json.dump(draft, open(os.path.join(out, 'project.draft.json'), 'w'), indent=1)
+json.dump(draft, open(os.path.join(out, 'project.draft.json'), 'w', encoding='utf-8', errors='replace'), indent=1)
 P('## 9. Draft project.json (CHECK every value on a render; schedule / levels / meta are typed from the drawing)')
 P('```json'); P(json.dumps(draft, indent=1)); P('```')
 
-open(os.path.join(out, 'survey.md'), 'w').write('\n'.join(R) + '\n')
+open(os.path.join(out, 'survey.md'), 'w', encoding='utf-8', errors='replace').write('\n'.join(R) + '\n')
 print('\n'.join(R))
