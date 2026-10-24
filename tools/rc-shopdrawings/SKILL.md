@@ -100,6 +100,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `probe.py` | `text "<s>"` where is a text; `at x,y` what is drawn here; `around "<s>" r` texts around a mark |
 | `table_dump.py` | a schedule (table or block) → rows / cells → `table.csv` |
 | `tb_template.py` | office / client title block → template DXF (sheet-specific texts stripped) for `project.json → title_block` |
+| `tb_keyplan.py` | the project's plan (layers + window of its DWG) into the key-plan cell of a title-block template copy |
 | `zone_util.py`, `gen_zone_necks.py`, `gen_zone_cores.py`, `gen_zone_strip.py`, `gen_zone_gb.py`, `gen_zone_cd.py` | the other packages per zone (§6b) |
 | `gen_zone_stairs.py` | stair starter bars per zone: outlines + bars on the plans → footing under each → sheets like the necks + BBS (§6c) |
 | `gen_zone_sog.py` | slab on grade per zone: panels between the GB faces with an S.O.G tag → one X sheet + one Y sheet + BBS (§6c) |
@@ -385,7 +386,8 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
   → `BSC-sd-stco-str-fd-10100-00` (venues `fd` 10100, `ncol` 20100 in `seq_start`, mapped by `venue_by_title`).
   Constant texts of the template (project ID / type / orig cells, "PROJECT CODE - …") are replaced in a project copy
   of the template (`titleblock_<code>.dxf`), never in the original. The key plan inside the block belongs to the
-  template's project - say so to the engineer.
+  template's project: replace it with the project's own plan (engineer, 24-10-2026) -
+  `tb_keyplan.py template.dxf LAY out.dxf main.dxf "S-FNDN,S-COLS" <plan window> <free cell box> <old key-plan block> "caption"`.
 - **`side_bars: false`**: footings without side bars (the design has none): no SB marks, no side panel.
 - **`neck_mode: "single"`** (+ `neck_foot` 300, `neck_lap_d` 65): ONE L bar per position - foot on the bottom mesh,
   straight up to T.O.GB + lap (no starter + separate neck bar, no 60d Ld rule). Vertical part dimensioned from the
