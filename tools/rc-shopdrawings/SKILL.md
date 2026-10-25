@@ -428,6 +428,28 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
   L/5 either side of the support, adjacent splices >= 500 apart, both directions; each mesh layer (B-X, B-Y, T-X, T-Y)
   on its OWN FULL plan - never strips / parts.
 
+### BLSC rev 2 (engineer's 20 notes, 25-10-2026) - keep applying
+- **Side bars: ONE row** whatever the depth (`side_rows: 1`).
+- **Neck bar one length per column type** = the longest (`neck_unify_length: true`); the extra goes into the lap above
+  T.O.GB (shown on the sheet: "LAP 1170 / 1174 / 1178"). Ties @125: first one 50 above T.O.F + ties through the footing
+  depth; **exact counts** in the BBS - one sub-row per footing-depth group (`split`), never 'VAR'.
+- **Unnamed 30x30 columns = C-30*30**; round columns are only D500 / D800 / D900 (theatre D400 drawn = C-80, D800).
+- **Wall necks** (`gen_w.py walls.json footings.json`, `wall_necks: {d: 16, foot: 300, s, lap_d, mesh_d}`): one sheet
+  per wall type (section 1:20, bar detail, key plan), count 2 x (L / s + 1) per piece, one BBS element = all walls of
+  the type. Spacing / horizontal bars not given -> written on the sheet with the RFI number.
+- **Raft lap 60d**; **CF top short = top long**.
+- **Chairs** (`chair_under_bottom: true`): T16, foot under the bottom mesh, height = h - 2 x cover - top layers + 16;
+  shape, dims and length in the BBS.
+- **Raft splices by zones** (`supports: {X: [...], Y: [...]}` in mats.json): bottom at midspan +/- span/5, top at the
+  supports +/- span/5, alternate bars shifted lp + 500; zones hatched (ANSI37, clipped to the mat). When the zones cannot
+  hold every lap (long tank with walls only at the ends) -> equal pieces + RED note + RFI.
+- **CONC DIM** (`gen_cd2.py`): names fitted INSIDE the footing (text along the footing), L / W aligned dims + clear
+  gaps between footings; columns: face-to-face clear distances to the nearest neighbours. Open outlines joined when the
+  loose ends are < 0.6 m apart (layer S-CD-CLOSE, magenta); anything uncertain RED (S-CD-RED) + note + RFI.
+- **Numbering across files**: run each generator with its own project copy (`RC_PROJECT=project_raft.json`) so
+  `seq_start` continues (FD 10100-10105 footings, 10106- raft; NCOL 20100-20101 necks, 20102- walls).
+- **Spacing from bars per metre**: `floor(1000 / per_m / 5 + 0.01) * 5` (float guard: 6.667/m -> 150, not 145).
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

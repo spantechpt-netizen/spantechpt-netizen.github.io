@@ -3,7 +3,7 @@ point (isolated footing mark of the final plan, or the CF / raft TYPE of mats.js
 import json, os, re, pickle, math
 from shapely.geometry import Polygon, Point
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 SRC = PRJ['fnd_final']; DX, DY = SRC['shift']
 _Z = json.load(open(SRC.get('zones', 'zones.json')))
 REST = _Z.pop('_rest', None)

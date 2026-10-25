@@ -6,7 +6,7 @@ FOUNDATION SIDE REINFORCEMENT, and a section through the footing."""
 import json, math, pickle, sys
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, lap_patterns, lapped_marks
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 _SIDE_BARS = PRJ.get('side_bars', True)   # footing side bars (Roya rule); false when the design has none
 ZONE = None                       # set per zone by gen_zones (zone levels)
 COVER = PRJ.get('footing_cover', 70)
@@ -14,7 +14,7 @@ PHI = '%%c'                       # AutoCAD diameter symbol
 
 
 def spacing(per_m):               # n bars per metre -> spacing in mm, floored to 5 mm
-    return math.floor(1000 / per_m / 5) * 5
+    return math.floor(1000 / per_m / 5 + 0.01) * 5   # + 0.01: 6.667 /m (= @150 rounded) must stay 150
 
 
 def count(width, s):              # bars distributed over width - 2c
@@ -63,13 +63,15 @@ def side_bars(f, ds=12):
     lx, ly = round(f['L'] - 2 * COVER - 2 * dX), round(f['W'] - 2 * COVER - 2 * dY)
     off = COVER + (dX + dY) / 2 + ds / 2                         # loop centre line from the face (drawing)
     free = f['h'] - 2 * COVER
-    rows = max(1, math.ceil(free / 300) - 1)
+    rows = int(PRJ['side_rows']) if PRJ.get('side_rows') else max(1, math.ceil(free / 300) - 1)   # project: one row whatever the depth
     lp = 60 * ds
     pieces = pieces_of_loop(lx, ly, lp)
     chair_n = max(4, math.ceil(f['L'] / 1000) * math.ceil(f['W'] / 1000))
     # chair Ø16: foot 300 / leg / top 400 / leg / foot 300 (out-to-out). It stands on the bottom mesh and carries
     # the top mesh: leg = h - 2 x cover - both bottom layers - both top layers (engineer: F6 650, T14 -> 454)
     ch_h = int(f['h'] - 2 * COVER - f['bot'][1] - f['bot'][3] - (f['top'][1] + f['top'][3] if f['top'][0] else 0))
+    if PRJ.get('chair_under_bottom'):            # engineer (BLSC): the T16 chair foot runs UNDER the bottom mesh (on the cover)
+        ch_h = int(f['h'] - 2 * COVER - (f['top'][1] + f['top'][3] if f['top'][0] else 0) + 16)   # foot underside at cover - 16
     return dict(rows=rows, ds=ds, off=off, offx=COVER + dX + ds / 2, offy=COVER + dY + ds / 2, lx=lx, ly=ly, lap=lp,
                 pieces=pieces, chairs=chair_n, ch_foot=300, ch_top=400, ch_h=ch_h,
                 chair_L=int(math.ceil((2 * 300 + 2 * ch_h + 400) / 10) * 10))
@@ -417,7 +419,7 @@ def draw_sheet(doc, idx, f, meta, bl):
             lines.append((y, side['mk'], t_, L - xs_))
     # chair (only with a top mesh): stands on the bottom mesh, carries the top mesh; every side dimensioned
     if bx_ and tx_ and sb['mk_ch']:
-        yb_, yt_ = c + dB + 8, h - c - dT - 8
+        yb_, yt_ = (c - 8, h - c - dT - 8) if PRJ.get('chair_under_bottom') else (c + dB + 8, h - c - dT - 8)   # foot under / on the bottom mesh
         xc = L * 0.30
         cp = [(xc - 500, yb_), (xc - 200, yb_), (xc - 200, yt_), (xc + 200, yt_), (xc + 200, yb_), (xc + 500, yb_)]
         sh.pline([Q(*p) for p in cp], 'S-RFT-STIR', max(16 * ks, 15), r=3 * 16 * ks)

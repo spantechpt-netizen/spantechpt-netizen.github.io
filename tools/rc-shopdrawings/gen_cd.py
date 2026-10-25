@@ -18,7 +18,7 @@ from shapely.geometry import Polygon, LineString, Point, box
 from shapely.ops import unary_union
 from gen import new_doc, Sheet, TA, ST, mm
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 LEV = PRJ.get('levels', {})
 FL = LEV.get('founding', -3.0)                      # bottom of PC
 ZONE = None                                         # set per zone by gen_zone_cd (zone levels)

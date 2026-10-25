@@ -8,7 +8,7 @@ from ezdxf import recover
 from shapely.geometry import Polygon
 import gen_cd
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 LAY = PRJ.get('core_outline_layer', 'CORE-COLS-CONC')
 cx, cy, hv = PRJ['fnd_view']; X0, X1, Y0, Y1 = cx - hv * 0.5, cx + hv * 0.5, cy - hv * 0.5, cy + hv * 0.5
 sizes = {tuple(sorted((v['W'], v['H']))): k for k, v in PRJ['core_types'].items()}

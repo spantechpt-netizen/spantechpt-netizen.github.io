@@ -14,7 +14,7 @@ core (always room there)."""
 import json, math, sys
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, fillet, draw_open_tie
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 LEV = PRJ['levels']
 ZONE = None                       # set per zone by gen_zone_cores
 CC = PRJ.get('core_cover', 40)

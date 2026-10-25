@@ -3,7 +3,7 @@ section_sheet() is shared with gen_st_plan.py (the strip detailed on the foundat
 file gives the section + a BBS per metre run (when the foundation plan is not available)."""
 import json, math
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes
-PRJ = json.load(open('project.json')); LEV = PRJ.get('levels', {})
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json'))); LEV = PRJ.get('levels', {})
 ZONE = None                       # set per zone by gen_zone_strip
 C = PRJ.get('footing_cover', 70)
 
@@ -12,7 +12,7 @@ def section_sheet(doc, idx, bl, B=1550, h=600, pcB=1750, n_m=7, d=14, ds=12, nam
     """Typical cross section 1:20 + typical stretch 1:50 on sheet idx. Call-outs: the U bar with its mark (the same
     bar everywhere); the longitudinal / side bars by position (their lengths change per run: see plan) unless
     per_metre (then marks of a 12 m bar per metre run)."""
-    s = math.floor(1000 / n_m / 5) * 5                    # 7 / m -> 140
+    s = math.floor(1000 / n_m / 5 + 0.01) * 5                    # 7 / m -> 140
     lg = h - 2 * C; lp = 60 * d
     nl = math.ceil((B - 2 * C) / s) + 1                   # longitudinal bars across the width (per layer)
     meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',

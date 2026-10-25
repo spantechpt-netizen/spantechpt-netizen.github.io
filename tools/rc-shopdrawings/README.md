@@ -166,7 +166,8 @@ consultant .dwg ──LibreDWG dwg2dxf──► drawing.dxf ──extract.py─�
 ## Project options (another project / consultant)
 `title_block.code.format` (drawing number pattern), `side_bars: false`, `neck_mode: "single"` (+ `neck_foot`,
 `neck_lap_d`), `column_sections` (sections typed when the schedule has no bar texts), footing `note`, and the BBS Excel
-(`bbs_xlsx.py BBS.xlsx out/*.bbs.json`, formulas, summary per diameter). See SKILL.md §6d.
+(`bbs_xlsx.py BBS.xlsx out/*.bbs.json`, one sheet per element, formulas, summary per diameter). Wall necks: `gen_w.py`;
+concrete dimensions without grids: `gen_cd2.py`. See SKILL.md §6d / §6e.
 
 ## Column necks (`gen_n.py`, sample Oct 2026)
 

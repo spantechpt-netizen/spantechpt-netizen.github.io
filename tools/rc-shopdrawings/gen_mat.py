@@ -19,7 +19,7 @@ from shapely.geometry import Polygon, LineString, Point
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, lapped_marks
 import gen_f
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 C = PRJ.get('footing_cover', 70)
 STOCK = 12000
 TOL = 50                                                   # rows within 50 mm of the same ends = one range
@@ -40,7 +40,7 @@ class BigTF:                                              # A0 at 1:200: the A3 
         return _B(doc, ox, oy, meta)
 
 
-def spacing(per_m): return math.floor(1000 / per_m / 5) * 5
+def spacing(per_m): return math.floor(1000 / per_m / 5 + 0.01) * 5   # 6.667 /m -> 150 (not 145)
 
 
 def pieces(L, lp):
@@ -122,6 +122,7 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
         m['dwg'] = f"{meta0['dwg']}-{len([1 for _ in range(idx - idx0)]) + 1:02d}"
         if big: m['size'] = 'A0'; m['scale'] = scale_txt
         sh = SH(doc, 0, -idx * (32000 if not big else 172000), m); idx += 1
+        meta0.setdefault('dwg_first', m.get('dwg_no', '')); meta0['dwg_no'] = meta0['dwg_first'] + ('' if idx - idx0 == 1 else f" ... {m.get('dwg_no', '').split('-')[-2]}")
         draw_legend(sh, WS * 0.5, HS * 0.94, G)
         sh.text(f"{f['name']}  h={h}  (NO={f['no']})  OUTLINE {len(poly)} CORNERS", WS * 0.048, HS * 0.94, ST['name'] * 0.8, 'S-AXIS-TXT')
         return sh
@@ -156,6 +157,27 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
             rg, step = ranges(pg, d, s, axis)
             sh = frame(f"{'BOTTOM' if layer == 'B' else 'TOP'} REINFORCEMENT - BARS ALONG {axis}")
             outline(sh)
+            # allowed lap zones by the supports (engineer, BLSC): bottom at midspan, top at the supports, +/- span / 5
+            sup = sorted((f.get('supports') or {}).get(axis, []))
+            zx = []
+            for i_ in range(len(sup) - 1):
+                sp = sup[i_ + 1] - sup[i_]
+                if layer == 'B': zx.append(((sup[i_] + sup[i_ + 1]) / 2 - sp / 5, (sup[i_] + sup[i_ + 1]) / 2 + sp / 5))
+            if layer == 'T':
+                for i_, s_ in enumerate(sup):
+                    spans = [sup[i_ + 1] - s_] if i_ + 1 < len(sup) else []
+                    spans += [s_ - sup[i_ - 1]] if i_ else []
+                    if spans: zx.append((s_ - min(spans) / 5, s_ + min(spans) / 5))
+            ext_ = (0, W) if axis == 'X' else (0, L)
+            run_ = L if axis == 'X' else W
+            zx = [(max(0, a_), min(run_, b_)) for a_, b_ in zx if min(run_, b_) > max(0, a_)]   # bands stay inside the mat
+            for a_, b_ in zx:                                  # hatched bands across the mat
+                r_ = [(a_, ext_[0]), (b_, ext_[0]), (b_, ext_[1]), (a_, ext_[1])] if axis == 'X' else [(ext_[0], a_), (ext_[1], a_), (ext_[1], b_), (ext_[0], b_)]
+                hz = sh.m.add_hatch(color=8, dxfattribs={'layer': 'S-DIM'}); hz.set_pattern_fill('ANSI37', scale=25)
+                hz.paths.add_polyline_path([sh.P(*P(*q)) for q in r_], is_closed=True)
+            if zx:
+                sh.text(('LAP ZONES (HATCHED): BOTTOM MESH AT MIDSPAN (+/- SPAN/5)' if layer == 'B' else 'LAP ZONES (HATCHED): TOP MESH AT THE SUPPORTS (+/- SPAN/5)')
+                        + f' - LAP {60 * d} (60d), ALTERNATE BARS STAGGERED >= 500', WS * 0.048, HS * 0.905, ST['note'] * G, 'S-DIM', maxw=WS * 0.5)
             lay = 'S-RFT-BOT' if layer == 'B' else 'S-RFT-TOP'
             lp = 60 * d
             items = []
@@ -163,7 +185,14 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
                 tm = (g['t0'] + g['t1']) / 2
                 for a, b in g['segs']:
                     straight = round(b - a); tot = straight + 2 * lg
-                    pats, marks = lapped_marks(bl, d, tot, lg, lg, g['n'], f['no'], tag, lp)
+                    zon = [(lg + max(a_, a) - a, lg + min(b_, b) - a) for a_, b_ in zx if min(b_, b) > max(a_, a)] if zx else None
+                    pats, marks = lapped_marks(bl, d, tot, lg, lg, g['n'], f['no'], tag, lp, zones=zon)
+                    if zx and tot > 12000 and len(pats) == 2 and not any(z0 <= (pats[0][0][1] - lp / 2) <= z1 for z0, z1 in zon):
+                        report.append(f"{f['name']} {layer}{axis}: laps could not be placed in the support zones - equal pieces used (CHECK)")
+                        if not getattr(sh, '_lapwarn', False):
+                            sh._lapwarn = True
+                            sh.text('(!) WITH 12 m BARS THE LAPS CANNOT ALL BE INSIDE THE ALLOWED ZONES (SUPPORTS TOO FAR APART): SHOWN AS EQUAL STAGGERED PIECES - RFI (NOT FOR CONSTRUCTION)',
+                                    WS * 0.048, HS * 0.875, ST['note'] * G, 'S-DIM', maxw=WS * 0.55).dxf.color = 1
                     mk = marks[0][0]
                     txt = ' + '.join(callout(c, d, m_, L_, s if not i else None, tag) + (' -STG' if len(marks) > 1 and not i else '')
                                      for i, (m_, c, L_) in enumerate(marks))
@@ -274,7 +303,7 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
     sh = frame('SIDE BARS, CHAIRS, SECTION')
     outline(sh, dims=False)
     ds = 12; lps = 60 * ds
-    free = h - 2 * C; rows = max(1, math.ceil(free / 300) - 1)
+    free = h - 2 * C; rows = int(PRJ['side_rows']) if PRJ.get('side_rows') else max(1, math.ceil(free / 300) - 1)
     dmain = max(f['bot'][1], f['bot'][3], f['top'][1] if f['top'][0] else 0, f['top'][3] if f['top'][0] else 0)
     ring = pg.buffer(-(C + dmain + ds / 2), join_style=2)
     per = ring.exterior.length
@@ -288,12 +317,14 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
     sh.pline([P(*q) for q in list(ring.exterior.coords)], 'S-RFT-STIR', 20, True)
     chairs = max(4, math.ceil(pg.area / 1e6))
     ch_h = int(h - 2 * C - f['bot'][1] - f['bot'][3] - (f['top'][1] + f['top'][3] if f['top'][0] else 0))
+    if PRJ.get('chair_under_bottom'):             # T16 chair foot under the bottom mesh (engineer, BLSC)
+        ch_h = int(h - 2 * C - (f['top'][1] + f['top'][3] if f['top'][0] else 0) + 16)
     chL = int(math.ceil((2 * 300 + 2 * ch_h + 400) / 10) * 10)
     lines = [(mksb, callout(rows * len(segs_pieces), ds, mksb, Lsb, None, 'SB') +
               (f'  ({rows} ROWS, {len(segs_pieces)} PCS PER ROW, LAP {lps} AWAY FROM THE CORNERS)' if len(segs_pieces) > 1 else f'  ({rows} ROWS, CLOSED LOOP, LAP {lps})'))]
     if f['top'][0]:
         mkch = bl.add(16, ('CH', 300, ch_h, 400), chL, chairs, f['no'], 'CH')
-        lines.append((mkch, callout(chairs, 16, mkch, chL, 1000, 'CH') + '  (1 PER m2 - ON THE BOTTOM MESH, CARRY THE TOP MESH)'))
+        lines.append((mkch, callout(chairs, 16, mkch, chL, 1000, 'CH') + ('  (1 PER m2 - FOOT UNDER THE BOTTOM MESH, CARRY THE TOP MESH)' if PRJ.get('chair_under_bottom') else '  (1 PER m2 - ON THE BOTTOM MESH, CARRY THE TOP MESH)')))
     lx = P(L, 0)[0] + 900
     for i, (mk, txt) in enumerate(lines):
         sh.ctext(mk, txt, lx, min(25600, P(0, W)[1]) - i * 650, ST['call'] * 0.75, maxw=WS * 0.95 - lx - 6800 * G)
@@ -325,9 +356,9 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
 if __name__ == '__main__':
     lib = json.load(open('mats.json'))
     names = sys.argv[1:] or [n for n, f in lib.items() if not f.get('rect', True)]
-    doc = new_doc(); bl = BarList(); idx = 0; rep = []
+    doc = new_doc(); bl = BarList(); idx = 0; rep = []; dwgmap = {}
     for n in names:
-        f = lib[n]
+        f = lib[n]; bl.cur = n
         meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                     rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='AS SHOWN', prefix='SDW-STR-FDN')
         meta.update(PRJ.get('meta', {}))
@@ -335,8 +366,13 @@ if __name__ == '__main__':
         meta['title'] = f"STRUCTURAL {'RAFT' if n.startswith('RAFT') else 'COMBINED FOOTING'}\nREINFORCEMENT - {n}"
         meta['dwg'] = f"SDW-STR-FDN-{n}"
         idx += draw_mat(doc, idx, f, meta, bl, rep)
+        dwgmap[n] = meta.get('dwg_no', '')
     meta['title'] = 'STRUCTURAL RAFTS - REAL OUTLINE'
-    nb = draw_bbs(doc, idx, bl.sorted(), meta)
-    doc.saveas('out/MATS_POLY.dxf')
+    if PRJ.get('bbs_per_element'):
+        from gen import draw_bbs_grouped
+        nb = draw_bbs_grouped(doc, idx, bl.sorted(), meta, [(f"{n}  (NO={lib[n]['no']})", n, lib[n]['no']) for n in names])
+    else:
+        nb = draw_bbs(doc, idx, bl.sorted(), meta)
+    doc.saveas('out/MATS_POLY.dxf'); bl.export('out/MATS_POLY.bbs.json', dwgmap, {n: lib[n]['no'] for n in names})
     print('sheets', idx, '+ BBS', nb)
     print('\n'.join(rep))

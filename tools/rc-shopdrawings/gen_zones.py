@@ -10,7 +10,7 @@ from shapely.geometry import Polygon, Point
 import gen_f, gen_mat, gen_cd
 from gen import new_doc, seq_zone, seq_save, BarList, draw_bbs, project_notes, Sheet, TA, ST
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 SRC = PRJ['fnd_final']; DX, DY = SRC['shift']
 Z = json.load(open(SRC.get('zones', 'zones.json')))
 REST = Z.pop('_rest', None)

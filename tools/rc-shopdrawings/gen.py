@@ -382,7 +382,7 @@ def _tb_frame(self):
             yy = (py - y0) * k - (i - (len(lines) - 1) / 2) * h * k * 1.6
             t = self.text(ln.strip(), (px - x0) * k, yy, h * k, 'S-TITLE', align=TA.MIDDLE_CENTER)
             t.dxf.style = TB.get('style', 'ROMANS')
-            est = len(ln.strip()) * h * k * 0.72                 # squeeze into the cell (wide fonts too)
+            est = len(ln.strip()) * h * k * 0.85                 # squeeze into the cell (wide fonts too)
             if est > w * k: t.dxf.width = round(w * k / est, 2)
 
 
@@ -618,7 +618,10 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
         rs = []
         for r in rows:
             q = r.get('use', {}).get(str(key), 0)
-            if q:
+            if q and r.get('split', {}).get(str(key)):                # exact counts per group of elements (neck ties per footing depth)
+                for n_c, ncol, lab in r['split'][str(key)]:
+                    rs.append(dict(r, n_in=n_c, n_el=ncol, q=n_c * ncol, sub=lab))
+            elif q:
                 ne = r.get('use_n', {}).get(str(key)) or nel             # elements that carry this mark (necks: per footing mesh)
                 rs.append(dict(r, n_in=round(q / max(1, ne)), n_el=ne, q=q))
         if rs: tables.append((title, rs))
@@ -681,7 +684,9 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
                 cx = x0
                 for i, (name, w) in enumerate(cols):
                     if i == 0: sh.mark(cx + w / 2, y + rh / 2, r['mark'], 240, 'S-TITLE')
-                    elif i == 6: _symbol(sh, cx, y, w, rh, r['shape'], r['d'])
+                    elif i == 6:
+                        _symbol(sh, cx, y, w, rh, r['shape'], r['d'])
+                        if r.get('sub'): sh.text(r['sub'], cx + w - 80, y + rh - 80, 130, 'S-TITLE', align=TA.TOP_RIGHT)
                     else: sh.text(vals[i], cx + w / 2, y + rh / 2, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
                     cx += w
             sh.text(f"TOTAL STEEL WEIGHT ({title}) = {tot:,.2f} kg  ({tot / 1000:.3f} t)", x0 + W, bot - 450, 240, 'S-TITLE', align=TA.MIDDLE_RIGHT)
@@ -690,6 +695,40 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
 
 
 # ---------------------------------------------------------------- bars longer than a stock bar (engineer, Oct 2026)
+def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500):
+    """Laps only inside the allowed zones (developed coordinates along the bar): engineer (BLSC) - bottom mesh at
+    midspan, top mesh at the supports, within 1/5 of the span; pattern B shifted by lp + gap from pattern A (adjacent
+    laps >= gap apart, never one section). Greedy: each cut as far as the stock allows, inside a zone.
+    -> [A, B] like lap_patterns, or None when the zones cannot carry the laps (fall back + report)."""
+    if T <= stock: return [[(0, T)]]
+    up = lambda v: math.ceil(v / 10) * 10
+    zs = sorted((max(lp, a), min(T - lp, b)) for a, b in zones if min(T - lp, b) > max(lp, a))
+    def cuts_from(shift):
+        cuts, start = [], 0
+        while T - start > stock:
+            lim = start + stock - lp / 2 - 10                   # farthest lap centre for this piece
+            best = None
+            for a, b in zs:
+                for c in (min(b, lim) - (shift if shift > 0 else 0), max(a, start + lp) - shift if shift < 0 else None):
+                    if c is None: continue
+                    if a <= c <= b and start + lp < c <= lim and (best is None or c > best): best = c
+            if best is None: return None
+            cuts.append(best); start = best - lp / 2
+        return cuts
+    def ivs(cuts):
+        b_ = [0] + cuts + [T]
+        return [(max(0, b_[i] - (lp / 2 if i else 0)), min(T, b_[i + 1] + (lp / 2 if i + 1 < len(b_) - 1 else 0))) for i in range(len(b_) - 1)]
+    cA = cuts_from(0)
+    if cA is None: return None
+    cB = [c - (lp + gap) for c in cA]                           # B: the lap moved back by lp + gap, still in its zone
+    if not all(any(a <= c <= b for a, b in zs) for c in cB): cB = [c + (lp + gap) for c in cA]
+    if not all(any(a <= c <= b for a, b in zs) for c in cB): return None
+    A, B = ivs(cA), ivs(cB)
+    if not all(0 < t1 - t0 <= stock for t0, t1 in A + B): return None
+    fix = lambda P_: [(t0, t0 + up(t1 - t0)) if t1 < T else (T - up(T - t0), T) for t0, t1 in P_]
+    return [fix(A), fix(B)]
+
+
 def lap_patterns(T, lp, stock=12000):
     """A bar of developed length T (legs included) longer than the stock: pieces lapped lp, in TWO patterns used on
     alternate bars so that the laps of neighbouring bars are STAGGERED (lap centres >= 1.3 lp apart) - never all the
@@ -722,11 +761,12 @@ def piece_shape(t0, t1, T, leg_a, leg_b):
     return ('S', L), L
 
 
-def lapped_marks(bl, d, T, leg_a, leg_b, n, n_el, tag, lp=None, stock=12000):
+def lapped_marks(bl, d, T, leg_a, leg_b, n, n_el, tag, lp=None, stock=12000, zones=None):
     """BarList marks of n bars of developed length T: one pattern = one mark set; pattern A on half the bars,
-    B on the other half. -> (patterns, [(mark, count, L)])"""
+    B on the other half. zones: allowed lap-centre intervals (developed coordinates) -> laps by the supports.
+    -> (patterns, [(mark, count, L)])"""
     lp = lp or 60 * d
-    pats = lap_patterns(T, lp, stock)
+    pats = (lap_patterns_zoned(T, lp, zones, stock) if zones else None) or lap_patterns(T, lp, stock)
     counts = [math.ceil(n / len(pats)), n - math.ceil(n / len(pats))] if len(pats) == 2 else [n]
     tot = {}
     for pat, c in zip(pats, counts):

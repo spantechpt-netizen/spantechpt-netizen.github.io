@@ -87,7 +87,7 @@ def setup(meta, title, src_lines, ext):
         ds = doc.dimstyles.new('GB200')
         ds.dxf.dimtxt = 2.0; ds.dxf.dimscale = 200; ds.dxf.dimasz = 1.5; ds.dxf.dimexo = 1.0; ds.dxf.dimexe = 1.0
         ds.dxf.dimgap = 0.6; ds.dxf.dimtad = 1; ds.dxf.dimdec = 0; ds.dxf.dimtih = 0; ds.dxf.dimtoh = 0; ds.dxf.dimblk = 'ARCHTICK'
-    for n, c in (('S-CD-RC', 7), ('S-CD-PC', 8), ('S-CD-COL', 1), ('S-CD-TXT', 3), ('S-CD-SRC', 8)):
+    for n, c in (('S-CD-RC', 7), ('S-CD-PC', 8), ('S-CD-COL', 1), ('S-CD-TXT', 3), ('S-CD-SRC', 8), ('S-CD-RED', 1), ('S-CD-CLOSE', 6)):
         if n not in doc.layers: doc.layers.add(n, color=c)
     m = dict(meta); m['title'] = title; m['scale'] = '1:200'; m['size'] = 'A0'
     sh = BigSheet(doc, 0, 0, m)
@@ -100,30 +100,66 @@ def setup(meta, title, src_lines, ext):
     return doc, sh, Q
 
 
+def fit_text(sh, s, x, y, h_max, width, layer, rot=0, align=None, h_min=60):
+    """text that stays inside the element: height so the string fits the width (engineer: names inside the footing)."""
+    h = max(h_min, min(h_max, width * 0.86 / max(1, len(s) * 0.62)))
+    return sh.text(s, x, y, h, layer, align=align or TA.MIDDLE_CENTER, rot=rot), h
+
+
+def red_mark(sh, Q, p, note, r=900):
+    sh.m.add_circle(sh.P(*Q(*p)), r, dxfattribs={'layer': 'S-CD-RED'})
+    sh.text(note, *Q(p[0] + r + 150, p[1]), 350, 'S-CD-RED', align=TA.MIDDLE_LEFT, maxw=30000)
+
+
 def foundations(E, src, flayers, win, meta):
     lines = source_lines(src, set(flayers.split(',')), win)
     xs = [x for p in lines for x, _ in p]; ys = [y for p in lines for _, y in p]
     ext = (min(xs) - 3000, min(ys) - 3000, max(xs) + 3000, max(ys) + 3000)
     doc, sh, Q = setup(meta, 'FOUNDATION CONC DIM\nALL FOOTINGS - ONE PLAN', lines, ext)
+    for p in E.get('closures', []):                      # lines added to close the consultant's open outlines
+        sh.m.add_lwpolyline([sh.P(*Q(*q)) for q in p], dxfattribs={'layer': 'S-CD-CLOSE', 'const_width': 40})
     els = [(i, Polygon(f['poly']).buffer(0)) for i, f in enumerate(E['footings']) if f['poly']]
     n_dim = 0; done = set()
     for i, g in els:
         f = E['footings'][i]
-        sh.m.add_lwpolyline([sh.P(*Q(*q)) for q in g.exterior.coords], dxfattribs={'layer': 'S-CD-RC', 'const_width': 40})
+        lay = 'S-CD-RED' if f.get('red') else 'S-CD-RC'
+        sh.m.add_lwpolyline([sh.P(*Q(*q)) for q in g.exterior.coords], dxfattribs={'layer': lay, 'const_width': 40})
         pc = g.buffer(100, join_style=2)
         pl = sh.m.add_lwpolyline([sh.P(*Q(*q)) for q in pc.exterior.coords], dxfattribs={'layer': 'S-CD-PC', 'linetype': 'DASHED'}); pl.dxf.ltscale = 200
         u, v, L, W = axes_of(g)
-        c = (g.centroid.x, g.centroid.y)
+        c = (g.centroid.x, g.centroid.y) if g.contains(g.centroid) else (g.representative_point().x, g.representative_point().y)
         ang = math.degrees(math.atan2(u[1], u[0]))
         if ang > 90: ang -= 180
         if ang <= -90: ang += 180
-        txt = f"{f['name']}" + ("" if f['kind'] == 'F' else '')
         import re as _re
         lw = [int(x) * 10 for x in _re.findall(r'\d+', f['name'])][:2]
-        size = (f"{lw[0]}x{lw[1]} h{f['h']}" if f['kind'] == 'F' and len(lw) == 2 else f"h{f['h']}  ({round(L, -1):.0f}x{round(W, -1):.0f} MAX)")
-        sh.text(txt, *Q(c[0], c[1] + 160), 300, 'S-CD-TXT', align=TA.BOTTOM_CENTER, rot=ang if W < 1800 else 0)
-        sh.text(size, *Q(c[0], c[1] - 60), 200, 'S-CD-TXT', align=TA.TOP_CENTER, rot=ang if W < 1800 else 0)
-        # clear distance to the next footing along +u and +v (each pair once: the neighbour does - u / - v)
+        size = (f"{lw[0]}x{lw[1]} h{f['h']}" if f['kind'] == 'F' and len(lw) == 2 else f"h{f['h']}")
+        # name + size INSIDE the footing (engineer, 25-10-2026), along its long side
+        up = (-math.sin(math.radians(ang)), math.cos(math.radians(ang)))          # the text's own "up" (after the flip)
+        _, hn = fit_text(sh, f['name'], *Q(c[0] + up[0] * 60, c[1] + up[1] * 60), 300, L - 200, lay if f.get('red') else 'S-CD-TXT', rot=ang, align=TA.BOTTOM_CENTER)
+        fit_text(sh, size, *Q(c[0] - up[0] * 60, c[1] - up[1] * 60), min(200, hn * 0.75), L - 200, 'S-CD-TXT', rot=ang, align=TA.TOP_CENTER)
+        if f.get('red') and f.get('note'): red_mark(sh, Q, c, f['note'], r=0)
+        # the footing's own dimensions: L along its long side, W along its short side (outside the PC line)
+        rr = list(g.minimum_rotated_rectangle.exterior.coords)[:4]
+        ed = sorted([(rr[k], rr[(k + 1) % 4]) for k in range(4)], key=lambda e_: -math.dist(*e_))
+        for (a_, b_) in (ed[0], ed[2] if math.dist(*ed[2]) < math.dist(*ed[0]) - 1 else ed[1]):
+            dl = math.dist(a_, b_)
+            if dl < 300: continue
+            da = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
+            if da > 90.01: da -= 180
+            if da <= -89.99: da += 180
+            mx, my = (a_[0] + b_[0]) / 2 - c[0], (a_[1] + b_[1]) / 2 - c[1]; hm = math.hypot(mx, my) or 1
+            base = (a_[0] + mx / hm * 350, a_[1] + my / hm * 350)
+            sh.dim(Q(*a_), Q(*b_), Q(*base), angle=da, text=MM(dl)); n_dim += 1
+            if f['kind'] == 'F': break                                   # isolated: one side here, the other below
+        if f['kind'] == 'F':
+            a_, b_ = ed[2] if abs(math.dist(*ed[2]) - math.dist(*ed[0])) > 1 else ed[1]
+            dl = math.dist(a_, b_); da = math.degrees(math.atan2(b_[1] - a_[1], b_[0] - a_[0]))
+            if da > 90.01: da -= 180
+            if da <= -89.99: da += 180
+            mx, my = (a_[0] + b_[0]) / 2 - c[0], (a_[1] + b_[1]) / 2 - c[1]; hm = math.hypot(mx, my) or 1
+            sh.dim(Q(*a_), Q(*b_), Q(a_[0] + mx / hm * 350, a_[1] + my / hm * 350), angle=da, text=MM(dl)); n_dim += 1
+        # clear distance to the next footing along its own axes (each pair once)
         for d in (u, v, (-u[0], -u[1]), (-v[0], -v[1])):
             e0 = exit_point(g, c, d)
             if e0 is None: continue
@@ -131,22 +167,23 @@ def foundations(E, src, flayers, win, meta):
             if not hit: continue
             j = next(k for k, gg in els if gg.distance(Point(hit[1])) < 1)
             key = (min(i, j), max(i, j))
-            if key in done: continue                                  # each pair once
+            if key in done: continue
             done.add(key)
             gap = hit[0]
             if gap < 50: continue
             da = math.degrees(math.atan2(d[1], d[0]))
             if da > 90.01: da -= 180
-            if da <= -89.99: da += 180                                 # dimension text always readable
-            r = sh.dim(Q(*e0), Q(*hit[1]), Q(*e0), angle=da, text=MM(gap))
+            if da <= -89.99: da += 180
+            sh.dim(Q(*e0), Q(*hit[1]), Q(*e0), angle=da, text=MM(gap))
             n_dim += 1
     for f in E['footings']:
         if not f['poly']:
-            sh.text(f['name'] + ' (!)', *Q(*f['lab']), 260, 'S-CD-TXT', align=TA.MIDDLE_CENTER)
+            red_mark(sh, Q, f['lab'], f"{f['name']}: {f.get('note', 'NO OUTLINE')}")
     sh.text('FOUNDATION CONC DIM - ALL FOOTINGS  1:200', 2300, 3000, 500, 'S-CD-TXT')
-    sh.text('RC FOOTING (THICK) / PC = RC + 100 EACH SIDE (DASHED) / CONSULTANT LINE WORK (GREY). NAMES AS THE REINFORCEMENT SHEETS AND THE BBS. '
-            'DIMENSIONS = CLEAR DISTANCE BETWEEN RC FACES ALONG EACH FOOTING\'S OWN AXES (MM). (!) = NO CLOSED OUTLINE ON THE CONSULTANT PLAN - SEE RFI. '
-            'NO GRID LINES IN THE CONSULTANT DWG: POSITIONS FROM THE GRIDS PENDING RFI.', 2300, 1900, 260, 'S-CD-TXT', maxw=200000)
+    sh.text('RC FOOTING (THICK) WITH ITS L x W DIMENSIONS / PC = RC + 100 EACH SIDE (DASHED) / CONSULTANT LINE WORK (GREY) / LINES ADDED BY SPAN TECH TO CLOSE '
+            'AN OPEN CONSULTANT OUTLINE (MAGENTA) / RED = OUTLINE NOT DEFINED OR IN CONFLICT - SEE THE NOTE AND THE RFI, NOT FOR CONSTRUCTION. '
+            'NAMES AS THE REINFORCEMENT SHEETS AND THE BBS. DIMENSIONS BETWEEN FOOTINGS = CLEAR DISTANCE BETWEEN RC FACES ALONG EACH FOOTING\'S OWN AXES (MM). '
+            'NO GRID LINES IN THE CONSULTANT DWG (RFI-20).', 2300, 1900, 260, 'S-CD-TXT', maxw=200000)
     doc.saveas('out/CONC_DIM_FOUNDATIONS.dxf')
     return n_dim, meta
 
@@ -156,7 +193,7 @@ def columns(E, src, clayers, win, meta):
     xs = [x for p in lines for x, _ in p]; ys = [y for p in lines for _, y in p]
     ext = (min(xs) - 3000, min(ys) - 3000, max(xs) + 3000, max(ys) + 3000)
     doc, sh, Q = setup(meta, 'COLUMN CONC DIM\nALL COLUMNS - ONE PLAN', lines, ext)
-    cs = [(i, Polygon(c['poly']).buffer(0)) for i, c in enumerate(E['columns'])]
+    cs = [(i, Polygon(c['poly']).buffer(0)) for i, c in enumerate(E['columns']) if c['poly']]
     n_dim = 0; done = set()
     for i, g in cs:
         c = E['columns'][i]
@@ -168,27 +205,30 @@ def columns(E, src, clayers, win, meta):
         ang = math.degrees(math.atan2(u[1], u[0]))
         if ang > 90: ang -= 180
         if ang <= -90: ang += 180
-        sh.text(f"{c['name']}", *Q(cc[0] - v[0] * (W / 2 + 120), cc[1] - v[1] * (W / 2 + 120)), 300, 'S-CD-TXT', align=TA.TOP_CENTER, rot=ang)
-        # C/C to the next column along each own axis (lateral offset <= 600, within 12 m)
-        for d in (u, v):
-            best = None
-            for j, gg in cs:
-                if j == i: continue
-                q = (gg.centroid.x - cc[0], gg.centroid.y - cc[1])
-                t = q[0] * d[0] + q[1] * d[1]; off = abs(q[0] * -d[1] + q[1] * d[0])
-                if 300 < t < 12000 and off < 600 and (best is None or t < best[0]): best = (t, (gg.centroid.x, gg.centroid.y), j)
-            if best and (min(i, best[2]), max(i, best[2])) in done: best = None    # each pair once
-            if best:
-                done.add((min(i, best[2]), max(i, best[2])))
-                da = math.degrees(math.atan2(d[1], d[0]))
-                if da > 90.01: da -= 180
-                if da <= -89.99: da += 180
-                p1 = (cc[0] + d[0] * best[0], cc[1] + d[1] * best[0])
-                sh.dim(Q(*cc), Q(*p1), Q(cc[0] - d[1] * 700, cc[1] + d[0] * 700), angle=da, text=MM(best[0]))
-                n_dim += 1
+        sz = f"D{round(L, -1):.0f}" if c.get('round') else f"{round(W, -1):.0f}x{round(L, -1):.0f}"
+        up = (-math.sin(math.radians(ang)), math.cos(math.radians(ang)))
+        sh.text(f"{c['name']}  {sz}", *Q(cc[0] - up[0] * (W / 2 + 120), cc[1] - up[1] * (W / 2 + 120)), 220, 'S-CD-TXT', align=TA.TOP_CENTER, rot=ang)
+        if c.get('note'): sh.text(c['note'], *Q(cc[0] + up[0] * (W / 2 + 120), cc[1] + up[1] * (W / 2 + 120)), 150, 'S-CD-RED', align=TA.BOTTOM_CENTER, rot=ang)
+        # CLEAR distance face to face to the next column along each own axis (engineer, 25-10-2026), close to the columns
+        for d in (u, v, (-u[0], -u[1]), (-v[0], -v[1])):
+            e0 = exit_point(g, cc, d)
+            if e0 is None: continue
+            hit = ray_hit(e0, d, cs, i, 12000)
+            if not hit: continue
+            j = next(k for k, gg in cs if gg.distance(Point(hit[1])) < 1)
+            if (min(i, j), max(i, j)) in done: continue
+            done.add((min(i, j), max(i, j)))
+            da = math.degrees(math.atan2(d[1], d[0]))
+            if da > 90.01: da -= 180
+            if da <= -89.99: da += 180
+            sh.dim(Q(*e0), Q(*hit[1]), Q(*e0), angle=da, text=MM(hit[0]))
+            n_dim += 1
+    for c in E['columns']:
+        if not c['poly']: red_mark(sh, Q, c['lab'], f"{c['name']}: {c.get('note', '')}", r=700)
     sh.text('COLUMN CONC DIM - ALL COLUMNS  1:200', 2300, 3000, 500, 'S-CD-TXT')
-    sh.text('COLUMNS HATCHED WITH THE SCHEDULE NAME; DIMENSIONS = C/C DISTANCE TO THE NEXT COLUMN ALONG ITS OWN AXES (MM). SIZES PER THE COLUMN SCHEDULE. '
-            'NO GRID LINES IN THE CONSULTANT DWG: POSITIONS FROM THE GRIDS PENDING RFI. "?" = NO SCHEDULE TYPE - SEE RFI.', 2300, 1900, 260, 'S-CD-TXT', maxw=200000)
+    sh.text('COLUMNS HATCHED WITH THE SCHEDULE NAME AND SIZE; DIMENSIONS = CLEAR DISTANCE FACE TO FACE TO THE NEXT COLUMN ALONG ITS OWN AXES (MM). '
+            'ROUND COLUMNS WITH THE SCHEDULE DIAMETER (THEATRE COLUMN D800 - DRAWN D400 ON THE CONSULTANT PLAN). RED = OUTLINE NOT DEFINED - SEE RFI-12. '
+            'NO GRID LINES IN THE CONSULTANT DWG (RFI-20).', 2300, 1900, 260, 'S-CD-TXT', maxw=200000)
     doc.saveas('out/CONC_DIM_COLUMNS.dxf')
     return n_dim
 

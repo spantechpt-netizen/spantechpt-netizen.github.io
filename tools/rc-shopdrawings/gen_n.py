@@ -7,7 +7,7 @@ import ezdxf
 from ezdxf import recover
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, lap, hooked_tie, opened_tie, fillet, tie_bar_centres, ST, mm, project_notes
 
-PRJ = json.load(open('project.json'))
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
 LEV = PRJ['levels']
 ZONE = None                       # set per zone by gen_zone_necks (zone levels: project.json levels.zones)
 COLC = 40                          # column cover (schedule note 4)
@@ -226,10 +226,17 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             dm = max(fm['bot'][1], fm['bot'][3]); g = grp.setdefault(dm, [0, []]); g[0] += nm; g[1].append(f"{fm['name']} ({nm})")
         for dm in sorted(grp):
             vv = round((tgb - (footing_levels(f['h'], ZL)[1])) * 1000) - (FC + dm * 2)      # T.O.PC -> T.O.GB - cover - mesh
-            L_ = int(round(foot + vv + lp))
-            model.append(dict(dm=dm, v=vv, L=L_, mk=bl.add(d, ('L', foot, vv + lp, 0), L_, col['n'], grp[dm][0], 'V'), no=grp[dm][0], fts=grp[dm][1]))
+            model.append(dict(dm=dm, v=vv, L=int(round(foot + vv + lp)), no=grp[dm][0], fts=grp[dm][1]))
+        if PRJ.get('neck_unify_length'):        # engineer (BLSC): ONE cutting length per column type = the longest; the
+            Lu = max(m_['L'] for m_ in model)    # extra length goes into the lap above T.O.GB (lap >= 65d everywhere)
+            mk_u = bl.add(d, ('L', foot, Lu - foot, 0), Lu, col['n'], sum(m_['no'] for m_ in model), 'V')
+            for m_ in model: m_['lap'] = Lu - foot - m_['v']; m_['L'] = Lu; m_['mk'] = mk_u
+        else:
+            for m_ in model:
+                m_['lap'] = lp; m_['mk'] = bl.add(d, ('L', foot, m_['v'] + lp, 0), m_['L'], col['n'], m_['no'], 'V')
         rep_ = next(m for m in model if m['dm'] == max(f['bot'][1], f['bot'][3]))
         mv, Lv = rep_['mk'], rep_['L']; no = sum(nm for _, nm in members)
+        if PRJ.get('neck_unify_length'): vert = Lv - foot
     else:
         mv = bl.add(d, ('L', foot, vert, 0), Lv, col['n'], no, 'V')
     Ln = int(round((Hn + lp) / 10) * 10)
@@ -282,13 +289,16 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
         mnx = min(p[0] for p in t['poly']); mny = min(p[1] for p in t['poly'])
         t['norm'] = [(round(p[0] - mnx), round(p[1] - mny)) for p in t['poly']]
         if model:                                                 # ties over the real columns: neck and footing parts per footing
-            tot_ = 0
+            tot_ = 0; per = {}
             for fm, nm in members:
                 _, _, tof_m = footing_levels(fm['h'], ZL); Hm = max(0, round((tgb - tof_m) * 1000))
                 em = fm['h'] - (FC + max(fm['bot'][1], fm['bot'][3]) * 2)
-                tot_ += (max(0, math.floor((Hm - 100) / s) + 1) + max(2, math.floor((em - 100) / s) + 1)) * nm
-            t['tot'] = tot_
-            t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], tot_ * t['k'], 1, '')
+                n_c = (max(0, math.floor((Hm - 100) / s) + 1) + max(2, math.floor((em - 100) / s) + 1)) * t['k']   # per column
+                tot_ += n_c * nm; g_ = per.setdefault(n_c, [0, set()]); g_[0] += nm; g_[1].add(fm['h'])
+            t['tot'] = tot_ // t['k']; t['per'] = per
+            t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], tot_, 1, '')
+            row_ = next(r_ for r_ in bl.rows.values() if r_['mark'] == t['mk'])     # exact rows per footing depth in the BBS
+            row_.setdefault('split', {})[str(bl.cur)] = [(n_c, g_[0], 'FTG h' + '/'.join(str(h_) for h_ in sorted(g_[1]))) for n_c, g_ in sorted(per.items())]
         else:
             t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], (n_neck + n_ftg) * t['k'], no, '')
 
@@ -381,7 +391,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     XD = min(cw / 2 + 2500, (20800 - ex) / k)                       # dimension line clear of the call-outs, of section A-A and the tie sketches
     if not starter:
         sh.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 400, f['h']), angle=90, text='VAR' if model else f'{Hn}')
-    sh.dim(Q(XD, top), Q(XD, top + lp), Q(XD + 400, top), angle=90, text=f'LAP {lp}')
+    sh.dim(Q(XD, top), Q(XD, top + lp), Q(XD + 400, top), angle=90, text=f'LAP {lp}' + (' MIN' if model and PRJ.get('neck_unify_length') else ''))
     if not (starter or single):
         sh.dim(Q(XD - 900, f['h']), Q(XD - 900, f['h'] + lp), Q(XD - 500, f['h']), angle=90, text=f'LAP {lp}')
     if single:                                                       # vertical part of the bar: foot -> T.O.GB
@@ -402,7 +412,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     elif single:
         sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V') + '  NECK BARS', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
         sh.text(f"(FOOT {foot} ON THE BOTTOM MESH, UP TO T.O.GB + LAP {lp} = {LAPN}d)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
-        if model: sh.text('LENGTH BY THE FOOTING MESH: SEE THE TABLE ABOVE', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 700, ST['note'])
+        if model: sh.text('LAP ABOVE T.O.GB BY THE FOOTING MESH: SEE THE TABLE ABOVE' if PRJ.get('neck_unify_length') else 'LENGTH BY THE FOOTING MESH: SEE THE TABLE ABOVE', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 700, ST['note'])
     else:
         sh.ctext(mn, callout(col['n'], d, mn, Ln, layer='V') + '  NECK BARS', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
         sh.text(f"(T.O.F TO T.O.GB + LAP {lp})", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
@@ -450,10 +460,11 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             f"TOTAL {sum(t.get('tot', 0) for t in ties[:1])} SETS FOR {no} COLUMNS (NECK + FOOTING DEPTH)", Q(cw / 2 + 200, 0)[0], yt_ - 260, ST['note'], maxw=(XD - cw / 2 - 350) * k)
     if model:                                                   # neck bar length by the footing's bottom mesh
         tx0, ty0 = 7800, 24600 - min(9, len(lines_)) * 300 - 900
-        sh.text('NECK BAR LENGTH BY FOOTING BOTTOM MESH (T.O.PC TO T.O.GB = %d)' % round((tgb - footing_levels(f['h'], ZL)[1]) * 1000), tx0, ty0, ST['note'], 'S-SEC', maxw=13500)
+        sh.text(('ONE CUTTING LENGTH FOR THE TYPE (THE LONGEST); EXTRA LENGTH = LONGER LAP ABOVE T.O.GB' if PRJ.get('neck_unify_length') else 'NECK BAR LENGTH BY FOOTING BOTTOM MESH')
+                + ' (T.O.PC TO T.O.GB = %d)' % round((tgb - footing_levels(f['h'], ZL)[1]) * 1000), tx0, ty0, ST['note'], 'S-SEC', maxw=13500)
         for j, m_ in enumerate(model):
             yy = ty0 - 500 - j * 450
-            sh.ctext(m_['mk'], f"{col['n'] * m_['no']} T {d}-{m_['L']}  MESH T{m_['dm']}: FOOT {foot} + {m_['v']} + LAP {lp}   ({m_['no']} COL.)", tx0, yy, ST['note'] * 1.2, maxw=12000)
+            sh.ctext(m_['mk'], f"{col['n'] * m_['no']} T {d}-{m_['L']}  MESH T{m_['dm']}: FOOT {foot} + {m_['v']} (TO T.O.GB) + LAP {m_['lap']}" + (f" (= {lp} + {m_['lap'] - lp})" if m_['lap'] > lp else '') + f"   ({m_['no']} COL.)", tx0, yy, ST['note'] * 1.2, maxw=13500)
     sh.text(col.get('elev_title') or ('ELEVATION  (STARTER BARS - THE COLUMN TIES CONTINUE ABOVE THE SLAB)' if starter else 'ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)'), Q(0, 0)[0], Q(0, -100)[1] - 700, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
 
     # ---------- SECTION A-A 1:10 (k=10) ----------

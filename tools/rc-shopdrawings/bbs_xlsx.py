@@ -49,6 +49,10 @@ def main(out, files):
         for r in d['rows']:
             for el, q in r.get('use', {}).items():
                 e = elems.setdefault(el, dict(dwg=d['dwg'].get(el, ''), n=d.get('counts', {}).get(el, 1), rows=[], src=fn))
+                if r.get('split', {}).get(el):                # exact counts per group (neck ties per footing depth)
+                    for n_c, ncol, lab in r['split'][el]:
+                        e['rows'].append(dict(mark=r['mark'], d=r['d'], shape=r['shape'], L=r['L'], q=n_c * ncol, ne=ncol, layer=lab))
+                    continue
                 ne = r.get('use_n', {}).get(el) or e['n']
                 e['rows'].append(dict(mark=r['mark'], d=r['d'], shape=r['shape'], L=r['L'], q=q, ne=ne, layer=r.get('layer', '')))
     hdr = Font(bold=True, color='FFFFFF'); fill = PatternFill('solid', fgColor='1D3557'); thin = Side(style='thin', color='999999')

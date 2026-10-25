@@ -20,11 +20,11 @@ from shapely.geometry import box, Point, LineString
 import gen_cd, strip_net
 from gen import new_doc, Sheet, TA, ST, BarList, callout, draw_bbs, draw_legend, project_notes, lapped_marks
 
-PRJ = json.load(open('project.json')); SP = PRJ.get('strip', {})
+PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json'))); SP = PRJ.get('strip', {})
 C = PRJ.get('footing_cover', 70)
 B, H, d, ds, n_m = SP.get('B', 1550), SP.get('h', 600), SP.get('d', 14), SP.get('ds', 12), SP.get('n_m', 7)
 NAME = SP.get('name', 'ST-01')
-S = math.floor(1000 / n_m / 5) * 5
+S = math.floor(1000 / n_m / 5 + 0.01) * 5
 LP, LPS, LMAX = 60 * d, 60 * ds, 12000
 LG = H - 2 * C                                             # leg of the U / of a bent end
 NL = math.ceil((B - 2 * C) / S) + 1                        # longitudinal bars per layer
