@@ -3,7 +3,8 @@
    distribution line with the dot where the drawn bar crosses it, overall sizes in mm, thickness in a circle.
 Panels: BOTTOM REINFORCEMENT PLAN @ X&Y, TOP REINFORCEMENT PLAN @ X&Y (when the schedule has top bars),
 FOUNDATION SIDE REINFORCEMENT, and a section through the footing."""
-import json, math, pickle, sys
+import json
+import gen, math, pickle, sys
 from gen import new_doc, Sheet, TA, callout, BarList, draw_legend, draw_bbs, ST, mm, project_notes, lap_patterns, lapped_marks
 
 PRJ = json.load(open(__import__('os').environ.get('RC_PROJECT', 'project.json')))
@@ -179,11 +180,11 @@ def draw_sheet(doc, idx, f, meta, bl):
     def cot(b):                                  # call-out(s) of a main bar: every piece with its own length
         if b.get('omit'):
             return (callout(b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag']) if b['pieces'] == 1 else
-                    ' + '.join(callout(c, b['d'], m_, L_, b['s'] if not i else None, b['tag']) for i, (m_, c, L_) in enumerate(b['marks']))) + \
+                    ' + '.join(callout(c, b['d'], m_, L_, b['s'] if not i else None, b['tag']) + (f' (MARK {m_:02d})' if i else '') for i, (m_, c, L_) in enumerate(b['marks']))) + \
                    f"  ({b['omit']} OMITTED IN THE STRIP BAND)"
         if b['pieces'] == 1: return callout(b['n'], b['d'], b['mk'], b['L'], b['s'], b['tag'])
-        return ' + '.join(callout(c, b['d'], m_, L_, b['s'] if not i else None, b['tag']) + (' -STG' if not i else '')
-                          for i, (m_, c, L_) in enumerate(b['marks']))
+        return ' + '.join(callout(c, b['d'], m_, L_, b['s'] if not i else None, b['tag']) + (' -STG' if not i else f' (MARK {m_:02d})')
+                          for i, (m_, c, L_) in enumerate(b['marks']))      # every piece names its own BBS mark
     # additional bars written on the consultant's plan (ADD TOP / ADD BOT): straight, in their zone
     for a in f.get('adds', []):
         a['mk'] = bl.add(a['d'], ('S', a['L']), a['L'], a['n'], f['no'], 'ADD-' + a['layer'])
@@ -436,6 +437,14 @@ def draw_sheet(doc, idx, f, meta, bl):
         sh.line(Q(xt, y), (Q(L + 100, 0)[0] + 350, ty_ + 90), 'S-RFT-TXT')
         sh.circle(*Q(xt, y), 25, 'S-RFT-TXT')
         sh.ctext(mk_, t, Q(L + 100, 0)[0] + 450, ty_, ST['call'], maxw=33600 - Q(L + 100, 0)[0] - 450)
+    # chair detail to scale with every part, its height and cutting length (engineer, BLSC 25-10)
+    if bx_ and tx_ and sb['mk_ch'] and not strip:
+        y0c = max(Q(0, h)[1] + 1700, Q(0, 0)[1] + len(yt) * 560 + 1000)
+        mh_ = R1 - 1000 - 3300 - y0c                       # free height above the section
+        kc = min(5.0, mh_ / max(sb['ch_h'], 1), 5200 / (2 * sb['ch_foot'] + sb['ch_top'] + 240))
+        if kc >= 2.0:                                       # 1:50 or larger, else the section + BBS carry it
+            gen.draw_chair_detail(sh, 25300, y0c, sb['ch_foot'], sb['ch_h'], sb['ch_top'], 16, sb['mk_ch'], sb['chairs'], sb['chair_L'],
+                                  h, c, [f['top'][1], f['top'][3]], maxh=mh_, title=False)
     sh.dim(Q(0, -100), Q(L, -100), (Q(0, 0)[0], Q(0, -100)[1] - 400), text=str(L))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
     sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')

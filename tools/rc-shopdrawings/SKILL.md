@@ -450,6 +450,27 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
   `seq_start` continues (FD 10100-10105 footings, 10106- raft; NCOL 20100-20101 necks, 20102- walls).
 - **Spacing from bars per metre**: `floor(1000 / per_m / 5 + 0.01) * 5` (float guard: 6.667/m -> 150, not 145).
 
+### BLSC rev 3 (engineer 25-10-2026, before the full run) - keep applying
+- **Rafts / real-outline CF (`gen_mat.py`)**: ONE sheet per mesh layer with X (upper plan) and Y (lower plan) when both
+  fit at >= 1:250 with <= 22 call-outs each, else one sheet per direction. Lap-zone hatches only where bars are lapped,
+  clipped to the outline. Re-entrant corner bars drawn on the X plan of each layer (no separate sheet); the ADD sheet
+  only when the consultant shows ADD bars - never a "NO ADDITIONAL BARS" sheet.
+- **Side bars (`side_pieces`)**: pieces along the real ring, laps 60d centred >= lap/2 + 150 from every corner, bends
+  at the corners; each piece type = one mark ('OPEN' shape) with a BAR DETAIL to its own shape, every part written,
+  L = sum; the plan shows each piece with its hexagon and the laps.
+- **Chairs**: `gen.draw_chair_detail` - chair to scale (1:20 or what fits, >= 1:50) with bottom / top mesh, five
+  parts dimensioned, H formula (h - 2c - top mesh + 16, foot under the bottom mesh) and L; on raft and CF sheets.
+- **Lapped bars**: every piece after the first names its BBS mark in the call-out "(MARK nn)". Pattern B laps may sit
+  in another allowed zone (>= lap + 500 from A). Rectangular CF whose bars need a lap go to `gen_mat` (call-out list).
+- **Necks of every column type** from the consultant schedule sketch (project tool: hatched dots in the section box,
+  outer tie + nested pairs of interior tie lines per direction, single-leg links; round columns = one hoop 'CIRC').
+  Schedule text vs sketch bar count differ -> text count, red note + RFI. Long tie lists: smaller sketches, 3 rows.
+- **Curved outlines** (fan rafts, curved strips): an orthogonal mesh gives dozens of lengths - hold + RFI until the
+  arrangement (variable lengths or radial + ring) and levels are confirmed.
+- **Long BBS tables** continue on the next sheet ("(CONT.)"), total on the last part.
+- **Footing schedule by thickness** without the row (0.95): use the footing the engineer names (its per-metre bars,
+  long bars outer), keep the plan's sizes and thickness; write it on the sheet.
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

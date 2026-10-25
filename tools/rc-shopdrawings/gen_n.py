@@ -179,6 +179,12 @@ def read_schedule2(dxf=None, block=None):
     return out
 
 
+def tie_shape(t):
+    if t.get('round'): return ('CIRC', t['w'])
+    if t.get('link'): return ('LINK', t['w'])
+    return ('POLY',) + tuple(t['norm'])
+
+
 def tie_length(pts, closed):
     L = sum(math.dist(pts[j], pts[j + 1]) for j in range(len(pts) - 1)) + (math.dist(pts[-1], pts[0]) if closed else 0)
     return int(round((L + 2 * 100) / 10) * 10)                 # + two 135-degree hooks of 100 mm
@@ -251,7 +257,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     e = COLC + ds + d / 2
     T = lambda p: (e + (p[0] - dx0) * (W - 2 * e) / (dx1 - dx0) if dx1 > dx0 else W / 2,         # one row of bars (stair starter): on the centre line
                    e + (p[1] - dy0) * (H - 2 * e) / (dy1 - dy0) if dy1 > dy0 else H / 2)
-    col['bars'] = [T(p) for p in col['dots']]
+    col['bars'] = [T(p) for p in col['dots']] if not col.get('round') else [tuple(p) for p in col['dots']]
     hall = MultiPoint(col['bars']).convex_hull
     lim_cl, lim_oo = hall.buffer(d / 2 + ds / 2, join_style=2), hall.buffer(d / 2 + ds, join_style=2)
     ties = []
@@ -271,6 +277,15 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
         xs = [p[0] for p in out]; ys = [p[1] for p in out]
         ties.append(dict(poly=out, w=round(max(xs) - min(xs)), hh=round(max(ys) - min(ys)),
                          L=int(round((oo.exterior.length + 2 * 100) / 10) * 10), draw=[(poly, True)]))   # out-to-out perimeter + two 135-deg hooks
+    if col.get('round'):                                 # round column: one circular hoop at the cover (schedule T10)
+        Dc = col['dw']; Doo = Dc - 2 * COLC; Rcl = (Doo - ds) / 2
+        circ = [(Dc / 2 + Rcl * math.cos(2 * math.pi * i / 72), Dc / 2 + Rcl * math.sin(2 * math.pi * i / 72)) for i in range(72)]
+        ties = [dict(round=True, poly=[(0, 0), (Doo, 0), (Doo, Doo), (0, Doo)], w=Doo, hh=Doo,
+                     L=int(round((math.pi * Doo + 2 * 100) / 10) * 10), draw=[(circ, True)])]
+    for lk in col.get('links', []):                      # single-leg link between two bars (as drawn in the schedule)
+        A_, B_ = T(lk[0]), T(lk[1])
+        oo = round(math.dist(A_, B_) + d + 2 * ds)
+        ties.append(dict(link=True, poly=[(0, 0), (oo, 0)], w=oo, hh=0, L=int(round((oo + 2 * 100) / 10) * 10), draw=[([A_, B_], False)]))
     s = int(1000 / col['per_m'])
     n_neck = max(0, math.floor((Hn - 100) / s) + 1)              # first 50 above T.O.F .. last >= 50 below T.O.GB
     n_ftg = max(2, math.floor((emb - 100) / s) + 1)              # the footing at the same spacing: first 50 below T.O.F
@@ -296,11 +311,11 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
                 n_c = (max(0, math.floor((Hm - 100) / s) + 1) + max(2, math.floor((em - 100) / s) + 1)) * t['k']   # per column
                 tot_ += n_c * nm; g_ = per.setdefault(n_c, [0, set()]); g_[0] += nm; g_[1].add(fm['h'])
             t['tot'] = tot_ // t['k']; t['per'] = per
-            t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], tot_, 1, '')
+            t['mk'] = bl.add(10, tie_shape(t), t['L'], tot_, 1, '')
             row_ = next(r_ for r_ in bl.rows.values() if r_['mark'] == t['mk'])     # exact rows per footing depth in the BBS
             row_.setdefault('split', {})[str(bl.cur)] = [(n_c, g_[0], 'FTG h' + '/'.join(str(h_) for h_ in sorted(g_[1]))) for n_c, g_ in sorted(per.items())]
         else:
-            t['mk'] = bl.add(10, ('POLY',) + tuple(t['norm']), t['L'], (n_neck + n_ftg) * t['k'], no, '')
+            t['mk'] = bl.add(10, tie_shape(t), t['L'], (n_neck + n_ftg) * t['k'], no, '')
 
     title = f"{col['name']}  {col['b']}x{col['h']}" + ('' if model else f"  ON  {f['name']}")
     sh.text(col.get('title_prefix', 'STARTER BARS ' if starter else 'NECK ') + title, 2000, 27900, ST['name'], 'S-AXIS-TXT')
@@ -312,12 +327,15 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             if len(cur_) + len(w_) > 95: lines_.append(cur_); cur_ = ''
             cur_ += w_ + ' '
         lines_.append(cur_)
-        for j, ln_ in enumerate(lines_[:9]):
-            sh.text(ln_.strip(), 7800, 24600 - j * 300, ST['note'] * 0.9, 'S-SEC', maxw=13500)
+        lines_ = lines_[:15]
+        for j, ln_ in enumerate(lines_):
+            sh.text(ln_.strip(), 7800, 24600 - j * 270, ST['note'] * 0.85, 'S-SEC', maxw=13500)
     else:
         sh.text(f"FOOTING {f['name']} " + (f"(COMBINED / RAFT / STRAP - SEE PLAN)  h={f['h']}" if f.get('part') else f"{f['L']}x{f['W']}x{f['h']}")
                 + (f"  - {f['note']}" if f.get('note') else ''), 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
-    if col.get('note'): sh.text(col['note'], 2000, 25800, ST['note'], 'S-SEC', maxw=18000)   # project remark (RFI)
+    if col.get('note'):
+        t_ = sh.text(col['note'], 2000, 25800, ST['note'], 'S-SEC', maxw=18000)   # project remark (RFI)
+        if col.get('check'): t_.dxf.color = 1                                   # conflict in the schedule: red
     sh.text((f"NO={no}   T.O.F VAR   T.O.GB {tgb:+.2f}   NECK H = VAR   FOOTING THICKNESS VAR" if model else
              f"NO={no}   T.O.F {tof:+.2f}   " + ("COLUMN STARTS AT THE FOOTING (T.O.F = T.O.SLAB): STARTER BARS, NO NECK" if starter else
                                                f"T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}")), 2000, 27100, ST['sub'], 'S-SEC')
@@ -459,7 +477,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     sh.text(f"{n_neck} IN THE NECK + {n_ftg} IN THE FOOTING" if not model else
             f"TOTAL {sum(t.get('tot', 0) for t in ties[:1])} SETS FOR {no} COLUMNS (NECK + FOOTING DEPTH)", Q(cw / 2 + 200, 0)[0], yt_ - 260, ST['note'], maxw=(XD - cw / 2 - 350) * k)
     if model:                                                   # neck bar length by the footing's bottom mesh
-        tx0, ty0 = 7800, 24600 - min(9, len(lines_)) * 300 - 900
+        tx0, ty0 = 7800, 24600 - len(lines_) * 270 - 700
         sh.text(('ONE CUTTING LENGTH FOR THE TYPE (THE LONGEST); EXTRA LENGTH = LONGER LAP ABOVE T.O.GB' if PRJ.get('neck_unify_length') else 'NECK BAR LENGTH BY FOOTING BOTTOM MESH')
                 + ' (T.O.PC TO T.O.GB = %d)' % round((tgb - footing_levels(f['h'], ZL)[1]) * 1000), tx0, ty0, ST['note'], 'S-SEC', maxw=13500)
         for j, m_ in enumerate(model):
@@ -473,8 +491,17 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     P = lambda x, y: (sx0 + x * ks, sy0 + y * ks)
     sh.pline([P(0, 0), P(col['h'], 0), P(col['h'], col['b']), P(0, col['b'])], 'S-GB-CONC', 0, True) if False else None
     W, Hh = col['b_draw'], col['h_draw']
-    sh.pline([P(0, 0), P(W, 0), P(W, Hh), P(0, Hh)], 'S-GB-CONC', 0, True)
+    if col.get('round'): sh.circle(*P(W / 2, Hh / 2), W / 2 * ks, 'S-GB-CONC')
+    else: sh.pline([P(0, 0), P(W, 0), P(W, Hh), P(0, Hh)], 'S-GB-CONC', 0, True)
     for t in ties:
+        if t.get('round') or t.get('link'):
+            for pts, closed in t['draw']:
+                sh.pline([P(*p) for p in pts], 'S-RFT-STIR', 25, closed)
+                a_, b_ = pts[0], pts[1] if not closed else pts[18]
+                for q_, sg_ in ((pts[0], 1), (pts[-1] if not closed else pts[0], -1)):       # 135-deg hooks
+                    hx, hy = (q_[0] - W / 2, q_[1] - Hh / 2); hn = math.hypot(hx, hy) or 1
+                    sh.line(P(*q_), P(q_[0] - hx / hn * 90 + sg_ * hy / hn * 60, q_[1] - hy / hn * 90 - sg_ * hx / hn * 60), 'S-RFT-STIR')
+            continue
         for pts, closed in t['draw']:
             hb_ = col['bars'] if not col.get('perimeter_tie') else [(x_, y_) for x_ in (min(p[0] for p in pts) + d / 2 + ds / 2, max(p[0] for p in pts) - d / 2 - ds / 2)
                                                                    for y_ in (min(p[1] for p in pts) + d / 2 + ds / 2, max(p[1] for p in pts) - d / 2 - ds / 2)]
@@ -488,15 +515,35 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     sh.text(f"SEC A-A  {col['name']} {col['b']}x{col['h']}   {col['n']} T {d}   COVER {COLC}", P(W / 2, 0)[0], P(0, 0)[1] - 1300, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # tie shapes with their lengths
     TX0 = max(23500, Q(fxr, 0)[0] + 900)                       # clear of the footing
-    tx = TX0; by = 8400
+    SHR = 1.0 if len(ties) <= 2 * max(1, int((35600 - TX0) / 6400)) else 0.6      # many ties: smaller sketches, 3 rows
+    STEP = 4300 if SHR == 1 else 3400
+    tx = TX0; by = 8400 if SHR == 1 else 9300
     sh.text('TIE LENGTHS L INCLUDE TWO 135-DEG HOOKS x 100 (OUT-TO-OUT DIMENSIONS)', 23500, 11500, ST['note'], 'S-RFT-TXT', maxw=9500)
     for t in ties:
-        kk = min(9.0, 2700 / max(1, t['hh']), 5500 / max(1, t['w']))
+        if t.get('round') or t.get('link'):
+            if tx > TX0 and tx + 3200 > 35600: tx = TX0; by -= STEP
+            if t.get('round'):
+                rr_ = 1200
+                sh.circle(tx + rr_, by + rr_, rr_, 'S-RFT-STIR')
+                sh.line((tx + rr_, by + 2 * rr_), (tx + rr_ - 120, by + 2 * rr_ - 200), 'S-RFT-STIR')
+                sh.line((tx + rr_ + 60, by + 2 * rr_), (tx + rr_ + 180, by + 2 * rr_ - 200), 'S-RFT-STIR')
+                sh.text(f"%%c{mm(t['w'])}", tx + rr_, by + rr_, ST['len'], 'S-DIM', align=TA.MIDDLE_CENTER)
+                lab = f"HOOP %%c{t['w']}"
+            else:
+                Lk = 2600
+                sh.pline([(tx + 150, by + 1350), (tx, by + 1200), (tx + Lk, by + 1200), (tx + Lk - 150, by + 1350)], 'S-RFT-STIR', 20)
+                sh.text(mm(t['w']), tx + Lk / 2, by + 1050, ST['len'], 'S-DIM', align=TA.TOP_CENTER)
+                lab = f"LINK {t['w']}"
+            sh.ctext(t['mk'], lab + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 800, ST['call'], 'S-RFT-TXT')
+            sh.text(f"L={mm(t['L'])}", tx, by - 1400, ST['call'], 'S-RFT-TXT')
+            tx += 3700 + 900
+            continue
+        kk = min(9.0 * SHR, 2700 * SHR / max(1, t['hh']), 5500 * SHR / max(1, t['w']))
         nm = t['norm']; nn = len(nm)
         cb = tie_bar_centres(nm, d / 2 + 10)              # bar centres for the out-to-out shape
         segs, moved = opened_tie(nm, cb, tail=100, rc=d / 2 + 10)      # opened at the hooks (engineer's sample)
         xa_ = min(p[0] for sg_ in segs for p in sg_); xb_ = max(p[0] for sg_ in segs for p in sg_)
-        if tx > TX0 and tx + (xb_ - xa_) * kk > 35600: tx = TX0; by -= 4300          # next row (title block at 36000)
+        if tx > TX0 and tx + (xb_ - xa_) * kk > 35600: tx = TX0; by -= STEP          # next row (title block at 36000)
         Z = lambda p: (tx + (p[0] - xa_) * kk, by + p[1] * kk)
         for sg_ in segs:
             sh.pline([Z(p) for p in sg_], 'S-RFT-STIR', 20)
@@ -523,7 +570,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             sh.text(mm(math.dist(a_, b_)), mx + nx_ / hn * 200, my + ny_ / hn * 200, ST['len'], 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
         sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 800, ST['call'], 'S-RFT-TXT')
         sh.text(f"L={mm(t['L'])}", tx, by - 1400, ST['call'], 'S-RFT-TXT')
-        tx += max((xb_ - xa_) * kk, 3700) + 900
+        tx += max((xb_ - xa_) * kk, 3700 * SHR if SHR < 1 else 3700) + (600 if SHR < 1 else 900)
     return Hn, (emb, foot, LD, ld_ok, inward)
 
 

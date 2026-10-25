@@ -524,7 +524,7 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.pline(q, 'S-RFT-TXT', 0, False, r=25)
         big = max(math.dist(a, b) for a, b in zip(pts, pts[1:]))
         for (a, b), (qa, qb) in zip(zip(pts, pts[1:]), zip(q, q[1:])):
-            if math.dist(a, b) < 0.3 * big: continue
+            if math.dist(a, b) < (0.3 * big if len(pts) > 5 else 120): continue
             sh.text(str(int(round(math.dist(a, b)))), (qa[0] + qb[0]) / 2, (qa[1] + qb[1]) / 2 + 40, 110, 'S-RFT-TXT',
                     rot=90 if abs(qa[0] - qb[0]) < 1 else 0, align=TA.BOTTOM_CENTER)
     elif kind == 'PROF':      # bar following a sloped profile (pool floor) + its legs: x / z scaled apart, every part written
@@ -543,6 +543,14 @@ def _symbol(sh, x, y, w, h, shape, d):
             vert = abs(a[0] - b[0]) < 1
             sh.text(str(int(round(Ls))), (qa[0] + qb[0]) / 2 + (-50 if vert else 0), (qa[1] + qb[1]) / 2 + (0 if vert else 40), 110,
                     'S-RFT-TXT', rot=90 if vert else 0, align=TA.BOTTOM_CENTER)
+    elif kind == 'CIRC':      # circular hoop (round column): diameter out-to-out
+        r_ = min(w, h) * 0.3
+        sh.circle(x + w * 0.4, y + h * 0.5, r_, 'S-RFT-TXT')
+        sh.text(f'%%c{seg[0]}', x + w * 0.4 + r_ + 80, y + h * 0.5, 120, 'S-RFT-TXT', align=TA.MIDDLE_LEFT)
+    elif kind == 'LINK':      # single-leg link with two 135-deg hooks
+        L = w * 0.55; cy2 = y + h * 0.45
+        sh.pline([(cx + 80, cy2 + 90), (cx, cy2), (cx + L, cy2), (cx + L - 80, cy2 + 90)], 'S-RFT-TXT')
+        sh.text(str(seg[0]), cx + L / 2, cy2 - 60, 130, 'S-RFT-TXT', align=TA.TOP_CENTER)
     elif kind == 'CH':        # chair: foot / leg / top / leg / foot
         f_, lg, top = seg
         u = w * 0.13; hh = h * 0.42; x0 = x + w * 0.12; y0 = y + h * 0.18
@@ -553,6 +561,48 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.text(str(top), x0 + 1.8 * u, y0 + hh + 50, 120, 'S-RFT-TXT', align=TA.BOTTOM_CENTER)
         sh.text(str(lg), x0 + u - 50, y0 + hh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
         sh.text(str(lg), x0 + 2.6 * u + 170, y0 + hh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
+
+
+def draw_chair_detail(sh, x, y, foot, ch_h, top, d, mk, n, L, h, cover, tops, s=1000, maxh=4200, title=True):
+    """Chair detail to scale (engineer: every part, the real height and the cutting length on the sheet - nothing to
+    deduce on site). x, y = lower-left of the drawing (bottom of the foot). tops = top-mesh diameters [d1, d2].
+    Shows the bottom mesh resting on the foot, the top mesh on the chair top, all five parts dimensioned, the
+    height formula and L = sum of the parts."""
+    k = min(5.0, maxh / max(ch_h, 1), 5200 / (2 * foot + top + 2 * 120))     # 1:20 or smaller to fit
+    Q = lambda u, v: (x + u * k, y + v * k)
+    u0, u1, u2, u3 = 0, foot, foot + top, 2 * foot + top
+    pts = [Q(u0, 0), Q(u1, 0), Q(u1, ch_h), Q(u2, ch_h), Q(u2, 0), Q(u3, 0)]
+    sh.pline(pts, 'S-RFT-STIR', max(d * k, 25), r=2.5 * d * k)
+    # bottom mesh (two layers) on the feet, top mesh (two layers) under the chair top: context in grey
+    db = 16
+    sh.line(Q(-150, d + db / 2), Q(u3 + 150, d + db / 2), 'S-DIM')
+    for uu in (u0 + 120, u1 - 80, u2 + 80, u3 - 120):
+        sh.circle(*Q(uu, d + db + db / 2), max(db / 2 * k, 18), 'S-DIM')
+    t1, t2 = (tops + [0, 0])[:2]
+    if t1:
+        yt = ch_h + t1 / 2
+        sh.line(Q(-150, yt), Q(u3 + 150, yt), 'S-DIM')
+        for uu in (u1 + 60, (u1 + u2) / 2, u2 - 60):
+            sh.circle(*Q(uu, ch_h + t1 + t2 / 2), max(t2 / 2 * k, 18), 'S-DIM')
+    sh.text('TOP MESH', *Q(u3 + 200, ch_h + t1), 140, 'S-DIM', align=TA.MIDDLE_LEFT)
+    sh.text('BOTTOM MESH', *Q(u3 + 200, d + db), 140, 'S-DIM', align=TA.MIDDLE_LEFT)
+    # every part dimensioned
+    sh.dim(Q(u0, 0), Q(u1, 0), (Q(0, 0)[0], Q(0, 0)[1] - 450), text=str(foot))
+    sh.dim(Q(u1, 0), Q(u2, 0), (Q(0, 0)[0], Q(0, 0)[1] - 450), text=str(top))
+    sh.dim(Q(u2, 0), Q(u3, 0), (Q(0, 0)[0], Q(0, 0)[1] - 450), text=str(foot))
+    sh.dim(Q(u1, 0), Q(u1, ch_h), (Q(u1, 0)[0] - 550, Q(0, 0)[1]), angle=90, text=str(ch_h))
+    sh.dim(Q(u2, 0), Q(u2, ch_h), (Q(u2, 0)[0] + 550, Q(0, 0)[1]), angle=90, text=str(ch_h))
+    sh.text(str(top), *Q((u1 + u2) / 2, ch_h + t1 + t2 + 60 / k + 40), 150, 'S-DIM', align=TA.BOTTOM_CENTER)
+    ty = Q(0, ch_h)[1] + 900
+    sh.ctext(mk, callout(n, d, mk, L, s, 'CH'), x, ty + 650, ST['call'] * 0.8, maxw=9000)
+    sh.text(f'H = {h} - 2x{cover} - {t1}{"+" + str(t2) if t2 else ""} (TOP MESH) + {d} (FOOT UNDER THE BOTTOM MESH) = {ch_h}  (OUT-TO-OUT)',
+            x, ty + 250, 130, 'S-RFT-TXT', maxw=9500)
+    sh.text(f'L = {foot} + {ch_h} + {top} + {ch_h} + {foot} = {L}   (T{d}, 1 CHAIR PER m2, @{s} x {s})', x, ty - 100, 130, 'S-RFT-TXT', maxw=9500)
+    if title:
+        sh.text(f'CHAIR DETAIL 1:{round(100 / k)}', x, Q(0, 0)[1] - 1250, ST['panel'] * 0.8, 'S-SEC')
+    else:
+        sh.text(f'CHAIR DETAIL 1:{round(100 / k)}', x, ty + 1250, ST['panel'] * 0.8, 'S-SEC')
+    return Q(u3, ch_h)
 
 
 def draw_bbs(doc, first_idx, rows, meta, Sheet_=None):
@@ -624,9 +674,12 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
             elif q:
                 ne = r.get('use_n', {}).get(str(key)) or nel             # elements that carry this mark (necks: per footing mesh)
                 rs.append(dict(r, n_in=round(q / max(1, ne)), n_el=ne, q=q))
-        if rs: tables.append((title, rs))
+        MAXR = 22                                                 # a long table continues on the next sheet
+        for i_ in range(0, len(rs), MAXR):
+            last = i_ + MAXR >= len(rs)
+            tables.append((title + (' (CONT.)' if i_ else ''), rs[i_:i_ + MAXR], (title, rs) if last else None))
     by_d = {}
-    for _, rs in tables:
+    for _, rs, _ in tables:
         for r in rs: by_d[r['d']] = by_d.get(r['d'], 0) + r['q'] * r['L'] / 1000 * unit_mass(r['d'])
     pages, cur, y = [], [], 27600
     for t in tables:
@@ -635,13 +688,13 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
         cur.append(t); y -= h + gap
     sumh = tit + 1000 + 700 * (len(by_d) + 1)
     if cur and y - sumh < 1500: pages.append(cur); cur = []
-    cur.append(('__SUMMARY__', None)); pages.append(cur)
+    cur.append(('__SUMMARY__', None, None)); pages.append(cur)
     for pi, page in enumerate(pages):
         m = dict(meta); m['title'] = (meta.get('title', '').split('\n')[0] + '\nBAR BENDING SCHEDULE (BBS)').strip()
         m['dwg'] = meta.get('dwg', '') + f'-BBS{pi + 1:02d}'
         sh = S(doc, 0, -(first_idx + pi) * 32000, m)
         ytop = 27600
-        for title, rs in page:
+        for title, rs, whole in page:
             if title == '__SUMMARY__':
                 ds_ = sorted(by_d); cw = [3000, 3500, 4000]; WW = sum(cw)
                 sh.pline([(x0, ytop), (x0 + WW, ytop), (x0 + WW, ytop - tit - 1000 - 700 * (len(ds_) + 1)), (x0, ytop - tit - 1000 - 700 * (len(ds_) + 1))], 'S-FRAME', 0, True)
@@ -689,7 +742,11 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
                         if r.get('sub'): sh.text(r['sub'], cx + w - 80, y + rh - 80, 130, 'S-TITLE', align=TA.TOP_RIGHT)
                     else: sh.text(vals[i], cx + w / 2, y + rh / 2, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
                     cx += w
-            sh.text(f"TOTAL STEEL WEIGHT ({title}) = {tot:,.2f} kg  ({tot / 1000:.3f} t)", x0 + W, bot - 450, 240, 'S-TITLE', align=TA.MIDDLE_RIGHT)
+            if whole:                                             # total of the element on its last table
+                tot = sum(r_['q'] * r_['L'] / 1000 * unit_mass(r_['d']) for r_ in whole[1])
+                sh.text(f"TOTAL STEEL WEIGHT ({whole[0]}) = {tot:,.2f} kg  ({tot / 1000:.3f} t)", x0 + W, bot - 450, 240, 'S-TITLE', align=TA.MIDDLE_RIGHT)
+            else:
+                sh.text('CONTINUED ON THE NEXT TABLE', x0 + W, bot - 450, 200, 'S-TITLE', align=TA.MIDDLE_RIGHT)
             ytop = bot - 700 - gap
     return len(pages)
 
@@ -703,15 +760,17 @@ def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500):
     if T <= stock: return [[(0, T)]]
     up = lambda v: math.ceil(v / 10) * 10
     zs = sorted((max(lp, a), min(T - lp, b)) for a, b in zones if min(T - lp, b) > max(lp, a))
-    def cuts_from(shift):
+    def cuts_from(shift, avoid=()):
         cuts, start = [], 0
         while T - start > stock:
             lim = start + stock - lp / 2 - 10                   # farthest lap centre for this piece
             best = None
             for a, b in zs:
-                for c in (min(b, lim) - (shift if shift > 0 else 0), max(a, start + lp) - shift if shift < 0 else None):
-                    if c is None: continue
-                    if a <= c <= b and start + lp < c <= lim and (best is None or c > best): best = c
+                cands = [min(b, lim) - (shift if shift > 0 else 0)] + ([max(a, start + lp) - shift] if shift < 0 else [])
+                if avoid:                                       # pattern B: any point of the zone >= lp + gap from A's laps
+                    cands += [v for v in range(int(a), int(min(b, lim)) + 1, 10)]
+                for c in cands:
+                    if a <= c <= b and start + lp < c <= lim and all(abs(c - q) >= lp + gap for q in avoid) and (best is None or c > best): best = c
             if best is None: return None
             cuts.append(best); start = best - lp / 2
         return cuts
@@ -722,7 +781,9 @@ def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500):
     if cA is None: return None
     cB = [c - (lp + gap) for c in cA]                           # B: the lap moved back by lp + gap, still in its zone
     if not all(any(a <= c <= b for a, b in zs) for c in cB): cB = [c + (lp + gap) for c in cA]
-    if not all(any(a <= c <= b for a, b in zs) for c in cB): return None
+    if not all(any(a <= c <= b for a, b in zs) for c in cB) or len(cB) != len(cA):
+        cB = cuts_from(0, avoid=cA)                             # or in another allowed zone (e.g. the next midspan)
+        if cB is None: return None
     A, B = ivs(cA), ivs(cB)
     if not all(0 < t1 - t0 <= stock for t0, t1 in A + B): return None
     fix = lambda P_: [(t0, t0 + up(t1 - t0)) if t1 < T else (T - up(T - t0), T) for t0, t1 in P_]
