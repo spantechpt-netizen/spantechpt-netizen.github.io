@@ -638,6 +638,10 @@ if __name__ == '__main__':
     mats_only = all(n.startswith(('CF', 'RAFT')) for n in names)
     meta['title'] = 'STRUCTURAL COMBINED FOOTINGS / RAFTS' if mats_only else 'STRUCTURAL FOUNDATION'
     meta['dwg'] = meta['prefix'].replace('GB', 'FDN')
-    nb = draw_bbs(doc, idx, bl.sorted(), meta)
-    doc.saveas('out/FOOTINGS.dxf'); bl.export('out/FOOTINGS.bbs.json', dwgmap)
+    if PRJ.get('bbs_per_element'):           # one BBS table per footing type, titled with its name (engineer, 25-10-2026)
+        from gen import draw_bbs_grouped
+        nb = draw_bbs_grouped(doc, idx, bl.sorted(), meta, [(f"{n}  (NO={lib[n]['no']})", n, lib[n]['no']) for n in names])
+    else:
+        nb = draw_bbs(doc, idx, bl.sorted(), meta)
+    doc.saveas('out/FOOTINGS.dxf'); bl.export('out/FOOTINGS.bbs.json', dwgmap, {n: lib[n]['no'] for n in names})
     print('sheets', idx, '+ BBS', nb)

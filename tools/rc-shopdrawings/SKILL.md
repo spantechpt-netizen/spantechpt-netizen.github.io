@@ -404,6 +404,30 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
   not clear): keep an **RFI register** (Excel), draw the samples with the stated default, and write the open RFI on the
   sheet itself.
 
+## 6e. Engineer's notes on the BLSC samples (25-10-2026) - keep applying
+
+- **The engineer's own panda**: he returns OUR sheet edited with the project title block (block inserted at the sheet
+  origin, sheet scale). `tb_template.py his_sheet.dxf <block> titleblock_<code>.dxf "@layer:S-TITLE"` strips our
+  per-sheet values (all on S-TITLE) and keeps the rest; fields = positions of those values (middle-centred); logos
+  that are OLE frames cannot be converted -> cropped from his PDF (400 dpi) and inserted as IMAGE entities, PNGs
+  delivered next to the DXFs (`doc.set_raster_variables(frame=0)` in new_doc). Number pattern from his sheet
+  (`BLSC-SD-STCO-STR-ALL-FD-10100-00`: code.format with {area}).
+- **Levels** given by the engineer win over the drawing (excavation = B.O.PC, T.O.PC, T.O.GB) -> `levels`.
+- **BBS one table per element** (`bbs_per_element: true` -> `gen.draw_bbs_grouped`): title = element name (NO=…), its
+  own total, several tables per sheet, then SUMMARY BY DIAMETER (net). Excel the same: one sheet per element with the
+  number of elements covered (`bbs_xlsx.py`).
+- **Generic neck per column type** (`gen_n.py --models neck_models.json`, `{type: [[footing, no], ...]}`): one sheet per
+  type, T.O.F / footing thickness / neck H = VAR; neck bar = foot 300 + (T.O.GB - T.O.PC - cover - 2 x mesh dia) + 65d,
+  one mark per bottom-mesh diameter (table on the sheet), ties counted over the real columns ('VAR' per element in the
+  BBS); never one sheet per column + footing pair.
+- **Footing side bars T12 inside** the U legs (Roya side-bar rule, `side_bars: true`).
+- **CONC DIM without grids / with rotated parts**: `gen_cd2.py` - FOUNDATION CONC DIM (every footing, names of the
+  reinforcement sheets, PC dashed, clear distances along each footing's own axes) and COLUMN CONC DIM (schedule names,
+  C/C along each column's axes), A0 1:200 each; no grids in the source -> RFI.
+- **Raft splices** (next raft sheets): bottom mesh splices at MIDSPAN, top mesh at the SUPPORTS, staggered within
+  L/5 either side of the support, adjacent splices >= 500 apart, both directions; each mesh layer (B-X, B-Y, T-X, T-Y)
+  on its OWN FULL plan - never strips / parts.
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

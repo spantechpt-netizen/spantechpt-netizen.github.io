@@ -5,7 +5,8 @@ usage: python3 tb_template.py sheet.dxf BLOCK titleblock.dxf ["text to strip" ..
   BLOCK       the title-block block name (survey / probe: the INSERT in the paper layout)
   strip       the texts of that sheet that change from sheet to sheet (drawing title, reference, scale, size,
               area / venue / rev codes, date ...): removed from the template, written per sheet by gen.Sheet
-              from project.json -> title_block -> fields.
+              from project.json -> title_block -> fields. "@layer:S-TITLE" strips every text on that layer (a
+              template made from one of OUR sheets edited by the engineer: the per-sheet values are on S-TITLE).
 The template keeps everything else of the block: frame, logos (IMAGE paths as in the source), key plan, general
 notes, revision table, names, the code row headers.
 """
@@ -25,7 +26,7 @@ gone = []
 for e in list(blk):
     if e.dxftype() in ('TEXT', 'MTEXT'):
         s = (e.plain_text() if e.dxftype() == 'MTEXT' else e.dxf.text).strip()
-        if any(s == k or (len(k) > 6 and s.startswith(k)) for k in strip):
+        if any(s == k or (len(k) > 6 and s.startswith(k)) for k in strip) or f'@layer:{e.dxf.layer}' in strip:
             gone.append(s[:40]); blk.delete_entity(e)
 # AutoCAD refuses ATTRIBs with an incomplete embedded MTEXT (converted drawings): every attribute inside the
 # template's blocks becomes a plain TEXT at the same place; OLE frames (empty after conversion) are dropped

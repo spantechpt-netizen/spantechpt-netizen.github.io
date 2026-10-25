@@ -40,6 +40,7 @@ def new_doc():
         from ezdxf import xref
         tpl = ezdxf.readfile(TB['dxf'])
         ld = xref.Loader(tpl, doc); ld.load_block_layout(tpl.blocks.get(TB['block'])); ld.execute()
+        doc.set_raster_variables(frame=0, quality=1, units='mm')   # logos (IMAGE) of the template: no frame line
     doc._tb_seq = {}                          # running sheet number per venue code
     return doc
 
@@ -416,6 +417,8 @@ class BarList:
             r = self.rows[key] = dict(mark=len(self.rows) + 1, d=d, shape=shape, L=int(round(L)), n_in=0, n_el=n_el, layer=layer)
         u = r.setdefault('use', {})
         u[str(self.cur)] = u.get(str(self.cur), 0) + n_in * n_el      # bars of this mark in this element type (all of them)
+        un = r.setdefault('use_n', {})                                # how many elements carry this mark (0: not counted per element)
+        un[str(self.cur)] = un.get(str(self.cur), 0) + (n_el if n_el > 1 else 0)
         if r['n_el'] != n_el:                 # the same bar in elements with different counts: keep the TOTAL right
             r['n_in'] = r['n_in'] * r['n_el'] + n_in * n_el; r['n_el'] = 1
         else:
@@ -423,10 +426,10 @@ class BarList:
         return r['mark']
     def sorted(self):
         return sorted(self.rows.values(), key=lambda r: r['mark'])
-    def export(self, path, dwg=None):
+    def export(self, path, dwg=None, counts=None):
         """BBS rows (mark, d, shape, L, counts, use per element) + element -> drawing number, for the Excel BBS."""
         import json as _j
-        _j.dump(dict(rows=[dict(r, shape=list(r['shape'])) for r in self.sorted()], dwg=dwg or {}), open(path, 'w'), indent=1)
+        _j.dump(dict(rows=[dict(r, shape=list(r['shape'])) for r in self.sorted()], dwg=dwg or {}, counts=counts or {}), open(path, 'w'), indent=1)
 
 
 def draw_legend(sh, x, y, g=1):
@@ -598,6 +601,91 @@ def draw_bbs(doc, first_idx, rows, meta, Sheet_=None):
         if pi == len(pages) - 1:
             y = hy - head - rh * len(page) - 700
             sh.text(f"TOTAL STEEL WEIGHT = {grand:,.2f} kg  ({grand / 1000:.3f} t)", x0 + W, y, 260, 'S-TITLE', align=TA.MIDDLE_RIGHT)
+    return len(pages)
+
+
+def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
+    """BBS with ONE TABLE PER ELEMENT (engineer, 25-10-2026: a BBS per footing / per neck model, titled with its
+    name, its own total), then a summary per diameter. groups: [(title, element key in BarList 'use', no. of
+    elements)]. Marks stay package-wide (the same mark may appear in two tables with that element's count).
+    Returns the number of sheets added."""
+    S = Sheet_ or Sheet
+    cols = [('Position', 2000), ('Steel grade', 1900), ('Diameter', 1900), ('in the\nelement', 2100), ('of elements', 2100),
+            ('total', 1900), ('Symbol ( mm)', 6200), ('Length ( m)', 2300), ('Mass ( kg)', 2300), ('Total mass\n( kg)', 2500)]
+    W = sum(w for _, w in cols); x0 = 1800; rh = 950; head = 1700; tit = 900; gap = 1500
+    tables = []
+    for title, key, nel in groups:
+        rs = []
+        for r in rows:
+            q = r.get('use', {}).get(str(key), 0)
+            if q:
+                ne = r.get('use_n', {}).get(str(key)) or nel             # elements that carry this mark (necks: per footing mesh)
+                rs.append(dict(r, n_in=round(q / max(1, ne)), n_el=ne, q=q))
+        if rs: tables.append((title, rs))
+    by_d = {}
+    for _, rs in tables:
+        for r in rs: by_d[r['d']] = by_d.get(r['d'], 0) + r['q'] * r['L'] / 1000 * unit_mass(r['d'])
+    pages, cur, y = [], [], 27600
+    for t in tables:
+        h = tit + head + rh * len(t[1]) + 700
+        if cur and y - h < 1500: pages.append(cur); cur, y = [], 27600
+        cur.append(t); y -= h + gap
+    sumh = tit + 1000 + 700 * (len(by_d) + 1)
+    if cur and y - sumh < 1500: pages.append(cur); cur = []
+    cur.append(('__SUMMARY__', None)); pages.append(cur)
+    for pi, page in enumerate(pages):
+        m = dict(meta); m['title'] = (meta.get('title', '').split('\n')[0] + '\nBAR BENDING SCHEDULE (BBS)').strip()
+        m['dwg'] = meta.get('dwg', '') + f'-BBS{pi + 1:02d}'
+        sh = S(doc, 0, -(first_idx + pi) * 32000, m)
+        ytop = 27600
+        for title, rs in page:
+            if title == '__SUMMARY__':
+                ds_ = sorted(by_d); cw = [3000, 3500, 4000]; WW = sum(cw)
+                sh.pline([(x0, ytop), (x0 + WW, ytop), (x0 + WW, ytop - tit - 1000 - 700 * (len(ds_) + 1)), (x0, ytop - tit - 1000 - 700 * (len(ds_) + 1))], 'S-FRAME', 0, True)
+                sh.text('SUMMARY OF STEEL BY DIAMETER (NET, NO WASTE)', x0 + WW / 2, ytop - tit / 2, 280, 'S-TITLE', align=TA.MIDDLE_CENTER)
+                yy = ytop - tit; sh.line((x0, yy), (x0 + WW, yy), 'S-FRAME')
+                for i, (hd, cx_) in enumerate(zip(('Diameter (mm)', 'Unit mass (kg/m)', 'Total mass (kg)'), (0, cw[0], cw[0] + cw[1]))):
+                    sh.text(hd, x0 + cx_ + cw[i] / 2, yy - 500, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
+                    if i: sh.line((x0 + cx_, yy), (x0 + cx_, ytop - tit - 1000 - 700 * (len(ds_) + 1)), 'S-FRAME')
+                yy -= 1000; sh.line((x0, yy), (x0 + WW, yy), 'S-FRAME')
+                for d in ds_ + ['TOTAL']:
+                    v = (str(d), f'{unit_mass(d):.3f}', f'{by_d[d]:,.2f}') if d != 'TOTAL' else ('TOTAL', '', f'{sum(by_d.values()):,.2f}  ({sum(by_d.values()) / 1000:.3f} t)')
+                    for i, (vv, cx_) in enumerate(zip(v, (0, cw[0], cw[0] + cw[1]))):
+                        sh.text(vv, x0 + cx_ + cw[i] / 2, yy - 350, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
+                    yy -= 700; sh.line((x0, yy), (x0 + WW, yy), 'S-FRAME')
+                continue
+            bot = ytop - tit - head - rh * len(rs)
+            sh.pline([(x0, ytop), (x0 + W, ytop), (x0 + W, bot), (x0, bot)], 'S-FRAME', 0, True)
+            sh.text(title, x0 + W / 2, ytop - tit / 2, 300, 'S-TITLE', align=TA.MIDDLE_CENTER)
+            hy = ytop - tit
+            sh.line((x0, hy), (x0 + W, hy), 'S-FRAME'); sh.line((x0, hy - head), (x0 + W, hy - head), 'S-FRAME')
+            cx = x0
+            for i, (name, w) in enumerate(cols):
+                if i > 0: sh.line((cx, hy if i not in (4, 5) else hy - head / 2), (cx, bot), 'S-FRAME')
+                yy = hy - head / 2 if i not in (3, 4, 5) else hy - head * 0.75
+                for j, part in enumerate(name.split('\n')):
+                    sh.text(part, cx + w / 2, yy + 120 - j * 260, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
+                cx += w
+            nx = x0 + sum(w for _, w in cols[:3])
+            sh.line((nx, hy - head / 2), (nx + sum(w for _, w in cols[3:6]), hy - head / 2), 'S-FRAME')
+            sh.text('Number', nx + sum(w for _, w in cols[3:6]) / 2, hy - head / 4, 220, 'S-TITLE', align=TA.MIDDLE_CENTER)
+            tot = 0
+            for k, r in enumerate(rs):
+                y = hy - head - rh * (k + 1)
+                sh.line((x0, y), (x0 + W, y), 'S-FRAME')
+                mass_el = r['q'] / r['n_el'] * r['L'] / 1000 * unit_mass(r['d'])   # average per element when VAR
+                total = r['q'] * r['L'] / 1000 * unit_mass(r['d']); tot += total
+                per_ = r['q'] / r['n_el']
+                vals = [None, 'T', str(r['d']), f"{per_:g}" if abs(per_ - round(per_)) < 1e-6 else 'VAR', str(r['n_el']), str(r['q']), None,
+                        f"{r['L'] / 1000:.3f}", f"{mass_el:.2f}", f"{total:.2f}"]
+                cx = x0
+                for i, (name, w) in enumerate(cols):
+                    if i == 0: sh.mark(cx + w / 2, y + rh / 2, r['mark'], 240, 'S-TITLE')
+                    elif i == 6: _symbol(sh, cx, y, w, rh, r['shape'], r['d'])
+                    else: sh.text(vals[i], cx + w / 2, y + rh / 2, 200, 'S-TITLE', align=TA.MIDDLE_CENTER)
+                    cx += w
+            sh.text(f"TOTAL STEEL WEIGHT ({title}) = {tot:,.2f} kg  ({tot / 1000:.3f} t)", x0 + W, bot - 450, 240, 'S-TITLE', align=TA.MIDDLE_RIGHT)
+            ytop = bot - 700 - gap
     return len(pages)
 
 
