@@ -296,7 +296,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     same = lambda a, b: len(a) == len(b) and all(min(math.dist(p, q) for q in b) <= 4 for p in a)
     for i_, t in enumerate(ties):       # identical ties (e.g. the two end hexagons, one turned over) share one mark
         k0 = shape_key(t, False)
-        hit = next((m for m in merged.values() if same(k0, m['key']) or same(shape_key(t, True), m['key'])), None)
+        rot = dict(t, poly=[(p_[1], -p_[0]) for p_ in t['poly']])            # the same tie turned 90 deg (square columns)
+        hit = next((m for m in merged.values() if not (t.get('round') or t.get('link') or m.get('round') or m.get('link')) and
+                    any(same(kk_, m['key']) for kk_ in (k0, shape_key(t, True), shape_key(rot, False), shape_key(rot, True)))), None)
         if hit: hit['k'] += 1; hit['draw'] += t['draw']
         else: merged[i_] = dict(t, k=1, key=k0)
     ties = list(merged.values())
@@ -568,8 +570,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             cx_ = sum(p[0] for p in nm) / nn; cy_ = sum(p[1] for p in nm) / nn
             nx_, ny_ = (a_[0] + b_[0]) / 2 - cx_, (a_[1] + b_[1]) / 2 - cy_; hn = math.hypot(nx_, ny_) or 1
             sh.text(mm(math.dist(a_, b_)), mx + nx_ / hn * 200, my + ny_ / hn * 200, ST['len'], 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
-        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}" + (f"  x{t['k']}/SET" if t['k'] > 1 else ''), tx, by - 800, ST['call'], 'S-RFT-TXT')
+        sh.ctext(t['mk'], f"{t['w']}x{t['hh']}", tx, by - 800, ST['call'], 'S-RFT-TXT')
         sh.text(f"L={mm(t['L'])}", tx, by - 1400, ST['call'], 'S-RFT-TXT')
+        if t['k'] > 1: sh.text(f"{t['k']} PER SET", tx, by - 1900, ST['note'], 'S-RFT-TXT')
         tx += max((xb_ - xa_) * kk, 3700 * SHR if SHR < 1 else 3700) + (600 if SHR < 1 else 900)
     return Hn, (emb, foot, LD, ld_ok, inward)
 
