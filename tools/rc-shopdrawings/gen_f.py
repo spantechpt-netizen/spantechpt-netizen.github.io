@@ -50,6 +50,19 @@ def bars_for(f):
             out.append(dict(layer=layer, tag=tag, along=along, d=d, s=s, n=n_ - omit, omit=omit,
                             straight=run, leg=lg, L=tot if p == 1 else max(t1 - t0 for t0, t1 in pats[0] + pats[-1]),
                             up=up, pieces=p, lap=lp, pats=pats, T=tot))
+    if f.get('top2'):          # schedule top steel of an isolated footing: 2 bars each way OVER THE COLUMN (engineer 26-10),
+        d2 = f['top2']         # U like the bottom mesh (top U = bottom U), no chairs, no top mesh
+        c_ = f.get('col') or [f['L'] / 2 - 150, f['W'] / 2 - 150, f['L'] / 2 + 150, f['W'] / 2 + 150]
+        long_is_x = f['L'] >= f['W']
+        for along in ('X', 'Y'):
+            run = (f['L'] if along == 'X' else f['W']) - 2 * COVER
+            a0, a1 = (c_[1], c_[3]) if along == 'X' else (c_[0], c_[2])          # the column across the bar
+            mid, half = (a0 + a1) / 2, max(50, (a1 - a0) / 2 - 75)                # inside the column cage, 75 from its faces
+            is_long = (along == 'X') == long_is_x
+            tot = run + 2 * lg; lp = 60 * d2; pats = lap_patterns(tot, lp)
+            out.append(dict(layer='T', tag='T' + ('2' if is_long else '1'), along=along, d=d2, s=None, n=2, omit=0, straight=run, leg=lg,
+                            L=tot if len(pats[0]) == 1 else max(t1 - t0 for t0, t1 in pats[0] + pats[-1]), up=False,
+                            pieces=len(pats[0]), lap=lp, pats=pats, T=tot, two=True, at=[mid - half, mid + half]))
     return out
 
 
@@ -175,7 +188,13 @@ def draw_sheet(doc, idx, f, meta, bl):
     strip = f['L'] / f['W'] > 3.2                    # long narrow raft / combined footing: full-width panels stacked
     k = min(4.0, 23000 / f['L'], 4000 / f['W']) if strip else min(4.0, 9300 / f['W'], 14500 / f['L'])       # leaves room for the panel names between the rows     # drawing factor: 4 = 1:25 on the 1:100 frame
     for b in bars:                               # one mark per piece (end pieces with their leg); laps staggered
-        b['pats'], b['marks'] = lapped_marks(bl, b['d'], b['T'], b['leg'], b['leg'], b['n'], f['no'], b['tag'], b['lap'])
+        if b.get('two'):                         # the 2 top bars: their own mark even when a bottom bar has the same shape
+            from gen import piece_shape
+            shp_, L_ = piece_shape(0, b['T'], b['T'], b['leg'], b['leg'])
+            m_ = bl.add(b['d'], tuple(shp_) + ('TOP',), L_, b['n'], f['no'], b['tag'])
+            b['pats'], b['marks'] = [[(0, b['T'])]], [(m_, b['n'], L_)]
+        else:
+            b['pats'], b['marks'] = lapped_marks(bl, b['d'], b['T'], b['leg'], b['leg'], b['n'], f['no'], b['tag'], b['lap'])
         b['mk'] = b['marks'][0][0]
     def cot(b):                                  # call-out(s) of a main bar: every piece with its own length
         if b.get('omit'):
@@ -219,8 +238,11 @@ def draw_sheet(doc, idx, f, meta, bl):
         P = lambda x, y: (ox + x * k, oy + y * k)
         sh.pline([P(0, 0), P(f['L'], 0), P(f['L'], f['W']), P(0, f['W'])], 'S-GB-CONC', 0, True)
         sh.text(f['name'], ox, oy + H_ + 250, 400, 'S-AXIS-TXT')          # panel name above the outline, clear of the bars
-        for c_ in (f.get('cols') or ([f['col']] if f.get('col') else [])):
-            sh.hatch_rect(*P(c_[0], c_[1]), *P(c_[2], c_[3]))
+        if f.get('shapes'):                       # columns / walls with their real shape (engineer 26-10: always shown)
+            for sp_ in f['shapes']: sh.hatch_poly([P(x_, y_) for x_, y_ in sp_])
+        else:
+            for c_ in (f.get('cols') or ([f['col']] if f.get('col') else [])):
+                sh.hatch_rect(*P(c_[0], c_[1]), *P(c_[2], c_[3]))
         tpos = {'B': (0.45, 0.82), 'T': (0.55, 0.20), 'S': (0.75, 0.32)}[kind]       # thickness tag in a free corner
         sh.circle(*P(f['L'] * tpos[0], f['W'] * tpos[1]), 330, 'S-SEC')
         sh.text(str(f['h']), *P(f['L'] * tpos[0], f['W'] * tpos[1]), 260, 'S-SEC', align=TA.MIDDLE_CENTER)
@@ -243,6 +265,29 @@ def draw_sheet(doc, idx, f, meta, bl):
             for b in [b for b in bars if b['layer'] == kind]:
                 m = mk(b)
                 lay = 'S-RFT-BOT' if kind == 'B' else 'S-RFT-TOP'
+                if b.get('two'):                              # 2 top bars over the column, each drawn where it lies
+                    lgk = min(b['leg'] * k, 1100)
+                    for j_, t_ in enumerate(b['at']):
+                        if b['along'] == 'X':
+                            x0, x1 = COVER, f['L'] - COVER
+                            pts = [(P(x0, t_)[0], P(x0, t_)[1] - lgk), P(x0, t_), P(x1, t_), (P(x1, t_)[0], P(x1, t_)[1] - lgk)]
+                        else:
+                            y0, y1 = COVER, f['W'] - COVER
+                            pts = [(P(t_, y0)[0] + lgk, P(t_, y0)[1]), P(t_, y0), P(t_, y1), (P(t_, y1)[0] + lgk, P(t_, y1)[1])]
+                        draw_bar(sh, pts, b, lay, k, -110)
+                    # call-outs OUTSIDE the outline (small footings): X bars above it, Y bars right of it; leaders to the bars
+                    if b['along'] == 'X':
+                        yb2 = max(b['at']); sh.text(mm(b['straight']), P(f['L'] * 0.30, 0)[0], P(0, yb2)[1] + 150, ST['len'], 'S-DIM', align=TA.BOTTOM_CENTER)
+                        tx, ty = ox + W_ * 0.40, oy + H_ + 850                 # above the panel name
+                        sh.line(P(f['L'] * 0.85, yb2), (tx + 150, ty + 60), 'S-RFT-TXT')
+                        sh.ctext(m, cot(b) + '  (OVER THE COLUMN)', tx, ty, ST['call'] * 0.9, 'S-RFT-TXT')
+                    else:
+                        xb2 = max(b['at']); sh.text(mm(b['straight']), P(xb2, 0)[0] + 200, P(0, f['W'] * 0.30)[1], ST['len'], 'S-DIM', rot=90, align=TA.TOP_CENTER)
+                        t2_ = cot(b) + '  (OVER THE COLUMN)'; hh_ = ST['call'] * 0.9
+                        tx, ty = ox + W_ + 450, oy + len(t2_) * hh_ * 0.45 + 3.5 * hh_     # text centre; hexagon at its lower end
+                        sh.line(P(xb2, f['W'] * 0.15), (tx - 60, oy + 3.5 * hh_), 'S-RFT-TXT')
+                        sh.ctext(m, t2_, tx, ty, hh_, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
+                    continue
                 lgk = min(b['leg'] * k, 1100)                    # legs shown folded into the plan
                 sgn = 1 if b['up'] else -1
                 ccs_ = f.get('cols') or []
@@ -405,9 +450,15 @@ def draw_sheet(doc, idx, f, meta, bl):
         ins = 0                                          # top U = bottom U: legs side by side at the face (engineer)
         xl, xr = c + ins + TX['d'] / 2, L - c - ins - TX['d'] / 2
         sh.pline([Q(xl, bot_of_leg), Q(xl, tX), Q(xr, tX), Q(xr, bot_of_leg)], 'S-RFT-TOP', max(TX['d'] * ks, 20), r=3 * TX['d'] * ks)
-        dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
-        lines.append((tX, TX['mk'], cot(TX), dot2(xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2, TY['s']) - TY['s'] * 1.5))
-        lines.append((tY, TY['mk'], cot(TY), dot2(xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2, TY['s'])))
+        if TY.get('two'):                                # 2 bars over the column: their two dots
+            for x_ in TY['at']:
+                hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'}); hh.paths.add_edge_path().add_arc(sh.P(*Q(x_, tY)), max(TY['d'] / 2 * ks, 18), 0, 360)
+            lines.append((tX, TX['mk'], cot(TX) + ' (OVER THE COLUMN)', min(L - c - 300, max(TY['at']) + 600)))
+            lines.append((tY, TY['mk'], cot(TY) + ' (OVER THE COLUMN)', max(TY['at'])))
+        else:
+            dots(tY, TY['d'], TY['s'], 'S-RFT-TOP', xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2)
+            lines.append((tX, TX['mk'], cot(TX), dot2(xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2, TY['s']) - TY['s'] * 1.5))
+            lines.append((tY, TY['mk'], cot(TY), dot2(xl + (TX['d'] + TY['d']) / 2, xr - (TX['d'] + TY['d']) / 2, TY['s'])))
     # side bars (rows) on both faces
     y0, y1 = (yY + 60) if bx_ else c + 60, (tY - 60) if tx_ else h - c - 60
     for i in range(side['rows']):
@@ -444,7 +495,7 @@ def draw_sheet(doc, idx, f, meta, bl):
         kc = min(5.0, mh_ / max(sb['ch_h'], 1), 5200 / (2 * sb['ch_foot'] + sb['ch_top'] + 240))
         if kc >= 2.0:                                       # 1:50 or larger, else the section + BBS carry it
             gen.draw_chair_detail(sh, 25300, y0c, sb['ch_foot'], sb['ch_h'], sb['ch_top'], 16, sb['mk_ch'], sb['chairs'], sb['chair_L'],
-                                  h, c, [f['top'][1], f['top'][3]], maxh=mh_, title=False)
+                                  h, c, [f['top'][1], f['top'][3]], maxh=mh_, title=False, under=bool(PRJ.get('chair_under_bottom')), bots=(f['bot'][1], f['bot'][3]))
     sh.dim(Q(0, -100), Q(L, -100), (Q(0, 0)[0], Q(0, -100)[1] - 400), text=str(L))
     sh.dim(Q(0, 0), Q(0, h), (Q(0, 0)[0] - 450, Q(0, 0)[1]), angle=90, text=str(h))
     sh.dim(Q(-100, -100), Q(-100, 0), (Q(-100, 0)[0] - 250, Q(0, -100)[1]), angle=90, text='100')

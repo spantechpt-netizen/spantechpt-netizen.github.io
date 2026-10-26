@@ -471,6 +471,22 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
 - **Footing schedule by thickness** without the row (0.95): use the footing the engineer names (its per-metre bars,
   long bars outer), keep the plan's sizes and thickness; write it on the sheet.
 
+### BLSC 26-10 (corrected foundation plan) - keep applying
+- **Isolated footing top steel** = the schedule's "2 bars" (2 T14 / 2 T16) EACH WAY OVER THE COLUMN (`top2` in the
+  footing data): U like the bottom mesh, inside the column cage 75 from its faces, own mark, NO chairs, no top mesh.
+- **Chairs** (`chair_under_bottom: false`): height from the TOP of the bottom mesh to the UNDERSIDE of the top mesh
+  = h - 2c - 2 bottom layers - 2 top layers; the chair detail states it.
+- **No DIAG / re-entrant corner bars** unless on the approved drawings (`reentrant_bars: false`).
+- **Columns and walls always on the footing plans** with their real shape (`shapes`: polygons in local mm; round
+  columns, U core walls) - an outline-only 1200x1200 in a band is a column.
+- **Cut bars**: one call-out (own hexagon) per piece; more than 24 call-outs on a plan -> BAR TABLE (rows from the
+  edge, every piece MARK-LENGTH for both lap patterns), very long bands on A0 (`big`).
+- **Sloped / kinked edges**: rows within 100 mm of the same length = one range, bars cut to the shortest and centred
+  (red note, engineer to confirm).
+- **One CF file**: `gen_cf.py` puts rectangular CF (gen_f) and real-outline CF (gen_mat) in one DXF with one BBS.
+- The engineer may return OUR FOUNDATION CONC DIM sheet corrected: read S-CD-RC outlines, S-CD-COL hatches, S-COLS
+  arcs and his S-FNDN additions; plan mm = sheet - offset of the sheet (find it from 2-3 unchanged footings).
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,

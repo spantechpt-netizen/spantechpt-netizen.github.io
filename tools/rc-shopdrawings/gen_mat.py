@@ -24,12 +24,17 @@ C = PRJ.get('footing_cover', 70)
 STOCK = 12000
 TOL = 50                                                   # rows within 50 mm of the same ends = one range
 TOL_CURVE = 100                                            # curved edges: within 100 mm, cut to the shortest (cover 70..170)
+SLOPE_MAX = 22                                             # more ranges than this in one direction: group by length
+TABLE_MIN = 24                                             # more call-outs than this on one plan: bar table instead of leaders
+SLOPE_TOL = 100                                            # rows within 100 mm of the same length = one range (cut to the shortest)
 
 
 class BigTF:                                              # A0 at 1:200: the A3 text sizes x 2
     def __new__(cls, doc, ox, oy, meta):
-        import gen_cd
-        class _B(gen_cd.BigSheet):
+        class _Big(Sheet):                                 # A0 at 1:200 (same as gen_cd.BigSheet, without its data)
+            W, H = 237800, 168200
+            dimstyle = 'GB200'
+        class _B(_Big):
             def text(self, s_, x, y, h=250, layer='S-RFT-TXT', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
                 return super().text(s_, x, y, h if layer == 'S-TITLE' else h * 2, layer, rot, align, maxw)
             def ctext(self, mk, s_, x, y, h=250, layer='S-RFT-TXT', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
@@ -87,6 +92,21 @@ def ranges(pg, d, s, axis):
                          [(min(a, a2), max(b, b2)) for (a, b), (a2, b2) in zip(g['segs'], sg)])
         else:
             out.append(dict(t0=t, t1=t, n=1, segs=sg, first=list(sg)))
+    if sum(len(g['segs']) for g in out) > SLOPE_MAX:          # sloped / kinked edges: every row its own length -> group the
+        out = []                                              # rows by LENGTH (within SLOPE_TOL), bars cut to the shortest of
+        for t, sg in rows:                                    # the group, centred in each row (end cover C .. C + SLOPE_TOL / 2)
+            if not sg: continue
+            g = out[-1] if out else None
+            if g and len(g['rows'][0][1]) == len(sg) and all(abs((b - a) - (b0 - a0)) <= SLOPE_TOL and a < b0 and a0 < b
+                                                             for (a, b), (a0, b0) in zip(sg, g['rows'][0][1])):
+                g['rows'].append((t, sg)); g['t1'] = t; g['n'] += 1
+            else:
+                out.append(dict(t0=t, t1=t, n=1, rows=[(t, sg)]))
+        for g in out:
+            tm_, sm_ = g['rows'][len(g['rows']) // 2]
+            lmin = [min(r_[1][j][1] - r_[1][j][0] for r_ in g['rows']) for j in range(len(sm_))]
+            g['segs'] = [((a + b) / 2 - lm / 2, (a + b) / 2 + lm / 2) for (a, b), lm in zip(sm_, lmin)]
+            g['sloped'] = True
     return out, step
 
 
@@ -202,7 +222,10 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
 
     def outline(sh, dims=True):
         sh.pline([P(*p) for p in poly], 'S-GB-CONC', 25 * G, True)
-        for c_ in f.get('cols') or []: sh.hatch_rect(*P(c_[0], c_[1]), *P(c_[2], c_[3]))
+        if f.get('shapes'):
+            for sp_ in f['shapes']: sh.hatch_poly([P(x_, y_) for x_, y_ in sp_])
+        else:
+            for c_ in f.get('cols') or []: sh.hatch_rect(*P(c_[0], c_[1]), *P(c_[2], c_[3]))
         if dims:                                           # every edge dimensioned outside the outline
             cx, cy = pg_out.centroid.x, pg_out.centroid.y
             for a, b in zip(poly, poly[1:] + poly[:1]):
@@ -214,7 +237,7 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
                 ang = math.degrees(math.atan2(b[1] - a[1], b[0] - a[0]))
                 if ang > 90.5 or ang <= -89.5: ang += 180
                 sh.text(str(round(Ls)), *P(mx + nx * 260 / k, my + ny * 260 / k), 170, 'S-DIM', rot=ang, align=TA.MIDDLE_CENTER)
-        for (cx, cy), u in reentrant(poly):
+        for (cx, cy), u in (reentrant(poly) if PRJ.get('reentrant_bars', True) else []):
             sh.circle(*P(cx, cy), 90, 'S-DIM')
 
     # ------------------------------------------------ mesh sheets
@@ -228,11 +251,12 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
         return next((100 / dn for dn in (50, 75, 100, 125, 150, 200, 250) if 100 / dn <= min(15500 / L, 8300 / W)), None)
 
     rc_all = reentrant(poly)
-    if rc_all: report.append(f"{f['name']}: {len(rc_all)} re-entrant corners - 2 T16 L=1500 diagonal bars bottom & top (SPAN TECH PROPOSAL)")
+    if rc_all and PRJ.get('reentrant_bars', True): report.append(f"{f['name']}: {len(rc_all)} re-entrant corners - 2 T16 L=1500 diagonal bars bottom & top (SPAN TECH PROPOSAL)")
 
     def corner_bars(sh, layer):
-        """2 T16 L=1500 diagonal bars at every re-entrant corner of this mesh layer, drawn on its plan."""
-        if not rc_all: return None
+        """2 T16 L=1500 diagonal bars at every re-entrant corner of this mesh layer, drawn on its plan.
+        Project option reentrant_bars: false (BLSC, engineer 26-10: not on the approved drawings, not executed)."""
+        if not rc_all or not PRJ.get('reentrant_bars', True): return None
         er_ = pg.buffer(-C, join_style=2)
         mkc = bl.add(16, ('S', 1500), 1500, 2 * len(rc_all), f['no'], 'DIAG')
         for (cx, cy), u in rc_all:
@@ -272,7 +296,7 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
                 k, ox, oy, scale_txt = k0, ox0, oy0, sc0
                 sh = frame(f"{LNAME} REINFORCEMENT - BARS ALONG {axis}")
                 y_title, y_zone, y_warn = 2500 * G, HS * 0.905, HS * 0.875
-                y_top, y_bot = min(HS * 0.86, P(0, W)[1]), 3000 * G
+                y_top, y_bot = HS * 0.86, 3000 * G                 # the call-out list uses the whole height (long thin plans)
             outline(sh)
             # allowed lap zones by the supports (engineer, BLSC): bottom at midspan, top at the supports, +/- span / 5
             sup = sorted((f.get('supports') or {}).get(axis, []))
@@ -302,7 +326,7 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
                         + f' - LAP {60 * d} (60d), ALTERNATE BARS STAGGERED >= 500', WS * 0.048, y_zone, ST['note'] * G, 'S-DIM', maxw=WS * 0.62)
             lay = 'S-RFT-BOT' if layer == 'B' else 'S-RFT-TOP'
             lp = 60 * d
-            items = []
+            items = []; tab = []
             for gi, g in enumerate(rg):
                 tm = (g['t0'] + g['t1']) / 2
                 for a, b in g['segs']:
@@ -316,6 +340,16 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
                             sh.text(f'(!) {axis}: WITH 12 m BARS THE LAPS CANNOT ALL BE INSIDE THE ALLOWED ZONES (SUPPORTS TOO FAR APART): SHOWN AS EQUAL STAGGERED PIECES - RFI-24 (NOT FOR CONSTRUCTION)',
                                     WS * 0.048, y_warn, ST['note'] * G, 'S-DIM', maxw=WS * 0.62).dxf.color = 1
                     mk = marks[0][0]
+                    from gen import piece_shape as _ps
+                    seqs = []                                   # every lap pattern: its pieces in order (mark, cutting length)
+                    for pat in pats:
+                        sq = []
+                        for t0_, t1_ in pat:
+                            shp_, L_ = _ps(t0_, t1_, tot, lg, lg)
+                            r_ = bl.rows.get((d, tuple(shp_), int(round(L_))))
+                            sq.append((r_['mark'] if r_ else mk, int(round(L_))))
+                        seqs.append(sq)
+                    tab.append((g['t0'], g['t1'], g['n'], seqs, len(pats)))
                     txt = ' + '.join(callout(c, d, m_, L_, s if not i else None, tag) + ((' -STG' if len(marks) > 1 else '') if not i else f' (MARK {m_:02d})')
                                      for i, (m_, c, L_) in enumerate(marks))      # every piece names its own BBS mark
                     # the bar with its U legs folded into the plan (engineer: "the legs are not drawn"), pieces + laps
@@ -341,23 +375,76 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
                         sh.line(Q(ud, g['t0']), Q(ud, g['t1']), 'S-DIM')
                         for t_ in (g['t0'], g['t1']): sh.line(Q(ud - 60 / k, t_ - 60 / k), Q(ud + 60 / k, t_ + 60 / k), 'S-DIM')
                     sh.circle(*Q(ud, tm), 30, 'S-DIM')
-                    items.append((Q(ud, tm), mk, txt, g, (a, b)))
+                    if len(marks) == 1:
+                        items.append((Q(ud, tm), mk, txt, g, (a, b)))
+                    else:                                       # every piece its own mark + call-out, leader to the piece (engineer 26-10)
+                        from gen import piece_shape
+                        cnt_ = {m_: c for m_, c, L_ in marks}
+                        where = {}
+                        for pi_, pat in enumerate(pats):
+                            for t0_, t1_ in pat:
+                                shp_, L_ = piece_shape(t0_, t1_, tot, lg, lg)
+                                m_ = next((mm_ for mm_, c, LL in marks if LL == L_ and (d, tuple(shp_), int(round(L_))) in bl.rows
+                                           and bl.rows[(d, tuple(shp_), int(round(L_)))]['mark'] == mm_), None)
+                                if m_ is not None and m_ not in where:
+                                    u_ = min(b - 50, max(a + 50, a + ((t0_ + t1_) / 2 - lg)))
+                                    where[m_] = (u_, pi_)
+                        for i_, (m_, c, L_) in enumerate(marks):
+                            u_, pi_ = where.get(m_, (ud, 0))
+                            tx_ = callout(c, d, m_, L_, s if i_ == 0 else None, tag) + (' -STG' if i_ == 0 else '') + ('  (ALTERNATE BARS)' if pi_ else '')
+                            items.append((Q(u_, tm), m_, tx_, g if i_ == 0 else None, (a, b)))
             if axis == 'X':
                 cb_ = corner_bars(sh, layer)
                 if cb_: items.append(cb_)
+            if len(items) > TABLE_MIN:                         # too many for leaders: a bar table (engineer 26-10: each bar its own
+                lx = P(L, 0)[0] + 900 * G                       # mark and length, nothing unified)
+                t_first = min(t[0] for t in tab); stp = pre[axis][1]
+                rows_ = sorted(tab, key=lambda t: t[0])
+                rh = 360 * G; hd = 200                           # the A0 sheet doubles text heights itself
+                colw = [1900 * G, 1000 * G]; rest = WS * 0.95 - 6800 * G - lx - sum(colw)
+                y0_ = (y_top + 300 * G) if merged else HS * 0.80                # below the legend and the sheet notes
+                per_blk = int((y0_ - (y_bot if merged else 2600 * G)) / rh) - 2
+                sh.text(f"BARS ALONG {axis} ({LNAME}) - T{d} @{s} {tag}: ROW 1 = FIRST BAR AT THE COVER FROM THE {'LOWER' if axis == 'X' else 'LEFT'} EDGE, "
+                        f"ROWS EVERY {round(stp)}; PIECES IN ORDER FROM THE {'LEFT' if axis == 'X' else 'LOWER'} END AS MARK-CUTTING LENGTH; LAPS {60 * d} STAGGERED (PATTERNS A / B ALTERNATE)",
+                        lx, y0_ + 300 * G, ST['note'] * 0.9, 'S-RFT-TXT', maxw=WS * 0.95 - 6800 * G - lx)
+                heads = ['ROWS', 'BARS', 'PIECES: PATTERN A (1ST, 3RD ... BAR OF THE RANGE)  -  PATTERN B (2ND, 4TH ...)']
+                yy = y0_
+                for j_, h_ in enumerate(heads):
+                    sh.text(h_, lx + sum(colw[:j_]) + 80, yy - rh * 0.7, hd, 'S-RFT-TXT')
+                sh.line((lx, yy - rh), (lx + sum(colw) + rest, yy - rh), 'S-FRAME')
+                for i_, (t0_, t1_, n_, seqs, npat) in enumerate(rows_[:per_blk]):
+                    yy = y0_ - rh * (i_ + 2)
+                    r0, r1 = round((t0_ - t_first) / stp) + 1, round((t1_ - t_first) / stp) + 1
+                    sq_txt = '  -  '.join(' + '.join(f'{m_:02d}-{L_}' for m_, L_ in sq) for sq in seqs)
+                    for j_, v_ in enumerate((f'{r0}-{r1}' if r1 > r0 else f'{r0}', str(n_), sq_txt)):
+                        sh.text(v_, lx + sum(colw[:j_]) + 80, yy + rh * 0.25, hd, 'S-RFT-TXT', maxw=(colw + [rest])[j_] - 150)
+                    sh.line((lx, yy), (lx + sum(colw) + rest, yy), 'S-FRAME')
+                for xx_ in [0, colw[0], sum(colw), sum(colw) + rest]:
+                    sh.line((lx + xx_, y0_), (lx + xx_, y0_ - rh * (min(len(rows_), per_blk) + 1)), 'S-FRAME')
+                if len(rows_) > per_blk: report.append(f"{f['name']} {layer}{axis}: bar table cut at {per_blk} rows (CHECK)")
+                sh.text(f"{LNAME} REINFORCEMENT - BARS ALONG {axis}  ({len(rg)} RANGES, TABLE)  {scale_txt}", ox, y_title, ST['panel'], 'S-SEC')
+                for t0_, t1_, n_, seqs, npat in rows_:
+                    report.append(f"{f['name']} {layer}{axis}: {n_} bars, rows {round(t0_)}..{round(t1_)}")
+                continue
             # call-out list right of the plan, leaders to the dot on each range
             lx = P(L, 0)[0] + 900 * G
             items.sort(key=lambda it: -it[0][1])
             dy = max(420 * G, min(650 * G, (y_top - y_bot) / max(1, len(items))))
+            per_col = max(1, int((y_top - y_bot) / dy) + 1)              # a long list continues in a second column
+            ncol = math.ceil(len(items) / per_col)
+            cw = (WS * 0.95 - lx - 6800 * G) / ncol
             for i, (pt, mk, txt, g, ab) in enumerate(items):
-                ty = y_top - i * dy
-                sh.pline([pt, (lx - 150, ty + 90)], 'S-RFT-TXT')
-                sh.ctext(mk, txt, lx, ty, ST['call'] * 0.75, maxw=WS * 0.95 - lx - 6800 * G)
+                cx_, ty = lx + (i // per_col) * cw, y_top - (i % per_col) * dy
+                sh.pline([pt, (cx_ - 150, ty + 90)], 'S-RFT-TXT')
+                sh.ctext(mk, txt, cx_, ty, ST['call'] * (0.75 if ncol == 1 else 0.6), maxw=cw - 300 * G)
                 if g: report.append(f"{f['name']} {layer}{axis}: {g['n']} bars, piece {round(ab[1] - ab[0])}, rows {round(g['t0'])}..{round(g['t1'])}")
             sh.text(f"{LNAME} REINFORCEMENT - BARS ALONG {axis}  ({len(rg)} RANGES)  {scale_txt}", ox, y_title, ST['panel'], 'S-SEC')
+            if any(g.get('sloped') for g in rg):
+                sh.text(f'SLOPED EDGES: ROWS WITHIN {SLOPE_TOL} MM OF THE SAME LENGTH = ONE RANGE, BARS CUT TO THE SHORTEST AND CENTRED (END COVER {C}-{C + SLOPE_TOL // 2}) - ENGINEER TO CONFIRM (RFI-32)',
+                        ox + 9000 * G, y_title, ST['note'] * G, 'S-DIM', maxw=WS * 0.5).dxf.color = 1
             if not merged or j == 1:
                 sh.text(f'EVERY BAR FROM FACE TO FACE - COVER {C}, U LEGS {lg}; ONE BAR DRAWN PER RANGE, DISTRIBUTION LINE = THE RANGE; '
-                        'CIRCLES = RE-ENTRANT CORNERS (2 T16 DIAGONAL BARS EACH, ON THE BARS ALONG X PLAN).', ox, (1900 if not merged else 2500) * G, ST['note'], 'S-RFT-TXT', maxw=WS * 0.8)
+                        + ('CIRCLES = RE-ENTRANT CORNERS (2 T16 DIAGONAL BARS EACH, ON THE BARS ALONG X PLAN).' if PRJ.get('reentrant_bars', True) else ''), ox, (1900 if not merged else 2500) * G, ST['note'], 'S-RFT-TXT', maxw=WS * 0.8)
     k, ox, oy, scale_txt = k0, ox0, oy0, sc0
 
     if f.get('mesh_only'):                                 # a slab cast with its strips: mesh sheets only
@@ -480,7 +567,7 @@ def draw_mat(doc, idx0, f, meta0, bl, report):
         mkch = bl.add(16, ('CH', 300, ch_h, 400), chL, chairs, f['no'], 'CH')
         cxx = 21500 if ylow < 12000 else 2600
         cyy = 4200 if ylow < 12000 else max(4200, ylow - 4800)
-        draw_chair_detail(sh, cxx, cyy, 300, ch_h, 400, 16, mkch, chairs, chL, h, C, [f['top'][1], f['top'][3]])
+        draw_chair_detail(sh, cxx, cyy, 300, ch_h, 400, 16, mkch, chairs, chL, h, C, [f['top'][1], f['top'][3]], under=bool(PRJ.get('chair_under_bottom')), bots=(f['bot'][1], f['bot'][3]))
         report.append(f"{f['name']}: chairs {chairs} T16 H={ch_h} L={chL}")
     # typical edge section 1:25 (U legs, side bars, chair)
     ks = 4; sx0, sy0 = (2600 if ylow < 12000 else 21500), 4300

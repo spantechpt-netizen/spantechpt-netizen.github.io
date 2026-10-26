@@ -322,6 +322,13 @@ class Sheet:
         h.set_pattern_fill('ANSI31', scale=20)
         self.pline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], layer, closed=True)
 
+    def hatch_poly(self, pts, layer='S-GB-COL'):
+        """column / wall of any shape (round column, U wall) hatched like hatch_rect."""
+        h = self.m.add_hatch(color=8, dxfattribs={'layer': layer})
+        h.paths.add_polyline_path([self.P(x, y) for x, y in pts], is_closed=True)
+        h.set_pattern_fill('ANSI31', scale=20)
+        self.pline(list(pts), layer, closed=True)
+
     def frame(self):
         if TB: return self.frame_tb()
         W, H = self.W, self.H
@@ -563,7 +570,7 @@ def _symbol(sh, x, y, w, h, shape, d):
         sh.text(str(lg), x0 + 2.6 * u + 170, y0 + hh / 2, 120, 'S-RFT-TXT', rot=90, align=TA.BOTTOM_CENTER)
 
 
-def draw_chair_detail(sh, x, y, foot, ch_h, top, d, mk, n, L, h, cover, tops, s=1000, maxh=4200, title=True):
+def draw_chair_detail(sh, x, y, foot, ch_h, top, d, mk, n, L, h, cover, tops, s=1000, maxh=4200, title=True, under=True, bots=(16, 16)):
     """Chair detail to scale (engineer: every part, the real height and the cutting length on the sheet - nothing to
     deduce on site). x, y = lower-left of the drawing (bottom of the foot). tops = top-mesh diameters [d1, d2].
     Shows the bottom mesh resting on the foot, the top mesh on the chair top, all five parts dimensioned, the
@@ -574,10 +581,16 @@ def draw_chair_detail(sh, x, y, foot, ch_h, top, d, mk, n, L, h, cover, tops, s=
     pts = [Q(u0, 0), Q(u1, 0), Q(u1, ch_h), Q(u2, ch_h), Q(u2, 0), Q(u3, 0)]
     sh.pline(pts, 'S-RFT-STIR', max(d * k, 25), r=2.5 * d * k)
     # bottom mesh (two layers) on the feet, top mesh (two layers) under the chair top: context in grey
-    db = 16
-    sh.line(Q(-150, d + db / 2), Q(u3 + 150, d + db / 2), 'S-DIM')
-    for uu in (u0 + 120, u1 - 80, u2 + 80, u3 - 120):
-        sh.circle(*Q(uu, d + db + db / 2), max(db / 2 * k, 18), 'S-DIM')
+    b1, b2 = (list(bots) + [16, 16])[:2]
+    if under:                                    # foot under the bottom mesh: the mesh rests on the feet
+        sh.line(Q(-150, d + b1 / 2), Q(u3 + 150, d + b1 / 2), 'S-DIM')
+        for uu in (u0 + 120, u1 - 80, u2 + 80, u3 - 120):
+            sh.circle(*Q(uu, d + b1 + b2 / 2), max(b2 / 2 * k, 18), 'S-DIM')
+    else:                                        # chair standing ON the bottom mesh (engineer 26-10)
+        sh.line(Q(-150, -b2 - b1 / 2), Q(u3 + 150, -b2 - b1 / 2), 'S-DIM')
+        for uu in (u0 + 120, u1 - 80, u2 + 80, u3 - 120):
+            sh.circle(*Q(uu, -b2 / 2), max(b2 / 2 * k, 18), 'S-DIM')
+    db = b1
     t1, t2 = (tops + [0, 0])[:2]
     if t1:
         yt = ch_h + t1 / 2
@@ -585,7 +598,7 @@ def draw_chair_detail(sh, x, y, foot, ch_h, top, d, mk, n, L, h, cover, tops, s=
         for uu in (u1 + 60, (u1 + u2) / 2, u2 - 60):
             sh.circle(*Q(uu, ch_h + t1 + t2 / 2), max(t2 / 2 * k, 18), 'S-DIM')
     sh.text('TOP MESH', *Q(u3 + 200, ch_h + t1), 140, 'S-DIM', align=TA.MIDDLE_LEFT)
-    sh.text('BOTTOM MESH', *Q(u3 + 200, d + db), 140, 'S-DIM', align=TA.MIDDLE_LEFT)
+    sh.text('BOTTOM MESH', *Q(u3 + 200, d + db if under else -b2), 140, 'S-DIM', align=TA.MIDDLE_LEFT)
     # every part dimensioned
     sh.dim(Q(u0, 0), Q(u1, 0), (Q(0, 0)[0], Q(0, 0)[1] - 450), text=str(foot))
     sh.dim(Q(u1, 0), Q(u2, 0), (Q(0, 0)[0], Q(0, 0)[1] - 450), text=str(top))
@@ -595,8 +608,12 @@ def draw_chair_detail(sh, x, y, foot, ch_h, top, d, mk, n, L, h, cover, tops, s=
     sh.text(str(top), *Q((u1 + u2) / 2, ch_h + t1 + t2 + 60 / k + 40), 150, 'S-DIM', align=TA.BOTTOM_CENTER)
     ty = Q(0, ch_h)[1] + 900
     sh.ctext(mk, callout(n, d, mk, L, s, 'CH'), x, ty + 650, ST['call'] * 0.8, maxw=9000)
-    sh.text(f'H = {h} - 2x{cover} - {t1}{"+" + str(t2) if t2 else ""} (TOP MESH) + {d} (FOOT UNDER THE BOTTOM MESH) = {ch_h}  (OUT-TO-OUT)',
-            x, ty + 250, 130, 'S-RFT-TXT', maxw=9500)
+    if under:
+        sh.text(f'H = {h} - 2x{cover} - {t1}{"+" + str(t2) if t2 else ""} (TOP MESH) + {d} (FOOT UNDER THE BOTTOM MESH) = {ch_h}  (OUT-TO-OUT)',
+                x, ty + 250, 130, 'S-RFT-TXT', maxw=9500)
+    else:
+        sh.text(f'H = {h} - 2x{cover} - {b1}+{b2} (BOTTOM MESH) - {t1}{"+" + str(t2) if t2 else ""} (TOP MESH) = {ch_h}  (TOP OF BOTTOM MESH TO UNDERSIDE OF TOP MESH)',
+                x, ty + 250, 130, 'S-RFT-TXT', maxw=9500)
     sh.text(f'L = {foot} + {ch_h} + {top} + {ch_h} + {foot} = {L}   (T{d}, 1 CHAIR PER m2, @{s} x {s})', x, ty - 100, 130, 'S-RFT-TXT', maxw=9500)
     if title:
         sh.text(f'CHAIR DETAIL 1:{round(100 / k)}', x, Q(0, 0)[1] - 1250, ST['panel'] * 0.8, 'S-SEC')
