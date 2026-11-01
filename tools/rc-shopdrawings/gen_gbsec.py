@@ -169,7 +169,8 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
         if q.get('beam'):                                           # end on a beam: its cross section, cut
             ms.pl([(a, bot), (a, top)], 'GB-CONC'); ms.pl([(b, bot), (b, top)], 'GB-CONC')
             ms.hatch([(a, bot), (b, bot), (b, top), (a, top)], 'GB-HATCH', 'ANSI31', 15)
-            ms.tx(q['lab'], (a + b) / 2, top + 900 + th * 1.2, al=TA.BOTTOM_CENTER, h=th * 0.9)
+            first = q is ln.sup[0]                                   # label kept inside the view: left / right aligned
+            ms.tx(q['lab'], a if first else b, top + 900 + th * 1.2, al=TA.BOTTOM_LEFT if first else TA.BOTTOM_RIGHT, h=th * 0.9)
             ms.ln(((a + b) / 2, top), ((a + b) / 2, top + 900 + th * 1.0), 'GB-TXT')
             continue
         for y0, y1 in ((bot - ext, bot), (top, top + ext)):
