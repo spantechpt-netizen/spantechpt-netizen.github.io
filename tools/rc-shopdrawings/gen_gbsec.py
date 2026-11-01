@@ -170,8 +170,9 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
             ms.pl([(a, bot), (a, top)], 'GB-CONC'); ms.pl([(b, bot), (b, top)], 'GB-CONC')
             ms.hatch([(a, bot), (b, bot), (b, top), (a, top)], 'GB-HATCH', 'ANSI31', 15)
             first = q is ln.sup[0]                                   # label kept inside the view: left / right aligned
-            ms.tx(q['lab'], a if first else b, top + 900 + th * 1.2, al=TA.BOTTOM_LEFT if first else TA.BOTTOM_RIGHT, h=th * 0.9)
-            ms.ln(((a + b) / 2, top), ((a + b) / 2, top + 900 + th * 1.0), 'GB-TXT')
+            yl = top + 900 + th * (1.2 if first else 2.8)          # second label one row higher: never on the first
+            ms.tx(q['lab'], a if first else b, yl, al=TA.BOTTOM_LEFT if first else TA.BOTTOM_RIGHT, h=th * 0.9)
+            ms.ln(((a + b) / 2, top), ((a + b) / 2, yl - th * 0.2), 'GB-TXT')
             continue
         for y0, y1 in ((bot - ext, bot), (top, top + ext)):
             ms.pl([(a, y0), (a, y1)], 'GB-CONC'); ms.pl([(b, y0), (b, y1)], 'GB-CONC')
