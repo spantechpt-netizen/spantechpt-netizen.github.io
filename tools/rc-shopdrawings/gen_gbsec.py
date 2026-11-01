@@ -18,7 +18,7 @@ plan: P1, dwg: '...-50225-00', title: '...'}], frame: {dxf, block, title: {field
 import json, math, sys
 import ezdxf
 from ezdxf.enums import TextEntityAlignment as TA
-from gen import lap_patterns_zoned, lap_patterns
+from gen import lap_patterns_zoned, lap_patterns, callout
 
 COVER = 40
 LEG_T, LEG_B = 600, 200
@@ -43,11 +43,11 @@ class Line:
         self.cols = cols
         self.marks = []                                  # dict(mark, d, shape, dims, L, n, pos, desc)
 
-    def mark(self, d, shape, dims, Lc, n, pos, desc):
+    def mark(self, d, shape, dims, Lc, n, pos, desc, side='L'):
         for m in self.marks:
             if m['d'] == d and m['shape'] == shape and m['dims'] == dims and m['L'] == Lc and m['pos'] == pos:
                 m['n'] += n; return m['mark']
-        m = dict(mark=len(self.marks) + 1, d=d, shape=shape, dims=dims, L=Lc, n=n, pos=pos, desc=desc)
+        m = dict(mark=len(self.marks) + 1, d=d, shape=shape, dims=dims, L=Lc, n=n, pos=pos, desc=desc, side=side)
         self.marks.append(m); return m['mark']
 
     def spans(self):
@@ -96,7 +96,7 @@ class Line:
                     elif a_ or b_: shape, dims = '11', dict(A=st, B=a_ or b_)
                     else: shape, dims = '00', dict(A=Ls)
                     desc = f"{'TOP' if pos == 'T' else 'BOTTOM'} {'(PATTERN ' + 'AB'[pi] + ')' if len(pats) == 2 else ''}".strip()
-                    mk = self.mark(d, shape, tuple(sorted(dims.items())), Ls, c, pos, desc)
+                    mk = self.mark(d, shape, tuple(sorted(dims.items())), Ls, c, pos, desc, 'R' if (b_ and not a_) else 'L')
                     # u position of the piece (developed t -> u)
                     u0 = x0 + max(0, t0 - lg); u1 = x0 + min(x1 - x0, t1 - lg)
                     pieces.append(dict(mark=mk, t0=t0, t1=t1, u0=u0, u1=u1, L=Ls, legL=bool(a_), legR=bool(b_), n=c))
@@ -166,6 +166,12 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
     for q in ln.sup:
         if q['u1'] < u_lo or q['u0'] > u_hi: continue
         a, b = clip(q['u0']), clip(q['u1'])
+        if q.get('beam'):                                           # end on a beam: its cross section, cut
+            ms.pl([(a, bot), (a, top)], 'GB-CONC'); ms.pl([(b, bot), (b, top)], 'GB-CONC')
+            ms.hatch([(a, bot), (b, bot), (b, top), (a, top)], 'GB-HATCH', 'ANSI31', 15)
+            ms.tx(q['lab'], (a + b) / 2, top + 900 + th * 1.2, al=TA.BOTTOM_CENTER, h=th * 0.9)
+            ms.ln(((a + b) / 2, top), ((a + b) / 2, top + 900 + th * 1.0), 'GB-TXT')
+            continue
         for y0, y1 in ((bot - ext, bot), (top, top + ext)):
             ms.pl([(a, y0), (a, y1)], 'GB-CONC'); ms.pl([(b, y0), (b, y1)], 'GB-CONC')
         ms.brk((a - 100, bot - ext), (b + 100, bot - ext)); ms.brk((a - 100, top + ext), (b + 100, top + ext))
@@ -208,7 +214,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
                 yy = (top + th * (1.6 + 2.8 * b_['pat'])) if pos == 'T' else (bot - th * (2.2 + 2.8 * b_['pat']))
                 ms.ln((um, y), (um, yy - (0 if pos == 'T' else -th * 0.2)), 'GB-TXT')
                 ms.hexmark(um, yy + th * 0.5 if pos == 'T' else yy - th * 0.5, pc['mark'], th * 0.8)
-                ms.tx(f"{pc['n']} T{d}-{pc['L']}" + (f"  ({'AB'[b_['pat']]})" if b_['npat'] == 2 else ''), um + th * 1.1, (yy + th * 0.15) if pos == 'T' else (yy - th * 0.85), h=th * 0.8)
+                ms.tx(callout(pc['n'], d, pc['mark'], pc['L']) + (f"  ({'AB'[b_['pat']]})" if b_['npat'] == 2 else ''), um + th * 1.1, (yy + th * 0.15) if pos == 'T' else (yy - th * 0.85), h=th * 0.8)
             # laps: dimension between consecutive pieces of the same pattern
             if k + 1 < len(b_['pieces']):
                 nx = b_['pieces'][k + 1]
@@ -228,7 +234,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
             ms.dim((st['first'], bot), (st['last'], bot), (st['a'], yd), text=f"{st['n'] - 1}x{st['s']}={(st['n'] - 1) * st['s']}")
             ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text=f"{round(st['b'] - st['last'])}")
             ms.hexmark((st['a'] + st['b']) / 2 - th * 3.2, yd - th * 2.2, st['mark'], th * 0.8)
-            ms.tx(f"{st['n']} T{ln.p['ds']}-{ln.stir_dims[2]} @{st['s']}", (st['a'] + st['b']) / 2 - th * 2.0, yd - th * 2.6, h=th * 0.8)
+            ms.tx(callout(st['n'], ln.p['ds'], st['mark'], ln.stir_dims[2], st['s']), (st['a'] + st['b']) / 2 - th * 2.0, yd - th * 2.6, h=th * 0.8)
     # spans / columns chain + levels
     if not detail:
         yc = top + 900 + th * 4.5
@@ -269,7 +275,7 @@ def draw_detailing(ms, ln, y0):
             ytx = yy + th * 1.6
             ms.hexmark(um, ytx + th * 0.4, pc['mark'], th * 0.8)
             parts = ([str(lg)] if pc['legL'] else []) + [str(st)] + ([str(lg)] if pc['legR'] else [])
-            ms.tx(f"{pc['n']} T{d}-{pc['L']}   L = {' + '.join(parts)} = {pc['L']}", um + th * 1.2, ytx, h=th * 0.8)
+            ms.tx(f"{callout(pc['n'], d, pc['mark'], pc['L'])}   L = {' + '.join(parts)} = {pc['L']}", um + th * 1.2, ytx, h=th * 0.8)
             if k + 1 < len(b_['pieces']):                                         # the lap with the next piece
                 nx = b_['pieces'][k + 1]
                 ms.dim((nx['u0'], yb), (pc['u1'], yb), (nx['u0'], yb + sg * (-1) * (th * 2.0 + 450)), text=f"LAP {b_['lp']} (60d)")
@@ -314,39 +320,105 @@ def draw_xsec(ms, ln, label):
     ms.tx(f'L = 2 x ({ws} + {hs}) + 2 x {hook} = {Lst}', sx, -th * 4.6, h=th * 0.7)
 
 
-def draw_bbs(lay, x, y, ln, beam, secname='', h=2.2):
-    """BBS of this section only (paper space mm)."""
-    cols = [('BAR\nMARK', 14), ('BEAM\nMARK', 30), ('DIA\n(mm)', 12), ('No. OF\nBARS', 14), ('SHAPE\nCODE', 13),
-            ('DIMENSIONS (mm)', 46), ('CUTTING\nLENGTH (mm)', 22), ('TOTAL\nLENGTH (m)', 20), ('UNIT WT\n(kg/m)', 17), ('TOTAL\nWT (kg)', 18)]
-    W = sum(w for _, w in cols); rh = 6.5; hh = 11
-    def T(s, x_, y_, al=TA.MIDDLE_CENTER, hgt=h):
-        t = lay.add_text(s, height=hgt, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}); t.set_placement((x_, y_), align=al)
-    lay.add_text(f'BAR BENDING SCHEDULE - {secname} ({beam}) - THIS SECTION ONLY', height=3.2, dxfattribs={'layer': 'GB-TITLE'}).set_placement((x, y + 3))
+class PS:
+    """paper-space drawing in the units of the office BBS (gen.py), scaled by k into sheet mm: lets the approved
+    footing / neck BBS table and its bar sketches (gen._symbol) be drawn unchanged on a paper layout."""
+    def __init__(self, lay, x0, y0, k): self.l, self.x0, self.y0, self.k = lay, x0, y0, k
+    def P(self, x, y): return (self.x0 + x * self.k, self.y0 + y * self.k)
+    def line(self, a, b, layer): self.l.add_line(self.P(*a), self.P(*b), dxfattribs={'layer': 'GB-TITLE'})
+    def pline(self, pts, layer, width=0, closed=False, r=0):
+        from gen import fillet
+        if r: pts = fillet(pts, r, closed)
+        e = self.l.add_lwpolyline([self.P(*q) for q in pts], dxfattribs={'layer': 'GB-TITLE'}); e.closed = closed; return e
+    def text(self, s, x, y, h=250, layer='', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
+        t = self.l.add_text(s, height=h * self.k, rotation=rot, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'})
+        t.set_placement(self.P(x, y), align=align); return t
+    def circle(self, x, y, r, layer): self.l.add_circle(self.P(x, y), r * self.k, dxfattribs={'layer': 'GB-TITLE'})
+    def mark(self, x, y, n, h=250, layer=''):
+        R = h * 1.1
+        self.pline([(x + R * math.cos(math.radians(60 * j)), y + R * math.sin(math.radians(60 * j))) for j in range(6)], '', 0, True)
+        self.text(f'{int(n):02d}', x, y, h * 0.75, align=TA.MIDDLE_CENTER)
+
+
+def bbs_shape(m):
+    """BBS sketch of a mark in the office shape keys (gen._symbol): S straight, L one leg, U two legs, HT stirrup."""
+    dm = dict(m['dims'])
+    if m['shape'] == '00': return ('S', dm['A'])
+    if m['shape'] == '11': return ('L', 0, dm['A'], dm['B']) if m.get('side') == 'R' else ('L', dm['B'], dm['A'])
+    if m['shape'] == '21': return ('U', dm['A'], dm['B'], dm['C'])
+    return ('HT', dm['A'], dm['B'])
+
+
+def bbs_parts(m):
+    """the parts of the bar, in order, as written on its sketch (they add up to the cutting length)"""
+    sh = bbs_shape(m)
+    if sh[0] == 'HT': return None
+    return [v for v in sh[1:] if v]
+
+
+BBS_COLS = [('Position', 2000), ('Steel grade', 1900), ('Diameter', 1900), ('in the\nelement', 2100), ('of elements', 2100),
+            ('total', 1900), ('Symbol ( mm)', 6200), ('Length ( m)', 2300), ('Mass ( kg)', 2300), ('Total mass\n( kg)', 2500)]
+
+
+def draw_bbs(lay, x, y, ln, beam, secname='', wmax=400.0, ymin=22.0):
+    """BBS of this section only, in the office table approved on the footings / column necks (gen.draw_bbs_grouped):
+    mark in a hexagon, steel grade, diameter, number in the element / of elements / total, the bar sketch with every
+    part written on it, length (m), mass, total mass; total by diameter and of the section under it. Paper mm."""
+    from gen import _symbol
     rows = sorted(ln.marks, key=lambda m: m['mark'])
-    n = len(rows) + 2
-    lay.add_lwpolyline([(x, y), (x + W, y), (x + W, y - hh - rh * n), (x, y - hh - rh * n)], close=True, dxfattribs={'layer': 'GB-TITLE'})
-    cx = x
-    for i, (nm, w) in enumerate(cols):
-        for j, part in enumerate(nm.split('\n')):
-            T(part, cx + w / 2, y - hh / 2 + (len(nm.split('\n')) - 1) * 1.6 - j * 3.2, hgt=h * 0.9)
-        if i: lay.add_line((cx, y), (cx, y - hh - rh * (n - 2)), dxfattribs={'layer': 'GB-TITLE'})
+    W = sum(w for _, w in BBS_COLS); rh = 950; head = 1700; tit = 900
+    Ht = tit + head + rh * len(rows) + 1500
+    k = min(wmax / W, (y - ymin) / Ht)
+    sh = PS(lay, x, y - Ht * k, k); ytop = Ht                           # local units, origin at the table's lower-left
+    bot = ytop - tit - head - rh * len(rows)
+    sh.pline([(0, ytop), (W, ytop), (W, bot), (0, bot)], '', 0, True)
+    sh.text(f'BBS - {secname} ({beam}) - THIS SECTION ONLY', W / 2, ytop - tit / 2, 300, align=TA.MIDDLE_CENTER)
+    hy = ytop - tit
+    sh.line((0, hy), (W, hy), ''); sh.line((0, hy - head), (W, hy - head), '')
+    cx = 0
+    for i, (name, w) in enumerate(BBS_COLS):
+        if i > 0: sh.line((cx, hy if i not in (4, 5) else hy - head / 2), (cx, bot), '')
+        yy = hy - head / 2 if i not in (3, 4, 5) else hy - head * 0.75
+        for j, part in enumerate(name.split('\n')):
+            sh.text(part, cx + w / 2, yy + 120 - j * 260, 200, align=TA.MIDDLE_CENTER)
         cx += w
-    lay.add_line((x, y - hh), (x + W, y - hh), dxfattribs={'layer': 'GB-TITLE'})
+    nx = sum(w for _, w in BBS_COLS[:3])
+    sh.line((nx, hy - head / 2), (nx + sum(w for _, w in BBS_COLS[3:6]), hy - head / 2), '')
+    sh.text('Number', nx + sum(w for _, w in BBS_COLS[3:6]) / 2, hy - head / 4, 220, align=TA.MIDDLE_CENTER)
     tot = {}
-    for k, m in enumerate(rows):
-        yy = y - hh - rh * (k + 0.5)
-        tl = m['n'] * m['L'] / 1000.0; wt = tl * UW(m['d']); tot[m['d']] = tot.get(m['d'], 0) + wt
-        dims = '  '.join(f'{a}={v}' for a, v in m['dims'])
-        vals = [f"{m['mark']:02d}", beam, str(m['d']), str(m['n']), m['shape'], dims, str(m['L']), f'{tl:.2f}', f"{UW(m['d']):.3f}", f'{wt:.2f}']
-        cx = x
-        for (nm, w), v in zip(cols, vals):
-            T(v, cx + w / 2, yy); cx += w
-        lay.add_line((x, y - hh - rh * (k + 1)), (x + W, y - hh - rh * (k + 1)), dxfattribs={'layer': 'GB-TITLE'})
-    yy = y - hh - rh * (len(rows) + 0.5)
-    T('TOTAL BY DIAMETER:  ' + '    '.join(f'T{d} = {v:,.2f} kg' for d, v in sorted(tot.items())), x + 3, yy, al=TA.MIDDLE_LEFT)
-    yy -= rh
-    T(f'TOTAL {secname} ({beam}): {sum(tot.values()):,.2f} kg', x + W - 3, yy, al=TA.MIDDLE_RIGHT, hgt=h * 1.1)
-    return hh + rh * n, tot
+    for r_, m in enumerate(rows):
+        yr = hy - head - rh * (r_ + 1)
+        sh.line((0, yr), (W, yr), '')
+        mass = m['n'] * m['L'] / 1000.0 * UW(m['d']); tot[m['d']] = tot.get(m['d'], 0) + mass
+        vals = [None, 'T', str(m['d']), str(m['n']), '1', str(m['n']), None, f"{m['L'] / 1000:.3f}", f'{mass:.2f}', f'{mass:.2f}']
+        cx = 0
+        for i, (name, w) in enumerate(BBS_COLS):
+            if i == 0: sh.mark(cx + w / 2, yr + rh / 2, m['mark'], 240)
+            elif i == 6: _symbol(sh, cx, yr, w, rh, bbs_shape(m), m['d'])
+            else: sh.text(vals[i], cx + w / 2, yr + rh / 2, 200, align=TA.MIDDLE_CENTER)
+            cx += w
+    sh.text('TOTAL BY DIAMETER:  ' + '    '.join(f'T{d} = {v:,.2f} kg' for d, v in sorted(tot.items())), 0, bot - 500, 220, align=TA.MIDDLE_LEFT)
+    sh.text(f'TOTAL STEEL WEIGHT ({secname}, {beam}) = {sum(tot.values()):,.2f} kg  ({sum(tot.values()) / 1000:.3f} t)', W, bot - 1100, 240, align=TA.MIDDLE_RIGHT)
+    return Ht * k, tot
+
+
+def beam_ends(l, lines, sched):
+    """a line end with no column: the beam it frames into becomes the end support (office rule of the approved Roya
+    package: bars to the FAR face of the end support - cover, same legs; stirrups from its face). Returns a copy of
+    the line extended to that far face, or None when an end has nothing under it (held, RFI)."""
+    import copy
+    l = copy.deepcopy(l); typ = lambda q: max(q['types'], key=q['types'].get) if q['types'] else '?'
+    for end in ('a', 'b'):
+        e = l[end]
+        if any(q['s0'] - 60 <= e <= q['s1'] + 60 for q in l['sup']): continue
+        hits = [q for q in lines if q['o'] != l['o'] and abs(q['c'] - e) <= q['w'] / 2 + 80 and q['a'] - 80 <= l['c'] <= q['b'] + 80]
+        if not hits: return None
+        q = hits[0]; s0, s1 = q['c'] - q['w'] / 2, q['c'] + q['w'] / 2
+        l['sup'].append(dict(lab=f"{typ(q)} {q['w']}x{sched.get(typ(q), {}).get('h', 700)} (SUPPORTING BEAM)", s0=s0, s1=s1, beam=True))
+        if end == 'a': l['a'] = min(l['a'], s0)
+        else: l['b'] = max(l['b'], s1)
+    l['sup'].sort(key=lambda q: q['s0'])
+    return l
 
 
 def main(lines_json, cfg_json, out):
@@ -391,6 +463,7 @@ def main(lines_json, cfg_json, out):
         if sheet.get('kind') == 'plan':
             continue
         L = next(l for l in LJ[sheet['plan']] if l['code'] == sheet['line'])
+        L = beam_ends(L, LJ[sheet['plan']], sched)
         ln = Line(L, sched, cols, sheet.get('top', C['levels']['top_gb']))
         ln.build(report)
         ox, oy = C['model_origin'][0], C['model_origin'][1] - k * 20000
@@ -435,7 +508,7 @@ def main(lines_json, cfg_json, out):
            f"SECTION {sheet['xsec']}-{sheet['xsec']}  ({ln.typ} {ln.w}x{ln.h}) - STIRRUP T{ln.p['ds']} @{ln.p['s']}   SCALE 1:20")
         # BBS of this section, notes
         bx, by = X0 + wx + 14, Y1 - hl - 22
-        hb, tot = draw_bbs(lay, bx, by, ln, ln.typ, f"SECTION {sheet['sec']}-{sheet['sec']}")
+        hb, tot = draw_bbs(lay, bx, by, ln, ln.typ, f"SECTION {sheet['sec']}-{sheet['sec']}", wmax=1030 * sc - 8 - bx)
         notes = [f"NOTES (SECTION {sheet['sec']}-{sheet['sec']}, {ln.typ}):",
                  f"1. T.O.GB {ln.top / 1000:+.2f}, B.O.GB {(ln.top - ln.h) / 1000:+.2f}, BEAM {ln.w}x{ln.h} AS THE PLAN; COVER {COVER} ALL FACES.",
                  f"2. LAPS 60d ({', '.join(sorted({str(b_['lp']) for b_ in ln.bars}))}) IN THE FIRST / LAST QUARTER OF THE SPAN NEXT TO A COLUMN, PATTERNS A / B STAGGERED.",
@@ -444,6 +517,8 @@ def main(lines_json, cfg_json, out):
                  "5. COLUMN BARS AND TIES (MAGENTA) ARE THE COLUMN'S: FROM THE NECK THROUGH THE BEAM TO THE G.F - NOT IN THIS BBS.",
                  f"6. STIRRUPS {round(1000 / ln.p['s'])} T{ln.p['ds']}/m THROUGHOUT (NO DENSER ZONE IN THE SCHEDULE).",
                  "7. BAR DETAILING UNDER THE SECTION: EVERY BAR WITH ITS STRAIGHT LENGTH, LEGS AND LAPS; MARKS AS THE BBS."]
+        if any(q.get('beam') for q in ln.sup):
+            notes.append(f"8. END ON A BEAM: BARS TO THE FAR FACE OF THE SUPPORTING BEAM - COVER {COVER}, SAME LEGS; STIRRUPS FROM ITS FACE (OFFICE RULE - SEE RFI-08).")
         for j, s_ in enumerate(notes):
             lay.add_text(s_, height=2.3, dxfattribs={'layer': 'GB-TITLE'}).set_placement((X0, yj - hx / 2 - 16 - j * 4.6))
     # beam codes + section marks on the copied plan (model space, text 2.5 mm at 1:100)
@@ -454,6 +529,9 @@ def main(lines_json, cfg_json, out):
             x, y = (mid, l['c']) if l['o'] == 'H' else (l['c'], mid)
             rot = 0 if l['o'] == 'H' else 90
             dx, dy = (0, l['w'] / 2 + 330) if l['o'] == 'H' else (-(l['w'] / 2 + 330), 0)
+            if l['code'] in C.get('held', {}):                     # held line: HOLD + the RFI on the plan
+                t_ = msp.add_text(f"HOLD - {C['held'][l['code']]}", height=200, rotation=rot, dxfattribs={'layer': 'GB-SEC', 'color': 1})
+                t_.set_placement((x - dx * 2.2, y - dy * 2.2) if l['o'] == 'H' else (x + dx * 2.2, y), align=TA.MIDDLE_CENTER)
             if l['code'] in secs:                                   # longitudinal section cut: marks at both ends
                 for e_, sg in ((l['a'], -1), (l['b'], 1)):
                     px, py = (e_ + sg * 700, l['c']) if l['o'] == 'H' else (l['c'], e_ + sg * 700)

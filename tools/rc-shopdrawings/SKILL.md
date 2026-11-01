@@ -734,3 +734,16 @@ the state in files, never only in the conversation:
   `COLUMN SCH`. Footings drawn bigger than their schedule (F6 ×2 at Y19, F15 ×5 on Y22, F15A Y22-X16,
   F3A Y16-X07 / Y11-X09, F8 Y10-X26): **engineer's decision — the schedule governs** (type size + reinforcement).
 - The commercial ALI-BEAM tool was not reverse-engineered or cloned; the method here is our own.
+
+### Grade beams - section-sheet format (`gen_gbsec.py`, Roya Zone 7, approved 01-11-2026)
+- One A1 paper layout per beam line: longitudinal section + full bar detailing (1:50, SECTION A-A), stirrup cross
+  section (1:20, SECTION B-B), BBS of that section only; model space at real size, scale only in the viewports.
+- BBS = the office table of the footings / necks (Position hexagon, steel grade, diameter, number in the element /
+  of elements / total, bar sketch with every part written on it, length m, mass, total mass) via `gen._symbol`
+  drawn on paper space (`PS` adapter). One-leg bars sketched with the leg on its real side.
+- Call-outs in the office format `n T d-L(-s)` (`gen.callout`), mark in the hexagon; detailing rows write
+  `L = leg + straight + leg = L` on every piece; marks identical in detailing, section and BBS.
+- Beam names only as the plan (GB1, GB2 ...); internal line codes never on a drawing.
+- A line ending on another beam: that beam is the end support (bars to its far face - cover, same legs,
+  stirrups from its face) - office rule, flagged in the RFI. Lines with a schedule/plan conflict, +0.55 steps,
+  core anchorage or a free end are held and marked HOLD on the plan.
