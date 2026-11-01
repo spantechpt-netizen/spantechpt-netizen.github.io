@@ -796,13 +796,16 @@ def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500):
         return [(max(0, b_[i] - (lp / 2 if i else 0)), min(T, b_[i + 1] + (lp / 2 if i + 1 < len(b_) - 1 else 0))) for i in range(len(b_) - 1)]
     cA = cuts_from(0)
     if cA is None: return None
-    cB = [c - (lp + gap) for c in cA]                           # B: the lap moved back by lp + gap, still in its zone
-    if not all(any(a <= c <= b for a, b in zs) for c in cB): cB = [c + (lp + gap) for c in cA]
-    if not all(any(a <= c <= b for a, b in zs) for c in cB) or len(cB) != len(cA):
-        cB = cuts_from(0, avoid=cA)                             # or in another allowed zone (e.g. the next midspan)
-        if cB is None: return None
-    A, B = ivs(cA), ivs(cB)
-    if not all(0 < t1 - t0 <= stock for t0, t1 in A + B): return None
+    A = ivs(cA)
+    if not all(0 < t1 - t0 <= stock for t0, t1 in A): return None
+    inz = lambda cs: cs is not None and all(any(a <= c <= b for a, b in zs) for c in cs)
+    okB = lambda cs: inz(cs) and all(0 < t1 - t0 <= stock for t0, t1 in ivs(cs))
+    # B: the lap moved back / forward by lp + gap in its zone, else anywhere allowed >= lp + gap from A's laps
+    for cand in ([c - (lp + gap) for c in cA], [c + (lp + gap) for c in cA], cuts_from(0, avoid=cA)):
+        if okB(cand): cB = cand; break
+    else:
+        return None
+    B = ivs(cB)
     fix = lambda P_: [(t0, t0 + up(t1 - t0)) if t1 < T else (T - up(T - t0), T) for t0, t1 in P_]
     return [fix(A), fix(B)]
 
