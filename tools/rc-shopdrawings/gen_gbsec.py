@@ -243,6 +243,40 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
     ms.dim((u_lo - 300, bot), (u_lo - 300, top), (u_lo - 600, bot), angle=90, text=str(H))
 
 
+def draw_detailing(ms, ln, y0):
+    """full bar detailing (tafreed) under the longitudinal section: every longitudinal bar drawn at its place with its
+    straight length, its legs and the laps between pieces written on it; mark + count + cutting length. -> lowest y"""
+    th = ms.th; y = y0
+    for b_ in ln.bars:
+        pos = b_['pos']; d = b_['d']; lg = b_['lg']
+        rowh = (lg + 1350) if pos == 'T' else 1550
+        lay = 'GB-RFT-TOP' if pos == 'T' else 'GB-RFT-BOT'
+        yb = y - (300 if pos == 'T' else rowh - 900)                               # bar line of this row
+        ms.tx(f"{'TOP' if pos == 'T' else 'BOTTOM'} BARS" + (f" - PATTERN {'AB'[b_['pat']]}" if b_['npat'] == 2 else '') + f" ({b_['n']} T{d})",
+              -2600, yb - th * 0.4, h=th * 0.8)
+        for k, pc in enumerate(b_['pieces']):
+            off = (k % 2) * 450 * (-1 if pos == 'T' else 1)                       # neighbouring pieces apart so the lap shows
+            yy = yb + off; sg = -1 if pos == 'T' else 1
+            pts = [(pc['u0'], yy), (pc['u1'], yy)]
+            if pc['legL']: pts.insert(0, (pc['u0'], yy + sg * lg))
+            if pc['legR']: pts.append((pc['u1'], yy + sg * lg))
+            ms.pl(pts, lay, w=max(d * 0.7, 10))
+            st = round(pc['u1'] - pc['u0'])
+            ms.tx(str(st), (pc['u0'] + pc['u1']) / 2, yy + th * 0.35, h=th * 0.85, al=TA.BOTTOM_CENTER)
+            for flag, uu in ((pc['legL'], pc['u0']), (pc['legR'], pc['u1'])):
+                if flag: ms.tx(str(lg), uu + (th * 0.9 if uu == pc['u0'] else -th * 0.3), yy + sg * lg / 2, h=th * 0.8, rot=90, al=TA.MIDDLE_CENTER)
+            um = pc['u0'] + min(1500, (pc['u1'] - pc['u0']) * 0.15)
+            ytx = yy + th * 1.6
+            ms.hexmark(um, ytx + th * 0.4, pc['mark'], th * 0.8)
+            parts = ([str(lg)] if pc['legL'] else []) + [str(st)] + ([str(lg)] if pc['legR'] else [])
+            ms.tx(f"{pc['n']} T{d}-{pc['L']}   L = {' + '.join(parts)} = {pc['L']}", um + th * 1.2, ytx, h=th * 0.8)
+            if k + 1 < len(b_['pieces']):                                         # the lap with the next piece
+                nx = b_['pieces'][k + 1]
+                ms.dim((nx['u0'], yb), (pc['u1'], yb), (nx['u0'], yb + sg * (-1) * (th * 2.0 + 450)), text=f"LAP {b_['lp']} (60d)")
+        y -= rowh
+    return y
+
+
 def draw_xsec(ms, ln, label):
     """cross section of the line's beam type: concrete, stirrup with 135-deg hooks, bars, every dimension."""
     th = ms.th; p = ln.p; W, H = ln.w, ln.h
@@ -263,21 +297,31 @@ def draw_xsec(ms, ln, label):
         marks_ = sorted({m['mark'] for m in ln.marks if m['pos'] == pos})
         ms.tx(f"{n} T{d} {'TOP' if pos == 'T' else 'BOTTOM'} (MARKS {', '.join(f'{x:02d}' for x in marks_)})", (x0 + x1) / 2 + th * 2.4, yy, h=th * 0.75)
     ms.hexmark(W + th * 1.6, H / 2, ln.stirs[0]['mark'] if ln.stirs else 0, th * 0.8)
-    ms.tx(f"T{p['ds']} @{p['s']} ({round(1000 / p['s'])}/m)  {ws}x{hs}  L={Lst}", W + th * 2.8, H / 2 - th * 0.4, h=th * 0.75)
+    ms.tx(f"T{p['ds']} @{p['s']} ({round(1000 / p['s'])} T{p['ds']}/m)", W + th * 2.8, H / 2 - th * 0.4, h=th * 0.75)
     ms.dim((0, 0), (W, 0), (0, -th * 5), text=str(W))
     ms.dim((0, 0), (0, H), (-th * 2.5, 0), angle=90, text=str(H))
     ms.dim((W, H), (W - COVER, H), (W, H + th * 4.5), text=str(COVER))
     ms.tx(f'COVER {COVER}', W + th * 0.6, H + th * 3.2, 'GB-DIM', h=th * 0.7)
+    ms.tx(f'SECTION {label}-{label}', W / 2, -th * 9.5, 'GB-SEC', h=th * 1.4, al=TA.TOP_CENTER)
+    # the stirrup alone with every dimension (out-to-out) and its hooks
+    sx = W + th * 2.8 + 1300
+    ms.pl([(sx, 0), (sx + ws, 0), (sx + ws, hs), (sx, hs)], 'GB-STIR', True, w=p['ds'])
+    ms.pl([(sx + 20, hs), (sx + 20 + hook * 0.7, hs - hook * 0.7)], 'GB-STIR', w=p['ds'])
+    ms.pl([(sx, hs - 20), (sx + hook * 0.7, hs - 20 - hook * 0.7)], 'GB-STIR', w=p['ds'])
+    ms.dim((sx, 0), (sx + ws, 0), (sx, -th * 2.5), text=str(ws))
+    ms.dim((sx + ws, 0), (sx + ws, hs), (sx + ws + th * 2.5, 0), angle=90, text=str(hs))
+    ms.tx(f'HOOKS 135 DEG x {hook}', sx, hs + th * 1.0, h=th * 0.7)
+    ms.tx(f'L = 2 x ({ws} + {hs}) + 2 x {hook} = {Lst}', sx, -th * 4.6, h=th * 0.7)
 
 
-def draw_bbs(lay, x, y, ln, beam, h=2.2):
+def draw_bbs(lay, x, y, ln, beam, secname='', h=2.2):
     """BBS of this section only (paper space mm)."""
     cols = [('BAR\nMARK', 14), ('BEAM\nMARK', 30), ('DIA\n(mm)', 12), ('No. OF\nBARS', 14), ('SHAPE\nCODE', 13),
             ('DIMENSIONS (mm)', 46), ('CUTTING\nLENGTH (mm)', 22), ('TOTAL\nLENGTH (m)', 20), ('UNIT WT\n(kg/m)', 17), ('TOTAL\nWT (kg)', 18)]
     W = sum(w for _, w in cols); rh = 6.5; hh = 11
     def T(s, x_, y_, al=TA.MIDDLE_CENTER, hgt=h):
         t = lay.add_text(s, height=hgt, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}); t.set_placement((x_, y_), align=al)
-    lay.add_text(f'BAR BENDING SCHEDULE - {beam}  (THIS SECTION ONLY)', height=3.2, dxfattribs={'layer': 'GB-TITLE'}).set_placement((x, y + 3))
+    lay.add_text(f'BAR BENDING SCHEDULE - {secname} ({beam}) - THIS SECTION ONLY', height=3.2, dxfattribs={'layer': 'GB-TITLE'}).set_placement((x, y + 3))
     rows = sorted(ln.marks, key=lambda m: m['mark'])
     n = len(rows) + 2
     lay.add_lwpolyline([(x, y), (x + W, y), (x + W, y - hh - rh * n), (x, y - hh - rh * n)], close=True, dxfattribs={'layer': 'GB-TITLE'})
@@ -301,7 +345,7 @@ def draw_bbs(lay, x, y, ln, beam, h=2.2):
     yy = y - hh - rh * (len(rows) + 0.5)
     T('TOTAL BY DIAMETER:  ' + '    '.join(f'T{d} = {v:,.2f} kg' for d, v in sorted(tot.items())), x + 3, yy, al=TA.MIDDLE_LEFT)
     yy -= rh
-    T(f'TOTAL {ln.code}: {sum(tot.values()):,.2f} kg', x + W - 3, yy, al=TA.MIDDLE_RIGHT, hgt=h * 1.1)
+    T(f'TOTAL {secname} ({beam}): {sum(tot.values()):,.2f} kg', x + W - 3, yy, al=TA.MIDDLE_RIGHT, hgt=h * 1.1)
     return hh + rh * n, tot
 
 
@@ -349,21 +393,19 @@ def main(lines_json, cfg_json, out):
         L = next(l for l in LJ[sheet['plan']] if l['code'] == sheet['line'])
         ln = Line(L, sched, cols, sheet.get('top', C['levels']['top_gb']))
         ln.build(report)
-        ox, oy = C['model_origin'][0], C['model_origin'][1] - k * 12000
+        ox, oy = C['model_origin'][0], C['model_origin'][1] - k * 20000
         draw_long(MS(msp, ox, oy, 125), ln, cols)                                    # 1:50 text 2.5 mm
-        # joint detail 1:20 around the first interior column (own copy of the geometry, texts for 1:20)
-        q = ln.sup[1] if len(ln.sup) > 2 else ln.sup[0]
-        jx = ox + ln.len + 6000
-        draw_long(MS(msp, jx - q['u0'] + 1500, oy, 50), ln, cols, q['u0'] - 1500, q['u1'] + 1500, detail=True)
-        xs_x = jx + (q['u1'] - q['u0']) + 3000 + 2500
-        draw_xsec(MS(msp, xs_x, oy - 350 + ln.top - ln.h + 350, 50), ln, 'a')
-        bases[sheet['line']] = (ln, ox, oy, jx, q, xs_x)
-        # section marks on the long section (cut a-a at mid of the first span)
-        sp = ln.spans()[0]; ua = (sp[0] + sp[1]) / 2
+        y_det = ln.top - ln.h - 2900                                                  # bar detailing (tafreed) under the section
+        y_end = draw_detailing(MS(msp, ox, oy, 125), ln, y_det)
+        xs_x = ox + ln.len + 5000
+        draw_xsec(MS(msp, xs_x, oy + ln.top - ln.h, 50), ln, sheet['xsec'])
+        bases[sheet['line']] = (ln, ox, oy, xs_x)
+        # cut of the cross section on the long section (mid of the first span), letter = sheet['xsec']
+        sp = ln.spans()[0]; ua = (sp[0] + sp[1]) / 2 - 600
         ms = MS(msp, ox, oy, 125)
         for yy in (ln.top + 250, ln.top - ln.h - 250):
             ms.pl([(ua, yy), (ua, yy + (300 if yy > ln.top else -300))], 'GB-SEC', w=20)
-        ms.tx('a', ua + 60, ln.top + 600, 'GB-SEC', h=200); ms.tx('a', ua + 60, ln.top - ln.h - 800, 'GB-SEC', h=200)
+        ms.tx(sheet['xsec'], ua + 60, ln.top + 600, 'GB-SEC', h=200); ms.tx(sheet['xsec'], ua + 60, ln.top - ln.h - 800, 'GB-SEC', h=200)
         # ---- paper-space sheet
         Wp, Hp = sheet.get('size', [841, 594])
         lay = doc.layouts.new(sheet['tab'])
@@ -381,29 +423,29 @@ def main(lines_json, cfg_json, out):
             v = lay.add_viewport(center=(cx, cy), size=(w, h), view_center_point=(mcx, mcy), view_height=h * scale)
             v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
             lay.add_text(title, height=3.5, dxfattribs={'layer': 'GB-TITLE'}).set_placement((cx - w / 2 + 2, cy - h / 2 - 6))
-        # long section: whole line at 1:50 (fits the drawing area by construction of the sheet size)
-        wl = (ln.len + 4000) / 50.0; hl = 5600 / 50.0
-        vp(X0 + wl / 2, Y1 - hl / 2 - 4, wl, hl, ox + ln.len / 2 - 1000, oy + ln.top - 700, 50,
-           f"LONGITUDINAL SECTION {sheet['sec']}-{sheet['sec']}  -  {ln.code} ({ln.typ} {ln.w}x{ln.h}, T.O.GB {ln.top / 1000:+.2f})   SCALE 1:50")
-        # joint detail 1:20 and cross section 1:20
-        wj = (q['u1'] - q['u0'] + 3000 + 2400 + 2600) / 20.0; hj = 4000 / 20.0
-        yj = Y1 - hl - 22 - hj / 2
-        vp(X0 + wj / 2, yj, wj, hj, jx + (q['u1'] - q['u0']) / 2 + 700, oy + ln.top - 600, 20,
-           f"DETAIL 1 - BEAM / COLUMN JOINT AT {q['lab']} (STIRRUPS STOP AT THE COLUMN FACES, COLUMN TIES CONTINUE)   SCALE 1:20")
-        wx = (ln.w + 4800) / 20.0
-        vp(X0 + wj + 12 + wx / 2, yj, wx, hj, xs_x + ln.w / 2 + 1400, oy + ln.top - ln.h / 2 - 300, 20, f"SECTION a-a  ({ln.typ} {ln.w}x{ln.h})   SCALE 1:20")
+        # SECTION A-A: the longitudinal section with the full bar detailing, 1:50
+        ytop_m, ybot_m = ln.top + 2300, y_end - 300
+        wl = (ln.len + 4400) / 50.0; hl = (ytop_m - ybot_m) / 50.0
+        vp(X0 + wl / 2, Y1 - hl / 2 - 4, wl, hl, ox + ln.len / 2 - 1200, oy + (ytop_m + ybot_m) / 2, 50,
+           f"SECTION {sheet['sec']}-{sheet['sec']}  -  {ln.typ} {ln.w}x{ln.h}, T.O.GB {ln.top / 1000:+.2f} - LONGITUDINAL SECTION + BAR DETAILING   SCALE 1:50")
+        # cross section (stirrup) 1:20
+        wx = (ln.w + 5600) / 20.0; hx = (ln.h + 2600) / 20.0
+        yj = Y1 - hl - 22 - hx / 2
+        vp(X0 + wx / 2, yj, wx, hx, xs_x + ln.w / 2 + 1900, oy + ln.top - ln.h / 2 - 200, 20,
+           f"SECTION {sheet['xsec']}-{sheet['xsec']}  ({ln.typ} {ln.w}x{ln.h}) - STIRRUP T{ln.p['ds']} @{ln.p['s']}   SCALE 1:20")
         # BBS of this section, notes
-        bx, by = X0, yj - hj / 2 - 18
-        hb, tot = draw_bbs(lay, bx, by, ln, f"{ln.code.split('-', 1)[1]} ({ln.typ})")
-        notes = [f"NOTES ({ln.code}):",
+        bx, by = X0 + wx + 14, Y1 - hl - 22
+        hb, tot = draw_bbs(lay, bx, by, ln, ln.typ, f"SECTION {sheet['sec']}-{sheet['sec']}")
+        notes = [f"NOTES (SECTION {sheet['sec']}-{sheet['sec']}, {ln.typ}):",
                  f"1. T.O.GB {ln.top / 1000:+.2f}, B.O.GB {(ln.top - ln.h) / 1000:+.2f}, BEAM {ln.w}x{ln.h} AS THE PLAN; COVER {COVER} ALL FACES.",
                  f"2. LAPS 60d ({', '.join(sorted({str(b_['lp']) for b_ in ln.bars}))}) IN THE FIRST / LAST QUARTER OF THE SPAN NEXT TO A COLUMN, PATTERNS A / B STAGGERED.",
                  f"3. END LEGS: TOP BARS {LEG_T} DOWN, BOTTOM BARS {LEG_B} UP, AT THE FAR FACE OF THE END COLUMN (COVER {COVER}).",
                  f"4. STIRRUPS T{ln.p['ds']} @{ln.p['s']} ({round(1000 / ln.p['s'])}/m PER THE SCHEDULE) FROM COLUMN FACE TO COLUMN FACE, FIRST 50 FROM THE FACE; NONE INSIDE THE COLUMNS.",
                  "5. COLUMN BARS AND TIES (MAGENTA) ARE THE COLUMN'S: FROM THE NECK THROUGH THE BEAM TO THE G.F - NOT IN THIS BBS.",
-                 "6. NO DENSER STIRRUP ZONE IN THE SCHEDULE (10/m THROUGHOUT)."]
+                 f"6. STIRRUPS {round(1000 / ln.p['s'])} T{ln.p['ds']}/m THROUGHOUT (NO DENSER ZONE IN THE SCHEDULE).",
+                 "7. BAR DETAILING UNDER THE SECTION: EVERY BAR WITH ITS STRAIGHT LENGTH, LEGS AND LAPS; MARKS AS THE BBS."]
         for j, s_ in enumerate(notes):
-            lay.add_text(s_, height=2.3, dxfattribs={'layer': 'GB-TITLE'}).set_placement((bx + 215, by - 4 - j * 4.6))
+            lay.add_text(s_, height=2.3, dxfattribs={'layer': 'GB-TITLE'}).set_placement((X0, yj - hx / 2 - 16 - j * 4.6))
     # beam codes + section marks on the copied plan (model space, text 2.5 mm at 1:100)
     secs = {s_['line']: s_['sec'] for s_ in C['sheets'] if s_.get('kind') != 'plan'}
     for pn in C.get('plan_marks', []):
@@ -412,8 +454,6 @@ def main(lines_json, cfg_json, out):
             x, y = (mid, l['c']) if l['o'] == 'H' else (l['c'], mid)
             rot = 0 if l['o'] == 'H' else 90
             dx, dy = (0, l['w'] / 2 + 330) if l['o'] == 'H' else (-(l['w'] / 2 + 330), 0)
-            t = msp.add_text(l['code'].split('-', 1)[1], height=250, rotation=rot, dxfattribs={'layer': 'GB-SEC', 'color': 4})
-            t.set_placement((x + dx + (900 if l['o'] == 'H' else 0), y + dy + (0 if l['o'] == 'H' else 900)), align=TA.BOTTOM_CENTER)
             if l['code'] in secs:                                   # longitudinal section cut: marks at both ends
                 for e_, sg in ((l['a'], -1), (l['b'], 1)):
                     px, py = (e_ + sg * 700, l['c']) if l['o'] == 'H' else (l['c'], e_ + sg * 700)
