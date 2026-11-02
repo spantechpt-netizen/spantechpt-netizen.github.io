@@ -128,8 +128,15 @@ class Line:
         for a, b in self.spans():
             a, b = round(a), round(b); cl = b - a                  # whole mm (no float loss in the count)
             if cl < 150: continue
-            n = int((cl - 100) // s) + 1
-            self.stirs.append(dict(a=a, b=b, n=n, s=s, mark=mk, first=a + 50, last=a + 50 + (n - 1) * s))
+            # first AND last stirrup 50 from the support faces (engineer, 02-11-2026): spacing s, one closing
+            # space <= s before the last stirrup when the clear length is not a multiple of s
+            Lc = cl - 100; n = math.ceil(Lc / s - 1e-9) + 1
+            pos = [a + 50 + i * s for i in range(n - 1)] + [b - 50]
+            close = Lc - (n - 2) * s; tail = [close]
+            if 0 < close < s / 2 and n >= 4:                       # short closing space: the last two spaces made equal
+                c1 = (s + close) // 2; tail = [c1, s + close - c1]
+                pos = pos[:-2] + [b - 50 - tail[1], b - 50]
+            self.stirs.append(dict(a=a, b=b, n=n, s=s, mark=mk, first=a + 50, last=b - 50, pos=pos, close=close, tail=tail))
         for m in self.marks:
             if m['mark'] == mk: m['n'] = sum(x['n'] for x in self.stirs)
         self.stir_dims = (ws, hs, Lst, hook)
@@ -185,6 +192,14 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
     for q in ln.sup:
         if q['u1'] < u_lo or q['u0'] > u_hi: continue
         a, b = clip(q['u0']), clip(q['u1'])
+        if q.get('under_wall'):                                     # the beam runs on under the core wall (wall above it)
+            ms.pl([(a, top), (a, top + 900)], 'GB-CONC'); ms.pl([(b, bot), (b, top + 900)], 'GB-CONC')
+            ms.brk((a - 100, top + 900), (b + 100, top + 900))
+            ms.hatch([(a, top), (b, top), (b, top + 900), (a, top + 900)], 'GB-HATCH', 'ANSI31', 25)
+            ms.tx(q['lab'], (a + b) / 2, top + 900 + th * 1.2, al=TA.BOTTOM_CENTER, h=th * 0.9)
+            ms.tx(f"GB1 UNDER THE WALL ({q.get('wt', '')})", (a + b) / 2, top + 560, al=TA.MIDDLE_CENTER, h=th * 0.75)
+            ms.tx("NO STIRRUPS IN THE WALL", (a + b) / 2, top + 560 - th * 1.3, al=TA.MIDDLE_CENTER, h=th * 0.75)
+            continue
         if q.get('core'):                                           # core wall: hatched, above and below the beam
             for y0, y1 in ((bot - 900, bot), (top, top + 900)):
                 ms.pl([(a, y0), (a, y1)], 'GB-CONC'); ms.pl([(b, y0), (b, y1)], 'GB-CONC')
@@ -256,15 +271,19 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
                     ms.dim((l0, y), (l1, y), (l0, yl), text=f"LAP {b_['lp']}")
     # stirrups: every stirrup drawn, zones dimensioned face to face
     for st in ln.stirs:
-        u = st['first']
-        while u <= st['last'] + 1:
+        for u in st['pos']:
             if u_lo <= u <= u_hi: ms.ln((u, bot + 40), (u, top - 40), 'GB-STIR')
-            u += st['s']
         if u_lo <= st['a'] and st['b'] <= u_hi:
             yd = bot - th * (8.2 if not detail else 3.0)
             ms.dim((st['a'], bot), (st['first'], bot), (st['a'], yd), text='50')
-            ms.dim((st['first'], bot), (st['last'], bot), (st['a'], yd), text=f"{st['n'] - 1}x{st['s']}={(st['n'] - 1) * st['s']}")
-            ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text=f"{round(st['b'] - st['last'])}")
+            if st['close'] == st['s'] or st['n'] < 3:
+                ms.dim((st['first'], bot), (st['last'], bot), (st['a'], yd), text=f"{st['n'] - 1}x{st['s']}={round(st['last'] - st['first'])}")
+            else:
+                k_ = len(st['tail']); p2 = st['pos'][-1 - k_]
+                ms.dim((st['first'], bot), (p2, bot), (st['a'], yd), text=f"{st['n'] - 1 - k_}x{st['s']}={(st['n'] - 1 - k_) * st['s']}")
+                for j_, sp_ in enumerate(st['tail']):
+                    ms.dim((st['pos'][-1 - k_ + j_], bot), (st['pos'][-k_ + j_], bot), (st['a'], yd), text=str(round(sp_)))
+            ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text='50')
             ms.hexmark((st['a'] + st['b']) / 2 - th * 3.2, yd - th * 2.2, st['mark'], th * 0.8)
             ms.tx(gbcall(st['n'], ln.p['ds'], ln.stir_dims[2], st['s']), (st['a'] + st['b']) / 2 - th * 2.0, yd - th * 2.6, h=th * 0.8)
     # stair starter bars (plan positions, projecting out of the beam): marked on the section
@@ -282,7 +301,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
         ref = ln.sup[-1]['u0'] if ln.sup[-1].get('core') else ln.len
         ms.dim((max(us_), top), (ref, top), (max(us_), yd), text=str(round(ref - max(us_))))
         ms.tx(f"{len(us_)} T16 STAIR STARTER BARS ({ln.L['starters'][0][1]}) - AS THE PLAN", min(us_), bot - th * 16.5, 'GB-STARTER', h=th * 0.8)
-        ms.tx(f"SHAPE / LENGTH: {ln.L.get('rfi_starters', 'RFI')}", min(us_), bot - th * 17.8, 'GB-STARTER', h=th * 0.8)
+        ms.tx(ln.L.get('starter_ref', f"SHAPE / LENGTH: {ln.L.get('rfi_starters', 'RFI')}"), min(us_), bot - th * 17.8, 'GB-STARTER', h=th * 0.8)
         ms.ln((min(us_), (top + bot) / 2), (min(us_), bot - th * 15.5), 'GB-STARTER')
     # anchorage in a core wall: Ld written at the wall
     for q in ln.sup:
@@ -369,6 +388,7 @@ def draw_xsec(ms, ln, label):
     if ln.L.get('starters'):                                       # stair starter bar out of the beam side (dashed)
         e_ = ms.pl([(0, H / 2), (-th * 9, H / 2)], 'GB-STARTER', w=16); e_.dxf.linetype = 'DASHED'
         ms.tx(f"T16 STAIR STARTER ({ln.L['starters'][0][1]})", -th * 9, H / 2 + th * 0.5, 'GB-STARTER', h=th * 0.7)
+        if ln.L.get('starter_ref'): ms.tx(ln.L['starter_ref'].replace('STAIR STARTERS: ', ''), -th * 9, H / 2 - th * 1.2, 'GB-STARTER', h=th * 0.6)
     ms.dim((0, 0), (W, 0), (0, -th * 5), text=str(W))
     ms.dim((0, 0), (0, H), (-th * 2.5, 0), angle=90, text=str(H))
     ms.dim((W, H), (W - COVER, H), (W, H + th * 4.5), text=str(COVER))
@@ -488,6 +508,62 @@ def beam_ends(l, lines, sched):
         else: l['b'] = max(l['b'], s1)
     l['sup'].sort(key=lambda q: q['s0'])
     return l
+
+
+class StarterSet:
+    """stair starter bars out of a beam (engineer 02-11-2026): shaped like column starters - a leg inside the beam
+    (leg), straight across the beam inside the stirrup, projecting a lap of lap_d x d out of the beam."""
+    def __init__(self, ln, d=16, leg=250, lap_d=65):
+        self.ln = ln; self.d = d; self.leg = leg; self.lap = lap_d * d
+        self.inside = ln.w - COVER - ln.p['ds']                      # across the beam, inside the stirrup
+        self.st = self.inside + self.lap; self.Lc = self.st + self.leg
+        self.n = len(ln.L.get('starters', []))
+        self.marks = [dict(mark=1, d=d, shape='11', dims=(('A', self.st), ('B', leg)), L=self.Lc, n=self.n, pos='S', side='L')]
+        self.w, self.h, self.top, self.typ = ln.w, ln.h, ln.top, f'STAIR STARTERS IN {ln.typ}'
+
+
+def draw_starter_section(ms, ss, label):
+    """cross section of the beam through a starter bar (1:10): the bar, its leg in the beam and its projection."""
+    th = ms.th; ln = ss.ln; p = ln.p; W, H = ln.w, ln.h
+    ms.pl([(0, 0), (W, 0), (W, H), (0, H)], 'GB-CONC', True)
+    c = COVER + p['ds'] / 2
+    ms.pl([(c, c), (W - c, c), (W - c, H - c), (c, H - c)], 'GB-STIR', True, w=p['ds'])
+    for pos, n, d, y in (('T', p['nt'], p['dt'], H - COVER - p['ds'] - p['dt'] / 2), ('B', p['nb'], p['db'], COVER + p['ds'] + p['db'] / 2)):
+        x0, x1 = COVER + p['ds'] + d / 2, W - COVER - p['ds'] - d / 2
+        for i in range(n): ms.circle(x0 + (x1 - x0) * i / max(1, n - 1), y, d / 2, 'GB-RFT-TOP' if pos == 'T' else 'GB-RFT-BOT', fill=True)
+    ys = H - COVER - p['ds'] - p['dt'] - ss.d / 2                    # under the top bars
+    xe = W - COVER - p['ds']                                          # inner face of the far stirrup leg
+    ms.pl([(xe, ys - ss.leg), (xe, ys), (-ss.lap, ys)], 'GB-STARTER', w=ss.d)
+    ms.dim((xe, ys), (0, ys), (xe, ys + th * 3.5), text=str(ss.inside))
+    ms.dim((0, ys), (-ss.lap, ys), (0, ys + th * 3.5), text=f"{ss.lap} ({round(ss.lap / ss.d)}d)")
+    ms.dim((xe, ys), (xe, ys - ss.leg), (xe + th * 3, ys), angle=90, text=str(ss.leg))
+    ms.hexmark(-ss.lap / 2, ys - th * 2.2, 1, th * 0.8)
+    ms.tx(f"{gbcall(ss.n, ss.d, ss.Lc)}   L = {ss.leg} + {ss.inside} + {ss.lap} = {ss.Lc}", -ss.lap / 2 + th * 1.2, ys - th * 2.6, 'GB-STARTER', h=th * 0.8)
+    ms.tx(f"TO THE STAIR ({ln.L['starters'][0][1]}) - LAP {round(ss.lap / ss.d)}d", -ss.lap, ys + th * 6.0, 'GB-STARTER', h=th * 0.75)
+    ms.dim((0, 0), (W, 0), (0, -th * 4), text=str(W))
+    ms.dim((W, 0), (W, H), (W + th * 6.5, 0), angle=90, text=str(H))
+    ms.tx(f'SECTION {label}-{label}', W / 2, -th * 7.0, 'GB-SEC', h=th * 1.4, al=TA.TOP_CENTER)
+
+
+def draw_starter_plan(ms, ss, ref_face_u):
+    """the starters along the beam (plan strip, 1:20): positions dimensioned from the core / beam faces."""
+    th = ms.th; ln = ss.ln; W = ln.w
+    us = [u for u, _ in ln.L['starters']]
+    u0, u1 = min(us) - 600, ref_face_u + 300
+    ms.pl([(u0, 0), (ref_face_u, 0)], 'GB-CONC'); ms.pl([(u0, W), (ref_face_u, W)], 'GB-CONC')
+    ms.brk((u0, -150), (u0, W + 150))
+    ms.pl([(ref_face_u, -300), (ref_face_u, W + 300)], 'GB-CONC')
+    ms.hatch([(ref_face_u, -300), (u1, -300), (u1, W + 300), (ref_face_u, W + 300)], 'GB-HATCH', 'ANSI31', 25)
+    ms.tx('CORE 1 WALL', ref_face_u + 40, W + 400, h=th * 0.8)
+    for u in us:
+        ms.pl([(u, W - COVER - ln.p['ds']), (u, -ss.lap)], 'GB-STARTER', w=ss.d)
+    prev = None
+    for u in sorted(us) + [ref_face_u]:
+        if prev is not None: ms.dim((prev, -ss.lap), (u, -ss.lap), (prev, -ss.lap - th * 3), text=str(round(u - prev)))
+        prev = u
+    ms.dim((min(us), 0), (min(us), -ss.lap), (min(us) - th * 3.5, 0), angle=90, text=str(ss.lap))
+    ms.tx(f"GB2 {W}x{ln.h} (PLAN)", u0 + 100, W + th * 0.6, h=th * 0.8)
+    ms.tx(f"{ss.n} T{ss.d} STAIR STARTER BARS - POSITIONS AS THE PLAN ({ln.L['starters'][0][1]})", u0 + 100, -ss.lap - th * 6.5, 'GB-STARTER', h=th * 0.8)
 
 
 # ------------------------------------------------------------------------- clean copy of the consultant's entities
@@ -636,6 +712,32 @@ def main(lines_json, cfg_json, out):
     sections = [s_ for s_ in C['sheets'] if s_.get('kind') != 'plan']
     built = []; oy = C['model_origin'][1]
     for sheet in sections:
+        if sheet.get('kind') == 'starter':                               # stair starter bars: own section + own BBS
+            gl = next(l_ for s__, l_ in built if s__['line'] == sheet['line'])
+            ss = StarterSet(gl, **C.get('starter_bar', {}))
+            thx = TXT * XSCALE; ox = C['model_origin'][0]
+            draw_starter_section(MS(msp, ox, oy, thx, XSCALE), ss, sheet['sec'])
+            ref = next(q['u0'] for q in gl.sup if q.get('core'))
+            px = ox + 4000
+            draw_starter_plan(MS(msp, px, oy, TXT * 20, 20), ss, ref)
+            lay, sc = new_sheet(sheet)
+            X0, Y1 = 14, 594 - 14
+            wm, hm = ss.lap + gl.w + 1500, gl.h + 1500
+            vp(lay, X0 + wm / XSCALE / 2, Y1 - hm / XSCALE / 2, wm / XSCALE, hm / XSCALE, ox - ss.lap - 400 + wm / 2, oy - 550 + hm / 2, XSCALE,
+               f"SECTION {sheet['sec']}-{sheet['sec']}  -  STAIR STARTER BARS {ss.n} T{ss.d} ({gl.typ} {gl.w}x{gl.h})   SCALE 1:{XSCALE}")
+            us = [u for u, _ in gl.L['starters']]
+            wp, hp = (ref + 1400) - (min(us) - 700), gl.w + ss.lap + TXT * 20 * 9 + 1100
+            vp(lay, X0 + wm / XSCALE + 20 + wp / 40, Y1 - hp / 40, wp / 20, hp / 20, px + (min(us) - 700 + ref + 1400) / 2, oy + gl.w + 1000 - hp / 2, 20,
+               f"STAIR STARTER BARS - PLAN ALONG THE {gl.typ} (SECTION {sheet['sec']}-{sheet['sec']} ON SHEET {sheet['seq']})   SCALE 1:20")
+            notes = [f"NOTES (SECTION {sheet['sec']}-{sheet['sec']}, STAIR STARTER BARS):",
+                     f"1. {ss.n} T{ss.d} STAIR STARTER BARS OUT OF THE {gl.typ} {gl.w}x{gl.h} (SECTION {sheet.get('parent_sec', '')}), AT THE POSITIONS OF THE PLAN.",
+                     f"2. SHAPE AS THE COLUMN STARTERS: LEG {ss.leg} INSIDE THE BEAM, ACROSS THE BEAM INSIDE THE STIRRUP ({ss.inside}), PROJECTING A LAP OF {round(ss.lap / ss.d)}d = {ss.lap}.",
+                     f"3. CUTTING LENGTH L = {ss.leg} + {ss.inside} + {ss.lap} = {ss.Lc}; BAR MARK 01 OF THIS SECTION; OWN BBS TABLE (SECTION {sheet['sec']}-{sheet['sec']}).",
+                     "4. SHOWN UNDER THE TOP BARS OF THE BEAM, PROJECTING INTO THE STAIR."]
+            for j, s2 in enumerate(notes):
+                lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((X0, Y1 - max(hm / XSCALE, hp / 20) - 20 - j * 4.6))
+            built.append((sheet, ss)); oy -= 6000
+            continue
         L = next(l for l in LJ[sheet['plan']] if l['code'] == sheet['line'])
         L = beam_ends(L, LJ[sheet['plan']], sched)
         if L.get('starters_abs'):
@@ -655,6 +757,13 @@ def main(lines_json, cfg_json, out):
             W1, H1 = Wm / s_, Hm / s_
             if W1 <= AW and H1 + 14 + Hx + 12 + Hn <= AH: pick = (s_, 'stack', W1, H1, Wm, Hm); break
             if W1 + 12 + Wx <= AW and H1 <= AH and Hx + 14 + Hn_side <= AH: pick = (s_, 'side', W1, H1, Wm, Hm); break
+        if pick is None:                                                     # notes beside the cross section (stacked)
+            for s_ in SCALES:
+                th = TXT * s_
+                Hm = 2300 + th * 4 + ln.h + 2900 + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300
+                Wm = ln.len + 3400 + 1000 + (th * 10 if ln.L.get('starters') else 0)
+                W1, H1 = Wm / s_, Hm / s_
+                if W1 <= AW and H1 + 14 + max(Hx, Hn) + 12 <= AH: pick = (s_, 'stack', W1, H1, Wm, Hm); break
         if pick is None:
             s_ = SCALES[-1]; th = TXT * s_
             Hm = 2300 + th * 4 + ln.h + 2900 + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300; Wm = ln.len + 4400
@@ -686,7 +795,7 @@ def main(lines_json, cfg_json, out):
                  f"1. T.O.GB {ln.top / 1000:+.2f}, B.O.GB {(ln.top - ln.h) / 1000:+.2f}, BEAM {ln.w}x{ln.h} AS THE PLAN AND THE GB SCHEDULE ({ln.typ}); COVER {COVER} ALL FACES.",
                  f"2. LAPS 60d ({', '.join(sorted({str(b_['lp']) for b_ in ln.bars}))}) IN THE FIRST / LAST QUARTER OF THE SPAN NEXT TO A COLUMN, PATTERNS A / B STAGGERED; SHORT SPANS: LAP ENDS AT THE COLUMN FACE.",
                  f"3. END LEGS: TOP BARS {LEG_T} DOWN, BOTTOM BARS {LEG_B} UP, AT THE FAR FACE OF THE END SUPPORT - COVER {COVER}.",
-                 f"4. STIRRUPS {nds}T{ln.p['ds']}/m' AS THE GB SCHEDULE ({ln.p['s']} c/c), FROM SUPPORT FACE TO SUPPORT FACE, FIRST 50 FROM THE FACE; NONE INSIDE COLUMNS / WALLS.",
+                 f"4. STIRRUPS {nds}T{ln.p['ds']}/m' AS THE GB SCHEDULE ({ln.p['s']} c/c), FROM SUPPORT FACE TO SUPPORT FACE: FIRST AND LAST STIRRUP 50 FROM THE FACES, CLOSING SPACES < {ln.p['s']} AS DIMENSIONED; NONE INSIDE COLUMNS / WALLS.",
                  "5. COLUMN BARS AND TIES (MAGENTA) ARE THE COLUMN'S, AS THE COLUMN SCHEDULE: SHOWN FOR COORDINATION ONLY - NOT IN THE GB BBS / WEIGHTS.",
                  "6. BAR DETAILING UNDER THE SECTION: EVERY BAR WITH ITS STRAIGHT LENGTH, LEGS AND LAPS; MARKS AS THE BBS SHEETS.",
                  "7. AT BEAM CROSSINGS THE BARS OF THE BEAM WITH THE LARGER BAR DIAMETER PASS FIRST."]
@@ -697,7 +806,7 @@ def main(lines_json, cfg_json, out):
         if ln.top != C['levels']['top_gb']:
             notes.append(f"{len(notes)}. BEAM AT T.O.GB {ln.top / 1000:+.2f} (RED ON THE PLAN): REINFORCED ON ITS OWN, LEGS IN ITS END COLUMNS; NOT CONTINUOUS WITH THE BEAMS AT {C['levels']['top_gb'] / 1000:+.2f}.")
         if ln.L.get('starters'):
-            notes.append(f"{len(notes)}. STAIR STARTER BARS T16: POSITIONS AND COUNT AS THE PLAN; SHAPE / EMBEDMENT / PROJECTION NOT GIVEN - {C.get('rfi_starters', 'RFI')}; NOT IN THE BBS UNTIL ANSWERED.")
+            notes.append(f"{len(notes)}. STAIR STARTER BARS T16 AT THE PLAN POSITIONS: {ln.L.get('starter_ref', 'SEE THE STARTER SECTION')}.")
         nx_, ny_ = (X0 + Wx + 12, Y1 - H1 - 14 - 4) if mode == 'stack' else (X0 + W1 + 12, Y1 - Hx - 14 - 4)
         import textwrap
         wrap = max(40, int((1030 * sc - 10 - nx_) / 2.6))                  # notes kept left of the title column
@@ -742,7 +851,15 @@ def main(lines_json, cfg_json, out):
             cx += w
         y -= rw
     # ---- section marks / HOLD on the copied plan
-    secs = {s_['line']: s_['sec'] for s_ in sections}
+    secs = {s_['line']: s_['sec'] for s_ in sections if s_.get('kind') != 'starter'}
+    for s_ in sections:                                                  # starter section: cut across the beam on the plan
+        if s_.get('kind') != 'starter': continue
+        l = next(l_ for l_ in LJ[s_['plan']] if l_['code'] == s_['line'])
+        yv = sum(v for v, _ in l['starters_abs']) / len(l['starters_abs'])
+        for xv, sg in ((l['c'] - l['w'] / 2 - 1300, -1), (l['c'] + l['w'] / 2 + 500, 1)):
+            msp.add_circle((xv, yv), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
+            msp.add_text(s_['sec'], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': 'STANDARD'}).set_placement((xv, yv), align=TA.MIDDLE_CENTER)
+        msp.add_line((l['c'] - l['w'] / 2 - 1000, yv), (l['c'] + l['w'] / 2 + 200, yv), dxfattribs={'layer': 'GB-SEC', 'color': 4, 'linetype': 'DASHED'})
     for pn in C.get('plan_marks', []):
         for l in LJ[pn]:
             mid = (l['a'] + l['b']) / 2
