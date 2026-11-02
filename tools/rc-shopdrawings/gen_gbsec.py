@@ -197,8 +197,8 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
             ms.brk((a - 100, top + 900), (b + 100, top + 900))
             ms.hatch([(a, top), (b, top), (b, top + 900), (a, top + 900)], 'GB-HATCH', 'ANSI31', 25)
             ms.tx(q['lab'], (a + b) / 2, top + 900 + th * 1.2, al=TA.BOTTOM_CENTER, h=th * 0.9)
-            ms.tx(f"GB1 UNDER THE WALL ({q.get('wt', '')})", (a + b) / 2, top + 560, al=TA.MIDDLE_CENTER, h=th * 0.75)
-            ms.tx("NO STIRRUPS IN THE WALL", (a + b) / 2, top + 560 - th * 1.3, al=TA.MIDDLE_CENTER, h=th * 0.75)
+            ms.tx(f"{ln.typ} UNDER THE WALL ({q.get('wt', '')})", (a + b) / 2, bot - th * 12.6, al=TA.MIDDLE_CENTER, h=th * 0.75)
+            ms.tx("NO STIRRUPS IN THE WALL", (a + b) / 2, bot - th * 13.9, al=TA.MIDDLE_CENTER, h=th * 0.75)
             continue
         if q.get('core'):                                           # core wall: hatched, above and below the beam
             for y0, y1 in ((bot - 900, bot), (top, top + 900)):
@@ -278,12 +278,11 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
             ms.dim((st['a'], bot), (st['first'], bot), (st['a'], yd), text='50')
             if st['close'] == st['s'] or st['n'] < 3:
                 ms.dim((st['first'], bot), (st['last'], bot), (st['a'], yd), text=f"{st['n'] - 1}x{st['s']}={round(st['last'] - st['first'])}")
-            else:
+                ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text='50')
+            else:                                                   # closing spaces + the last 50 in one dimension (readable)
                 k_ = len(st['tail']); p2 = st['pos'][-1 - k_]
                 ms.dim((st['first'], bot), (p2, bot), (st['a'], yd), text=f"{st['n'] - 1 - k_}x{st['s']}={(st['n'] - 1 - k_) * st['s']}")
-                for j_, sp_ in enumerate(st['tail']):
-                    ms.dim((st['pos'][-1 - k_ + j_], bot), (st['pos'][-k_ + j_], bot), (st['a'], yd), text=str(round(sp_)))
-            ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text='50')
+                ms.dim((p2, bot), (st['b'], bot), (st['a'], yd), text='+'.join(str(round(v)) for v in st['tail']) + '+50')
             ms.hexmark((st['a'] + st['b']) / 2 - th * 3.2, yd - th * 2.2, st['mark'], th * 0.8)
             ms.tx(gbcall(st['n'], ln.p['ds'], ln.stir_dims[2], st['s']), (st['a'] + st['b']) / 2 - th * 2.0, yd - th * 2.6, h=th * 0.8)
     # stair starter bars (plan positions, projecting out of the beam): marked on the section
