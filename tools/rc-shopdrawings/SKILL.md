@@ -747,3 +747,13 @@ the state in files, never only in the conversation:
 - A line ending on another beam: that beam is the end support (bars to its far face - cover, same legs,
   stirrups from its face) - office rule, flagged in the RFI. Lines with a schedule/plan conflict, +0.55 steps,
   core anchorage or a free end are held and marked HOLD on the plan.
+- Final rules (engineer, 02-11-2026): BBS on separate A1 sheets after the section sheets (one table per section,
+  k 0.018), sheet numbers plan -> sections -> BBS running on; long section at the largest of 1:20..1:50 that fits,
+  cross section 1:10; call-outs `2 T16-10370`, `45 T10-1880-125`; stirrups written as the schedule (8T10/m').
+- Two codes on one beam -> the code with the larger bar diameter. Red beams on the plan = T.O.GB +0.55, own beam
+  face to face of its end columns (own legs). Core wall end: Ld = 60d (general note) straight where the wall runs
+  along the axis long enough, else to the far face - cover + leg (>= the standard leg); no stirrups in the wall.
+- DXF for AutoCAD: R2010, the consultant's frame and plan rebuilt as plain primitives (`clean_copy`: no foreign
+  blocks / styles / linetypes / xdata / proxies), every layer in the table, audit 0. Check with a strict read.
+- Reading a DWG converted by LibreDWG: mirrored blocks (scale -1) -> use `vertices_in_wcs()` / `ocs().to_wcs()`.
+
