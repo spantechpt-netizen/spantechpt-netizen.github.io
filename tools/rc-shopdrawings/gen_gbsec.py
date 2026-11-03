@@ -27,6 +27,7 @@ LD_D = 60                       # development length = 60 d (general note 7 of t
 SCALES = (20, 25, 30, 40, 50)   # longitudinal section: the largest that fits the sheet
 XSCALE = 10                     # cross section scale
 TXT = 3.0                       # paper text height (mm) of the call-outs on the sections
+TXT_STYLE = 'ROMANS'            # text style of the footing / neck packages (font arial.ttf), set up in main()
 
 
 def gbcall(n, d, L, s=None):
@@ -154,12 +155,12 @@ class MS:
         return e
     def ln(self, a, b, layer): return self.m.add_line(self.P(*a), self.P(*b), dxfattribs={'layer': layer})
     def tx(self, s, u, y, layer='GB-TXT', h=None, rot=0, al=TA.BOTTOM_LEFT):
-        t = self.m.add_text(s, height=h or self.th, rotation=rot, dxfattribs={'layer': layer, 'style': 'STANDARD'})
+        t = self.m.add_text(s, height=h or self.th, rotation=rot, dxfattribs={'layer': layer, 'style': TXT_STYLE})
         t.set_placement(self.P(u, y), align=al); return t
     def hexmark(self, u, y, n, h=None):
-        h = h or self.th; R = h * 1.05
+        h = h or self.th; R = h * 1.3                              # two digits fit inside with margin (Arial)
         self.pl([(u + R * math.cos(math.radians(60 * k)), y + R * math.sin(math.radians(60 * k))) for k in range(6)], 'GB-TXT', True)
-        self.tx(f'{n:02d}', u, y, h=h * 0.7, al=TA.MIDDLE_CENTER)
+        self.tx(f'{n:02d}', u, y, h=h * 0.62, al=TA.MIDDLE_CENTER)
     def dim(self, a, b, base, angle=0, text='<>'):
         d = self.m.add_linear_dim(base=self.P(*base), p1=self.P(*a), p2=self.P(*b), angle=angle, text=text,
                                   dimstyle='GBSEC%d' % self.sc, dxfattribs={'layer': 'GB-DIM'})
@@ -261,7 +262,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
                 yy = (top + th * (1.6 + 2.8 * b_['pat'])) if pos == 'T' else (bot - th * (2.2 + 2.8 * b_['pat']))
                 ms.ln((um, y), (um, yy - (0 if pos == 'T' else -th * 0.2)), 'GB-TXT')
                 ms.hexmark(um, yy + th * 0.5 if pos == 'T' else yy - th * 0.5, pc['mark'], th * 0.8)
-                ms.tx(gbcall(pc['n'], d, pc['L']) + (f"  ({'AB'[b_['pat']]})" if b_['npat'] == 2 else ''), um + th * 1.1, (yy + th * 0.15) if pos == 'T' else (yy - th * 0.85), h=th * 0.8)
+                ms.tx(gbcall(pc['n'], d, pc['L']) + (f"  ({'AB'[b_['pat']]})" if b_['npat'] == 2 else ''), um + th * 1.45, (yy + th * 0.15) if pos == 'T' else (yy - th * 0.85), h=th * 0.8)
             # laps: dimension between consecutive pieces of the same pattern
             if k + 1 < len(b_['pieces']):
                 nx = b_['pieces'][k + 1]
@@ -284,7 +285,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
                 ms.dim((st['first'], bot), (p2, bot), (st['a'], yd), text=f"{st['n'] - 1 - k_}x{st['s']}={(st['n'] - 1 - k_) * st['s']}")
                 ms.dim((p2, bot), (st['b'], bot), (st['a'], yd), text='+'.join(str(round(v)) for v in st['tail']) + '+50')
             ms.hexmark((st['a'] + st['b']) / 2 - th * 3.2, yd - th * 2.2, st['mark'], th * 0.8)
-            ms.tx(gbcall(st['n'], ln.p['ds'], ln.stir_dims[2], st['s']), (st['a'] + st['b']) / 2 - th * 2.0, yd - th * 2.6, h=th * 0.8)
+            ms.tx(gbcall(st['n'], ln.p['ds'], ln.stir_dims[2], st['s']), (st['a'] + st['b']) / 2 - th * 1.75, yd - th * 2.6, h=th * 0.8)
     # stair starter bars (plan positions, projecting out of the beam): marked on the section
     for k, (us, side) in enumerate(ln.L.get('starters', [])):
         if not (u_lo <= us <= u_hi): continue
@@ -355,7 +356,7 @@ def draw_detailing(ms, ln, y0):
             ytx = yy + th * 1.6
             ms.hexmark(um, ytx + th * 0.4, pc['mark'], th * 0.8)
             parts = ([str(pc['legL'])] if pc['legL'] else []) + [str(st)] + ([str(pc['legR'])] if pc['legR'] else [])
-            ms.tx(f"{gbcall(pc['n'], d, pc['L'])}   L = {' + '.join(parts)} = {pc['L']}", um + th * 1.2, ytx, h=th * 0.8)
+            ms.tx(f"{gbcall(pc['n'], d, pc['L'])}   L = {' + '.join(parts)} = {pc['L']}", um + th * 1.45, ytx, h=th * 0.8)
             if k + 1 < len(b_['pieces']):                                         # the lap with the next piece
                 nx = b_['pieces'][k + 1]
                 ms.dim((nx['u0'], yb), (pc['u1'], yb), (nx['u0'], yb + sg * (-1) * (th * 2.0 + 450)), text=f"LAP {b_['lp']} (60d)")
@@ -381,9 +382,9 @@ def draw_xsec(ms, ln, label):
         ms.ln(((x0 + x1) / 2, y), ((x0 + x1) / 2, yy), 'GB-TXT')
         ms.hexmark((x0 + x1) / 2 + th * 1.2, yy + th * 0.4, mk, th * 0.8)
         marks_ = sorted({m['mark'] for m in ln.marks if m['pos'] == pos})
-        ms.tx(f"{n} T{d} {'TOP' if pos == 'T' else 'BOTTOM'} (MARKS {', '.join(f'{x:02d}' for x in marks_)})", (x0 + x1) / 2 + th * 2.4, yy, h=th * 0.75)
+        ms.tx(f"{n} T{d} {'TOP' if pos == 'T' else 'BOTTOM'} (MARKS {', '.join(f'{x:02d}' for x in marks_)})", (x0 + x1) / 2 + th * 2.6, yy, h=th * 0.75)
     ms.hexmark(W + th * 1.6, H / 2, ln.stirs[0]['mark'] if ln.stirs else 0, th * 0.8)
-    ms.tx(f"STIRRUPS {round(1000 / p['s'])}T{p['ds']}/m' (GB SCHEDULE)", W + th * 2.8, H / 2 - th * 0.4, h=th * 0.75)
+    ms.tx(f"STIRRUPS {round(1000 / p['s'])}T{p['ds']}/m' (GB SCHEDULE)", W + th * 3.0, H / 2 - th * 0.4, h=th * 0.75)
     if ln.L.get('starters'):                                       # stair starter bar out of the beam side (dashed)
         e_ = ms.pl([(0, H / 2), (-th * 9, H / 2)], 'GB-STARTER', w=16); e_.dxf.linetype = 'DASHED'
         ms.tx(f"T16 STAIR STARTER ({ln.L['starters'][0][1]})", -th * 9, H / 2 + th * 0.5, 'GB-STARTER', h=th * 0.7)
@@ -415,13 +416,13 @@ class PS:
         if r: pts = fillet(pts, r, closed)
         e = self.l.add_lwpolyline([self.P(*q) for q in pts], dxfattribs={'layer': 'GB-TITLE'}); e.closed = closed; return e
     def text(self, s, x, y, h=250, layer='', rot=0, align=TA.BOTTOM_LEFT, maxw=None):
-        t = self.l.add_text(s, height=h * self.k, rotation=rot, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'})
+        t = self.l.add_text(s, height=h * self.k, rotation=rot, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE})
         t.set_placement(self.P(x, y), align=align); return t
     def circle(self, x, y, r, layer): self.l.add_circle(self.P(x, y), r * self.k, dxfattribs={'layer': 'GB-TITLE'})
     def mark(self, x, y, n, h=250, layer=''):
-        R = h * 1.1
+        R = h * 1.3
         self.pline([(x + R * math.cos(math.radians(60 * j)), y + R * math.sin(math.radians(60 * j))) for j in range(6)], '', 0, True)
-        self.text(f'{int(n):02d}', x, y, h * 0.75, align=TA.MIDDLE_CENTER)
+        self.text(f'{int(n):02d}', x, y, h * 0.62, align=TA.MIDDLE_CENTER)
 
 
 def bbs_shape(m):
@@ -537,7 +538,7 @@ def draw_starter_section(ms, ss, label):
     ms.dim((0, ys), (-ss.lap, ys), (0, ys + th * 3.5), text=f"{ss.lap} ({round(ss.lap / ss.d)}d)")
     ms.dim((xe, ys), (xe, ys - ss.leg), (xe + th * 3, ys), angle=90, text=str(ss.leg))
     ms.hexmark(-ss.lap / 2, ys - th * 2.2, 1, th * 0.8)
-    ms.tx(f"{gbcall(ss.n, ss.d, ss.Lc)}   L = {ss.leg} + {ss.inside} + {ss.lap} = {ss.Lc}", -ss.lap / 2 + th * 1.2, ys - th * 2.6, 'GB-STARTER', h=th * 0.8)
+    ms.tx(f"{gbcall(ss.n, ss.d, ss.Lc)}   L = {ss.leg} + {ss.inside} + {ss.lap} = {ss.Lc}", -ss.lap / 2 + th * 1.45, ys - th * 2.6, 'GB-STARTER', h=th * 0.8)
     ms.tx(f"TO THE STAIR ({ln.L['starters'][0][1]}) - LAP {round(ss.lap / ss.d)}d", -ss.lap, ys + th * 6.0, 'GB-STARTER', h=th * 0.75)
     ms.dim((0, 0), (W, 0), (0, -th * 4), text=str(W))
     ms.dim((W, 0), (W, H), (W + th * 6.5, 0), angle=90, text=str(H))
@@ -576,6 +577,18 @@ def _layer(doc, src, name):
         try: col = src.layers.get(name).dxf.color
         except Exception: pass
         doc.layers.add(nm, color=abs(col) if col else 7)
+    return nm
+
+
+def _style(doc, src, name):
+    """the consultant's text style re-created by name and font file only (as the footing / neck packages keep it)"""
+    nm = ''.join('_' if ch in BAD_LAYER else ch for ch in (name or 'Standard'))[:250] or 'Standard'
+    if nm not in doc.styles:
+        font, wf = 'txt', 1.0
+        try:
+            st = src.styles.get(name); font = st.dxf.get('font', 'txt') or 'txt'; wf = st.dxf.get('width', 1.0) or 1.0
+        except Exception: pass
+        doc.styles.add(nm, font=font).dxf.width = wf
     return nm
 
 
@@ -621,14 +634,14 @@ def clean_copy(doc, src, ents, dst, depth=0, keep_layer=None):
             elif t in ('TEXT', 'ATTRIB'):
                 if not e.dxf.text.strip(): continue
                 ocs = e.ocs(); rot = e.dxf.get('rotation', 0) if e.dxf.extrusion.z >= 0 else 180 - e.dxf.get('rotation', 0)
-                tx = dst.add_text(e.dxf.text, height=e.dxf.height, rotation=rot, dxfattribs=dict(at, style='STANDARD'))
+                tx = dst.add_text(e.dxf.text, height=e.dxf.height, rotation=rot, dxfattribs=dict(at, style=_style(doc, src, e.dxf.get('style', 'Standard'))))
                 tx.dxf.insert = ocs.to_wcs(e.dxf.insert)
                 if e.dxf.hasattr('align_point'): tx.dxf.align_point = ocs.to_wcs(e.dxf.align_point)
                 for k_ in ('halign', 'valign', 'width', 'oblique'):
                     if e.dxf.hasattr(k_): tx.dxf.set(k_, e.dxf.get(k_))
                 n += 1
             elif t == 'MTEXT':
-                mt = dst.add_mtext(e.plain_text(), dxfattribs=dict(at, style='STANDARD', char_height=e.dxf.char_height,
+                mt = dst.add_mtext(e.plain_text(), dxfattribs=dict(at, style=_style(doc, src, e.dxf.get('style', 'Standard')), char_height=e.dxf.char_height,
                                    attachment_point=e.dxf.get('attachment_point', 1), insert=e.dxf.insert))
                 if e.dxf.hasattr('width'): mt.dxf.width = e.dxf.width
                 if e.dxf.hasattr('text_direction'): mt.dxf.text_direction = e.dxf.text_direction
@@ -673,10 +686,13 @@ def main(lines_json, cfg_json, out):
     doc.header['$INSUNITS'] = 4; doc.header['$MEASUREMENT'] = 1
     for k, v in LAYERS.items():
         if k not in doc.layers: doc.layers.add(k, color=v)
+    fs = C.get('text_style', {'name': 'ROMANS', 'font': 'arial.ttf'})
+    globals()['TXT_STYLE'] = fs['name']
+    if fs['name'] not in doc.styles: doc.styles.add(fs['name'], font=fs['font'])
     for sc_ in (10, 15, 20, 25, 30, 40, 50, 100):              # dimension styles scaled for the viewport scales
         ds = doc.dimstyles.duplicate_entry('EZDXF', 'GBSEC%d' % sc_)
         ds.dxf.dimscale = sc_; ds.dxf.dimtxt = 2.5; ds.dxf.dimasz = 2.0; ds.dxf.dimexo = 1.0; ds.dxf.dimexe = 1.0; ds.dxf.dimgap = 0.8
-        ds.dxf.dimtad = 1; ds.dxf.dimdec = 0; ds.dxf.dimblk = 'ARCHTICK'
+        ds.dxf.dimtad = 1; ds.dxf.dimdec = 0; ds.dxf.dimblk = 'ARCHTICK'; ds.dxf.dimtxsty = fs['name']
     FR = frame_block(doc, src, C['frame']['block']) if src is not None else None
     msp = doc.modelspace(); report = []
     # the reinforcement plan: the engineer's plan copied 1:1 in place (measurable), as plain entities, our marks on it
@@ -699,14 +715,14 @@ def main(lines_json, cfg_json, out):
         for f, (fx, fy, fh) in C['frame']['title'].items():
             v = sheet.get(f, C['frame'].get('defaults', {}).get(f, ''))
             for j, part in enumerate(str(v).split('\n')):
-                t = lay.add_text(part, height=fh * sc, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'})
+                t = lay.add_text(part, height=fh * sc, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE})
                 t.set_placement((fx * sc, (fy - j * fh * 1.6) * sc), align=TA.MIDDLE_CENTER)
         return lay, sc
 
     def vp(lay, cx, cy, w, h, mcx, mcy, scale, title):
         v = lay.add_viewport(center=(cx, cy), size=(w, h), view_center_point=(mcx, mcy), view_height=h * scale)
         v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
-        lay.add_text(title, height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((cx - w / 2 + 2, cy - h / 2 - 6))
+        lay.add_text(title, height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((cx - w / 2 + 2, cy - h / 2 - 6))
 
     sections = [s_ for s_ in C['sheets'] if s_.get('kind') != 'plan']
     built = []; oy = C['model_origin'][1]
@@ -734,7 +750,7 @@ def main(lines_json, cfg_json, out):
                      f"3. CUTTING LENGTH L = {ss.leg} + {ss.inside} + {ss.lap} = {ss.Lc}; BAR MARK 01 OF THIS SECTION; OWN BBS TABLE (SECTION {sheet['sec']}-{sheet['sec']}).",
                      "4. SHOWN UNDER THE TOP BARS OF THE BEAM, PROJECTING INTO THE STAIR."]
             for j, s2 in enumerate(notes):
-                lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((X0, Y1 - max(hm / XSCALE, hp / 20) - 20 - j * 4.6))
+                lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((X0, Y1 - max(hm / XSCALE, hp / 20) - 20 - j * 4.6))
             built.append((sheet, ss)); oy -= 6000
             continue
         L = next(l for l in LJ[sheet['plan']] if l['code'] == sheet['line'])
@@ -811,7 +827,7 @@ def main(lines_json, cfg_json, out):
         wrap = max(40, int((1030 * sc - 10 - nx_) / 2.6))                  # notes kept left of the title column
         lines_ = [w_ for s2 in notes for w_ in (textwrap.wrap(s2, wrap, subsequent_indent='    ') or [''])]
         for j, s2 in enumerate(lines_):
-            lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((nx_, ny_ - j * 4.6))
+            lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((nx_, ny_ - j * 4.6))
         built.append((sheet, ln))
         oy -= Hm + 4000
     # ---- BBS sheets: one table per section, in section order (approved footing / neck format)
@@ -837,7 +853,7 @@ def main(lines_json, cfg_json, out):
     x0 = 14 + TW + 14; y = 594 - 14; rw = 6.0
     cw = [24, 30, 22, 22, 22, 26]
     hdr = ['SECTION', 'SHEET', 'T10 (kg)', 'T16 (kg)', 'T18 (kg)', 'TOTAL (kg)']
-    lay.add_text('SUMMARY - GROUND BEAMS ZONE 7 PART 1 (NET, NO WASTE)', height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((x0, y))
+    lay.add_text('SUMMARY - GROUND BEAMS ZONE 7 PART 1 (NET, NO WASTE)', height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y))
     rows = [[f"{s_['sec']}-{s_['sec']}", s_['seq']] + [f"{t.get(d, 0):,.2f}" for d in (10, 16, 18)] + [f"{sum(t.values()):,.2f}"] for s_, _, t in summ]
     g = {d: sum(t.get(d, 0) for _, _, t in summ) for d in (10, 16, 18)}
     rows.append(['TOTAL', ''] + [f"{g[d]:,.2f}" for d in (10, 16, 18)] + [f"{sum(g.values()):,.2f}"])
@@ -846,7 +862,7 @@ def main(lines_json, cfg_json, out):
         cx = x0
         for c_i, (v, w) in enumerate(zip(row, cw)):
             lay.add_lwpolyline([(cx, y), (cx + w, y), (cx + w, y - rw), (cx, y - rw)], close=True, dxfattribs={'layer': 'GB-TITLE'})
-            t = lay.add_text(v, height=2.4, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}); t.set_placement((cx + w / 2, y - rw / 2), align=TA.MIDDLE_CENTER)
+            t = lay.add_text(v, height=2.4, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}); t.set_placement((cx + w / 2, y - rw / 2), align=TA.MIDDLE_CENTER)
             cx += w
         y -= rw
     # ---- section marks / HOLD on the copied plan
@@ -857,7 +873,7 @@ def main(lines_json, cfg_json, out):
         yv = sum(v for v, _ in l['starters_abs']) / len(l['starters_abs'])
         for xv, sg in ((l['c'] - l['w'] / 2 - 1300, -1), (l['c'] + l['w'] / 2 + 500, 1)):
             msp.add_circle((xv, yv), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
-            msp.add_text(s_['sec'], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': 'STANDARD'}).set_placement((xv, yv), align=TA.MIDDLE_CENTER)
+            msp.add_text(s_['sec'], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((xv, yv), align=TA.MIDDLE_CENTER)
         msp.add_line((l['c'] - l['w'] / 2 - 1000, yv), (l['c'] + l['w'] / 2 + 200, yv), dxfattribs={'layer': 'GB-SEC', 'color': 4, 'linetype': 'DASHED'})
     for pn in C.get('plan_marks', []):
         for l in LJ[pn]:
@@ -866,13 +882,13 @@ def main(lines_json, cfg_json, out):
             rot = 0 if l['o'] == 'H' else 90
             dx, dy = (0, l['w'] / 2 + 330) if l['o'] == 'H' else (-(l['w'] / 2 + 330), 0)
             if l['code'] in C.get('held', {}):
-                t_ = msp.add_text(f"HOLD - {C['held'][l['code']]}", height=200, rotation=rot, dxfattribs={'layer': 'GB-SEC', 'color': 1, 'style': 'STANDARD'})
+                t_ = msp.add_text(f"HOLD - {C['held'][l['code']]}", height=200, rotation=rot, dxfattribs={'layer': 'GB-SEC', 'color': 1, 'style': TXT_STYLE})
                 t_.set_placement((x - dx * 2.2, y - dy * 2.2) if l['o'] == 'H' else (x + dx * 2.2, y), align=TA.MIDDLE_CENTER)
             if l['code'] in secs:
                 for e_, sg in ((l['a'], -1), (l['b'], 1)):
                     px, py = (e_ + sg * 450, l['c'] + l['w'] / 2 + 420) if l['o'] == 'H' else (l['c'] - l['w'] / 2 - 420, e_ + sg * 450)
                     msp.add_circle((px, py), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
-                    msp.add_text(secs[l['code']], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': 'STANDARD'}).set_placement((px, py), align=TA.MIDDLE_CENTER)
+                    msp.add_text(secs[l['code']], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((px, py), align=TA.MIDDLE_CENTER)
     # ---- plan sheet
     for sheet in C['sheets']:
         if sheet.get('kind') != 'plan': continue
@@ -881,9 +897,9 @@ def main(lines_json, cfg_json, out):
         w, h = (x1 - x0) / s_, (y1 - y0) / s_
         v = lay.add_viewport(center=(14 + w / 2, 594 - 14 - h / 2), size=(w, h), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2), view_height=h * s_)
         v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
-        lay.add_text(f"{sheet['caption']}   SCALE 1:{s_}", height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((14, 594 - 14 - h - 7))
+        lay.add_text(f"{sheet['caption']}   SCALE 1:{s_}", height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((14, 594 - 14 - h - 7))
         for j, s2 in enumerate(sheet.get('notes', [])):
-            lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': 'STANDARD'}).set_placement((14 + w + 10, 594 - 30 - j * 4.6))
+            lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((14 + w + 10, 594 - 30 - j * 4.6))
     for nm in [l.name for l in doc.layouts if l.name.startswith('Layout')]:
         try: doc.layouts.delete(nm)
         except Exception: pass
