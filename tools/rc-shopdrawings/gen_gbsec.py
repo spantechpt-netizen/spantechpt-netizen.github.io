@@ -964,12 +964,22 @@ def main(lines_json, cfg_json, out):
     # ---- section marks / HOLD on the copied plan
     secs = {s_['line']: s_['sec'] for s_ in sections if s_.get('kind') != 'starter'}
     placed = []                                                          # section bubbles already on the plan
+    boxes = []                                                           # texts of the plan (labels, dimensions): kept clear
+    for e in msp.query('TEXT MTEXT'):
+        try:
+            t_ = e.dxf.text if e.dxftype() == 'TEXT' else e.plain_text(); hh = e.dxf.height if e.dxftype() == 'TEXT' else e.dxf.char_height
+            q_ = e.dxf.insert; w_ = max(1, len(t_.split('\n')[0])) * hh * 0.8; r_ = e.dxf.get('rotation', 0) % 180
+            boxes.append((q_.x - 60, q_.y - hh, q_.x + w_ + 60, q_.y + hh * 1.6) if r_ < 45 else (q_.x - hh * 1.6, q_.y - 60, q_.x + hh, q_.y + w_ + 60))
+        except Exception: pass
+    def free(px, py):
+        if any(math.dist((px, py), q_) < 640 for q_ in placed): return False
+        return not any(b_[0] - 300 < px < b_[2] + 300 and b_[1] - 300 < py < b_[3] + 300 for b_ in boxes)
     for s_ in sections:                                                  # starter section: cut across the beam on the plan
         if s_.get('kind') != 'starter': continue
         l = next(l_ for l_ in LJ[s_['plan']] if l_['code'] == s_['line'])
         yv = sum(v for v, _ in l['starters_abs']) / len(l['starters_abs'])
         for xv, sg in ((l['c'] - l['w'] / 2 - 1300, -1), (l['c'] + l['w'] / 2 + 500, 1)):
-            msp.add_circle((xv, yv), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
+            msp.add_circle((xv, yv), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4}); placed.append((xv, yv))
             msp.add_text(s_['sec'], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((xv, yv), align=TA.MIDDLE_CENTER)
         msp.add_line((l['c'] - l['w'] / 2 - 1000, yv), (l['c'] + l['w'] / 2 + 200, yv), dxfattribs={'layer': 'GB-SEC', 'color': 4, 'linetype': 'DASHED'})
     for pn in C.get('plan_marks', []):
@@ -984,11 +994,18 @@ def main(lines_json, cfg_json, out):
             if l['code'] in secs:
                 for e_, sg in ((l['a'], -1), (l['b'], 1)):
                     px, py = (e_ + sg * 450, l['c'] + l['w'] / 2 + 420) if l['o'] == 'H' else (l['c'] - l['w'] / 2 - 420, e_ + sg * 450)
-                    p0 = (px, py); k_ = 0
-                    while any(math.dist((px, py), q_) < 640 for q_ in placed) and k_ < 6:   # free place further out
-                        k_ += 1
-                        px, py = (p0[0] + sg * 650 * k_, p0[1]) if l['o'] == 'H' else (p0[0], p0[1] + sg * 650 * k_)
-                    if k_: msp.add_line(p0, (px - sg * 300, py) if l['o'] == 'H' else (px, py - sg * 300), dxfattribs={'layer': 'GB-SEC', 'color': 4})
+                    p0 = (px, py); best = None
+                    for k_ in range(0, 7):                                   # free place: further out, either side of the beam
+                        for side in (1, -1):
+                            off = (l['w'] / 2 + 420) * (1 - side) if side < 0 else 0
+                            q0 = (p0[0] + sg * 650 * k_, p0[1] - off) if l['o'] == 'H' else (p0[0] + off, p0[1] + sg * 650 * k_)
+                            if free(*q0): best = q0; break
+                        if best: break
+                    px, py = best or p0
+                    end_pt = (e_, l['c']) if l['o'] == 'H' else (l['c'], e_)
+                    if math.dist((px, py), p0) > 1:                          # leader from the beam end to the moved bubble
+                        dvx, dvy = px - end_pt[0], py - end_pt[1]; dl = math.hypot(dvx, dvy) or 1
+                        msp.add_line(end_pt, (px - dvx / dl * 300, py - dvy / dl * 300), dxfattribs={'layer': 'GB-SEC', 'color': 4})
                     placed.append((px, py))
                     msp.add_circle((px, py), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
                     msp.add_text(secs[l['code']], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((px, py), align=TA.MIDDLE_CENTER)

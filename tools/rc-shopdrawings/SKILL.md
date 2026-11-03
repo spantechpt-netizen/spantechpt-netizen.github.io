@@ -756,4 +756,14 @@ the state in files, never only in the conversation:
 - DXF for AutoCAD: R2010, the consultant's frame and plan rebuilt as plain primitives (`clean_copy`: no foreign
   blocks / styles / linetypes / xdata / proxies), every layer in the table, audit 0. Check with a strict read.
 - Reading a DWG converted by LibreDWG: mirrored blocks (scale -1) -> use `vertices_in_wcs()` / `ocs().to_wcs()`.
+- Part 2 (03-11-2026), from the engineer's edits of the Part 1 file (adopt them for every later part): no notes on the
+  section / plan sheets; long sections as large as the sheet allows (cfg `layout` aw 712, finer `scales`), cross
+  section beside or under; size / scale fields live in the frame block (take the corrected frame with
+  `frame.block_dxf`); text style ROMANS -> arial.ttf (footing / neck packages), consultant styles kept; plan bubbles
+  kept off labels and each other with leaders. Stair starters `kind: column`: 1400 zone at the core face, 8 @185,
+  2 per position (one at each face), foot 200 at the beam bottom + h - 50 up + 65d lap = 1890 (T16), own section
+  1:5 + plan strip 1:15 + own BBS.
+- Reading a part: take the plan window from the S-FRAME sheet frame; a beam drawn broken where two beams meet it
+  from both sides is ONE beam (merge, show the others as crossings); column labels further than 1500 accepted up to
+  2000 when the label size matches the drawn column.
 
