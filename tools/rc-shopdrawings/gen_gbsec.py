@@ -684,7 +684,7 @@ def _style(doc, src, name):
     return nm
 
 
-def clean_copy(doc, src, ents, dst, depth=0, keep_layer=None):
+def clean_copy(doc, src, ents, dst, depth=0, keep_layer=None, no_fill=False):
     """the consultant's entities exploded into plain primitives on our own table entries: no foreign block, text
     style, dimension style, linetype, xdata or proxy object can reach the file (what makes a DXF open everywhere)."""
     from ezdxf import path as _path
@@ -702,12 +702,13 @@ def clean_copy(doc, src, ents, dst, depth=0, keep_layer=None):
             if t == 'INSERT':
                 if depth > 6: continue
                 for ins in (e.multi_insert() if e.mcount > 1 else [e]):
-                    n += clean_copy(doc, src, ins.virtual_entities(), dst, depth + 1)
+                    n += clean_copy(doc, src, ins.virtual_entities(), dst, depth + 1, no_fill=no_fill)
                 for a_ in e.attribs:
                     if a_.dxf.text.strip(): n += clean_copy(doc, src, [a_], dst, depth + 1)
             elif t in ('DIMENSION', 'ARC_DIMENSION', 'LEADER', 'MLEADER', 'MULTILEADER', 'POLYLINE', 'ACAD_TABLE'):
                 if depth > 6: continue
-                n += clean_copy(doc, src, e.virtual_entities(), dst, depth + 1, keep_layer=lay)
+                # leader arrowheads inside a scaled block come out at full size (ezdxf): keep the lines only
+                n += clean_copy(doc, src, e.virtual_entities(), dst, depth + 1, keep_layer=lay, no_fill=no_fill or t in ('LEADER', 'MLEADER', 'MULTILEADER'))
             elif t == 'LINE':
                 dst.add_line(e.dxf.start, e.dxf.end, dxfattribs=at); n += 1
             elif t == 'LWPOLYLINE':
@@ -750,6 +751,7 @@ def clean_copy(doc, src, ents, dst, depth=0, keep_layer=None):
                     if len(pts) > 2: h.paths.add_polyline_path(pts, is_closed=True)
                 n += 1
             elif t in ('SOLID', 'TRACE', '3DFACE'):
+                if no_fill: continue
                 v = [e.dxf.get(k_) for k_ in ('vtx0', 'vtx1', 'vtx2', 'vtx3') if e.dxf.hasattr(k_)]
                 if e.dxftype() != '3DFACE' and e.dxf.extrusion.z < 0: v = [e.ocs().to_wcs(q) for q in v]
                 dst.add_solid(v, dxfattribs=at); n += 1
@@ -1030,7 +1032,8 @@ def main(lines_json, cfg_json, out):
                     msp.add_circle((px, py), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
                     msp.add_text(secs[l['code']], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((px, py), align=TA.MIDDLE_CENTER)
     for p1_, p2_, base_ in C.get('plan_dims', []):                      # extra plan dimensions (e.g. a core wall opening)
-        d_ = msp.add_linear_dim(base=base_, p1=p1_, p2=p2_, angle=90 if abs(p1_[0] - p2_[0]) < abs(p1_[1] - p2_[1]) else 0,
+        vert_ = abs(p1_[0] - p2_[0]) < abs(p1_[1] - p2_[1])
+        d_ = msp.add_linear_dim(base=base_, p1=p1_, p2=p2_, angle=90 if vert_ else 0, text=str(round(abs(p1_[1] - p2_[1]) if vert_ else abs(p1_[0] - p2_[0]))),
                                 dimstyle='GBSEC%d' % next((s_['scale'] for s_ in C['sheets'] if s_.get('kind') == 'plan'), 100), dxfattribs={'layer': 'GB-DIM'})
         d_.render()
     # ---- plan sheet

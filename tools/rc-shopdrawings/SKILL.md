@@ -766,4 +766,9 @@ the state in files, never only in the conversation:
 - Reading a part: take the plan window from the S-FRAME sheet frame; a beam drawn broken where two beams meet it
   from both sides is ONE beam (merge, show the others as crossings); column labels further than 1500 accepted up to
   2000 when the label size matches the drawn column.
+- Part 3 (03-11-2026): pipeline scripts saved in `zone7/` (dump -> extract -> lines -> prep -> partcfg -> gen_gbsec ->
+  qc / dxfcheck; cmp.py = what the engineer changed in a returned DXF, sheet by sheet). Engineer's Part 2 edit: a beam
+  under a core wall gets stirrups only along the wall opening (door), n = floor(len / 125), centred; own section only
+  when its width differs from the beam. Frames copied from an AutoCAD-saved file: leader arrowheads inside scaled
+  blocks are dropped (ezdxf draws them full size).
 
