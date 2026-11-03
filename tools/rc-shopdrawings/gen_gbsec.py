@@ -138,8 +138,20 @@ class Line:
                 c1 = (s + close) // 2; tail = [c1, s + close - c1]
                 pos = pos[:-2] + [b - 50 - tail[1], b - 50]
             self.stirs.append(dict(a=a, b=b, n=n, s=s, mark=mk, first=a + 50, last=b - 50, pos=pos, close=close, tail=tail))
+        for q in self.sup:                                          # beam under a wall: stirrups only where the wall is open
+            for o0, o1 in q.get('openings', []):
+                a, b = round(o0 - self.L['a']), round(o1 - self.L['a']); n = int((b - a) // s)
+                if n < 1: continue
+                wt = q.get('wt', self.w); mk_o = mk
+                if wt != self.w:                                       # wider beam under the wall: its own stirrup mark
+                    ws2 = wt - 2 * COVER; Lst2 = up10(2 * (ws2 + hs) + 2 * hook)
+                    mk_o = self.mark(p['ds'], '51', (('A', ws2), ('B', hs)), Lst2, 0, 'S', 'STIRRUP UNDER THE WALL')
+                    self.stir_dims_wall = (ws2, hs, Lst2, hook)
+                e0 = a + (b - a - (n - 1) * s) / 2
+                pos = [e0 + i * s for i in range(n)]
+                self.stirs.append(dict(a=a, b=b, n=n, s=s, mark=mk_o, first=pos[0], last=pos[-1], pos=pos, close=s, tail=[s], opening=True))
         for m in self.marks:
-            if m['mark'] == mk: m['n'] = sum(x['n'] for x in self.stirs)
+            if m['pos'] == 'S': m['n'] = sum(x['n'] for x in self.stirs if x['mark'] == m['mark'])
         self.stir_dims = (ws, hs, Lst, hook)
 
 
@@ -196,10 +208,17 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
         if q.get('under_wall'):                                     # the beam runs on under the core wall (wall above it)
             ms.pl([(a, top), (a, top + 900)], 'GB-CONC'); ms.pl([(b, bot), (b, top + 900)], 'GB-CONC')
             ms.brk((a - 100, top + 900), (b + 100, top + 900))
-            ms.hatch([(a, top), (b, top), (b, top + 900), (a, top + 900)], 'GB-HATCH', 'ANSI31', 25)
+            ops = sorted((o0 - ln.L['a'], o1 - ln.L['a']) for o0, o1 in q.get('openings', []))
+            xs_ = [a] + [v for o in ops for v in o] + [b]
+            for x0_, x1_ in zip(xs_[0::2], xs_[1::2]):
+                if x1_ - x0_ > 5: ms.hatch([(x0_, top), (x1_, top), (x1_, top + 900), (x0_, top + 900)], 'GB-HATCH', 'ANSI31', 25)
+            for o0_, o1_ in ops:
+                ms.pl([(o0_, top), (o0_, top + 900)], 'GB-CONC'); ms.pl([(o1_, top), (o1_, top + 900)], 'GB-CONC')
+                ms.tx(f"OPENING {round(o1_ - o0_)}", (o0_ + o1_) / 2, top + 450, h=th * 0.7, al=TA.MIDDLE_CENTER)
+                ms.dim((o0_, top + 900), (o1_, top + 900), (o0_, top + 900 + th * 1.2), text=str(round(o1_ - o0_)))
             ms.tx(q['lab'], (a + b) / 2, top + 900 + th * 1.2, al=TA.BOTTOM_CENTER, h=th * 0.9)
             ms.tx(f"{ln.typ} UNDER THE WALL ({q.get('wt', '')})", (a + b) / 2, bot - th * 12.6, al=TA.MIDDLE_CENTER, h=th * 0.75)
-            ms.tx("NO STIRRUPS IN THE WALL", (a + b) / 2, bot - th * 13.9, al=TA.MIDDLE_CENTER, h=th * 0.75)
+            ms.tx("STIRRUPS ONLY AT THE WALL OPENING" if q.get('openings') else "NO STIRRUPS IN THE WALL", (a + b) / 2, bot - th * 13.9, al=TA.MIDDLE_CENTER, h=th * 0.75)
             continue
         if q.get('core'):                                           # core wall: hatched, above and below the beam
             for y0, y1 in ((bot - 900, bot), (top, top + 900)):
@@ -276,16 +295,17 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
             if u_lo <= u <= u_hi: ms.ln((u, bot + 40), (u, top - 40), 'GB-STIR')
         if u_lo <= st['a'] and st['b'] <= u_hi:
             yd = bot - th * (8.2 if not detail else 3.0)
-            ms.dim((st['a'], bot), (st['first'], bot), (st['a'], yd), text='50')
+            ms.dim((st['a'], bot), (st['first'], bot), (st['a'], yd), text=str(round(st['first'] - st['a'])))
             if st['close'] == st['s'] or st['n'] < 3:
                 ms.dim((st['first'], bot), (st['last'], bot), (st['a'], yd), text=f"{st['n'] - 1}x{st['s']}={round(st['last'] - st['first'])}")
-                ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text='50')
+                ms.dim((st['last'], bot), (st['b'], bot), (st['a'], yd), text=str(round(st['b'] - st['last'])))
             else:                                                   # closing spaces + the last 50 in one dimension (readable)
                 k_ = len(st['tail']); p2 = st['pos'][-1 - k_]
                 ms.dim((st['first'], bot), (p2, bot), (st['a'], yd), text=f"{st['n'] - 1 - k_}x{st['s']}={(st['n'] - 1 - k_) * st['s']}")
                 ms.dim((p2, bot), (st['b'], bot), (st['a'], yd), text='+'.join(str(round(v)) for v in st['tail']) + '+50')
             ms.hexmark((st['a'] + st['b']) / 2 - th * 3.2, yd - th * 2.2, st['mark'], th * 0.8)
-            ms.tx(gbcall(st['n'], ln.p['ds'], ln.stir_dims[2], st['s']), (st['a'] + st['b']) / 2 - th * 1.75, yd - th * 2.6, h=th * 0.8)
+            Lst_ = next(m_['L'] for m_ in ln.marks if m_['mark'] == st['mark'])
+            ms.tx(gbcall(st['n'], ln.p['ds'], Lst_, st['s']), (st['a'] + st['b']) / 2 - th * 1.75, yd - th * 2.6, h=th * 0.8)
     # stair starter bars (plan positions, projecting out of the beam): marked on the section
     col_st = ln.L.get('starter_kind') == 'column'
     for k, (us, side) in enumerate(ln.L.get('starters', [])):
@@ -1009,6 +1029,10 @@ def main(lines_json, cfg_json, out):
                     placed.append((px, py))
                     msp.add_circle((px, py), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
                     msp.add_text(secs[l['code']], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((px, py), align=TA.MIDDLE_CENTER)
+    for p1_, p2_, base_ in C.get('plan_dims', []):                      # extra plan dimensions (e.g. a core wall opening)
+        d_ = msp.add_linear_dim(base=base_, p1=p1_, p2=p2_, angle=90 if abs(p1_[0] - p2_[0]) < abs(p1_[1] - p2_[1]) else 0,
+                                dimstyle='GBSEC%d' % next((s_['scale'] for s_ in C['sheets'] if s_.get('kind') == 'plan'), 100), dxfattribs={'layer': 'GB-DIM'})
+        d_.render()
     # ---- plan sheet
     for sheet in C['sheets']:
         if sheet.get('kind') != 'plan': continue
