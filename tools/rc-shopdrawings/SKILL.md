@@ -1,6 +1,6 @@
 ---
 name: rc-shopdrawings
-description: "Span Tech RC shop drawings from ANY consultant's structural DWG/DXF in the office style approved on the Roya school package: grade beams per axis, isolated / combined footings, rafts, strip footings, column necks, core-wall necks, stair starter bars and slab on grade X / Y. Also covers reading a new consultant's drawing (layers, blocks, grid, schedules) with survey.py / probe.py / table_dump.py. Use whenever the user sends a structural drawing and asks for شوب درونج / shop drawings of الجريد بيم / grade beams, القواعد / footings, رقاب الأعمدة / necks, الكور / core walls, أشاير السلم / stair starters, SOG, ترقيم اللوحات, a BBS / جدول تفريد, or sends a screenshot of one of these sheets saying a bar, tie, hook, text, length or level is wrong. Covers the pipeline, the drafting rules, how to change a rule, verify a sheet and deliver."
+description: "Span Tech RC shop drawings from ANY consultant's structural DWG/DXF in the office style approved on the Roya school package: grade beams per axis or in section sheets, isolated / combined footings, rafts (also curved rafts with a skewed mesh: B-X / B-Y / T-X / T-Y / chairs layout), strip footings, column necks, core-wall necks, stair starter bars and slab on grade X / Y. Also covers reading a new consultant's drawing (layers, blocks, grid, schedules) with survey.py / probe.py / table_dump.py. Use whenever the user sends a structural drawing and asks for شوب درونج / shop drawings of الجريد بيم / grade beams, القواعد / footings, رقاب الأعمدة / necks, الكور / core walls, أشاير السلم / stair starters, SOG, ترقيم اللوحات, a BBS / جدول تفريد, or sends a screenshot of one of these sheets saying a bar, tie, hook, text, length or level is wrong. Covers the pipeline, the drafting rules, how to change a rule, verify a sheet and deliver."
 ---
 
 # RC shop drawings (Span Tech) — grade beams / footings / column necks
@@ -120,6 +120,10 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `pair_necks.py` | FND plan → every column paired with its footing → `neck_pairs.txt` (input of `gen_n.py @neck_pairs.txt`) |
 | `topdf.py` | DXF sheets → multi-page PDF (each page renders only its own entities: fast) |
 | `rend.py` | fast PNG of a window of the source DXF |
+| `topdf_sheets.py` | sheets of any size (mixed A0 / A3) → one PDF, from the `OUT.sheets.json` windows a generator writes |
+| `gen_raft.py` | curved / skewed raft with a mesh at any angle: B-X, B-Y, T-X, T-Y, chairs layout on A0 1:30, sections & details, BBS (§6e) |
+| `gen_gbsec.py` | grade beams in the section-sheet format (long section + cross sections per beam, starters) on the engineer's frame (§11) |
+| `zone7/*.py` | GB section-sheet pipeline per part: `dump` → `extract` → `lines` → `prep` → `partcfg` → `gen_gbsec` → `qc` / `dxfcheck`; `cmp` = what the engineer changed in a returned DXF |
 
 Sheets are A3 frames at 1:100 in model space (42000 × 29700 units), stacked every −32000 in y.
 Title block on the right (client, project, consultant, contractor, *Shop Drawings Prepared By: SPAN TECH*,
