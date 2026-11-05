@@ -487,6 +487,32 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
 - The engineer may return OUR FOUNDATION CONC DIM sheet corrected: read S-CD-RC outlines, S-CD-COL hatches, S-COLS
   arcs and his S-FNDN additions; plan mm = sheet - offset of the sheet (find it from 2-3 unchanged footings).
 
+### Curved raft with a rotated mesh (`gen_raft.py`, BLSC theatre raft, 05-11-2026)
+- The engineer fixes the mesh directions by drawing them on his sheet (X parallel to the straight edge, Y perpendicular,
+  with the leg value at the ends) - read the angle from his lines; never assume global axes for a skewed raft.
+- `RC_PROJECT=project.json python3 gen_raft.py raft.json OUT` (raft.json = project data: outline, columns, angle, h,
+  cover, leg, meshes, side bars, chairs, levels). Sheets: BOTTOM X (B1), BOTTOM Y (B2), TOP X (T2), TOP Y (T1), CHAIRS
+  LAYOUT - each on its own A0 at 1:30 (the engineer's sample sheet was A0 at ~1:29) - then SECTIONS AND DETAILS, then the
+  BBS on A3 sheets. Same panda on all of them (`title_block` from his sheet: block + S-TITLE field positions, middle-centred,
+  his text style), numbering continues from the number on his sample (FD-10306...).
+- Every row at its real length: cut by the outline eroded by the cover, straight part floored to 10 and centred; identical
+  bars share a mark (package-wide BarList), all others their own mark (427 marks on a 265 m2 raft - that is the answer
+  to "no unified lengths"). Every bar drawn; the call-out (hexagon + `n T d-L-s [-STG] -layer`) written ON the bar, centred
+  between the rows; a piece too short for its text gets it beyond its end on its own line with a leader.
+- Laps: supports = columns projected on the axis (merged within 1 m), bottom at midspan +/- span/5, top at the supports
+  +/- span/5, alternate rows patterns A / B (`lap_patterns_zoned`), the lapped piece drawn 18 mm aside, lap ends circled,
+  zones hatched (ANSI31) only where bars are lapped.
+- Chairs (BLSC 26-10 rule: on the bottom mesh, H = h - 2c - 2 bottom - 2 top layers) on a 1000 grid along the mesh axes,
+  plan symbol = top (thick) + leg dots (the 300 feet make a chain at 1000 - shown in the detail only).
+- Side bars: `gen_mat.side_pieces` on the real ring; BBS sketch simplified (100 mm) so arc facets do not clutter, L real.
+- Sections A-A / B-B at 1:30 through a column (row nearest the cut in both layers, legs and laps; other direction as dots),
+  edge detail 1:10, plan of the bar ends at the curved edge 1:15, staggered-lap detail 1:20, chair detail 1:10, side-bar
+  plan 1:100.
+- Check: leg tips of the INNER layers (B2 up, T2 down) - with h - 2c = 260 a 250 leg leaves 66 cover there -> RFI.
+- PDF: `topdf_sheets.py OUT.dxf out.pdf OUT.sheets.json [pages]` (mixed A0 / A3). Vector A0 sheets ~4 MB each (texts as
+  paths); BBS pages with the panda key plan ~2.8 MB each -> deliver the BBS rasterised (pdftoppm -r 300 -mono + PIL)
+  to stay under the 30 MB upload limit.
+
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
 - `pair_necks.py` (needs `project.json → fnd_view: [cx, cy, height]` of the FND window): columns typed by size,
