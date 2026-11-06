@@ -121,6 +121,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `topdf.py` | DXF sheets → multi-page PDF (each page renders only its own entities: fast) |
 | `rend.py` | fast PNG of a window of the source DXF |
 | `topdf_sheets.py` | sheets of any size (mixed A0 / A3) → one PDF, from the `OUT.sheets.json` windows a generator writes |
+| `gen_axes_radial.py` | axes + columns layout for a radial (theatre) structure drawn without axes: centre / rings fitted to the columns, radial axis through every column, setting-out table, collision-free texts (§6e) |
 | `gen_raft.py` | curved / skewed raft with a mesh at any angle: B-X, B-Y, T-X, T-Y, chairs layout on A0 1:30, sections & details, BBS (§6e) |
 | `gen_gbsec.py` | grade beams in the section-sheet format (long section + cross sections per beam, starters) on the engineer's frame (§11) |
 | `zone7/*.py` | GB section-sheet pipeline per part: `dump` → `extract` → `lines` → `prep` → `partcfg` → `gen_gbsec` → `qc` / `dxfcheck`; `cmp` = what the engineer changed in a returned DXF |
@@ -516,6 +517,17 @@ Nothing here changes the Roya defaults; each option is set in the project's `pro
 - PDF: `topdf_sheets.py OUT.dxf out.pdf OUT.sheets.json [pages]` (mixed A0 / A3). Vector A0 sheets ~4 MB each (texts as
   paths); BBS pages with the panda key plan ~2.8 MB each -> deliver the BBS rasterised (pdftoppm -r 300 -mono + PIL)
   to stay under the 30 MB upload limit.
+
+### Axes made by us for a radial structure (`gen_axes_radial.py`, BLSC theatre, 06-11-2026)
+- Engineer: "make the axes yourself, no overlaps". Centre + one radius per ring = least-squares fit of the columns (rings split
+  where the radii jump > 1 m, first guess = centre of the curved outline edge - the longest run of short facets); radial axis
+  through every column, merged when < 2 deg apart (the outer column keeps the axis, the other one's offset is labelled
+  and tabled); radial lines stop short of the centre, bubbles past the angle-dimension arc; ring arcs at most 6 deg past
+  the end axes. Setting-out table (R, angle, dR, dT, per column) + axes table. RFI: the fitted centre vs the outline arc
+  centre, columns off their axis.
+- One collision list (texts, bubbles, columns, axis lines); texts turned to read from the bottom / right; a final check
+  of every text box against every other one must report 0.
+- Sheet number: run with a project copy whose `seq_start` continues after the last issued sheet.
 
 ## 7. Column necks (`gen_n.py C1:F6:11 C2:F2:15 …` or `gen_n.py @neck_pairs.txt`)
 
