@@ -769,7 +769,7 @@ def draw_bbs_grouped(doc, first_idx, rows, meta, groups, Sheet_=None):
 
 
 # ---------------------------------------------------------------- bars longer than a stock bar (engineer, Oct 2026)
-def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500):
+def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500, retry=True):
     """Laps only inside the allowed zones (developed coordinates along the bar): engineer (BLSC) - bottom mesh at
     midspan, top mesh at the supports, within 1/5 of the span; pattern B shifted by lp + gap from pattern A (adjacent
     laps >= gap apart, never one section). Greedy: each cut as far as the stock allows, inside a zone.
@@ -794,17 +794,19 @@ def lap_patterns_zoned(T, lp, zones, stock=12000, gap=500):
     def ivs(cuts):
         b_ = [0] + cuts + [T]
         return [(max(0, b_[i] - (lp / 2 if i else 0)), min(T, b_[i + 1] + (lp / 2 if i + 1 < len(b_) - 1 else 0))) for i in range(len(b_) - 1)]
-    cA = cuts_from(0)
-    if cA is None: return None
-    A = ivs(cA)
-    if not all(0 < t1 - t0 <= stock for t0, t1 in A): return None
     inz = lambda cs: cs is not None and all(any(a <= c <= b for a, b in zs) for c in cs)
     okB = lambda cs: inz(cs) and all(0 < t1 - t0 <= stock for t0, t1 in ivs(cs))
-    # B: the lap moved back / forward by lp + gap in its zone, else anywhere allowed >= lp + gap from A's laps
-    for cand in ([c - (lp + gap) for c in cA], [c + (lp + gap) for c in cA], cuts_from(0, avoid=cA)):
-        if okB(cand): cB = cand; break
-    else:
-        return None
+    cB = None
+    for shA in (range(0, 4001, 250) if retry else (0,)):   # A as far as the stock allows; moved back when B finds no room
+        cA = cuts_from(shA)
+        if cA is None or not inz(cA): continue
+        A = ivs(cA)
+        if not all(0 < t1 - t0 <= stock for t0, t1 in A): continue
+        # B: the lap moved back / forward by lp + gap in its zone, else anywhere allowed >= lp + gap from A's laps
+        for cand in ([c - (lp + gap) for c in cA], [c + (lp + gap) for c in cA], cuts_from(0, avoid=cA)):
+            if okB(cand): cB = cand; break
+        if cB: break
+    if cB is None: return None
     B = ivs(cB)
     fix = lambda P_: [(t0, t0 + up(t1 - t0)) if t1 < T else (T - up(T - t0), T) for t0, t1 in P_]
     return [fix(A), fix(B)]

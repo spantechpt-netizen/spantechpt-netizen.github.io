@@ -28,6 +28,7 @@ SCALES = (20, 25, 30, 40, 50)   # longitudinal section: the largest that fits th
 XSCALE = 10                     # cross section scale
 TXT = 3.0                       # paper text height (mm) of the call-outs on the sections
 TXT_STYLE = 'ROMANS'            # text style of the footing / neck packages (font arial.ttf), set up in main()
+TOP_LAP = 'support'             # 'midspan' (AREA 7 update, 07-11-2026): top bars lapped at midspan, bottom bars unchanged
 
 
 def gbcall(n, d, L, s=None):
@@ -89,7 +90,13 @@ class Line:
             # allowed lap zones: the quarter of the span next to every interior column (engineer), whole lap inside
             zones = []
             sp = self.spans()
-            for i in range(1, len(self.sup) - 1):
+            if pos == 'T' and TOP_LAP == 'midspan':                    # top bars: the lap inside the middle 2/5 of every clear span
+                for a_s, b_s in sp:
+                    m_ = (a_s + b_s) / 2; hs_ = (b_s - a_s) / 5
+                    c0, c1 = m_ - hs_ + lp / 2, m_ + hs_ - lp / 2
+                    if c1 < c0: c0, c1 = m_ - 5, m_ + 5; self.shortm = True     # short span: the lap centred at midspan
+                    zones.append((c0 - x0 + lgA, c1 - x0 + lgA))
+            for i in (range(1, len(self.sup) - 1) if not (pos == 'T' and TOP_LAP == 'midspan') else ()):
                 q = self.sup[i]; sl = sp[i - 1][1] - sp[i - 1][0]; sr = sp[i][1] - sp[i][0]
                 for z0, z1 in ((q['u0'] - sl / 4, q['u0']), (q['u1'], q['u1'] + sr / 4)):
                     c0, c1 = z0 + lp / 2, z1 - lp / 2
@@ -98,11 +105,12 @@ class Line:
                         c0, c1 = cc - 5, cc + 5
                         self.shortq = True
                     zones.append((c0 - x0 + lgA, c1 - x0 + lgA))
-            pats = lap_patterns_zoned(T, lp, zones) if T > STOCK and zones else None
+            pats = lap_patterns_zoned(T, lp, zones, retry=(pos == 'T' and TOP_LAP == 'midspan')) if T > STOCK and zones else None
             if pats and getattr(self, 'shortq', False):
                 report.append(f'{self.code} {pos}: a quarter span next to a column is shorter than the lap {lp} - laps there run past the quarter (see RFI)')
             if T > STOCK and not pats:
-                pats = lap_patterns(T, lp); report.append(f'{self.code} {pos}: laps could not be placed in the quarter spans next to the columns (RFI)')
+                pats = lap_patterns(T, lp)
+                report.append(f'{self.code} {pos}: laps could not be placed ' + ('at midspan' if pos == 'T' and TOP_LAP == 'midspan' else 'in the quarter spans next to the columns') + ' (RFI)')
             if T <= STOCK: pats = [[(0, T)]]
             cnt = [math.ceil(n / len(pats)), n - math.ceil(n / len(pats))] if len(pats) == 2 else [n]
             for pi, (pat, c) in enumerate(zip(pats, cnt)):
@@ -440,6 +448,61 @@ def draw_xsec(ms, ln, label):
     ms.dim((sx + ws, 0), (sx + ws, hs), (sx + ws + th * 2.5, 0), angle=90, text=str(hs))
     ms.tx(f'HOOKS 135 DEG x {hook}', sx, hs + th * 1.0, h=th * 0.7)
     ms.tx(f'L = 2 x ({ws} + {hs}) + 2 x {hook} = {Lst}', sx, -th * 4.6, h=th * 0.7)
+
+
+def level_mark(ms, u, y, txt, right=True):
+    """level symbol (open triangle on the level line) + text"""
+    th = ms.th; z = th * 0.9
+    ms.pl([(u, y), (u - z * 0.6, y + z), (u + z * 0.6, y + z)], 'GB-DIM', True)
+    ms.ln((u - z * 1.2, y), (u + z * 6.5 if right else u - z * 6.5, y), 'GB-DIM')
+    ms.tx(txt, u + z * 1.0 if right else u - z * 1.0, y + z * 0.3, 'GB-DIM', h=th * 0.75, al=TA.BOTTOM_LEFT if right else TA.BOTTOM_RIGHT)
+
+
+def draw_sog_section(ms, ln, label, axis, ref, sog_t=150, side=1100):
+    """typical section ground beam + slab on grade (AREA 7 update, 07-11-2026): T.O.S.O.G = T.O.GB, S.O.G thickness as
+    given, compacted backfill under the slab (no thickness / compaction / membrane / slab reinforcement drawn: not
+    given - RFI), the beam with its bars and stirrup as its own section (ref)."""
+    th = ms.th; p = ln.p; W, H = ln.w, ln.h; T = ln.top
+    ms.pl([(0, 0), (W, 0), (W, H - sog_t)], 'GB-CONC'); ms.pl([(0, H - sog_t), (0, 0)], 'GB-CONC')
+    for sg in (-1, 1):                                                  # slab both sides, top flush with the beam
+        x0, x1 = (-side, 0) if sg < 0 else (W, W + side)
+        ms.pl([(x0, H), (x1, H)], 'GB-CONC'); ms.pl([(x0, H - sog_t), (x1, H - sog_t)], 'GB-CONC')
+        xe = x0 if sg < 0 else x1
+        ms.brk((xe, H - sog_t - 60), (xe, H + 60))
+        bx0, bx1 = (x0, 0) if sg < 0 else (W, x1)
+        ms.hatch([(bx0, -250), (bx1, -250), (bx1, H - sog_t), (bx0, H - sog_t)], pattern='AR-SAND', scale=1.2)
+        ms.ln((bx0, -250), (bx1, -250), 'GB-DIM').dxf.linetype = 'DASHED'
+    ms.pl([(0, H), (W, H)], 'GB-CONC')
+    for xj in (0, W):                                                   # beam face inside the slab: joint not given (RFI)
+        ms.ln((xj, H - sog_t), (xj, H), 'GB-CONC').dxf.linetype = 'DASHED'
+    ws, hs, Lst, hook = ln.stir_dims
+    c = COVER + p['ds'] / 2
+    ms.pl([(c, c), (W - c, c), (W - c, H - c), (c, H - c)], 'GB-STIR', True, w=p['ds'])
+    ms.pl([(c + 15, H - c), (c + 15 + hook * 0.7, H - c - hook * 0.7)], 'GB-STIR', w=p['ds'])
+    ms.pl([(c, H - c - 15), (c + hook * 0.7, H - c - 15 - hook * 0.7)], 'GB-STIR', w=p['ds'])
+    for pos, n, d, y in (('T', p['nt'], p['dt'], H - COVER - p['ds'] - p['dt'] / 2), ('B', p['nb'], p['db'], COVER + p['ds'] + p['db'] / 2)):
+        x0, x1 = COVER + p['ds'] + d / 2, W - COVER - p['ds'] - d / 2
+        for i in range(n): ms.circle(x0 + (x1 - x0) * i / max(1, n - 1), y, d / 2, 'GB-RFT-TOP' if pos == 'T' else 'GB-RFT-BOT', fill=True)
+    # labels (left / right of the slab ends, clear of the dimensions)
+    xr = W + side + th * 2
+    ms.ln((W + side * 0.55, H - sog_t / 2), (xr - th * 0.4, H + th * 2.2), 'GB-TXT')
+    ms.tx(f'S.O.G {sog_t} THK. - T.O.S.O.G = T.O.GB', xr, H + th * 2.2, h=th * 0.8)
+    ms.tx('S.O.G REINFORCEMENT / JOINT WITH THE GB: NOT GIVEN - SEE RFI', xr, H + th * 0.8, h=th * 0.65)
+    ms.ln((W + side * 0.5, (H - sog_t) / 2), (xr - th * 0.4, (H - sog_t) / 2), 'GB-TXT')
+    ms.tx('COMPACTED BACKFILL', xr, (H - sog_t) / 2 + th * 0.2, h=th * 0.8)
+    ms.tx('(THICKNESS / COMPACTION / MEMBRANE: NOT GIVEN - SEE RFI)', xr, (H - sog_t) / 2 - th * 1.2, h=th * 0.65)
+    ms.ln((W / 2, H - COVER - p['ds'] - p['dt'] / 2), (xr - th * 0.4, H - sog_t - th * 3.4), 'GB-TXT')
+    ms.tx(f"{ln.typ} {W}x{H}: {p['nt']} T{p['dt']} TOP, {p['nb']} T{p['db']} BOTTOM, STIRRUPS {round(1000 / p['s'])}T{p['ds']}/m'", xr, H - sog_t - th * 3.4, h=th * 0.8)
+    ms.tx(f"BARS / LENGTHS / LAPS AS {ref} - COVER {COVER}", xr, H - sog_t - th * 4.8, h=th * 0.65)
+    # dimensions
+    ms.dim((0, 0), (W, 0), (0, -th * 4.5), text=str(W))
+    ms.dim((0, 0), (0, H), (-side - th * 2.5, 0), angle=90, text=str(H))
+    ms.dim((-side, H - sog_t), (-side, H), (-side - th * 1.0, 0), angle=90, text=str(sog_t))
+    ms.dim((W, H), (W - COVER, H), (W, H + th * 4.0), text=str(COVER))
+    level_mark(ms, -side * 0.55, H, f'T.O.GB = T.O.S.O.G {T / 1000:+.2f}', right=False)
+    level_mark(ms, -side * 0.55, H - sog_t, f'B.O.S.O.G {(T - sog_t) / 1000:+.2f}', right=False)
+    level_mark(ms, -side * 0.15, 0, f'B.O.GB {(T - H) / 1000:+.2f}', right=False)
+    ms.tx(f'SECTION {label}-{label}  (ALONG {axis})', W / 2, -th * 8.0, 'GB-SEC', h=th * 1.4, al=TA.TOP_CENTER)
 
 
 class PS:
@@ -781,7 +844,7 @@ def main(lines_json, cfg_json, out):
     for k, v in LAYERS.items():
         if k not in doc.layers: doc.layers.add(k, color=v)
     fs = C.get('text_style', {'name': 'ROMANS', 'font': 'arial.ttf'})
-    globals()['TXT_STYLE'] = fs['name']
+    globals()['TXT_STYLE'] = fs['name']; globals()['TOP_LAP'] = C.get('top_lap', 'support')
     if fs['name'] not in doc.styles: doc.styles.add(fs['name'], font=fs['font'])
     for sc_ in (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 75, 100):              # dimension styles scaled for the viewport scales
         ds = doc.dimstyles.duplicate_entry('EZDXF', 'GBSEC%d' % sc_)
@@ -822,6 +885,20 @@ def main(lines_json, cfg_json, out):
     sections = [s_ for s_ in C['sheets'] if s_.get('kind') != 'plan']
     built = []; oy = C['model_origin'][1]
     for sheet in sections:
+        if sheet.get('kind') == 'sog':                                   # typical GB + S.O.G sections (X-X, Y-Y), no BBS
+            lay, sc = new_sheet(sheet)
+            X0, Y1 = C.get('layout', {}).get('x0', 14), 594 - 14; yv = Y1
+            for lab, code, axis, ref in sheet['cuts']:
+                L = beam_ends(next(l for l in LJ[sheet['plan']] if l['code'] == code), LJ[sheet['plan']], sched)
+                ln = Line(L, sched, cols, C['levels']['top_gb']); ln.build([])
+                s1 = sheet.get('scale', 10); th1 = TXT * s1; ox = C['model_origin'][0]
+                draw_sog_section(MS(msp, ox, oy, th1, s1), ln, lab, axis, ref)
+                side = 1100; wm = 2 * side + ln.w + th1 * 2 + 70 * th1 * 0.8 * 0.62 + th1 * 8; hm = ln.h + th1 * 9 + 250 + th1 * 7
+                xm0 = ox - side - th1 * 9
+                vp(lay, X0 + wm / s1 / 2, yv - hm / s1 / 2, wm / s1, hm / s1, xm0 + wm / 2, oy - 250 - th1 * 9 + hm / 2, s1,
+                   f"SECTION {lab}-{lab}  -  TYPICAL CONSTRUCTION SECTION GB / S.O.G ({ln.typ} {ln.w}x{ln.h}, ALONG {axis})   SCALE 1:{s1}")
+                yv -= hm / s1 + 22; oy -= 6000
+            continue
         if sheet.get('kind') == 'starter':                               # stair starter bars: own section + own BBS
             gl = next(l_ for s__, l_ in built if s__['line'] == sheet['line'])
             ss = StarterSet(gl, **C.get('starter_bar', {}))
@@ -957,10 +1034,17 @@ def main(lines_json, cfg_json, out):
         cur.append((sheet, ln)); yy += hgt
     if cur: pages.append(cur)
     seq0 = int(C['bbs_seq']); summ = []; bbs_tabs = []
+    nums = list(C.get('bbs_numbers') or [])                              # issued BBS sheets keep their numbers
+    pool = int(C.get('bbs_pool', seq0 + len(nums)))
+    nums += [pool + i for i in range(max(0, len(pages) - len(nums)))]    # extra pages: new numbers from the pool
+    if not C.get('bbs_numbers'): nums = [seq0 + i for i in range(len(pages))]
+    C['_bbs_used'] = nums[:len(pages)]; C['_bbs_new'] = [n for n in nums[:len(pages)] if n not in (C.get('bbs_numbers') or [])]
     for pi, page in enumerate(pages):
-        no = seq0 + pi
-        sh_ = dict(sections[0]); sh_.update(tab=f"Z07-GB-{no} BBS {pi + 1:02d}", t2=f"BAR BENDING SCHEDULE (BBS) {pi + 1}/{len(pages)}",
-                                            dwg=C['bbs_dwg'].format(no=no), seq=str(no), scale_txt='-', size_txt='A1')
+        no = nums[pi]; new_ = no in C['_bbs_new'] and C.get('bbs_numbers')
+        sh_ = dict(sections[0]); sh_.update(C.get('bbs_fields', {}))
+        if new_: sh_.update(C.get('new_fields', {}))
+        sh_.update(tab=f"{C.get('tab_prefix', 'Z07-GB-')}{no} BBS {pi + 1:02d}", t2=f"BAR BENDING SCHEDULE (BBS) {pi + 1}/{len(pages)}", seq=str(no), scale_txt='-', size_txt='A1')
+        sh_['dwg'] = C['bbs_dwg'].format(no=no, rev=sh_.get('rev', '00'))
         lay, sc = new_sheet(sh_); bbs_tabs.append(sh_['tab'])
         y = 594 - 14
         for sheet, ln in page:
@@ -971,7 +1055,7 @@ def main(lines_json, cfg_json, out):
     x0 = 14 + TW + 14; y = 594 - 14; rw = 6.0
     cw = [24, 30, 22, 22, 22, 26]
     hdr = ['SECTION', 'SHEET', 'T10 (kg)', 'T16 (kg)', 'T18 (kg)', 'TOTAL (kg)']
-    lay.add_text('SUMMARY - GROUND BEAMS ZONE 7 PART 1 (NET, NO WASTE)', height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y))
+    lay.add_text(C.get('summary_title', 'SUMMARY - GROUND BEAMS ZONE 7 PART 1') + ' (NET, NO WASTE)', height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y))
     rows = [[f"{s_['sec']}-{s_['sec']}", s_['seq']] + [f"{t.get(d, 0):,.2f}" for d in (10, 16, 18)] + [f"{sum(t.values()):,.2f}"] for s_, _, t in summ]
     g = {d: sum(t.get(d, 0) for _, _, t in summ) for d in (10, 16, 18)}
     rows.append(['TOTAL', ''] + [f"{g[d]:,.2f}" for d in (10, 16, 18)] + [f"{sum(g.values()):,.2f}"])
@@ -984,7 +1068,7 @@ def main(lines_json, cfg_json, out):
             cx += w
         y -= rw
     # ---- section marks / HOLD on the copied plan
-    secs = {s_['line']: s_['sec'] for s_ in sections if s_.get('kind') != 'starter'}
+    secs = {s_['line']: s_['sec'] for s_ in sections if s_.get('kind') not in ('starter', 'sog')}
     placed = []                                                          # section bubbles already on the plan
     boxes = []                                                           # texts of the plan (labels, dimensions): kept clear
     for e in msp.query('TEXT MTEXT'):
@@ -1024,6 +1108,8 @@ def main(lines_json, cfg_json, out):
                             if free(*q0): best = q0; break
                         if best: break
                     px, py = best or p0
+                    fx = [q for q in C.get('mark_fix', []) if q[0] == secs[l['code']] and math.dist((q[1], q[2]), (px, py)) < 3000]
+                    if fx: px, py = fx[0][1], fx[0][2]                       # the engineer's position on the issued plan
                     end_pt = (e_, l['c']) if l['o'] == 'H' else (l['c'], e_)
                     if math.dist((px, py), p0) > 1:                          # leader from the beam end to the moved bubble
                         dvx, dvy = px - end_pt[0], py - end_pt[1]; dl = math.hypot(dvx, dvy) or 1
@@ -1031,6 +1117,18 @@ def main(lines_json, cfg_json, out):
                     placed.append((px, py))
                     msp.add_circle((px, py), 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
                     msp.add_text(secs[l['code']], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement((px, py), align=TA.MIDDLE_CENTER)
+    for cm in C.get('sog_marks', []):                                    # typical GB / S.O.G sections cut across a beam
+        l = next(l_ for l_ in LJ[cm['plan']] if l_['code'] == cm['line'])
+        u = cm['u']; L_ = l['w'] / 2 + 1500
+        for k_ in range(0, 9):                                           # a free place along the beam
+            uu = u + (k_ + 1) // 2 * 650 * (1 if k_ % 2 else -1)
+            ends_ = [((l['c'] - L_, uu), (l['c'] + L_, uu)) if l['o'] == 'V' else ((uu, l['c'] - L_), (uu, l['c'] + L_))][0]
+            if all(free(*q) for q in ends_): u = uu; break
+        a_, b_ = ends_
+        msp.add_line(a_, b_, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'linetype': 'DASHED'})
+        for q in (a_, b_):
+            placed.append(q); msp.add_circle(q, 300, dxfattribs={'layer': 'GB-SEC', 'color': 4})
+            msp.add_text(cm['sec'], height=260, dxfattribs={'layer': 'GB-SEC', 'color': 4, 'style': TXT_STYLE}).set_placement(q, align=TA.MIDDLE_CENTER)
     for p1_, p2_, base_ in C.get('plan_dims', []):                      # extra plan dimensions (e.g. a core wall opening)
         vert_ = abs(p1_[0] - p2_[0]) < abs(p1_[1] - p2_[1])
         d_ = msp.add_linear_dim(base=base_, p1=p1_, p2=p2_, angle=90 if vert_ else 0, text=str(round(abs(p1_[1] - p2_[1]) if vert_ else abs(p1_[0] - p2_[0]))),
@@ -1042,9 +1140,10 @@ def main(lines_json, cfg_json, out):
         lay, sc = new_sheet(sheet)
         x0, y0, x1, y1 = sheet['window']; s_ = sheet.get('scale', 100)
         w, h = (x1 - x0) / s_, (y1 - y0) / s_
-        v = lay.add_viewport(center=(14 + w / 2, 594 - 14 - h / 2), size=(w, h), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2), view_height=h * s_)
+        cx_, cy_ = sheet.get('vp_center', (14 + w / 2, 594 - 14 - h / 2))   # the engineer's place of the plan on the sheet
+        v = lay.add_viewport(center=(cx_, cy_), size=(w, h), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2), view_height=h * s_)
         v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
-        lay.add_text(f"{sheet['caption']}   SCALE 1:{s_}", height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((14, 594 - 14 - h - 7))
+        lay.add_text(f"{sheet['caption']}   SCALE 1:{s_}", height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((cx_ - w / 2, cy_ - h / 2 - 7) if 'vp_center' in sheet else (14, 594 - 14 - h - 7))
         for j, s2 in enumerate(sheet.get('notes', [])):
             lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((14 + w + 10, 594 - 30 - j * 4.6))
     for nm in [l.name for l in doc.layouts if l.name.startswith('Layout')]:
@@ -1052,6 +1151,8 @@ def main(lines_json, cfg_json, out):
         except Exception: pass
     # plan sheet first in the tab order
     order = [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'plan'] + [s_['tab'] for s_ in sections] + bbs_tabs
+    if C.get('tab_order') == 'number':                                   # new sheets numbered after the issued ones: tabs by number
+        order = sorted(order, key=lambda t: int(t[len(C.get('tab_prefix', 'Z07-GB-')):].split()[0]))
     for i, nm in enumerate(order):
         try: doc.layouts.get(nm).dxf.taborder = i + 1
         except Exception: pass

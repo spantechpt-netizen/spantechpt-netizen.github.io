@@ -813,4 +813,19 @@ the state in files, never only in the conversation:
   under a core wall gets stirrups only along the wall opening (door), n = floor(len / 125), centred; own section only
   when its width differs from the beam. Frames copied from an AutoCAD-saved file: leader arrowheads inside scaled
   blocks are dropped (ezdxf draws them full size).
+- AREA 7 update (07-11-2026): parts renamed Z11 / Z10 / Z09 (Part 1 / 2 / 3), drawing numbers NVMNR2-SD-STCO.-STR-A7-Z11-GB-<no>-<rev>,
+  title line 1 "GROUND BEAMS - AREA 7 - ZONE n", tabs "A7-Zn-GB-<no> ...". Issued sheets KEEP number, section letter and revision;
+  new sheets get numbers after the last issued one (pool) and letters after the last used pair (unique in the area).
+  - New beams added by the engineer on our issued files: `zone7/augment.py` copies them (beam edges, GB labels, level tags, dims
+    near given boxes; extended consultant edges replaced) into the consultant DXF -> rerun dump / extract / lines / prep.
+    Map issued sections to the new lines by geometry (and, for a part without its old config, by the plan bubbles: the line
+    whose two ends are nearest the two bubbles of the letter). A new red segment between two collinear beams is split by prep.
+  - gen_gbsec options: `top_lap: 'midspan'` (top laps inside the middle 2/5 of every clear span, A moved back until B fits;
+    bottom unchanged - check bottom pieces identical to the issued ones), `bbs_numbers` + `bbs_pool` (issued BBS numbers, extra
+    pages from the pool), `bbs_fields` / `new_fields` (rev / date / revision row of old vs new pages), `tab_prefix`, `summary_title`,
+    `mark_fix` [[sec, x, y]] (engineer's moved bubbles), `vp_center` on the plan sheet, sheet kind `sog` (typical GB / S.O.G
+    sections X-X, Y-Y at 1:10: T.O.S.O.G = T.O.GB, slab thickness as instructed, backfill hatched; slab reinforcement, joint,
+    backfill specification NOT drawn when not given -> RFI) with `sog_marks` on the plan.
+  - `zone7/qc.py W PN OUT.dxf`: also every top lap at midspan and the per-section totals of the summary table in the DXF.
+
 
