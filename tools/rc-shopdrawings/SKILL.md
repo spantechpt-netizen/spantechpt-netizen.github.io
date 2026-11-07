@@ -124,6 +124,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `gen_axes_radial.py` | axes + columns layout for a radial (theatre) structure drawn without axes: centre / rings fitted to the columns, radial axis through every column, setting-out table, collision-free texts (§6e) |
 | `gen_pool_cd.py` | swimming pool CONC. DIM.: plan (zones, slopes, channel, all chains), long section, cross sections, details (wall / floor / channel / waterstop, level changes) on A1 layouts with the project frame, model 1:1 |
 | `gen_tank.py` | rectangular RC tank (raft + 4 walls + roof with an opening) reinforcement: raft / roof mesh plans (bottom & top, U legs, bars cut at the opening), long-wall elevation + ring plan (horizontal U + straight bars, 60d laps staggered A / B), sections 3-3 / 4-4 with call-outs, notes, BBS with description; A3 layouts with the office frame block; input `tank.json` (sizes, covers, legs, frame fields, sheet numbers) |
+| `gen_cf_real.py`, `gen_f_top.py`, `sheets_layouts.py` | combined footings re-issued with the gen_raft method on A0 (every row real length, call-out ON the bar group, lapped rows grouped as ALTERNATE BARS, laps B midspan / T supports, columns of any shape, chairs plan on the sections sheet, BBS A3), original sheet numbers kept (extra sheets = last number + letter, meta `seq`); one drawn bar set completed to the real outline only (F1 / F2: end parts kept, nothing added); model sheets -> one LAYOUT per sheet (frame / panda in paper space, one viewport) |
 | `gen_raft.py` | curved / skewed raft with a mesh at any angle: B-X, B-Y, T-X, T-Y, chairs layout on A0 1:30, sections & details, BBS (§6e) |
 | `gen_gbsec.py` | grade beams in the section-sheet format (long section + cross sections per beam, starters) on the engineer's frame (§11) |
 | `zone7/*.py` | GB section-sheet pipeline per part: `dump` → `extract` → `lines` → `prep` → `partcfg` → `gen_gbsec` → `qc` / `dxfcheck`; `cmp` = what the engineer changed in a returned DXF |
@@ -831,3 +832,12 @@ the state in files, never only in the conversation:
   - `zone7/qc.py W PN OUT.dxf`: also every top lap at midspan and the per-section totals of the summary table in the DXF.
 
 
+
+### BLSC combined footings re-issue (07-11-2026)
+- Source = our own earlier CF sheets (no mats.json left): outline = largest S-GB-CONC polyline of the side-bar sheet / k, columns =
+  S-GB-COL polylines, mesh d / s from the call-outs, h from the title; title block template made from THAT file's frame block
+  (names differ from the raft template) + its call-out key (`legend_origin`).
+- `gen_cf_real.py cf.json NAME OUT`: 5+ original numbers -> one plan per mesh (B1, B2, T2, T1) + SECTIONS; 3 numbers -> BOTTOM X & Y,
+  TOP X & Y, SECTIONS (two plans side by side); scale = largest of 1:20..1:100 that fits; call-out text 1.65-2.4 mm by row spacing.
+- `gen_f_top.py`: the engineer's "only the drawn bar" rule - rows cut by the outline, main part real length, end parts as drawn.
+- Deliver DXF after `sheets_layouts.py` (layouts named by sheet number) and the PDF from the model sheets (`topdf_sheets.py`); zips <= 30 MB.

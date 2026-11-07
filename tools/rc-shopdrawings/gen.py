@@ -372,7 +372,8 @@ def _tb_frame(self):
     venue = m.get('venue') or next((v for key, v in TB.get('venue_by_title', []) if key in m.get('title', '').upper()),
                                     c.get('venue', 'XX'))
     seqs = self.doc._tb_seq
-    seqs[venue] = seqs.get(venue, int(TB.get('seq_start', {}).get(venue, 1)) - 1) + 1
+    if m.get('seq'): seqs[venue] = m['seq']                       # fixed sheet number (re-issue of numbered sheets)
+    else: seqs[venue] = int(seqs.get(venue, int(TB.get('seq_start', {}).get(venue, 1)) - 1)) + 1
     rev = m.get('rev', '00')
     val = dict(title=m.get('title', ''), ref=' '.join(m.get('ref', '').split('\n')), scale=m.get('scale', 'AS SHOWN'),
                size=m.get('size') or TB.get('size', 'A3'), area=m.get('area') or c.get('area', ''), venue=venue, seq=str(seqs[venue]), rev=rev,

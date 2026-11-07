@@ -27,7 +27,8 @@ cfg = Configuration(background_policy=BackgroundPolicy.WHITE, color_policy=Color
                     hatch_policy=HatchPolicy.SHOW_APPROXIMATE_PATTERN)          # light PDF (patterns as PDF hatches)
 only = [int(v) for v in sys.argv[4].split(',')] if len(sys.argv) > 4 else None
 with PdfPages(out) as pdf:
-    for i, (x0, y0, W, H, pw, ph) in enumerate(sheets):
+    for i, sh_ in enumerate(sheets):
+        x0, y0, W, H, pw, ph = sh_[:6]                                     # (7th item: sheet number)
         if only and i not in only: continue
         inside = lambda e: (lambda c: c is not None and x0 <= c[0] <= x0 + W and y0 <= c[1] <= y0 + H)(cen.get(e.dxf.handle))
         fig = plt.figure(figsize=(pw / 25.4, ph / 25.4)); ax = fig.add_axes([0, 0, 1, 1])

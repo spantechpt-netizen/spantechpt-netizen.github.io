@@ -49,7 +49,12 @@ class Raft:
         self.pl = Polygon([self.Lc(*p) for p in self.poly])
         self.C = f['cover']; self.h = f['h']; self.lg = f['leg']
         self.er = self.pl.buffer(-self.C, join_style=2)
-        self.cols = [(self.Lc(x, y), r) for x, y, r in f['cols']]
+        # columns / walls: [x, y, r] (round) or {"poly": [[x, y], ...]} (any shape, global mm) -> local polygons
+        self.colp = []
+        for c_ in f['cols']:
+            if isinstance(c_, dict): self.colp.append(Polygon([self.Lc(*q) for q in c_['poly']]))
+            else: self.colp.append(Point(self.Lc(c_[0], c_[1])).buffer(c_[2], 36))
+        self.cols = [((g.centroid.x, g.centroid.y), max(math.dist((g.centroid.x, g.centroid.y), q) for q in g.exterior.coords)) for g in self.colp]
         self.stock = f.get('stock', 12000)
 
     def supports(self, axis):
@@ -88,7 +93,48 @@ class Raft:
         return [(i, lo + i * step, self.cut(lo + i * step, axis)) for i in range(n)], step
 
 
-def build_bars(R, bl, layer, axis, d, s, tag, report):
+def chair_points(R, sp, foot, top, best=False):
+    """chairs on a sp x sp grid along the mesh axes, the whole chair inside the cover line, >= 200 from columns.
+    best: the grid shifted (quarter steps) to hold the most chairs (irregular / sloped footings)."""
+    x0, y0, x1, y1 = R.er.bounds
+    half = (2 * foot + top) / 2
+    inner = R.er.buffer(-20)
+    def grid(ox, oy):
+        pts = []
+        for i in range(-1, int((x1 - x0) // sp) + 2):
+            for j in range(-1, int((y1 - y0) // sp) + 2):
+                u, v = x0 + ox + i * sp, y0 + oy + j * sp
+                if inner.contains(LineString([(u - half, v), (u + half, v)])) and all(g.distance(Point(u, v)) > 200 for g in R.colp):
+                    pts.append((u, v))
+        return pts
+    if not best: return grid(sp / 2, sp / 2)
+    return max((grid(ox, oy) for ox in (0, sp / 4, sp / 2, 3 * sp / 4) for oy in (0, sp / 4, sp / 2, 3 * sp / 4)), key=len)
+
+
+def chairs_plan(sh, R, f, chair, area):
+    """chairs layout as a small plan inside area (sheet units) - used on the sections sheet of straight-edged footings."""
+    mkch, nch, chL, ch_h, foot, top, dch, sp = chair
+    pts = chair_points(R, sp, foot, top, best=bool(f.get('chairs_best')))
+    gx0, gy0, gx1, gy1 = Polygon(R.poly).bounds
+    ax0, ay0, ax1, ay1 = area
+    sc_ = next(v for v in (20, 25, 30, 40, 50, 75, 100, 125, 150, 200, 250) if (gx1 - gx0) * SC / v <= ax1 - ax0 - 2000 and (gy1 - gy0) * SC / v <= ay1 - ay0 - 6000)
+    P = Plan(sh, R, SC / sc_, ax0 + 1000, ay0 + 3500, gx0, gy0)
+    P.outline()
+    for u, v in pts:
+        sh.pline([P.SL(u - top / 2, v), P.SL(u + top / 2, v)], 'S-RFT-STIR', 60)
+        for uu in (u - top / 2, u + top / 2):
+            c_ = P.SL(uu, v)
+            hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-STIR'}); hh.paths.add_edge_path().add_arc(sh.P(*c_), 70, 0, 360)
+    if pts:
+        topc = max(pts, key=lambda q: (q[1], -q[0])); cp = P.SL(*topc)
+        lx, ly = ax0 + 1000, P.S(gx0, gy1)[1] + 1500
+        sh.line(cp, (lx + 4000, ly - 100), 'S-RFT-TXT')
+        P.ctext_along(mkch, callout(len(pts), dch, mkch, chL, sp, 'CH') + '  (DETAIL 4)', (lx, ly), 0, gap=0)
+    sh.text(f"CHAIRS LAYOUT - {len(pts)} CHAIRS T{dch} @{sp} x {sp} ALONG X / Y  SCALE 1:{sc_}", ax0, ay0 + 1500, HP * 0.8, 'S-SEC', maxw=ax1 - ax0)
+    sh.text(f"THICK LINE = CHAIR TOP {top}, DOTS = ITS LEGS; INSIDE THE COVER LINE, >= 200 FROM THE COLUMNS.", ax0, ay0 + 300, HN, 'S-RFT-TXT', maxw=ax1 - ax0)
+
+
+def build_bars(R, bl, layer, axis, d, s, tag, report, alt=False):
     """every row of this mesh layer: real straight length (floor 10, centred), U legs, laps zoned + staggered."""
     rows, step = R.rows(axis, s)
     lp = R.f.get('lap_d', 60) * d; lg = R.lg
@@ -119,8 +165,15 @@ def build_bars(R, bl, layer, axis, d, s, tag, report):
     groups = []
     for br in bars:
         g = groups[-1] if groups else None
-        if (g and g[-1]['seg'] == br['seg'] and br['row'] == g[-1]['row'] + 1 and len(g[-1]['pcs']) == len(br['pcs'])
-                and all(p['mark'] == q['mark'] and abs(p['u0'] - q['u0']) <= 15 for p, q in zip(g[-1]['pcs'], br['pcs']))):
+        if alt:                                                      # rows split by a notch: follow each part separately
+            g = next((q for q in reversed(groups) if q[-1]['row'] == br['row'] - 1
+                      and abs(q[-1]['a'] - br['a']) <= 15 and abs(q[-1]['b'] - br['b']) <= 15), g)
+        same = (g and g[-1]['seg'] == br['seg'] and br['row'] == g[-1]['row'] + 1 and len(g[-1]['pcs']) == len(br['pcs'])
+                and all(p['mark'] == q['mark'] and abs(p['u0'] - q['u0']) <= 15 for p, q in zip(g[-1]['pcs'], br['pcs'])))
+        if alt and g and not same:                                   # alt: same bar (ends within 15), lap pattern A / B alternating
+            same = (br['row'] == g[-1]['row'] + 1 and g[-1]['lapped'] == br['lapped'] and len(g[-1]['pcs']) == len(br['pcs'])
+                    and abs(g[-1]['a'] - br['a']) <= 15 and abs(g[-1]['b'] - br['b']) <= 15)
+        if same:
             g.append(br)
         else:
             groups.append([br])
@@ -138,8 +191,8 @@ class Plan:
 
     def outline(self, layer='S-GB-CONC'):
         self.sh.pline([self.S(*p) for p in self.R.poly], layer, 0, True)
-        for (u, v), r in self.R.cols:
-            pts = [self.SL(u + r * math.cos(a / 18 * math.pi), v + r * math.sin(a / 18 * math.pi)) for a in range(36)]
+        for g in self.R.colp:
+            pts = [self.SL(*q) for q in list(g.exterior.coords)[:-1]]
             hz = self.sh.m.add_hatch(color=8, dxfattribs={'layer': 'S-GB-COL'}); hz.set_pattern_fill('ANSI31', scale=90)
             hz.paths.add_polyline_path([self.sh.P(*q) for q in pts], is_closed=True)
             self.sh.pline(pts, 'S-GB-COL', 0, True)
@@ -231,10 +284,16 @@ def draw_mesh_plan(sh, P, M, R):
             c_ = Q(uu, t)
             sh.line((c_[0] - nrm[0] * 220, c_[1] - nrm[1] * 220), (c_[0] + nrm[0] * 60, c_[1] + nrm[1] * 60), lay)
     # call-outs: one per group of identical consecutive rows, on its middle bar, every piece its own hexagon
+    entries = []                                                     # (group, row shown, count, alternate) per lap pattern
     for gi, g in enumerate(M['groups']):
-        br = g[len(g) // 2]; t = br['t']; n_ = len(g)
+        var = {}
+        for b_ in g: var.setdefault(tuple(p['mark'] for p in b_['pcs']), []).append(b_)
+        for vi, rows_v in enumerate(var.values()):
+            entries.append((gi, g, rows_v[len(rows_v) // 2], len(rows_v), vi > 0))
+    for gi, g, br, n_, alt_ in entries:
+        t = br['t']
         for j, p in enumerate(br['pcs']):
-            txt = callout(n_, d, p['mark'], p['L'], s, tag, stg=br['lapped'])
+            txt = callout(n_, d, p['mark'], p['L'], s, tag, stg=br['lapped']) + ('  (ALTERNATE BARS)' if alt_ else '')
             Lt = P.text_len(txt); hh = M['step'] * k * 0.5 + HC * 1.1 * math.sin(math.pi / 3) + 30
             Lu = (p['u1'] - p['u0']) * k
             cand = []
@@ -267,7 +326,7 @@ def draw_mesh_plan(sh, P, M, R):
                 q0 = Q(p['u1'], t); sh.line((q0[0] + e[0] * 150, q0[1] + e[1] * 150), (pt[0] - e[0] * 100, pt[1] - e[1] * 100), 'S-RFT-TXT')
             elif kind == 'start':
                 q0 = Q(p['u0'], t); sh.line((q0[0] - e[0] * 150, q0[1] - e[1] * 150), (pt[0] + e[0] * (Lt + 100), pt[1] + e[1] * (Lt + 100)), 'S-RFT-TXT')
-        if n_ > 1:                                                   # distribution line of the group with ticks
+        if len(g) > 1 and not alt_:                                  # distribution line of the group with ticks
             u_ = (max(b['pcs'][0]['u0'] for b in g) + min(b['pcs'][0]['u1'] for b in g)) / 2
             u_ = min(u_, min(b['pcs'][0]['u1'] for b in g) - 100)
             a_, b_ = Q(u_, g[0]['t']), Q(u_, g[-1]['t'])
@@ -290,6 +349,8 @@ def copy_legend(sh, tpl, origin):
     ox, oy = origin
     for e in tpl.modelspace():
         if e.dxf.layer != 'S-RFT-TXT': continue
+        p0 = e.dxf.insert if e.dxftype() == 'TEXT' else (e.dxf.start if e.dxftype() == 'LINE' else (e.get_points('xy')[0] if e.dxftype() == 'LWPOLYLINE' else None))
+        if p0 is None or not (ox - 1 <= p0[0] <= ox + 42000 and oy - 1 <= p0[1] <= oy + 29700): continue     # this sheet's key only
         if e.dxftype() == 'TEXT':
             t = sh.m.add_text(e.dxf.text, height=e.dxf.height, rotation=e.dxf.rotation,
                               dxfattribs={'layer': 'S-RFT-TXT', 'style': e.dxf.style if e.dxf.style in sh.doc.styles else 'ROMANS'})
@@ -388,13 +449,8 @@ def main():
     ch_h = int(R.h - 2 * R.C - db1 - db2 - dt1 - dt2)                 # top of bottom mesh -> underside of top mesh (BLSC 26-10)
     chL = int(math.ceil((2 * foot + 2 * ch_h + top) / 10) * 10)
     sp = int(round(1000 / math.sqrt(ch.get('per_m2', 1))))
-    x0, y0, x1, y1 = R.er.bounds; pts = []
-    half = (2 * foot + top) / 2
-    for i in range(int((x1 - x0) // sp) + 2):
-        for j in range(int((y1 - y0) // sp) + 2):
-            u, v = x0 + sp / 2 + i * sp, y0 + sp / 2 + j * sp
-            if R.er.buffer(-20).contains(LineString([(u - half, v), (u + half, v)])) and all(math.dist((u, v), c) > r + 200 for c, r in R.cols):
-                pts.append((u, v))
+    pts = chair_points(R, sp, foot, top)
+    x0, y0, x1, y1 = R.er.bounds
     mkch = bl.add(dch, ('CH', foot, ch_h, top), chL, len(pts), 1, 'CH')
     sh = new_sheet('CHAIRS LAYOUT', f'1:{scale}')
     P = place_plan(sh, R, scale, area); P.outline(); P.edge_dims()
@@ -464,6 +520,8 @@ def draw_sections_sheet(sh, R, f, meshes, secs, pcs, pmk, grp, rows_sb, ds, lps,
     z_b1, z_b2 = C + db1 / 2, C + db1 + db2 / 2                      # bottom: B1 (X) lowest, B2 (Y) on it
     z_t1, z_t2 = h - C - dt2 / 2, h - C - dt2 - dt1 / 2               # top: T1 (Y) uppermost, T2 (X) under it
     lv = f.get('levels', {})
+    EL = f.get('elem_abbr', 'RAFT')                                    # RAFT / F (combined footing)
+    curved = bool(f.get('arc'))
     def level(x, y, txt):
         sh.pline([(x - 350, y + 600), (x, y), (x + 350, y + 600), (x - 350, y + 600)], 'S-DIM', 0, True)
         sh.line((x, y), (x + 3800, y), 'S-DIM')
@@ -475,12 +533,13 @@ def draw_sections_sheet(sh, R, f, meshes, secs, pcs, pmk, grp, rows_sb, ds, lps,
         Z = lambda s_, z: (ox + (s_ - s0) * k, oy + z * k)
         sh.pline([Z(s0, 0), Z(s1, 0), Z(s1, h), Z(s0, h)], 'S-GB-CONC', 0, True)
         sh.line((Z(s0, 0)[0] - 1500, oy), (Z(s1, 0)[0] + 1500, oy), 'S-DIM')                       # T.O.PC line
-        for (u, v), r in R.cols:
-            cs = v if axis == 'Y' else u; ct = u if axis == 'Y' else v
-            if abs(ct - t) < r:
-                w = math.sqrt(r * r - (ct - t) ** 2)
-                for xx in (cs - w, cs + w): sh.line(Z(xx, h), Z(xx, h + 900), 'S-GB-CONC')
-                sh.break_line(Z(cs - w - 150, h + 900), Z(cs + w + 150, h + 900), 'S-GB-CONC', amp=250)
+        for g in R.colp:                                             # columns cut by the section line
+            cut_ = g.intersection(LineString([(t, -1e7), (t, 1e7)]) if axis == 'Y' else LineString([(-1e7, t), (1e7, t)]))
+            if cut_.is_empty: continue
+            bb = cut_.bounds; c0, c1 = (bb[1], bb[3]) if axis == 'Y' else (bb[0], bb[2])
+            if c1 - c0 < 1: continue
+            for xx in (c0, c1): sh.line(Z(xx, h), Z(xx, h + 900), 'S-GB-CONC')
+            sh.break_line(Z(c0 - 150, h + 900), Z(c1 + 150, h + 900), 'S-GB-CONC', amp=250)
         tag_b, tag_t = ('B1', 'T2') if axis == 'X' else ('B2', 'T1')
         zb, zt = (z_b1, z_t2) if axis == 'X' else (z_b2, z_t1)
         for tag, zz, sg in ((tag_b, zb, 1), (tag_t, zt, -1)):
@@ -514,8 +573,9 @@ def draw_sections_sheet(sh, R, f, meshes, secs, pcs, pmk, grp, rows_sb, ds, lps,
                     hh = sh.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-BOT' if tag[0] == 'B' else 'S-RFT-TOP'})
                     hh.paths.add_edge_path().add_arc(sh.P(*c_), max(M['d'] / 2 * k, 45), 0, 360)
         sh.dim(Z(s1, 0), Z(s1, h), (Z(s1, 0)[0] + 1800, oy), angle=90, text=str(h))
-        level(Z(s0, h)[0] - 11000, Z(s0, h)[1], f"T.O.RAFT {lv.get('tor', 0):+.2f}")
-        level(Z(s0, 0)[0] - 11000, oy, f"B.O.RAFT = T.O.PC {lv.get('bor', 0):+.2f}")
+        if lv:                                                       # levels only when given (never invented)
+            level(Z(s0, h)[0] - 11000, Z(s0, h)[1], f"T.O.{EL} {lv.get('tor', 0):+.2f}")
+            level(Z(s0, 0)[0] - 11000, oy, f"B.O.{EL} = T.O.PC {lv.get('bor', 0):+.2f}")
         sh.text(f"SECTION {lab}-{lab}  (ALONG {axis}, THROUGH A COLUMN)  SCALE 1:{round(SC / k)}", ox, oy - 3600, HP, 'S-SEC')
         return Z
 
@@ -555,63 +615,69 @@ def draw_sections_sheet(sh, R, f, meshes, secs, pcs, pmk, grp, rows_sb, ds, lps,
     xc = 760; zf = z_b2 + db2 / 2 + dch / 2
     sh.pline([Z(xc - top / 2 - foot * 0.55, zf), Z(xc - top / 2, zf), Z(xc - top / 2, zf + ch_h), Z(xc + top / 2, zf + ch_h), Z(xc + top / 2, zf), Z(Wd - 20, zf)], 'S-RFT-STIR', dch * k, r=2.5 * dch * k)
     sh.text('CHAIR', *Z(xc, zf + ch_h - 60), HS * 1.2, 'S-RFT-TXT', align=TA.TOP_CENTER)
-    level(Z(Wd, h)[0] + 2500, Z(0, h)[1], f"T.O.RAFT {lv.get('tor', 0):+.2f}")
-    level(Z(Wd, 0)[0] + 2500, oy, f"B.O.RAFT = T.O.PC {lv.get('bor', 0):+.2f}")
-    sh.text('EDGE FACE (CURVED / STRAIGHT)', *Z(-60, h + 150), HS * 1.2, 'S-DIM', rot=90, align=TA.BOTTOM_LEFT)
-    sh.text(f'DETAIL 1 - TYPICAL EDGE (CURVED AND STRAIGHT EDGES)  SCALE 1:10', ox - 2600, oy - 4200, HP, 'S-SEC')
-    sh.text(f'BARS STOP AT COVER {C} FROM THE FACE (NORMAL TO THE CURVED FACE), U LEGS {lg}: BOTTOM UP, TOP DOWN, LEGS SIDE BY SIDE; SIDE BAR T{ds} INSIDE THE LEGS.',
+    if lv:
+        level(Z(Wd, h)[0] + 2500, Z(0, h)[1], f"T.O.{EL} {lv.get('tor', 0):+.2f}")
+        level(Z(Wd, 0)[0] + 2500, oy, f"B.O.{EL} = T.O.PC {lv.get('bor', 0):+.2f}")
+    sh.text('EDGE FACE (CURVED / STRAIGHT)' if curved else 'EDGE FACE', *Z(-60, h + 150), HS * 1.2, 'S-DIM', rot=90, align=TA.BOTTOM_LEFT)
+    sh.text(f'DETAIL 1 - TYPICAL EDGE{" (CURVED AND STRAIGHT EDGES)" if curved else ""}  SCALE 1:10', ox - 2600, oy - 4200, HP, 'S-SEC')
+    sh.text(f'BARS STOP AT COVER {C} FROM THE FACE{" (NORMAL TO THE CURVED FACE)" if curved else ""}, U LEGS {lg}: BOTTOM UP, TOP DOWN, LEGS SIDE BY SIDE; SIDE BAR T{ds} INSIDE THE LEGS.',
             ox - 2600, oy - 5300, HN, 'S-RFT-TXT', maxw=60000)
-    # ---- detail 2: plan of the bar ends at the curved edge, 1:15 (enlarged where the bars are densest)
+    # ---- detail 2: plan of the bar ends at the curved edge, 1:15 (enlarged where the bars are densest);
+    #      straight-edged footings: the CHAIRS LAYOUT plan in its place (no separate chairs sheet)
+    if not curved:
+        chairs_plan(sh, R, f, chair, (98000, 84000, 146000, 120000))
     k2 = SC / 15
-    arc = f.get('arc')
-    am = R.Lc(*arc['mid']) if arc else R.pl.centroid.coords[0]
-    wx, wy = 3200, 2400
-    win = box(am[0] - wx / 2, am[1] - wy / 2, am[0] + wx / 2, am[1] + wy / 2)
-    gx, gy = 98000, 84000
-    D = lambda u, v: (gx + (u - win.bounds[0]) * k2, gy + (v - win.bounds[1]) * k2)
-    sh.pline([D(*q) for q in win.exterior.coords], 'S-SEC', 0)
-    def clipped(geom, layer, w=0):
-        g = geom.intersection(win)
+    if not curved: k2 = None
+    if curved:
+        arc = f.get('arc')
+        am = R.Lc(*arc['mid']) if arc else R.pl.centroid.coords[0]
+        wx, wy = 3200, 2400
+        win = box(am[0] - wx / 2, am[1] - wy / 2, am[0] + wx / 2, am[1] + wy / 2)
+        gx, gy = 98000, 84000
+        D = lambda u, v: (gx + (u - win.bounds[0]) * k2, gy + (v - win.bounds[1]) * k2)
+        sh.pline([D(*q) for q in win.exterior.coords], 'S-SEC', 0)
+        def clipped(geom, layer, w=0):
+            g = geom.intersection(win)
+            for q in getattr(g, 'geoms', [g]):
+                if q.is_empty: continue
+                cs = list(q.coords) if q.geom_type == 'LineString' else (list(q.exterior.coords) if q.geom_type == 'Polygon' else [])
+                if len(cs) > 1: sh.pline([D(*c) for c in cs], layer, w)
+        clipped(R.pl.exterior, 'S-GB-CONC', 40)
+        cvr = R.er.exterior
+        g = cvr.intersection(win)
         for q in getattr(g, 'geoms', [g]):
-            if q.is_empty: continue
-            cs = list(q.coords) if q.geom_type == 'LineString' else (list(q.exterior.coords) if q.geom_type == 'Polygon' else [])
-            if len(cs) > 1: sh.pline([D(*c) for c in cs], layer, w)
-    clipped(R.pl.exterior, 'S-GB-CONC', 40)
-    cvr = R.er.exterior
-    g = cvr.intersection(win)
-    for q in getattr(g, 'geoms', [g]):
-        if q.is_empty or q.geom_type != 'LineString': continue
-        cs = list(q.coords)
-        for a_, b_ in zip(cs, cs[1:]):                                  # cover line dashed (short dashes)
-            Ls = math.dist(a_, b_); nseg = max(1, int(Ls / 120))
-            for i in range(0, nseg, 2):
-                p0 = (a_[0] + (b_[0] - a_[0]) * i / nseg, a_[1] + (b_[1] - a_[1]) * i / nseg)
-                p1 = (a_[0] + (b_[0] - a_[0]) * (i + 1) / nseg, a_[1] + (b_[1] - a_[1]) * (i + 1) / nseg)
-                sh.line(D(*p0), D(*p1), 'S-DIM')
-    for tag, axis in (('B1', 'X'), ('B2', 'Y')):
-        M = by[tag]
-        for br in M['bars']:
-            for p in br['pcs']:
-                ln = LineString([(p['u0'], br['t']), (p['u1'], br['t'])]) if axis == 'X' else LineString([(br['t'], p['u0']), (br['t'], p['u1'])])
-                clipped(ln, 'S-RFT-BOT', 25 * 2)
-            for uu in (br['a'], br['b']):
-                q = (uu, br['t']) if axis == 'X' else (br['t'], uu)
-                if win.contains(Point(q)): sh.circle(*D(*q), 90, 'S-RFT-BOT')
-    clipped(LineString(list(R.pl.buffer(-(C + max(db1, db2) + ds / 2), join_style=2).exterior.coords)), 'S-RFT-STIR', 30)
-    # labels: one X bar and one Y bar ending in the window
-    for tag, axis in (('B1', 'X'), ('B2', 'Y')):
-        M = by[tag]; ang = R.th * 0 + (0 if axis == 'X' else math.pi / 2)
-        cand = [br for br in M['bars'] if win.buffer(-300).contains(Point((br['b'], br['t']) if axis == 'X' else (br['t'], br['b'])))]
-        if not cand: continue
-        br = cand[len(cand) // 2]; p = br['pcs'][-1]
-        q = (br['b'], br['t']) if axis == 'X' else (br['t'], br['b'])
-        a0 = D(*q)
-        tx, ty = (gx + wx * k2 + 1500, a0[1]) if axis == 'X' else (gx + wx * k2 + 1500, gy + wy * k2 - 1800)
-        sh.line(a0, (tx - 200, ty + 200), 'S-RFT-TXT')
-        Pl.ctext_along(p['mark'], callout(1, M['d'], p['mark'], p['L'], M['s'], tag) + f'  (ROW {br["row"] + 1})', (tx, ty), 0, h=HC * 1.2, gap=0)
-    sh.text(f'COVER LINE {C} (DASHED) - EVERY BAR ENDS ON IT; CIRCLE = BAR END WITH ITS U LEG ({lg}); SIDE BAR T{ds} ALONG THE CURVE.',
-            gx, gy - 1500, HN, 'S-RFT-TXT', maxw=60000)
-    sh.text('DETAIL 2 - BOTTOM BAR ENDS AT THE CURVED EDGE (PLAN, MESH AXES HORIZONTAL)  SCALE 1:15', gx, gy - 3000, HP, 'S-SEC', maxw=95000)
+            if q.is_empty or q.geom_type != 'LineString': continue
+            cs = list(q.coords)
+            for a_, b_ in zip(cs, cs[1:]):                                  # cover line dashed (short dashes)
+                Ls = math.dist(a_, b_); nseg = max(1, int(Ls / 120))
+                for i in range(0, nseg, 2):
+                    p0 = (a_[0] + (b_[0] - a_[0]) * i / nseg, a_[1] + (b_[1] - a_[1]) * i / nseg)
+                    p1 = (a_[0] + (b_[0] - a_[0]) * (i + 1) / nseg, a_[1] + (b_[1] - a_[1]) * (i + 1) / nseg)
+                    sh.line(D(*p0), D(*p1), 'S-DIM')
+        for tag, axis in (('B1', 'X'), ('B2', 'Y')):
+            M = by[tag]
+            for br in M['bars']:
+                for p in br['pcs']:
+                    ln = LineString([(p['u0'], br['t']), (p['u1'], br['t'])]) if axis == 'X' else LineString([(br['t'], p['u0']), (br['t'], p['u1'])])
+                    clipped(ln, 'S-RFT-BOT', 25 * 2)
+                for uu in (br['a'], br['b']):
+                    q = (uu, br['t']) if axis == 'X' else (br['t'], uu)
+                    if win.contains(Point(q)): sh.circle(*D(*q), 90, 'S-RFT-BOT')
+        clipped(LineString(list(R.pl.buffer(-(C + max(db1, db2) + ds / 2), join_style=2).exterior.coords)), 'S-RFT-STIR', 30)
+        # labels: one X bar and one Y bar ending in the window
+        for tag, axis in (('B1', 'X'), ('B2', 'Y')):
+            M = by[tag]; ang = R.th * 0 + (0 if axis == 'X' else math.pi / 2)
+            cand = [br for br in M['bars'] if win.buffer(-300).contains(Point((br['b'], br['t']) if axis == 'X' else (br['t'], br['b'])))]
+            if not cand: continue
+            br = cand[len(cand) // 2]; p = br['pcs'][-1]
+            q = (br['b'], br['t']) if axis == 'X' else (br['t'], br['b'])
+            a0 = D(*q)
+            tx, ty = (gx + wx * k2 + 1500, a0[1]) if axis == 'X' else (gx + wx * k2 + 1500, gy + wy * k2 - 1800)
+            sh.line(a0, (tx - 200, ty + 200), 'S-RFT-TXT')
+            Pl.ctext_along(p['mark'], callout(1, M['d'], p['mark'], p['L'], M['s'], tag) + f'  (ROW {br["row"] + 1})', (tx, ty), 0, h=HC * 1.2, gap=0)
+        sh.text(f'COVER LINE {C} (DASHED) - EVERY BAR ENDS ON IT; CIRCLE = BAR END WITH ITS U LEG ({lg}); SIDE BAR T{ds} ALONG THE CURVE.',
+                gx, gy - 1500, HN, 'S-RFT-TXT', maxw=60000)
+        sh.text('DETAIL 2 - BOTTOM BAR ENDS AT THE CURVED EDGE (PLAN, MESH AXES HORIZONTAL)  SCALE 1:15', gx, gy - 3000, HP, 'S-SEC', maxw=95000)
     # ---- detail 3: staggered laps, 1:20 (k = 10)
     k3 = SC / 20; lx, ly = 14000, 40000
     M = by['B1']; lp = M['lp']
@@ -666,7 +732,8 @@ def draw_sections_sheet(sh, R, f, meshes, secs, pcs, pmk, grp, rows_sb, ds, lps,
         if pc.get('lap'):
             for q in pc['lap'][:2]: sh.circle(*S_(*q), 90, 'S-DIM')
     sh.text(f'SIDE BARS T{ds} ALONG THE REAL PERIMETER - {rows_sb} ROW, {len(pcs)} PIECES, LAPS {lps} (60d) AWAY FROM THE CORNERS  SCALE 1:100', px - 4000, py - 3000, HP * 0.8, 'S-SEC', maxw=85000)
-    sh.text(f'T{ds} @{f["side"].get("s", "")} (ENGINEER): ONE ROW AT MID DEPTH BETWEEN THE MESHES, INSIDE THE U LEGS.', px - 4000, py - 4300, HN, 'S-RFT-TXT', maxw=85000)
+    sb_s = f["side"].get("s", "")
+    sh.text((f'T{ds} @{sb_s} (ENGINEER)' if sb_s else f'T{ds} - {rows_sb} ROW') + ': AT MID DEPTH BETWEEN THE MESHES, INSIDE THE U LEGS.', px - 4000, py - 4300, HN, 'S-RFT-TXT', maxw=85000)
     rep.append('sections: A-A at u=%d, B-B at v=%d' % (A[2], B[2]))
 
 
