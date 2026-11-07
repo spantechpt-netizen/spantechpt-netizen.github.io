@@ -122,6 +122,7 @@ consultant .dwg ──LibreDWG dwg2dxf──► main.dxf ──extract.py──�
 | `rend.py` | fast PNG of a window of the source DXF |
 | `topdf_sheets.py` | sheets of any size (mixed A0 / A3) → one PDF, from the `OUT.sheets.json` windows a generator writes |
 | `gen_axes_radial.py` | axes + columns layout for a radial (theatre) structure drawn without axes: centre / rings fitted to the columns, radial axis through every column, setting-out table, collision-free texts (§6e) |
+| `gen_pool_cd.py` | swimming pool CONC. DIM.: plan (zones, slopes, channel, all chains), long section, cross sections, details (wall / floor / channel / waterstop, level changes) on A1 layouts with the project frame, model 1:1 |
 | `gen_raft.py` | curved / skewed raft with a mesh at any angle: B-X, B-Y, T-X, T-Y, chairs layout on A0 1:30, sections & details, BBS (§6e) |
 | `gen_gbsec.py` | grade beams in the section-sheet format (long section + cross sections per beam, starters) on the engineer's frame (§11) |
 | `zone7/*.py` | GB section-sheet pipeline per part: `dump` → `extract` → `lines` → `prep` → `partcfg` → `gen_gbsec` → `qc` / `dxfcheck`; `cmp` = what the engineer changed in a returned DXF |
