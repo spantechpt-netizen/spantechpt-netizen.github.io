@@ -3,7 +3,7 @@ W_, PN = sys.argv[1], sys.argv[2]; sys_argv = list(sys.argv)
 sys.path.insert(0, W_); sys.argv = ['x']; import gen_gbsec as G
 LJ = json.load(open(f'{W_}/lines_final_{PN}.json')); C = json.load(open(f'{W_}/gbsec_{PN}.json'))
 bad = []; tot = {}; built = {}; nst = 0; G.TOP_LAP = C.get('top_lap', 'support'); kgs = {}; laps = []
-for sh in [s for s in C['sheets'] if s.get('kind') not in ('plan', 'sog')]:
+for sh in [s for s in C['sheets'] if s.get('kind') not in ('plan', 'sog', 'cd')]:
     if sh.get('kind') == 'starter':
         ss = G.StarterSet(built[sh['line']], **C['starter_bar']); m = ss.marks[0]
         if m['L'] != sum(G.bbs_parts(m)) or m['n'] != 16: bad.append(('starter', m['n'], m['L']))

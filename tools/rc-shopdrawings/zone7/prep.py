@@ -7,7 +7,10 @@ from shapely.geometry import Polygon, LineString, Point, box
 W_, PN, CFG = sys.argv[1], sys.argv[2], sys.argv[3]
 LJ = json.load(open(W_ + '/lines.json')); P = pickle.load(open(W_ + '/plans.pkl', 'rb'))[PN]; G = pickle.load(open(W_ + '/geo.pkl', 'rb'))
 sched = json.load(open(CFG))['schedule']
-W = box(*{'P1': (224000, 116000, 256000, 162000), 'P2': (224000, 65700, 256000, 112000), 'P3': (224000, 12300, 256000, 58600)}[PN])
+import os
+_PL = {'P1': (224000, 116000, 256000, 162000), 'P2': (224000, 65700, 256000, 112000), 'P3': (224000, 12300, 256000, 58600)}
+if os.environ.get('PLANS_JSON'): _PL = json.loads(os.environ['PLANS_JSON'])
+W = box(*_PL[PN])
 core = max((Polygon(c) for c in P['cols']), key=lambda p: p.area)
 red = [g for g in G if g[0] == 'CORE-FNDN-GRBM' and g[3] == 1 and W.contains(LineString(g[2]).centroid)]
 dia = lambda t: max(sched[t]['dt'], sched[t]['db']) if t in sched else 0

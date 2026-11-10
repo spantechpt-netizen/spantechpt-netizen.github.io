@@ -841,3 +841,16 @@ the state in files, never only in the conversation:
   TOP X & Y, SECTIONS (two plans side by side); scale = largest of 1:20..1:100 that fits; call-out text 1.65-2.4 mm by row spacing.
 - `gen_f_top.py`: the engineer's "only the drawn bar" rule - rows cut by the outline, main part real length, end parts as drawn.
 - Deliver DXF after `sheets_layouts.py` (layouts named by sheet number) and the PDF from the model sheets (`topdf_sheets.py`); zips <= 30 MB.
+
+### AREA 5 ground beams (10-11-2026) - AREA 7 Z09 method on a new area
+- `zone7/extract.py` env: `PLANS_JSON` (plan windows), `BEAM_LAYERS` (extra beam-edge layers, e.g. a beam edge drawn on
+  `1-slab edge`), `COL_LAYERS` (extra column layers, e.g. `COLUMN MAIN`); polylines are exploded into segments (L-shaped
+  beam edges were read as one diagonal and the beam was lost). `prep.py` takes `PLANS_JSON` too.
+- No schedule in the area file -> the project schedule (consultant sheets of another area) + RFI; plan width not in the
+  schedule (GB2 350, GB3 300, GB1 150) -> line HOLD, red tag on the plans, no section.
+- No levels in the area file -> cfg `levels.tbc: 'T.B.C.'`: every level text "T.O.GB T.B.C." / "B.O.GB T.O.GB - 0.70".
+- CONC DIM sheet: sheet kind `cd` + cfg `cd_copy {offset, text_h}`: second copy of the plan shifted (no section marks),
+  each line tagged "GB1 200x700 - L=7300" clear of the plan texts (red = HOLD), concrete-size table per code / width
+  (lines, total length, remark) + legend in paper space; first in the tab order, numbered before the plan.
+- Long lines (40 m): scales up to 1:75 (`scales` [..., 60, 75]), gap long section / detailing scaled with the scale,
+  `right_margin_th` (text heights) so the last call-out is not clipped. Plan of a 45 m area at 1:100 on A1.

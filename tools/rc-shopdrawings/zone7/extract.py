@@ -7,6 +7,10 @@ logging.getLogger('ezdxf').setLevel(logging.ERROR)
 W_ = sys.argv[1]
 G = pickle.load(open(W_ + '/geo.pkl', 'rb')); T = pickle.load(open(W_ + '/texts.pkl', 'rb'))
 PLANS = {'P1': (224000, 116000, 256000, 162000), 'P2': (224000, 65700, 256000, 112000), 'P3': (224000, 12300, 256000, 58600)}
+import os
+COL_LAYERS = os.environ.get('COL_LAYERS', 'CORE-COLS-CONC').split(',')         # extra column layers (e.g. 'COLUMN MAIN')
+BEAM_LAYERS = os.environ.get('BEAM_LAYERS', 'CORE-FNDN-GRBM').split(',')     # extra edge layers (e.g. '1-slab edge')
+if os.environ.get('PLANS_JSON'): PLANS = {k: tuple(v) for k, v in json.loads(os.environ['PLANS_JSON']).items()}   # other areas: plan windows
 doc = ezdxf.readfile(sys.argv[2]); msp = doc.modelspace()
 lv = []
 for e in msp.query('INSERT'):
@@ -22,7 +26,11 @@ for e in msp.query('DIMENSION'):
 out = {}
 for nm, (x0, y0, x1, y1) in PLANS.items():
     W = box(x0, y0, x1, y1)
-    L = [LineString(g[2]) for g in G if g[0] == 'CORE-FNDN-GRBM' and W.contains(LineString(g[2]).centroid)]
+    L = []                                                              # polylines exploded into their segments (L-shaped edges)
+    for g in G:
+        if g[0] not in BEAM_LAYERS: continue
+        for p_, q_ in zip(g[2], g[2][1:]):
+            if p_ != q_ and W.contains(LineString([p_, q_]).centroid): L.append(LineString([p_, q_]))
     segs = []
     for i, a in enumerate(L):
         (ax0, ay0), (ax1, ay1) = a.coords[0], a.coords[-1]
@@ -44,10 +52,10 @@ for nm, (x0, y0, x1, y1) in PLANS.items():
         if not inner: keep.append(s)
     cols = []
     for g in G:
-        if g[0] == 'CORE-COLS-CONC' and g[1] == 'LWPOLYLINE' and len(g[2]) >= 4:
+        if g[0] in COL_LAYERS and g[1] == 'LWPOLYLINE' and len(g[2]) >= 4:
             p = Polygon(g[2]).buffer(0)
             if W.contains(p.centroid) and p.area > 3e4: cols.append(p)
-    cl = [L_ for L_ in [LineString(g[2]) for g in G if g[0] == 'CORE-COLS-CONC' and g[1] == 'LINE'] if W.contains(L_.centroid)]
+    cl = [L_ for L_ in [LineString(g[2]) for g in G if g[0] in COL_LAYERS and g[1] == 'LINE'] if W.contains(L_.centroid)]
     for f in polygonize(unary_union(cl)):
         if f.area > 3e4 and not any(c.intersects(f.buffer(-5)) for c in cols): cols.append(f)
     ded = []

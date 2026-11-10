@@ -42,6 +42,13 @@ LAYERS = {'GB-CONC': 7, 'GB-COL': 8, 'GB-RFT-TOP': 1, 'GB-RFT-BOT': 5, 'GB-STIR'
 def up10(v): return int(math.ceil(v / 10.0) * 10)
 
 
+LV_TBC = None                                                            # levels not given for the area: text instead of a value
+def LV(v_mm, rel=0):
+    """level text: +0.85, or 'T.B.C.' / 'T.O.GB - 0.70' when the area has no levels (cfg levels.tbc)"""
+    if LV_TBC: return LV_TBC if not rel else f'T.O.GB - {rel / 1000:.2f}'
+    return f'{v_mm / 1000:+.2f}'
+
+
 class Line:
     """one beam line: along coordinate u (mm from its start), levels, supports, bars, stirrups"""
     def __init__(self, L, sched, cols, top):
@@ -365,7 +372,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
         for a, b in zip(pts, pts[1:]):
             if b - a > 5: ms.dim((a, top), (b, top), (a, yc), text=str(b - a))
         ms.dim((0, top), (ln.len, top), (0, yc + th * 3), text=str(round(ln.len)))
-    for yy, lab in ((top, f'T.O.GB {top / 1000:+.2f}'), (bot, f'B.O.GB {bot / 1000:+.2f}')):
+    for yy, lab in ((top, f'T.O.GB {LV(top)}'), (bot, f'B.O.GB {LV(bot, top - bot)}')):
         ms.ln((u_lo - (2200 if not detail else 900), yy), (u_lo - 100, yy), 'GB-DIM')
         ms.tx(lab, u_lo - (2200 if not detail else 900), yy + th * 0.3, 'GB-DIM', h=th * 0.8)
     ms.dim((u_lo - 300, bot), (u_lo - 300, top), (u_lo - 600, bot), angle=90, text=str(H))
@@ -499,9 +506,9 @@ def draw_sog_section(ms, ln, label, axis, ref, sog_t=150, side=1100):
     ms.dim((0, 0), (0, H), (-side - th * 2.5, 0), angle=90, text=str(H))
     ms.dim((-side, H - sog_t), (-side, H), (-side - th * 1.0, 0), angle=90, text=str(sog_t))
     ms.dim((W, H), (W - COVER, H), (W, H + th * 4.0), text=str(COVER))
-    level_mark(ms, -side * 0.55, H, f'T.O.GB = T.O.S.O.G {T / 1000:+.2f}', right=False)
-    level_mark(ms, -side * 0.55, H - sog_t, f'B.O.S.O.G {(T - sog_t) / 1000:+.2f}', right=False)
-    level_mark(ms, -side * 0.15, 0, f'B.O.GB {(T - H) / 1000:+.2f}', right=False)
+    level_mark(ms, -side * 0.55, H, f'T.O.GB = T.O.S.O.G {LV(T)}', right=False)
+    level_mark(ms, -side * 0.55, H - sog_t, f'B.O.S.O.G {LV(T - sog_t, sog_t)}', right=False)
+    level_mark(ms, -side * 0.15, 0, f'B.O.GB {LV(T - H, H)}', right=False)
     ms.tx(f'SECTION {label}-{label}  (ALONG {axis})', W / 2, -th * 8.0, 'GB-SEC', h=th * 1.4, al=TA.TOP_CENTER)
 
 
@@ -561,7 +568,7 @@ def draw_bbs(lay, x, y, ln, beam, secname='', k=0.018, sheet_no=''):
     sh = PS(lay, x, y - Ht * k, k); ytop = Ht                           # local units, origin at the table's lower-left
     bot = ytop - tit - head - rh * len(rows)
     sh.pline([(0, ytop), (W, ytop), (W, bot), (0, bot)], '', 0, True)
-    sh.text(f'BBS - {secname} ({beam} {ln.w}x{ln.h}, T.O.GB {ln.top / 1000:+.2f})' + (f' - SHEET {sheet_no}' if sheet_no else ''), W / 2, ytop - tit / 2, 300, align=TA.MIDDLE_CENTER)
+    sh.text(f'BBS - {secname} ({beam} {ln.w}x{ln.h}, T.O.GB {LV(ln.top)})' + (f' - SHEET {sheet_no}' if sheet_no else ''), W / 2, ytop - tit / 2, 300, align=TA.MIDDLE_CENTER)
     hy = ytop - tit
     sh.line((0, hy), (W, hy), ''); sh.line((0, hy - head), (W, hy - head), '')
     cx = 0
@@ -833,6 +840,67 @@ def frame_block(doc, src, name):
     return 'ST_FRAME'
 
 
+def cd_annotate(msp, LJ, C, dx, dy, report):
+    """CONC DIM copy of the plan: every beam line tagged with its code, b x h and length (concrete only, no bars);
+    HOLD lines tagged with the RFI. Tags placed clear of the plan texts, beside the beam."""
+    boxes = []
+    for e in msp.query('TEXT MTEXT'):
+        try:
+            t_ = e.dxf.text if e.dxftype() == 'TEXT' else e.plain_text(); hh = e.dxf.height if e.dxftype() == 'TEXT' else e.dxf.char_height
+            q_ = e.dxf.insert; w_ = max(1, len(t_.split('\n')[0])) * hh * 0.8; r_ = e.dxf.get('rotation', 0) % 180
+            boxes.append((q_.x - 60, q_.y - hh, q_.x + w_ + 60, q_.y + hh * 1.6) if r_ < 45 else (q_.x - hh * 1.6, q_.y - 60, q_.x + hh, q_.y + w_ + 60))
+        except Exception: pass
+    sched = C['schedule']; th = C['cd_copy'].get('text_h', 190); n = 0
+    for pn in C.get('plan_marks', []):
+        for l in LJ[pn]:
+            h_ = sched.get(l.get('typ', ''), {}).get('h')
+            held = C.get('held', {}).get(l['code'])
+            txt = f"{l.get('typ', '?')} {l['w']}x{h_ if h_ else '?'} - L={round(l['b'] - l['a'])}" + (f"  (HOLD: {held})" if held else '')
+            Lt = len(txt) * th * 0.78
+            done = False
+            for f_ in (0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.12, 0.88):
+                for side in (1, -1):
+                    m = l['a'] + (l['b'] - l['a']) * f_
+                    off = side * (l['w'] / 2 + th * 0.5 + (0 if side > 0 else th))
+                    if l['o'] == 'H': x0_, y0_, rot = m - Lt / 2, l['c'] + off, 0; bx = (x0_, y0_, x0_ + Lt, y0_ + th)
+                    else: x0_, y0_, rot = l['c'] - off, m - Lt / 2, 90; bx = (x0_ - th, y0_, x0_, y0_ + Lt)
+                    if any(not (bx[2] < b_[0] or bx[0] > b_[2] or bx[3] < b_[1] or bx[1] > b_[3]) for b_ in boxes): continue
+                    t = msp.add_text(txt, height=th, rotation=rot, dxfattribs={'layer': 'GB-CD', 'color': 1 if held else 5, 'style': TXT_STYLE})
+                    t.set_placement((x0_ + dx, y0_ + dy)); boxes.append(bx); done = True; n += 1; break
+                if done: break
+            if not done:                                                 # fallback: tag inside the beam outline (text on the axis)
+                m = (l['a'] + l['b']) / 2
+                t = msp.add_text(txt, height=min(th, l['w'] * 0.7), rotation=0 if l['o'] == 'H' else 90,
+                                 dxfattribs={'layer': 'GB-CD', 'color': 1 if held else 5, 'style': TXT_STYLE})
+                t.set_placement(((m if l['o'] == 'H' else l['c']) + dx, (l['c'] if l['o'] == 'H' else m) + dy), align=TA.MIDDLE_CENTER)
+                report.append(f'CD tag on the beam axis: {l["code"]}'); n += 1
+    report.append(f'CD tags: {n}')
+
+
+def cd_table(lay, sheet, LJ, C, sched, x0, y0):
+    """CONC DIM sheet: concrete sizes per code (plan width x schedule depth), lines, total length, levels (paper space)."""
+    rows = {}
+    for pn in C.get('plan_marks', []):
+        for l in LJ[pn]:
+            k = (l.get('typ', '?'), l['w']); r = rows.setdefault(k, [0, 0, set()]); r[0] += 1; r[1] += l['b'] - l['a']
+            if C.get('held', {}).get(l['code']): r[2].add(C['held'][l['code']])
+    hdr = ['CODE', 'b x h (mm)', 'LINES', 'LENGTH (m)', 'REMARK']; cw = [16, 24, 13, 20, 60]; rh = 6.0
+    lay.add_text(sheet.get('table_title', 'GROUND BEAM CONCRETE DIMENSIONS'), height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y0))
+    y = y0 - 4
+    data = [hdr] + [[t, f"{w}x{sched.get(t, {}).get('h', '?')}", str(r[0]), f"{r[1] / 1000:,.2f}", '; '.join(sorted(r[2])) or 'AS SCHEDULE'] for (t, w), r in sorted(rows.items())]
+    for row in data:
+        cx = x0
+        for v, w_ in zip(row, cw):
+            lay.add_lwpolyline([(cx, y), (cx + w_, y), (cx + w_, y - rh), (cx, y - rh)], close=True, dxfattribs={'layer': 'GB-TITLE'})
+            t = lay.add_text(v, height=2.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}); t.set_placement((cx + 1.5, y - rh / 2), align=TA.MIDDLE_LEFT)
+            est = len(v) * 2.2 * 0.8
+            if est > w_ - 3: t.dxf.width = round((w_ - 3) / est, 2)
+            cx += w_
+        y -= rh
+    for j, s2 in enumerate(sheet.get('legend', [])):
+        lay.add_text(s2, height=2.4, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y - 6 - j * 4.4))
+
+
 def main(lines_json, cfg_json, out):
     LJ = json.load(open(lines_json)); C = json.load(open(cfg_json))
     sched, cols = C['schedule'], C['columns']
@@ -845,8 +913,9 @@ def main(lines_json, cfg_json, out):
         if k not in doc.layers: doc.layers.add(k, color=v)
     fs = C.get('text_style', {'name': 'ROMANS', 'font': 'arial.ttf'})
     globals()['TXT_STYLE'] = fs['name']; globals()['TOP_LAP'] = C.get('top_lap', 'support')
+    globals()['LV_TBC'] = C.get('levels', {}).get('tbc')                 # e.g. 'T.B.C. (RFI A5-02)'
     if fs['name'] not in doc.styles: doc.styles.add(fs['name'], font=fs['font'])
-    for sc_ in (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 75, 100):              # dimension styles scaled for the viewport scales
+    for sc_ in (5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 60, 75, 100):              # dimension styles scaled for the viewport scales
         ds = doc.dimstyles.duplicate_entry('EZDXF', 'GBSEC%d' % sc_)
         ds.dxf.dimscale = sc_; ds.dxf.dimtxt = 2.5; ds.dxf.dimasz = 2.0; ds.dxf.dimexo = 1.0; ds.dxf.dimexe = 1.0; ds.dxf.dimgap = 0.8
         ds.dxf.dimtad = 1; ds.dxf.dimdec = 0; ds.dxf.dimblk = 'ARCHTICK'; ds.dxf.dimtxsty = fs['name']
@@ -864,6 +933,13 @@ def main(lines_json, cfg_json, out):
             if b.has_data and any(w[0] <= (b.extmin.x + b.extmax.x) / 2 <= w[2] and w[1] <= (b.extmin.y + b.extmax.y) / 2 <= w[3] for w in win):
                 keep.append(e)
         report.append(f'plan copy: {clean_copy(doc, src, keep, msp)} entities')
+        if C.get('cd_copy'):                                             # CONC DIM: a second copy of the plan, shifted, without our marks
+            dx_, dy_ = C['cd_copy']['offset']; n0 = len(msp)
+            clean_copy(doc, src, keep, msp)
+            for e in list(msp)[n0:]:
+                try: e.translate(dx_, dy_, 0)
+                except Exception: pass
+            cd_annotate(msp, LJ, C, dx_, dy_, report)
 
     def new_sheet(sheet, Wp=841, Hp=594):
         lay = doc.layouts.new(sheet['tab'])
@@ -882,7 +958,7 @@ def main(lines_json, cfg_json, out):
         v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
         lay.add_text(title, height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((cx - w / 2 + 2, cy - h / 2 - 6))
 
-    sections = [s_ for s_ in C['sheets'] if s_.get('kind') != 'plan']
+    sections = [s_ for s_ in C['sheets'] if s_.get('kind') not in ('plan', 'cd')]
     built = []; oy = C['model_origin'][1]
     for sheet in sections:
         if sheet.get('kind') == 'sog':                                   # typical GB + S.O.G sections (X-X, Y-Y), no BBS
@@ -959,8 +1035,8 @@ def main(lines_json, cfg_json, out):
         pick = None
         for s_ in SCL:                                                       # the largest scale that fits
             th = TXT * s_
-            Hm = 2300 + th * 4 + ln.h + 2900 + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300 + (1300 if ln.L.get('starters') else 0)
-            Wm = ln.len + 3400 + 1000 + (th * 10 if ln.L.get('starters') else 0)
+            Hm = 2300 + th * 4 + ln.h + 2900 * max(1, s_ / 50) + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300 + (1300 if ln.L.get('starters') else 0)
+            Wm = ln.len + 3400 + 1000 + th * C.get('right_margin_th', 0) + (th * 10 if ln.L.get('starters') else 0)
             W1, H1 = Wm / s_, Hm / s_
             side_ok = W1 + 12 + Wx <= AW and H1 <= AH and Hx + 14 + Hn_side <= AH
             stack_ok = W1 <= AW and H1 + 14 + Hx + 12 + Hn <= AH
@@ -969,19 +1045,19 @@ def main(lines_json, cfg_json, out):
         if pick is None:                                                     # notes beside the cross section (stacked)
             for s_ in SCL:
                 th = TXT * s_
-                Hm = 2300 + th * 4 + ln.h + 2900 + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300
-                Wm = ln.len + 3400 + 1000 + (th * 10 if ln.L.get('starters') else 0)
+                Hm = 2300 + th * 4 + ln.h + 2900 * max(1, s_ / 50) + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300
+                Wm = ln.len + 3400 + 1000 + th * C.get('right_margin_th', 0) + (th * 10 if ln.L.get('starters') else 0)
                 W1, H1 = Wm / s_, Hm / s_
                 if W1 <= AW and H1 + 14 + max(Hx, Hn) + 12 <= AH: pick = (s_, 'stack', W1, H1, Wm, Hm); break
         if pick is None:
             s_ = SCL[-1]; th = TXT * s_
-            Hm = 2300 + th * 4 + ln.h + 2900 + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300; Wm = ln.len + 4400
+            Hm = 2300 + th * 4 + ln.h + 2900 * max(1, s_ / 50) + sum(b_['lg'] + 1350 + 2.5 * th for b_ in ln.bars) + 300; Wm = ln.len + 4400 + th * C.get('right_margin_th', 0)
             pick = (s_, 'stack', Wm / s_, Hm / s_, Wm, Hm); report.append(f"{sheet['line']}: does not fit the sheet at 1:{s_}")
         s_, mode, W1, H1, Wm, Hm = pick; th = TXT * s_
         ox = C['model_origin'][0]
         ms = MS(msp, ox, oy, th, s_)
         draw_long(ms, ln, cols)
-        y_det = ln.top - ln.h - 2900
+        y_det = ln.top - ln.h - 2900 * max(1, s_ / 50)                  # gap long section / detailing: same on paper at 1:60 / 1:75
         y_end = draw_detailing(ms, ln, y_det)
         xs_x = ox + ln.len + 6000
         draw_xsec(MS(msp, xs_x, oy + ln.top - ln.h, TXT * XSCALE, XSCALE), ln, sheet['xsec'])
@@ -994,14 +1070,14 @@ def main(lines_json, cfg_json, out):
         X0, Y1 = LY.get('x0', 14), Hp - 14
         ytop_m = ln.top + 2300 + th * 4; ybot_m = ytop_m - Hm
         vp(lay, X0 + W1 / 2, Y1 - H1 / 2, W1, H1, ox - 3400 + Wm / 2, oy + (ytop_m + ybot_m) / 2, s_,
-           f"SECTION {sheet['sec']}-{sheet['sec']}  -  {ln.typ} {ln.w}x{ln.h}, T.O.GB {ln.top / 1000:+.2f} - LONGITUDINAL SECTION + BAR DETAILING   SCALE 1:{s_}")
+           f"SECTION {sheet['sec']}-{sheet['sec']}  -  {ln.typ} {ln.w}x{ln.h}, T.O.GB {LV(ln.top)} - LONGITUDINAL SECTION + BAR DETAILING   SCALE 1:{s_}")
         if mode == 'stack': xc, yc = X0 + Wx / 2, Y1 - H1 - 14 - Hx / 2
         else: xc, yc = X0 + W1 + 12 + Wx / 2, Y1 - Hx / 2
         vp(lay, xc, yc, Wx, Hx, xs_x - xl + wx_m / 2, oy + ln.top - ln.h - 550 + hx_m / 2, XSCALE,
            f"SECTION {sheet['xsec']}-{sheet['xsec']}  ({ln.typ} {ln.w}x{ln.h}) - STIRRUPS {round(1000 / ln.p['s'])}T{ln.p['ds']}/m'   SCALE 1:{XSCALE}")
         nds = round(1000 / ln.p['s'])
         notes = [f"NOTES (SECTION {sheet['sec']}-{sheet['sec']}, {ln.typ}):",
-                 f"1. T.O.GB {ln.top / 1000:+.2f}, B.O.GB {(ln.top - ln.h) / 1000:+.2f}, BEAM {ln.w}x{ln.h} AS THE PLAN AND THE GB SCHEDULE ({ln.typ}); COVER {COVER} ALL FACES.",
+                 f"1. T.O.GB {LV(ln.top)}, B.O.GB {LV(ln.top - ln.h, ln.h)}, BEAM {ln.w}x{ln.h} AS THE PLAN AND THE GB SCHEDULE ({ln.typ}); COVER {COVER} ALL FACES.",
                  f"2. LAPS 60d ({', '.join(sorted({str(b_['lp']) for b_ in ln.bars}))}) IN THE FIRST / LAST QUARTER OF THE SPAN NEXT TO A COLUMN, PATTERNS A / B STAGGERED; SHORT SPANS: LAP ENDS AT THE COLUMN FACE.",
                  f"3. END LEGS: TOP BARS {LEG_T} DOWN, BOTTOM BARS {LEG_B} UP, AT THE FAR FACE OF THE END SUPPORT - COVER {COVER}.",
                  f"4. STIRRUPS {nds}T{ln.p['ds']}/m' AS THE GB SCHEDULE ({ln.p['s']} c/c), FROM SUPPORT FACE TO SUPPORT FACE: FIRST AND LAST STIRRUP 50 FROM THE FACES, CLOSING SPACES < {ln.p['s']} AS DIMENSIONED; NONE INSIDE COLUMNS / WALLS.",
@@ -1134,9 +1210,9 @@ def main(lines_json, cfg_json, out):
         d_ = msp.add_linear_dim(base=base_, p1=p1_, p2=p2_, angle=90 if vert_ else 0, text=str(round(abs(p1_[1] - p2_[1]) if vert_ else abs(p1_[0] - p2_[0]))),
                                 dimstyle='GBSEC%d' % next((s_['scale'] for s_ in C['sheets'] if s_.get('kind') == 'plan'), 100), dxfattribs={'layer': 'GB-DIM'})
         d_.render()
-    # ---- plan sheet
+    # ---- plan sheet (and the CONC DIM sheet: same layout, its own copy of the plan)
     for sheet in C['sheets']:
-        if sheet.get('kind') != 'plan': continue
+        if sheet.get('kind') not in ('plan', 'cd'): continue
         lay, sc = new_sheet(sheet)
         x0, y0, x1, y1 = sheet['window']; s_ = sheet.get('scale', 100)
         w, h = (x1 - x0) / s_, (y1 - y0) / s_
@@ -1146,11 +1222,12 @@ def main(lines_json, cfg_json, out):
         lay.add_text(f"{sheet['caption']}   SCALE 1:{s_}", height=3.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((cx_ - w / 2, cy_ - h / 2 - 7) if 'vp_center' in sheet else (14, 594 - 14 - h - 7))
         for j, s2 in enumerate(sheet.get('notes', [])):
             lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((14 + w + 10, 594 - 30 - j * 4.6))
+        if sheet.get('kind') == 'cd': cd_table(lay, sheet, LJ, C, sched, 14 + w + 12 if 'vp_center' not in sheet else cx_ + w / 2 + 12, 594 - 16)
     for nm in [l.name for l in doc.layouts if l.name.startswith('Layout')]:
         try: doc.layouts.delete(nm)
         except Exception: pass
     # plan sheet first in the tab order
-    order = [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'plan'] + [s_['tab'] for s_ in sections] + bbs_tabs
+    order = [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'cd'] + [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'plan'] + [s_['tab'] for s_ in sections] + bbs_tabs
     if C.get('tab_order') == 'number':                                   # new sheets numbered after the issued ones: tabs by number
         order = sorted(order, key=lambda t: int(t[len(C.get('tab_prefix', 'Z07-GB-')):].split()[0]))
     for i, nm in enumerate(order):
