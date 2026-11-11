@@ -855,6 +855,22 @@ the state in files, never only in the conversation:
 - Long lines (40 m): scales up to 1:75 (`scales` [..., 60, 75]), gap long section / detailing scaled with the scale,
   `right_margin_th` (text heights) so the last call-out is not clipped. Plan of a 45 m area at 1:100 on A1.
 
+### AREA 5 R01 (11-11-2026) - RFI answers applied, S.O.G X / Y, BBS in model space
+- **BBS tables in MODEL space** (engineer: "BBS inside the model, then in the layout like the sections"): `gen_gbsec`
+  draws every BBS table (and the package summary) at 1 unit = 1 table unit in model space (`bbs_model` [x, y]) and shows
+  each BBS sheet through one viewport (1 : 1/K). `zone7/qc.py` reads the summary from model space.
+- Per-line schedule override: `lines_final[...]['p']` (e.g. GB1 150 wide: 2T16 + 2T16, because 4T16 do not fit in 150).
+  Width changed by an RFI answer -> `w` changed, CD table remark column from cfg `remarks {code: text}`.
+- Column stopping at the GB level: support `stub: true` -> drawn below the beam only, label "C 30X30 (STOPS AT T.O.GB)";
+  cfg `plan_labels [[x, y, text]]` writes the name on the plan and the CONC DIM copy.
+- Issued sheet numbers kept on a revision: released lines get new numbers after the issued BBS; `bbs_numbers` keeps the
+  issued BBS numbers, extra pages from `bbs_pool`. Rev table: frame fields `rv2n / rv2d / rv2t` = row 01 under row 00.
+- **S.O.G between the grade beams** (`sog_mesh.py`, cfg `sog_mesh`): panels = outer GB ring minus (beams + columns),
+  small gaps closed by a +/-60 buffer; `exclude` points drop panels (ramp, hatched + note + RFI); bars T10@150 one bottom
+  mesh, 50 from the GB faces, equal pieces lapped 60d over 12 m (lap zone marked); equal neighbouring bars = one group
+  (bar + ticked range + hexagon call-out); X sheet and Y sheet, each with its BBS (model space, viewport), notes and a
+  typical GB / S.O.G section 1:20. Check: steel ~ area x 2 / s x d^2/162 (8.2 kg/m2 for T10@150).
+
 ### Review-only jobs (ramp / stairs, 10-11-2026) - review + RFI before any drawing
 - When the engineer asks for a review (PART 1) the deliverable is a **PDF report + RFI register (xlsx)**, no sheets:
   what was read (element list, sizes, levels table per flight / ramp segment), checks (riser / going vs code limits,

@@ -12,7 +12,7 @@ for sh in [s for s in C['sheets'] if s.get('kind') not in ('plan', 'sog', 'cd')]
     L = next(l for l in LJ[PN] if l['code'] == sh['line']); L = G.beam_ends(L, LJ[PN], C['schedule'])
     if L.get('starters_abs'): L['starters'] = [(v - L['a'], s) for v, s in L['starters_abs']]
     ln = G.Line(L, C['schedule'], C['columns'], 850); ln.build([]); built[sh['line']] = ln
-    p = C['schedule'][ln.typ]
+    p = ln.p                                                         # line schedule (per-line override, e.g. GB1 150 2T16)
     for m in ln.marks:
         pr = G.bbs_parts(m)
         if pr and sum(pr) != m['L']: bad.append((sh['seq'], 'length', m['mark']))
@@ -41,12 +41,12 @@ for sh in [s for s in C['sheets'] if s.get('kind') not in ('plan', 'sog', 'cd')]
 if len(sys_argv) > 3:                                                # the summary table of the DXF against the bars built here
     import ezdxf, logging; logging.getLogger('ezdxf').setLevel(logging.ERROR)
     d = ezdxf.readfile(sys_argv[3]); found = {}
-    for lay in d.layouts:
-        if 'BBS' not in lay.name: continue
-        ts = sorted([e for e in lay.query('TEXT') if e.dxf.layer == 'GB-TITLE' and e.dxf.insert.x > 300], key=lambda e: (-round((e.dxf.align_point.y if e.dxf.halign else e.dxf.insert.y) * 2), e.dxf.insert.x))
+    for lay in [d.modelspace()] + [l for l in d.layouts if 'BBS' in l.name]:   # summary in model space (R01) or on the sheet
+        ms_ = lay.name == 'Model'; q_ = 50.0 if ms_ else 0.5
+        ts = sorted([e for e in lay.query('TEXT') if e.dxf.layer == 'GB-TITLE' and (ms_ or e.dxf.insert.x > 300)], key=lambda e: (-round((e.dxf.align_point.y if e.dxf.halign else e.dxf.insert.y) / q_), e.dxf.insert.x if not e.dxf.halign else e.dxf.align_point.x))
         rows = {}
         for e in ts:
-            y = round((e.dxf.align_point.y if e.dxf.halign else e.dxf.insert.y) * 2); rows.setdefault(y, []).append(e.dxf.text)
+            y = round((e.dxf.align_point.y if e.dxf.halign else e.dxf.insert.y) / q_); rows.setdefault(y, []).append(e.dxf.text)
         for r in rows.values():
             for i, t in enumerate(r):
                 if t.count('-') == 1 and t.split('-')[0] == t.split('-')[1] and t.split('-')[0].isalpha() and len(r) >= i + 6:

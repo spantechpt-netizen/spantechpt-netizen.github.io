@@ -53,7 +53,7 @@ class Line:
     """one beam line: along coordinate u (mm from its start), levels, supports, bars, stirrups"""
     def __init__(self, L, sched, cols, top):
         self.L = L; self.code = L['code']; self.typ = L.get('typ') or (max(L['types'], key=L['types'].get) if L['types'] else '?')
-        p = sched[self.typ]; self.p = p
+        p = L.get('p') or sched[self.typ]; self.p = p
         self.w = L['w']; self.h = p['h']; self.top = L.get('top', top)
         self.len = L['b'] - L['a']
         self.sup = [dict(q, u0=q['s0'] - L['a'], u1=q['s1'] - L['a']) for q in L['sup']]
@@ -253,6 +253,12 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
             yl = top + 900 + th * (1.2 if first else 2.8)          # second label one row higher: never on the first
             ms.tx(q['lab'], a if first else b, yl, al=TA.BOTTOM_LEFT if first else TA.BOTTOM_RIGHT, h=th * 0.9)
             ms.ln(((a + b) / 2, top), ((a + b) / 2, yl - th * 0.2), 'GB-TXT')
+            continue
+        if q.get('stub'):                                           # column stopping at the GB level: below only
+            ms.pl([(a, bot - ext), (a, bot)], 'GB-CONC'); ms.pl([(b, bot - ext), (b, bot)], 'GB-CONC')
+            ms.brk((a - 100, bot - ext), (b + 100, bot - ext))
+            ms.hatch([(a, bot - ext), (b, bot - ext), (b, top), (a, top)], 'GB-HATCH', 'ANSI31', 40 if not detail else 15)
+            ms.tx(q['lab'] + ' (STOPS AT T.O.GB)', (a + b) / 2, top + th * 1.2, al=TA.BOTTOM_CENTER, h=th * 0.9)
             continue
         for y0, y1 in ((bot - ext, bot), (top, top + ext)):
             ms.pl([(a, y0), (a, y1)], 'GB-CONC'); ms.pl([(b, y0), (b, y1)], 'GB-CONC')
@@ -556,7 +562,7 @@ def bbs_height(ln, k):
     return (900 + 1700 + 950 * len(ln.marks) + 1500) * k
 
 
-def draw_bbs(lay, x, y, ln, beam, secname='', k=0.018, sheet_no=''):
+def draw_bbs(lay, x, y, ln, beam, secname='', k=0.018, sheet_no='', title=None):
     """BBS of one section, in the office table approved on the footings / column necks (gen.draw_bbs_grouped):
     mark in a hexagon, steel grade, diameter, number in the element / of elements / total, the bar sketch with every
     part written on it, length (m), mass, total mass; total by diameter and of the section under it. (x, y) = the
@@ -568,7 +574,7 @@ def draw_bbs(lay, x, y, ln, beam, secname='', k=0.018, sheet_no=''):
     sh = PS(lay, x, y - Ht * k, k); ytop = Ht                           # local units, origin at the table's lower-left
     bot = ytop - tit - head - rh * len(rows)
     sh.pline([(0, ytop), (W, ytop), (W, bot), (0, bot)], '', 0, True)
-    sh.text(f'BBS - {secname} ({beam} {ln.w}x{ln.h}, T.O.GB {LV(ln.top)})' + (f' - SHEET {sheet_no}' if sheet_no else ''), W / 2, ytop - tit / 2, 300, align=TA.MIDDLE_CENTER)
+    sh.text(title or (f'BBS - {secname} ({beam} {ln.w}x{ln.h}, T.O.GB {LV(ln.top)})' + (f' - SHEET {sheet_no}' if sheet_no else '')), W / 2, ytop - tit / 2, 300, align=TA.MIDDLE_CENTER)
     hy = ytop - tit
     sh.line((0, hy), (W, hy), ''); sh.line((0, hy - head), (W, hy - head), '')
     cx = 0
@@ -884,6 +890,7 @@ def cd_table(lay, sheet, LJ, C, sched, x0, y0):
         for l in LJ[pn]:
             k = (l.get('typ', '?'), l['w']); r = rows.setdefault(k, [0, 0, set()]); r[0] += 1; r[1] += l['b'] - l['a']
             if C.get('held', {}).get(l['code']): r[2].add(C['held'][l['code']])
+            if C.get('remarks', {}).get(l['code']): r[2].add(C['remarks'][l['code']])
     hdr = ['CODE', 'b x h (mm)', 'LINES', 'LENGTH (m)', 'REMARK']; cw = [16, 24, 13, 20, 60]; rh = 6.0
     lay.add_text(sheet.get('table_title', 'GROUND BEAM CONCRETE DIMENSIONS'), height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y0))
     y = y0 - 4
@@ -940,6 +947,9 @@ def main(lines_json, cfg_json, out):
                 try: e.translate(dx_, dy_, 0)
                 except Exception: pass
             cd_annotate(msp, LJ, C, dx_, dy_, report)
+        for x_, y_, t_ in C.get('plan_labels', []):                       # labels added on the plan copies (e.g. stub columns 'C')
+            for ox_, oy_ in [(0, 0)] + ([tuple(C['cd_copy']['offset'])] if C.get('cd_copy') else []):
+                msp.add_text(t_, height=220, dxfattribs={'layer': 'GB-SEC', 'color': 1, 'style': TXT_STYLE}).set_placement((x_ + ox_, y_ + oy_), align=TA.BOTTOM_LEFT)
 
     def new_sheet(sheet, Wp=841, Hp=594):
         lay = doc.layouts.new(sheet['tab'])
@@ -1109,7 +1119,8 @@ def main(lines_json, cfg_json, out):
         if cur and yy + hgt > 594 - 28: pages.append(cur); cur, yy = [], 0
         cur.append((sheet, ln)); yy += hgt
     if cur: pages.append(cur)
-    seq0 = int(C['bbs_seq']); summ = []; bbs_tabs = []
+    seq0 = int(C['bbs_seq']); summ = []; bbs_tabs = []; bbs_pages = []
+    BX = C.get('bbs_model', [C['model_origin'][0] + 120000, 0])[0]; bbs_y0 = C.get('bbs_model', [0, C['model_origin'][1]])[1]
     nums = list(C.get('bbs_numbers') or [])                              # issued BBS sheets keep their numbers
     pool = int(C.get('bbs_pool', seq0 + len(nums)))
     nums += [pool + i for i in range(max(0, len(pages) - len(nums)))]    # extra pages: new numbers from the pool
@@ -1123,15 +1134,20 @@ def main(lines_json, cfg_json, out):
         sh_['dwg'] = C['bbs_dwg'].format(no=no, rev=sh_.get('rev', '00'))
         lay, sc = new_sheet(sh_); bbs_tabs.append(sh_['tab'])
         y = 594 - 14
+        # BBS tables drawn in MODEL space (1 table unit = 1 model unit) and shown on the sheet through a viewport
+        # (engineer: "BBS tables inside the model, then in the layout like the sections")
+        BY = bbs_y0 - pi * (600 / K); M_ = lambda px, py, BY=BY: (BX + (px - 14) / K, BY + (py - 580) / K)
         for sheet, ln in page:
-            h_, tot = draw_bbs(lay, 14, y, ln, ln.typ, f"SECTION {sheet['sec']}-{sheet['sec']}", K, sheet['seq'])
-            summ.append((sheet, ln, tot)); y -= h_ + 10
+            mx_, my_ = M_(14, y)
+            h_, tot = draw_bbs(msp, mx_, my_, ln, ln.typ, f"SECTION {sheet['sec']}-{sheet['sec']}", 1.0, sheet['seq'])
+            h_ *= K; summ.append((sheet, ln, tot)); y -= h_ + 10
+        bbs_pages.append((lay, BY, y, M_))
         report.append(f"BBS sheet {no}: " + ', '.join(f"{s_['sec']}-{s_['sec']}" for s_, _ in page))
     # summary of the package on the last BBS sheet, right of the tables
     x0 = 14 + TW + 14; y = 594 - 14; rw = 6.0
     cw = [24, 30, 22, 22, 22, 26]
     hdr = ['SECTION', 'SHEET', 'T10 (kg)', 'T16 (kg)', 'T18 (kg)', 'TOTAL (kg)']
-    lay.add_text(C.get('summary_title', 'SUMMARY - GROUND BEAMS ZONE 7 PART 1') + ' (NET, NO WASTE)', height=3.2, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((x0, y))
+    msp.add_text(C.get('summary_title', 'SUMMARY - GROUND BEAMS ZONE 7 PART 1') + ' (NET, NO WASTE)', height=3.2 / K, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement(M_(x0, y))
     rows = [[f"{s_['sec']}-{s_['sec']}", s_['seq']] + [f"{t.get(d, 0):,.2f}" for d in (10, 16, 18)] + [f"{sum(t.values()):,.2f}"] for s_, _, t in summ]
     g = {d: sum(t.get(d, 0) for _, _, t in summ) for d in (10, 16, 18)}
     rows.append(['TOTAL', ''] + [f"{g[d]:,.2f}" for d in (10, 16, 18)] + [f"{sum(g.values()):,.2f}"])
@@ -1139,10 +1155,18 @@ def main(lines_json, cfg_json, out):
     for r_i, row in enumerate([hdr] + rows):
         cx = x0
         for c_i, (v, w) in enumerate(zip(row, cw)):
-            lay.add_lwpolyline([(cx, y), (cx + w, y), (cx + w, y - rw), (cx, y - rw)], close=True, dxfattribs={'layer': 'GB-TITLE'})
-            t = lay.add_text(v, height=2.4, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}); t.set_placement((cx + w / 2, y - rw / 2), align=TA.MIDDLE_CENTER)
+            msp.add_lwpolyline([M_(cx, y), M_(cx + w, y), M_(cx + w, y - rw), M_(cx, y - rw)], close=True, dxfattribs={'layer': 'GB-TITLE'})
+            t = msp.add_text(v, height=2.4 / K, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}); t.set_placement(M_(cx + w / 2, y - rw / 2), align=TA.MIDDLE_CENTER)
             cx += w
         y -= rw
+    xr_last = x0 + sum(cw)
+    for pi_, (lay_, BY_, ylow, M2) in enumerate(bbs_pages):            # one viewport per BBS sheet, 1 : 1/K
+        xr = xr_last if pi_ == len(bbs_pages) - 1 else 14 + TW
+        yl = min(ylow, y) if pi_ == len(bbs_pages) - 1 else ylow
+        x_a, y_a, x_b, y_b = 12, yl - 2, xr + 2, 582
+        c0 = M2((x_a + x_b) / 2, (y_a + y_b) / 2)
+        v = lay_.add_viewport(center=((x_a + x_b) / 2, (y_a + y_b) / 2), size=(x_b - x_a, y_b - y_a), view_center_point=c0, view_height=(y_b - y_a) / K)
+        v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
     # ---- section marks / HOLD on the copied plan
     secs = {s_['line']: s_['sec'] for s_ in sections if s_.get('kind') not in ('starter', 'sog')}
     placed = []                                                          # section bubbles already on the plan
@@ -1223,11 +1247,15 @@ def main(lines_json, cfg_json, out):
         for j, s2 in enumerate(sheet.get('notes', [])):
             lay.add_text(s2, height=2.5, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((14 + w + 10, 594 - 30 - j * 4.6))
         if sheet.get('kind') == 'cd': cd_table(lay, sheet, LJ, C, sched, 14 + w + 12 if 'vp_center' not in sheet else cx_ + w / 2 + 12, 594 - 16)
+    sog_tabs = []
+    if C.get('sog_mesh'):                                                # S.O.G X / Y sheets + BBS (AREA 5 R01)
+        import sog_mesh
+        sog_tabs = sog_mesh.build(doc, msp, LJ, C, new_sheet, report, src, clean_copy, globals())
     for nm in [l.name for l in doc.layouts if l.name.startswith('Layout')]:
         try: doc.layouts.delete(nm)
         except Exception: pass
     # plan sheet first in the tab order
-    order = [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'cd'] + [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'plan'] + [s_['tab'] for s_ in sections] + bbs_tabs
+    order = [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'cd'] + [s_['tab'] for s_ in C['sheets'] if s_.get('kind') == 'plan'] + [s_['tab'] for s_ in sections] + bbs_tabs + sog_tabs
     if C.get('tab_order') == 'number':                                   # new sheets numbered after the issued ones: tabs by number
         order = sorted(order, key=lambda t: int(t[len(C.get('tab_prefix', 'Z07-GB-')):].split()[0]))
     for i, nm in enumerate(order):
