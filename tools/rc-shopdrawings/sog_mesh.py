@@ -159,7 +159,9 @@ def build(doc, msp, LJ, C, new_sheet, report, src, clean_copy, G):
         report.append(f'S.O.G {axis}: {nb} bars in {len(grs)} groups, {len(rows)} marks')
         # ---- the BBS of this direction in model space (pages of the sheet height)
         ln = _Ln(rows); W = sum(w for _, w in BBS_COLS); rh = 950
-        per = max(5, int((560 / K - 900 - 1700 - 1500) / rh))
+        wpl = (M['plan_window'][2] - M['plan_window'][0]) / sc
+        side = 14 + wpl + 14 + W * K <= M.get('title_x', 715)          # BBS beside the plan, else on its own sheets
+        per = max(5, int(((560 - 150 if side else 560) / K - 900 - 1700 - 1500) / rh))
         chunks = [rows[i:i + per] for i in range(0, len(rows), per)]
         bx0, by0 = BXM[0] + si * 30000, BXM[1]
         tabs_axis = []
@@ -178,43 +180,49 @@ def build(doc, msp, LJ, C, new_sheet, report, src, clean_copy, G):
         # BBS (first chunk) right of the plan
         xb = 14 + w + 14; yt = 594 - 14
         bxm, bym, hh = tabs_axis[0]
-        Wp, Hp = W * K, hh * K
-        v = lay.add_viewport(center=(xb + Wp / 2, yt - Hp / 2), size=(Wp + 4, Hp + 4), view_center_point=(bxm + W / 2, bym - hh / 2), view_height=(Hp + 4) / K); v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
+        Wp, Hp = W * K, (hh * K if side else 0)
+        if side: v = lay.add_viewport(center=(xb + Wp / 2, yt - Hp / 2), size=(Wp + 4, Hp + 4), view_center_point=(bxm + W / 2, bym - hh / 2), view_height=(Hp + 4) / K)
+        if side: v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
         # notes + typical section under the BBS
         notes = [f'NOTES - SLAB ON GRADE ({axis}-DIRECTION SHEET):',
-                 f'1. S.O.G {t} THICK BETWEEN THE GRADE BEAMS, T.O.S.O.G = T.O.GB {LV(top)} (RFI A5-09 ANSWER).',
+                 f'1. S.O.G {t} THICK BETWEEN THE GRADE BEAMS, T.O.S.O.G = T.O.GB {LV(top)} ({M.get("ref_note", "RFI A5-09 ANSWER")}).',
                  f'2. ONE BOTTOM MESH T{d}@{s} BOTH WAYS (X BARS ON SHEET {M["sheets"][0]}, Y BARS ON SHEET {M["sheets"][1]}).',
                  f'3. BARS STOP {cov} FROM THE GRADE BEAM FACES; BOTTOM COVER {covb}.',
                  f'4. BARS LONGER THAN 12000: EQUAL PIECES LAPPED {lap} ({lapd}d), LAP ZONES MARKED ON THE BAR.',
                  '5. EACH CALL-OUT = ONE GROUP OF EQUAL BARS; THE TICKED LINE = THE RANGE OF THE GROUP.',
                  '6. ' + M.get('exclude_txt', 'HATCHED AREA: NO S.O.G.'),
                  '7. DIMENSIONS / LENGTHS IN mm, LEVELS IN m.']
-        yn = yt - Hp - 12
+        yn = yt - Hp - (12 if side else 16)
         for j, s2 in enumerate(notes):
             lay.add_text(s2, height=2.6 if j == 0 else 2.3, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((xb, yn - j * 4.4))
         # typical section (model, real size) shown at 1:20 under the notes
         sx, sy = BXM[0] + si * 30000, BXM[1] + 6000
-        _section(msp, sx, sy, t, d, s, cov, covb, top, axis, TA, TXT_STYLE, LV, G)
-        s2c = 20; ww, hh2 = 3400 / s2c, 1300 / s2c
+        _section(msp, sx, sy, t, d, s, cov, covb, top, axis, TA, TXT_STYLE, LV, G, M.get('backfill'))
+        s2c = 20; ww, hh2 = 3800 / s2c, 1300 / s2c
         ys = yn - len(notes) * 4.4 - 6
         if ys - hh2 > 30:
-            v = lay.add_viewport(center=(xb + ww / 2, ys - hh2 / 2), size=(ww, hh2), view_center_point=(sx + 1500, sy - 330), view_height=hh2 * s2c); v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
+            v = lay.add_viewport(center=(xb + ww / 2, ys - hh2 / 2), size=(ww, hh2), view_center_point=(sx + 1700, sy - 330), view_height=hh2 * s2c); v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
             lay.add_text(f'TYPICAL SECTION GB / S.O.G   SCALE 1:{s2c}', height=3.0, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((xb, ys - hh2 - 6))
         # BBS overflow: own sheets
-        for ci in range(1, len(tabs_axis)):
-            no2 = nxt; nxt += 1
-            sh2 = dict(C['bbs_fields']); sh2.update(tab=f"{C.get('tab_prefix', '')}{no2} S.O.G {axis} BBS {ci + 1}", t2=f'SLAB ON GRADE - {axis} BBS {ci + 1}/{len(tabs_axis)}', seq=str(no2), dwg=C['bbs_dwg'].format(no=no2, rev=sh2.get('rev', '00')))
+        rest = list(range(1 if side else 0, len(tabs_axis))); extra = []
+        ncol = max(1, int((M.get('title_x', 715) - 14) // (W * K + 14)))     # BBS parts side by side on a BBS sheet
+        for gi in range(0, len(rest), ncol):
+            no2 = nxt; nxt += 1; extra.append(no2)
+            sh2 = dict(C['bbs_fields']); sh2.update(tab=f"{C.get('tab_prefix', '')}{no2} S.O.G {axis} BBS", t2=f'SLAB ON GRADE - {axis}-DIRECTION BBS', seq=str(no2), dwg=C['bbs_dwg'].format(no=no2, rev=sh2.get('rev', '00')))
             lay2, _ = new_sheet(sh2); tabs.append(sh2['tab'])
-            bxm, bym, hh = tabs_axis[ci]; Hp = hh * K
-            v = lay2.add_viewport(center=(14 + Wp / 2, 580 - Hp / 2), size=(Wp + 4, Hp + 4), view_center_point=(bxm + W / 2, bym - hh / 2), view_height=(Hp + 4) / K); v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
-        report.append(f'S.O.G {axis}: sheet {no}' + (f' + BBS sheets {nxt - len(tabs_axis) + 1}..{nxt - 1}' if len(tabs_axis) > 1 else ''))
+            for j, ci in enumerate(rest[gi:gi + ncol]):
+                bxm, bym, hh = tabs_axis[ci]; Hp2 = hh * K; x2 = 14 + j * (W * K + 14)
+                v = lay2.add_viewport(center=(x2 + W * K / 2, 580 - Hp2 / 2), size=(W * K + 4, Hp2 + 4), view_center_point=(bxm + W / 2, bym - hh / 2), view_height=(Hp2 + 4) / K); v.dxf.status = 1; v.dxf.layer = 'GB-VPORT'
+        if not side:
+            lay.add_text(f'BBS OF THE {axis} BARS: SHEET {", ".join(map(str, extra))}', height=3.0, dxfattribs={'layer': 'GB-TITLE', 'style': TXT_STYLE}).set_placement((xb, 594 - 14 - 4))
+        report.append(f'S.O.G {axis}: sheet {no}' + (f' + BBS sheets {extra}' if extra else ''))
     tot = sum(sum(t_.values()) for _, t_ in summary)
     report.append(f'S.O.G steel: {tot:,.1f} kg')
     C['_sog_total'] = tot
     return tabs
 
 
-def _section(msp, x, y, t, d, s, cov, covb, top, axis, TA, TXT_STYLE, LV, G):
+def _section(msp, x, y, t, d, s, cov, covb, top, axis, TA, TXT_STYLE, LV, G, backfill=None):
     """typical section: GB 200 x 700 cut, S.O.G t thick on both sides at the GB top, bottom mesh, the 50 gaps"""
     gb_w, gb_h = 200, 700; L = 1400
     A = lambda u, v: (x + u, y + v)                               # u along the section, v up from the S.O.G top (0)
@@ -236,10 +244,15 @@ def _section(msp, x, y, t, d, s, cov, covb, top, axis, TA, TXT_STYLE, LV, G):
     h.paths.add_polyline_path([A(g0, 0), A(g1, 0), A(g1, -gb_h), A(g0, -gb_h)], is_closed=True)
     tx(f'S.O.G {t} THK', 100, 60, 65)
     tx(f'T.O.GB = T.O.S.O.G {LV(top)}', g1 + 150, 60, 60)
-    tx(f'BARS END {cov} FROM THE GB FACES', 100, -t - 300, 55)
-    tx(f'T{d}@{s} BOTTOM MESH (BOTH WAYS)', g1 + 150, -t - 160, 55)
-    tx(f'BOTTOM COVER {covb}', g1 + 150, -t - 260, 55)
+    tx(f'BARS END {cov} FROM THE GB FACES', 100, -t - 300 if not backfill else 200, 55)
+    tx(f'T{d}@{s} BOTTOM MESH (BOTH WAYS)', g1 + 150, -t - 160 if not backfill else 200, 55 if not backfill else 48)
+    if not backfill: tx(f'BOTTOM COVER {covb}', g1 + 150, -t - 260, 55)
     tx('GB (SEE GB SECTIONS)', g0 - 150, -gb_h - 120, 55)
+    if backfill:                                                      # backfill under the slab: shown, thickness not given
+        for u0, u1 in ((0, g0), (g1, g1 + L)):
+            h = msp.add_hatch(color=8, dxfattribs={'layer': 'SOG-SEC'}); h.set_pattern_fill('AR-SAND', scale=4)
+            h.paths.add_polyline_path([A(u0, -t), A(u1, -t), A(u1, -t - 350), A(u0, -t - 350)], is_closed=True)
+        tx(backfill, 100, -930, 50)
     for u0, u1, v in ((g0 - cov, g0, yb - 90), (g1, g1 + cov, yb - 90)):
         pl([(u0, v), (u1, v)], 'GB-DIM'); pl([(u0, v - 25), (u0, v + 25)], 'GB-DIM'); pl([(u1, v - 25), (u1, v + 25)], 'GB-DIM')
     tx(str(cov), g0 - cov / 2, yb - 160, 45, TA.MIDDLE_CENTER); tx(str(cov), g1 + cov / 2, yb - 160, 45, TA.MIDDLE_CENTER)
