@@ -340,6 +340,7 @@ def draw_long(ms, ln, cols, u_lo=None, u_hi=None, detail=False):
     if ln.L.get('starters') and col_st:                            # chain of the starter positions + zone, the projection
         us_ = sorted(u for u, _ in ln.L['starters']); ref = next((q['u0'] for q in ln.sup if q.get('core')), ln.len)
         z0 = ref - ln.L['starter_zone']; yd = top + ln.L['starter_lap'] + th * 1.6
+        if ln.L.get('starter_from') == 'a': z0 = ln.L['starter_face_abs'] - ln.L['a']; ref = z0 + ln.L['starter_zone']   # zone from the start face
         pts_ = [z0] + us_ + [ref]
         for a_, b_ in zip(pts_, pts_[1:]): ms.dim((a_, top), (b_, top), (a_, yd), text=str(round(b_ - a_)))
         ms.dim((z0, top), (ref, top), (z0, yd + th * 2.6), text=f"{round(ref - z0)} (STAIR STARTER ZONE)")
@@ -613,7 +614,9 @@ def beam_ends(l, lines, sched):
     for end in ('a', 'b'):
         e = l[end]
         if any(q['s0'] - 60 <= e <= q['s1'] + 60 for q in l['sup']): continue
-        hits = [q for q in lines if q['o'] != l['o'] and abs(q['c'] - e) <= q['w'] / 2 + 80 and q['a'] - 80 <= l['c'] <= q['b'] + 80]
+        hits = [q for q in lines if q['o'] != l['o'] and abs(q['c'] - e) <= q['w'] / 2 + 80 and q['a'] - 80 - l['w'] / 2 <= l['c'] <= q['b'] + 80 + l['w'] / 2]
+        if not hits:                                                     # drawing gap up to 200 at the end (e.g. a stair beam): nearest beam
+            hits = sorted([q for q in lines if q['o'] != l['o'] and abs(q['c'] - e) <= q['w'] / 2 + 200 and q['a'] - 80 <= l['c'] <= q['b'] + 80], key=lambda q: abs(q['c'] - e))
         if not hits: return None
         q = hits[0]; s0, s1 = q['c'] - q['w'] / 2, q['c'] + q['w'] / 2
         l['sup'].append(dict(lab=f"{typ(q)} {q['w']}x{sched.get(typ(q), {}).get('h', 700)} (SUPPORTING BEAM)", s0=s0, s1=s1, beam=True))
@@ -670,24 +673,26 @@ def draw_starter_section_col(ms, ss, label):
 
 
 def draw_starter_plan_col(ms, ss, ref_face_u):
-    """the starter zone along the beam (plan): two rows of bars at the beam faces, positions and zone dimensioned."""
+    """the starter zone along the beam (plan): two rows of bars at the beam faces, positions and zone dimensioned.
+    The reference face is the core (zone before it) or, with starter_from 'a', the supporting beam at the start (zone after it)."""
     th = ms.th; ln = ss.ln; W = ln.w
-    us = sorted(u for u, _ in ln.L['starters']); z0 = ref_face_u - ss.zone
-    u0, u1 = z0 - 700, ref_face_u + 300
+    d = -1 if ln.L.get('starter_from') == 'a' else 1
+    us = sorted(u for u, _ in ln.L['starters']); z0 = ref_face_u - d * ss.zone
+    u0, u1 = z0 - d * 700, ref_face_u + d * 300
     ms.pl([(u0, 0), (ref_face_u, 0)], 'GB-CONC'); ms.pl([(u0, W), (ref_face_u, W)], 'GB-CONC')
     ms.brk((u0, -150), (u0, W + 150))
     ms.pl([(ref_face_u, -300), (ref_face_u, W + 300)], 'GB-CONC')
     ms.hatch([(ref_face_u, -300), (u1, -300), (u1, W + 300), (ref_face_u, W + 300)], 'GB-HATCH', 'ANSI31', 25)
-    ms.tx('CORE 1 WALL', ref_face_u + 40, W + 400, h=th * 0.8)
+    ms.tx('CORE 1 WALL' if d > 0 else 'SUPPORTING BEAM', min(ref_face_u, u1) + 40, W + 400, h=th * 0.8)
     c_ = COVER + ln.p['ds']
-    e_ = ms.pl([(u0 + 100, c_), (ref_face_u - 40, c_), (ref_face_u - 40, W - c_), (u0 + 100, W - c_)], 'GB-STIR', w=5)
+    e_ = ms.pl([(u0 + d * 100, c_), (ref_face_u - d * 40, c_), (ref_face_u - d * 40, W - c_), (u0 + d * 100, W - c_)], 'GB-STIR', w=5)
     for u in us:
         for yv in (c_ + ss.d / 2, W - c_ - ss.d / 2): ms.circle(u, yv, ss.d / 2 + 4, 'GB-STARTER', fill=True)
-    pts_ = [z0] + us + [ref_face_u]
+    pts_ = sorted([z0] + us + [ref_face_u])
     for a_, b_ in zip(pts_, pts_[1:]): ms.dim((a_, 0), (b_, 0), (a_, -th * 3), text=str(round(b_ - a_)))
-    ms.dim((z0, 0), (ref_face_u, 0), (z0, -th * 6), text=f"{round(ss.zone)} (STAIR STARTER ZONE)")
-    ms.tx(f"{ln.typ} {W}x{ln.h} (PLAN)", u0 + 100, W + th * 0.6, h=th * 0.8)
-    ms.tx(f"{ss.n} T{ss.d} STAIR STARTER BARS: {ss.npos} POSITIONS @{ss.s} x {ss.per_pos} (AT BOTH FACES)", u0 + 100, -th * 9.5, 'GB-STARTER', h=th * 0.8)
+    ms.dim((min(z0, ref_face_u), 0), (max(z0, ref_face_u), 0), (min(z0, ref_face_u), -th * 6), text=f"{round(ss.zone)} (STAIR STARTER ZONE)")
+    ms.tx(f"{ln.typ} {W}x{ln.h} (PLAN)", min(u0, ref_face_u) + 100, W + th * 0.6, h=th * 0.8)
+    ms.tx(f"{ss.n} T{ss.d} STAIR STARTER BARS: {ss.npos} POSITIONS @{ss.s} x {ss.per_pos} (AT BOTH FACES)", min(u0, ref_face_u) + 100, -th * 9.5, 'GB-STARTER', h=th * 0.8)
 
 
 def draw_starter_section(ms, ss, label):
@@ -989,7 +994,8 @@ def main(lines_json, cfg_json, out):
             gl = next(l_ for s__, l_ in built if s__['line'] == sheet['line'])
             ss = StarterSet(gl, **C.get('starter_bar', {}))
             ox = C['model_origin'][0]
-            ref = next(q['u0'] for q in gl.sup if q.get('core'))
+            ref = (gl.L['starter_face_abs'] - gl.L['a']) if gl.L.get('starter_from') == 'a' else next(q['u0'] for q in gl.sup if q.get('core'))
+            dz = -1 if gl.L.get('starter_from') == 'a' else 1
             lay, sc = new_sheet(sheet)
             X0, Y1 = C.get('layout', {}).get('x0', 14), 594 - 14
             px = ox + 4000
@@ -1002,11 +1008,11 @@ def main(lines_json, cfg_json, out):
                 vp(lay, X0 + wm / s1 / 2, Y1 - 8 - hm / s1 / 2, wm / s1, hm / s1, ox - xl0 + wm / 2, oy - 380 + hm / 2, s1,
                    f"SECTION {sheet['sec']}-{sheet['sec']}  -  STAIR STARTER BARS {ss.n} T{ss.d} ({gl.typ} {gl.w}x{gl.h})   SCALE 1:{s1}")
                 wp, hp = ss.zone + 1000 + 300 + 400, gl.w + 2400
-                vp(lay, X0 + wm / s1 + 25 + wp / s2 / 2, Y1 - hp / s2 / 2, wp / s2, hp / s2, px + ref - ss.zone - 700 + wp / 2, oy + gl.w + 800 - hp / 2, s2,
+                vp(lay, X0 + wm / s1 + 25 + wp / s2 / 2, Y1 - hp / s2 / 2, wp / s2, hp / s2, px + (ref - ss.zone - 700 + wp / 2 if dz > 0 else ref - 300 + wp / 2), oy + gl.w + 800 - hp / 2, s2,
                    f"STAIR STARTER BARS - PLAN ALONG THE {gl.typ} (SECTION {sheet['sec']}-{sheet['sec']})   SCALE 1:{s2}")
                 hmax = max(hm / s1, hp / s2)
                 notes = [f"NOTES (SECTION {sheet['sec']}-{sheet['sec']}, STAIR STARTER BARS):",
-                         f"1. {ss.n} T{ss.d} = {ss.npos} POSITIONS @{ss.s} x {ss.per_pos} BARS (ONE AT EACH FACE) IN THE {ss.zone} ZONE NEXT TO THE CORE, IN THE {gl.typ} (SECTION {sheet.get('parent_sec', '')}).",
+                         f"1. {ss.n} T{ss.d} = {ss.npos} POSITIONS @{ss.s} x {ss.per_pos} BARS (ONE AT EACH FACE) IN THE {ss.zone} ZONE NEXT TO THE {'CORE' if dz > 0 else 'SUPPORTING BEAM'}, IN THE {gl.typ} (SECTION {sheet.get('parent_sec', '')}).",
                          f"2. SHAPE AS THE COLUMN STARTERS: FOOT {ss.leg} AT THE BOTTOM OF THE BEAM, {ss.inside} UP THROUGH THE BEAM, PROJECTING A LAP OF {ss.lap_d}d = {ss.lap}; L = {ss.Lc}."]
             else:
                 thx = TXT * XSCALE
