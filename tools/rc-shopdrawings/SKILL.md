@@ -896,7 +896,20 @@ the state in files, never only in the conversation:
 
 ### 12a. Grade beams per ZONE in section sheets (`gb_zone/`: `extc.py` → `build.py` → `post_r02.py` [+ `post_curved.py`])
 Generic, config-driven (`GBZ_CONFIG` = one JSON with the schedule, title block, numbering and the zones - see
-`gb_zone/gbzone.example.json`). Per zone: sheets `FIRST` CONC DIM, `+1` PLAN, `+2` SOG PLAN, `+3` TYPICAL DETAILS,
+`gb_zone/gbzone.example.json`).
+```
+export GBZ_CONFIG=prj_gb.json                     # copy gb_zone/gbzone.example.json, type the schedule / frame / zones
+python3 gb_zone/extc.py z1                        # every part of the zone: rotate (base_deg + extra) + extract lines
+python3 gb_zone/curves.py z1 --ext 400            # only when the zone has curved beams -> z1/curves.json
+python3 gb_zone/build.py z1 30100                 # group, sections, BBS, post (CONC DIM / SOG / TYPICAL / CURVED) -> out/
+```
+Zone inputs in `<root>/<zone>/`: `src/<zone>.dxf` (labels `*`→`X`), optional `eng_marks.json`, `line_edits.json`,
+`eng_add.json`, `sog_eng.json`, `secnames.json`, `curves.json`. Hand fixes of an extraction go into
+`<zone>_<part>/lines.json` (and are noted in the zone notes). Flags per zone (defaults = current rules):
+`strict_grouping`, `hook`, `free_ends`, `drop_pieces`, `pack_detail`, `bubbles_off_texts`, `use_eng_marks`,
+`curves`, `curve_marks`, `merge_c_tol`, `scale`. `gb_zone/work/gen_gbsec.py` is this pipeline's own version (the
+top-level `gen_gbsec.py` stays for the older per-area jobs - their output differs). Verified: the generic version
+reproduces three delivered zones exactly (layouts, entities, texts with positions). Per zone: sheets `FIRST` CONC DIM, `+1` PLAN, `+2` SOG PLAN, `+3` TYPICAL DETAILS,
 (`+4` CURVED BEAMS when the zone has curves), then one sheet per section, then the BBS sheets. Numbering runs on from
 the previous zone (renumber a zone when an earlier zone grows; never two zones on one number).
 - **Read the zone file first** (render it): beam directions (angle histogram of the beam lines), labels, column
