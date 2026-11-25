@@ -196,7 +196,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     f is then the representative footing used for the drawing."""
     """col: schedule entry; f: footing entry from footings.json."""
     sh = Sheet(doc, 0, -idx * 32000, meta)
-    draw_legend(sh, 21000, 27900)
+    NOGB = bool(PRJ.get('neck_no_gb'))
+    if not NOGB: draw_legend(sh, 21000, 27900)
     from gen import zone_levels, footing_levels
     ZL = zone_levels(ZONE)
     fl, tpc, tof = footing_levels(f['h'], ZL)
@@ -224,6 +225,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     # engineer (Oct 2026): STARTER bars anchored in the footing (Ld) and out 65 d above T.O.F; separate straight NECK
     # bars from T.O.F up to T.O.GB + 65 d (lapped with the starters above the footing, with the column above the GB)
     vert = emb + (Hn if single else 0) + lp
+    if single and PRJ.get('neck_fixed_vert'):                   # neck_fixed_vert (CB 24/11): neck bar FIXED = neck_foot + vertical (e.g. 400 + 2600 = 3000)
+        vert = int(PRJ['neck_fixed_vert']); lp = vert - emb - Hn          # what is left above T.O.GB (lap with the column bars)
+        if NOGB: Hn = vert - emb; lp = 0                                   # neck_no_gb: no GB on the neck section - the neck shown up to the bar end
     Lv = int(round((vert + foot) / 10) * 10)
     model = []                                                    # (mesh d, vertical foot->T.O.GB, L, mark, no. of columns, footings)
     if members and single:
@@ -232,14 +236,15 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             dm = max(fm['bot'][1], fm['bot'][3]); g = grp.setdefault(dm, [0, []]); g[0] += nm; g[1].append(f"{fm['name']} ({nm})")
         for dm in sorted(grp):
             vv = round((tgb - (footing_levels(f['h'], ZL)[1])) * 1000) - (FC + dm * 2)      # T.O.PC -> T.O.GB - cover - mesh
-            model.append(dict(dm=dm, v=vv, L=int(round(foot + vv + lp)), no=grp[dm][0], fts=grp[dm][1]))
+            if PRJ.get('neck_fixed_vert'): vv = int(PRJ['neck_fixed_vert'])
+            model.append(dict(dm=dm, v=vv, L=int(round(foot + vv + (0 if PRJ.get('neck_fixed_vert') else lp))), no=grp[dm][0], fts=grp[dm][1]))
         if PRJ.get('neck_unify_length'):        # engineer (BLSC): ONE cutting length per column type = the longest; the
             Lu = max(m_['L'] for m_ in model)    # extra length goes into the lap above T.O.GB (lap >= 65d everywhere)
             mk_u = bl.add(d, ('L', foot, Lu - foot, 0), Lu, col['n'], sum(m_['no'] for m_ in model), 'V')
             for m_ in model: m_['lap'] = Lu - foot - m_['v']; m_['L'] = Lu; m_['mk'] = mk_u
         else:
             for m_ in model:
-                m_['lap'] = lp; m_['mk'] = bl.add(d, ('L', foot, m_['v'] + lp, 0), m_['L'], col['n'], m_['no'], 'V')
+                m_['lap'] = 0 if PRJ.get('neck_fixed_vert') else lp; m_['mk'] = bl.add(d, ('L', foot, m_['L'] - foot, 0), m_['L'], col['n'], m_['no'], 'V')
         rep_ = next(m for m in model if m['dm'] == max(f['bot'][1], f['bot'][3]))
         mv, Lv = rep_['mk'], rep_['L']; no = sum(nm for _, nm in members)
         if PRJ.get('neck_unify_length'): vert = Lv - foot
@@ -324,8 +329,12 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     if model:
         nft = sum(len(m_['fts']) for m_ in model)
         sh.text(f"ON {nft} FOOTING TYPES - {no} COLUMNS (LIST BELOW / KEY PLAN)", 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
-        words = ', '.join(x for m_ in model for x in m_['fts']).split(' '); lines_, cur_ = [], ''
+        txt_ = 'FOOTINGS: ' + ', '.join(x for m_ in model for x in m_['fts'])
+        if col.get('zone_tot'): txt_ = 'TOTAL ' + col['name'] + ' PER ZONE: ' + ', '.join(f"{z_} = {n_}" for z_, n_ in sorted(col['zone_tot'].items())) + ' |  ' + txt_
+        if col.get('ids'): txt_ += ' |  COLUMNS OF THIS MODEL (GRID, NEAREST AXES): ' + ', '.join(col['ids'])
+        words = txt_.split(' '); lines_, cur_ = [], ''
         for w_ in words:
+            if w_ == '|': lines_.append(cur_); cur_ = ''; continue
             if len(cur_) + len(w_) > 95: lines_.append(cur_); cur_ = ''
             cur_ += w_ + ' '
         lines_.append(cur_)
@@ -338,7 +347,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     if col.get('note'):
         t_ = sh.text(col['note'], 2000, 25800, ST['note'], 'S-SEC', maxw=18000)   # project remark (RFI)
         if col.get('check'): t_.dxf.color = 1                                   # conflict in the schedule: red
-    sh.text((f"NO={no}   T.O.F VAR   T.O.GB {tgb:+.2f}   NECK H = VAR   FOOTING THICKNESS VAR" if model else
+    sh.text((f"NO={no}" if NOGB else f"NO={no}   T.O.F VAR   T.O.GB {tgb:+.2f}   NECK H = VAR   FOOTING THICKNESS VAR") if model else (f"NO={no}" if NOGB else
              f"NO={no}   T.O.F {tof:+.2f}   " + ("COLUMN STARTS AT THE FOOTING (T.O.F = T.O.SLAB): STARTER BARS, NO NECK" if starter else
                                                f"T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}")), 2000, 27100, ST['sub'], 'S-SEC')
 
@@ -368,7 +377,7 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
         gb_h = 200
         for sx in (-1, 1):
             sh.pline([Q(sx * cw / 2, top), Q(max(fxl - 600, -(ex - 1500) / k) if sx < 0 else min(fxr + 600, (22300 - ex) / k), top)], 'S-SEC')
-    else:
+    elif not NOGB:
         for sx in (-1, 1):                                           # grade beams framing in (dashed outline)
             sh.pline([Q(sx * cw / 2, top), Q(sx * (cw / 2 + 1500), top), Q(sx * (cw / 2 + 1500), top - gb_h), Q(sx * cw / 2, top - gb_h)], 'S-SEC')
     sh.break_line(Q(-cw / 2 - 300, top + lp + 200), Q(cw / 2 + 300, top + lp + 200))            # break line of the column above
@@ -409,18 +418,20 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
         sh.text('A', Q(sx_ * (cw / 2 + 650), 0)[0], Q(0, ya + 220)[1], 300, 'S-SEC', align=TA.BOTTOM_CENTER)
     # dims and levels
     XD = min(cw / 2 + 2500, (20800 - ex) / k)                       # dimension line clear of the call-outs, of section A-A and the tie sketches
-    if not starter:
+    if not starter and not NOGB:
         sh.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 400, f['h']), angle=90, text='VAR' if model else f'{Hn}')
-    sh.dim(Q(XD, top), Q(XD, top + lp), Q(XD + 400, top), angle=90, text=f'LAP {lp}' + (' MIN' if model and PRJ.get('neck_unify_length') else ''))
+    if not NOGB: sh.dim(Q(XD, top), Q(XD, top + lp), Q(XD + 400, top), angle=90, text=f'LAP {lp}' + (' MIN' if model and PRJ.get('neck_unify_length') else ''))
     if not (starter or single):
         sh.dim(Q(XD - 900, f['h']), Q(XD - 900, f['h'] + lp), Q(XD - 500, f['h']), angle=90, text=f'LAP {lp}')
-    if single:                                                       # vertical part of the bar: foot -> T.O.GB
+    if single and not NOGB:                                          # vertical part of the bar: foot -> T.O.GB
         sh.dim(Q(XD - 900, yb), Q(XD - 900, top), Q(XD - 500, yb), angle=90, text=f'{top - yb}')
-    sh.text('FIRST TIE 50 FROM T.O.F' + ('' if starter else ' / T.O.GB'), Q(-cw / 2, 0)[0] - 200, Q(0, f['h'] + 60)[1], ST['note'] * 0.8, 'S-DIM', align=TA.BOTTOM_RIGHT)
-    sh.dim(Q(fxl, 0), Q(fxl, f['h']), Q(fxl - 400, 0), angle=90, text='VAR (FOOTING THICKNESS)' if model else str(f['h']))
+    sh.text('FIRST TIE 50 FROM T.O.F' + ('' if (starter or NOGB) else ' / T.O.GB'), Q(-cw / 2, 0)[0] - 200, Q(0, f['h'] + 60)[1], ST['note'] * 0.8, 'S-DIM', align=TA.BOTTOM_RIGHT)
+    if model and NOGB: sh.dim(Q(fxr, 0), Q(fxr, f['h']), Q(fxr + 400, 0), angle=90, text='VAR (FOOTING THICKNESS)')
+    else: sh.dim(Q(fxl, 0), Q(fxl, f['h']), Q(fxl - 400, 0), angle=90, text='VAR (FOOTING THICKNESS)' if model else str(f['h']))
     marks_ = ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F = T.O.SLAB {tof:+.2f}")) if starter else \
              ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], 'T.O.F VAR' if model else f"T.O.F {tof:+.2f}"),
-              (top - gb_h, f"B.O.GB {tgb - gb_h / 1000:+.2f}"), (top, f"T.O.GB {tgb:+.2f}"))
+              ) + ((() if NOGB else ((top - gb_h, f"B.O.GB {tgb - gb_h / 1000:+.2f}"), (top, f"T.O.GB {tgb:+.2f}"))))
+    if ZL.get('no_print'): marks_ = ((-100, 'F.L (B.O.PC) - LEVELS: ' + PRJ.get('levels_rfi', 'RFI')), (0, 'T.O.PC'), (f['h'], 'T.O.F'))
     for yy, lab in marks_:
         xl = max(Q(fxl - 1600, 0)[0], 1300)                      # level marks stay on the sheet (wide footings)
         sh.line((xl, Q(0, yy)[1]), Q(fxl - 150, yy), 'S-DIM')
@@ -431,8 +442,8 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
         sh.text(f"(FOOT {foot} {'TURNED INWARDS ' if inward else ''}ON THE BOTTOM MESH)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
     elif single:
         sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V') + '  NECK BARS', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
-        sh.text(f"(FOOT {foot} ON THE BOTTOM MESH, UP TO T.O.GB + LAP {lp} = {LAPN}d)", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
-        if model: sh.text('LAP ABOVE T.O.GB BY THE FOOTING MESH: SEE THE TABLE ABOVE' if PRJ.get('neck_unify_length') else 'LENGTH BY THE FOOTING MESH: SEE THE TABLE ABOVE', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 700, ST['note'])
+        if not NOGB: sh.text((f"(FOOT {foot} + {vert} = {foot + vert} FIXED, {lp} ABOVE T.O.GB)" if PRJ.get("neck_fixed_vert") else f"(FOOT {foot} ON THE BOTTOM MESH, UP TO T.O.GB + LAP {lp} = {LAPN}d)"), Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
+        if model and not NOGB: sh.text('LAP ABOVE T.O.GB BY THE FOOTING MESH: SEE THE TABLE ABOVE' if PRJ.get('neck_unify_length') else 'LENGTH BY THE FOOTING MESH: SEE THE TABLE ABOVE', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 700, ST['note'])
     else:
         sh.ctext(mn, callout(col['n'], d, mn, Ln, layer='V') + '  NECK BARS', Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1], ST['call'])
         sh.text(f"(T.O.F TO T.O.GB + LAP {lp})", Q(cw / 2 + 200, 0)[0], Q(0, top + lp * 0.6)[1] - 400, ST['note'])
@@ -453,9 +464,9 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
     sh.pline([B_(fx_, 0), B_(0, 0), B_(0, vert)], 'S-RFT-TOP', max(d * kb, 30), r=3 * d * kb)
     sh.text(str(foot), *B_(fx_ / 2, -120 / kb * 1.0), ST['len'], 'S-DIM', align=TA.TOP_CENTER)
     sh.text(str(vert), *B_(-140 / kb, vert / 2), ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-    for yy, t in (((emb, f'T.O.F = T.O.SLAB (IN FOOTING {emb})'),) if starter else ((emb, 'T.O.F (VAR)' if model else f'T.O.F (IN FOOTING {emb})'), (emb + Hn, f'T.O.GB ({emb + Hn} FROM THE FOOT' + (f", MESH T{max(f['bot'][1], f['bot'][3])})" if model else ')'))) if single else ((emb, f'T.O.F (IN FOOTING {emb})'),)):
+    for yy, t in (((emb, f'T.O.F = T.O.SLAB (IN FOOTING {emb})'),) if starter else ((emb, 'T.O.F (VAR)' if model else f'T.O.F (IN FOOTING {emb})'),) if NOGB else ((emb, 'T.O.F (VAR)' if model else f'T.O.F (IN FOOTING {emb})'), (emb + Hn, f'T.O.GB ({emb + Hn} FROM THE FOOT' + (f", MESH T{max(f['bot'][1], f['bot'][3])})" if model else ')'))) if single else ((emb, f'T.O.F (IN FOOTING {emb})'),)):
         sh.line(B_(-60, yy), B_(380 / kb, yy), 'S-DIM'); sh.text(t, B_(420 / kb, 0)[0], B_(0, yy)[1] - 60, ST['note'], 'S-DIM')
-    sh.text(f'LAP {lp}', B_(420 / kb, 0)[0], B_(0, emb + (Hn if single else 0) + lp / 2)[1], ST['note'], 'S-DIM')
+    if not NOGB: sh.text(f'LAP {lp}', B_(420 / kb, 0)[0], B_(0, emb + (Hn if single else 0) + lp / 2)[1], ST['note'], 'S-DIM')
     sh.ctext(mv, callout(col['n'], d, mv, Lv, layer='V'), bx0, by0 + vert * kb + 700, ST['call'])
     sh.text(f'L = {foot} + {vert} = {Lv}', bx0, by0 + vert * kb + 300, ST['note'], 'S-RFT-TXT')
     if not (starter or single):                                      # the neck bar beside it, from T.O.F
@@ -480,12 +491,16 @@ def draw_neck(doc, idx, col, f, meta, bl, no, members=None):
             f"TOTAL {sum(t.get('tot', 0) for t in ties[:1])} SETS FOR {no} COLUMNS (NECK + FOOTING DEPTH)", Q(cw / 2 + 200, 0)[0], yt_ - 260, ST['note'], maxw=(XD - cw / 2 - 350) * k)
     if model:                                                   # neck bar length by the footing's bottom mesh
         tx0, ty0 = 7800, 24600 - len(lines_) * 270 - 700
-        sh.text(('ONE CUTTING LENGTH FOR THE TYPE (THE LONGEST); EXTRA LENGTH = LONGER LAP ABOVE T.O.GB' if PRJ.get('neck_unify_length') else 'NECK BAR LENGTH BY FOOTING BOTTOM MESH')
+        if NOGB:
+            sh.text(f'NECK BARS: ONE SHAPE FOR ALL FOOTINGS - FOOT {foot} ON THE BOTTOM MESH + {vert} VERTICAL = {foot + vert} (FIXED)', tx0, ty0, ST['note'], 'S-SEC', maxw=13500)
+            sh.ctext(model[0]['mk'], f"{col['n'] * sum(m_['no'] for m_ in model)} T {d}-{foot + vert}   ({sum(m_['no'] for m_ in model)} COL. x {col['n']})", tx0, ty0 - 500, ST['note'] * 1.2, maxw=13500)
+        else:
+          sh.text(('ONE CUTTING LENGTH FOR THE TYPE (THE LONGEST); EXTRA LENGTH = LONGER LAP ABOVE T.O.GB' if PRJ.get('neck_unify_length') else 'NECK BAR LENGTH BY FOOTING BOTTOM MESH')
                 + ' (T.O.PC TO T.O.GB = %d)' % round((tgb - footing_levels(f['h'], ZL)[1]) * 1000), tx0, ty0, ST['note'], 'S-SEC', maxw=13500)
-        for j, m_ in enumerate(model):
+          for j, m_ in enumerate(model):
             yy = ty0 - 500 - j * 450
             sh.ctext(m_['mk'], f"{col['n'] * m_['no']} T {d}-{m_['L']}  MESH T{m_['dm']}: FOOT {foot} + {m_['v']} (TO T.O.GB) + LAP {m_['lap']}" + (f" (= {lp} + {m_['lap'] - lp})" if m_['lap'] > lp else '') + f"   ({m_['no']} COL.)", tx0, yy, ST['note'] * 1.2, maxw=13500)
-    sh.text(col.get('elev_title') or ('ELEVATION  (STARTER BARS - THE COLUMN TIES CONTINUE ABOVE THE SLAB)' if starter else 'ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)'), Q(0, 0)[0], Q(0, -100)[1] - 700, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
+    sh.text(col.get('elev_title') or ('ELEVATION  (STARTER BARS - THE COLUMN TIES CONTINUE ABOVE THE SLAB)' if starter else ('SECTION  -  FOOTING + COLUMN NECK' if NOGB else 'ELEVATION  (COLUMN TIES CONTINUE THROUGH THE GB JOINT)')), Q(0, 0)[0], Q(0, -100)[1] - 700, ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
 
     # ---------- SECTION A-A 1:10 (k=10) ----------
     ks = min(10.0, 9000 / max(col['b'], col['h']))

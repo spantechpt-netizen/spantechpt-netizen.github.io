@@ -217,7 +217,7 @@ def draw_sheet(doc, idx, f, meta, bl):
     # chairs only carry a top mesh: none when the footing has no top reinforcement (engineer)
     sb['mk_ch'] = bl.add(16, ('CH', sb['ch_foot'], sb['ch_h'], sb['ch_top']), sb['chair_L'], sb['chairs'], f['no'], 'CH') if f['top'][0] else None
     mk = lambda b: b['mk']
-    draw_legend(sh, 21000, 27900)
+    if not PRJ.get('no_legend'): draw_legend(sh, 21000, 27900)
     sh.text(f['name'], 2000, 27900, ST['name'], 'S-AXIS-TXT')
     xc_ = 2000 + len(f['name']) * ST['name'] * 0.9 + 800                 # thickness circle and NO= after the name
     sh.circle(xc_, 28150, 520, 'S-SEC'); sh.text(str(f['h']), xc_, 28150, 380, 'S-SEC', align=TA.MIDDLE_CENTER)
@@ -505,10 +505,14 @@ def draw_sheet(doc, idx, f, meta, bl):
     if 'founding' in lev or 'tof' in lev:
         fl, tpc, tof = footing_levels(h, lev)
         marks_ = [(-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (h, f"T.O.F {tof:+.2f}")]
+        if lev.get('no_print'): marks_ = [(-100, "F.L (B.O.PC) - LEVELS: " + PRJ.get("levels_rfi", "RFI")), (0, "T.O.PC"), (h, "T.O.F")]
         if 'top_gb' in lev and not strip and lev['top_gb'] > tof + 0.05:
             neck = lev['top_gb'] - tof
-            sh.text(f"NECK UP TO T.O.GB {lev['top_gb']:+.2f}", Q(cx1, 0)[0] + 300, Q(0, h + 560)[1], 170, 'S-DIM')
-            sh.text(f"NECK H = {mm(neck * 1000)}", Q(cx1, 0)[0] + 300, Q(0, h + 300)[1], 170, 'S-DIM')
+            if PRJ.get('neck_no_gb'):                        # neck_no_gb: no GB level on the drawings (unknown)
+                sh.text("COLUMN NECK", Q(cx1, 0)[0] + 300, Q(0, h + 560)[1], 170, 'S-DIM')
+            else:
+                sh.text(f"NECK UP TO T.O.GB {lev['top_gb']:+.2f}", Q(cx1, 0)[0] + 300, Q(0, h + 560)[1], 170, 'S-DIM')
+                sh.text(f"NECK H = {mm(neck * 1000)}", Q(cx1, 0)[0] + 300, Q(0, h + 300)[1], 170, 'S-DIM')
             for c_ in ccs: sh.break_line(Q(c_[0] - 150, h + 700), Q(c_[2] + 150, h + 700))     # break line on each neck
         for yy, lab in marks_:
             sh.line(Q(-1300, yy), Q(-150, yy), 'S-DIM')
@@ -642,7 +646,7 @@ def draw_adds(doc, idx, f, meta):
     """Additional bars written on the consultant's plan (ADD BOT / ADD TOP), Roya raft style: own panels on a sheet."""
     m2 = dict(meta); m2['dwg'] = meta['dwg'] + '-ADD'; m2['title'] = meta['title'].split('\n')[0] + f"\nADDITIONAL RFT - {f['name']}"
     sh = Sheet(doc, 0, -idx * 32000, m2)
-    draw_legend(sh, 21000, 27900)
+    if not PRJ.get('no_legend'): draw_legend(sh, 21000, 27900)
     sh.text(f"{f['name']}  ADDITIONAL REINFORCEMENT", 2000, 27900, ST['name'], 'S-AXIS-TXT')
     k = min(4.0, 14000 / f['W'], 14500 / f['L'])
     for kind, title, ox, oy in (('B', 'ADDITIONAL BOTTOM REINFORCEMENT (ADD BOT)', 2000, 9000), ('T', 'ADDITIONAL TOP REINFORCEMENT (ADD TOP)', 18200, 9000)):
@@ -689,7 +693,7 @@ if __name__ == '__main__':
         meta = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                     rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='AS SHOWN', prefix='SDW-STR-FDN')
         meta.update(PRJ.get('meta', {}))
-        meta['notes'] = project_notes('COVER FOOTINGS 70; PLAIN CONCRETE 100 UNDER FOOTINGS.', 'SIDE BARS INSIDE THE MAIN U-BARS; CH = CHAIRS (ONLY WITH A TOP MESH).')
+        meta['notes'] = project_notes(f'COVER FOOTINGS {COVER}; PLAIN CONCRETE 100 UNDER FOOTINGS.', 'SIDE BARS INSIDE THE MAIN U-BARS; CH = CHAIRS (ONLY WITH A TOP MESH).')
         kind_ = 'RAFT' if n.startswith('RAFT') else 'COMBINED FOOTING' if n.startswith('CF') else 'FOUNDATION'
         meta['title'] = f"STRUCTURAL {kind_}\nREINFORCEMENT - {n}  (NO={f['no']})"
         meta['dwg'] = f"{meta['prefix'].replace('GB', 'FDN')}-{n}"

@@ -34,9 +34,16 @@ def bars_of(ct):
         for x in xs:
             for y in ys:
                 if (x, y) != (xs[1], ys[1]): V.append((x, y, dc, 'C'))
+    TEN = ct.get('corner_n', 8) == 10
     for xs in ((e, t / 2, t - e), (W - e, W - t / 2, W - t + e)):
         for ys in ((e, t / 2, t - e), (H - e, H - t / 2, H - t + e)):
-            box(xs, ys)
+            if TEN and ys[0] == e:                          # corner_n 10: 10 bars at a base corner = 3 x 4 ring inside the corner tie
+                y4 = [e + (t - 2 * e) * i / 3 for i in range(4)]
+                for x in xs:
+                    for y in y4:
+                        if x in (xs[0], xs[2]) or y in (y4[0], y4[3]): V.append((x, y, dc, 'C'))
+            else:
+                box(xs, ys)
     ends = []
     for sgn, xe in ((1, R - e), (-1, W - R + e)):          # return ends: column at the end + one back on the inner face
         pts = [(xe, H - e), (xe, H - t / 2), (xe, H - t + e), (xe - sgn * 100, H - t + e)][:ct['end'][0]]
@@ -79,10 +86,15 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     ZL = zone_levels(ZONE)
     fl, tpc, tof = footing_levels(f['h'], ZL)
     tgb = ZL['top_gb']
-    Hn = max(0, round((tgb - tof) * 1000))
-    starter = Hn == 0                   # wall starts at the footing (basement): starter bars, no neck
     yb = FC + max(f['bot'][1], f['bot'][3]) * 2              # verticals stand on the bottom mesh
     emb = f['h'] - yb
+    FIX = bool(PRJ.get('neck_fixed_vert'))                   # neck_fixed_vert: one bar = neck_foot + fixed vertical, as the column necks
+    NOP = bool(ZL.get('no_print'))
+    if FIX:
+        Hn = int(PRJ['neck_fixed_vert']) - emb; starter = True
+    else:
+        Hn = max(0, round((tgb - tof) * 1000))
+        starter = Hn == 0                   # wall starts at the footing (basement): starter bars, no neck
     V, nw, outer, inner = bars_of(ct)
     # ---- marks
     # vertical bars as the column necks (engineer, Oct 2026): STARTER from the footing (foot on the bottom mesh,
@@ -94,6 +106,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
         LD = LDN * d; lp = LAPN * d
         foot = max(12 * d, 300, int(math.ceil((LD - emb) / 10) * 10))
         vert = emb + lp
+        if FIX: foot = int(PRJ.get('neck_foot', 400)); vert = int(PRJ['neck_fixed_vert']); lp = 0
         Lv = int(round((vert + foot) / 10) * 10)
         Ln = int(round((Hn + lp) / 10) * 10)
         dv[kind] = dict(d=d, n=n, foot=foot, vert=vert, L=Lv, LD=LD, lp=lp, Ln=Ln,
@@ -104,7 +117,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     # horizontal bars (approved core detail): per wall two U-bars (outer face + inner face), legs across the wall,
     # long side = wall length - 2 covers; the walls' U-bars overlap at the corners
     lu = t - 2 * CC
-    walls = [('BACK WALL', W, 2), ('SIDE WALL', H, 4), ('RETURN', R, 4)]
+    walls = [('BACK WALL', W, 2), ('SIDE WALL', H, 4)] + ([('RETURN', R, 4)] if R > t else [])
     hu = {}
     for wn, Lw, k_ in walls:
         Lb = Lw - 2 * CC
@@ -127,11 +140,14 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     meta = dict(meta0); meta['title'] = f'CORE NECKS - {name} ON {f["name"]}\nPLAN SECTION'
     meta['dwg'] = f"{meta['prefix']}-{name.replace(' ', '')}-{f['name']}-1"
     s1 = Sheet(doc, 0, -idx * 32000, meta)
-    draw_legend(s1, 21000, 27900)
-    s1.text(f'{"STARTER BARS" if starter else "NECK"} {name}  {W}x{H}  t={t}  ON  {f["name"]}', 2000, 27900, ST['name'], 'S-AXIS-TXT')
-    s1.text(f'NO={no}   T.O.F {tof:+.2f}   ' + ('WALL STARTS AT THE FOOTING (T.O.F = T.O.SLAB): STARTER BARS, NO NECK' if starter else f'T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}'), 2000, 27100, ST['sub'], 'S-SEC')
-    s1.text(f'FOOTING {f["name"]}  h={f["h"]}   (SCHEDULE: SHEAR WALLS SCHEDULE - FROM FOUNDATION TO UPPER ROOF)', 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
-    k = 4.0; ox, oy = 3200, 25200 - H * k
+    if not PRJ.get('no_legend'): draw_legend(s1, 21000, 27900)
+    s1.text(f'{"NECK" if FIX or not starter else "STARTER BARS"} {name}  {W}x{H}  t={t}  ON  {f["name"]}', 2000, 27900, ST['name'], 'S-AXIS-TXT')
+    if FIX:
+        s1.text(f'NO={no}   ' + ('' if NOP else f'T.O.F {tof:+.2f}   ') + f'VERTICAL BARS: FOOT {dv["W"]["foot"]} + {dv["W"]["vert"]} FIXED (AS THE COLUMN NECKS) - HORIZONTAL BARS / LINKS / STIRRUPS OVER {mm(Hn)} ABOVE T.O.F', 2000, 27100, ST['sub'], 'S-SEC', maxw=18500)
+    else:
+        s1.text(f'NO={no}   T.O.F {tof:+.2f}   ' + ('WALL STARTS AT THE FOOTING (T.O.F = T.O.SLAB): STARTER BARS, NO NECK' if starter else f'T.O.GB {tgb:+.2f}   NECK H = {mm(Hn)}'), 2000, 27100, ST['sub'], 'S-SEC')
+    s1.text(f'FOOTING {f["name"]}  h={f["h"]}   ' + (f'(CORE DETAIL: {ct.get("detail", "")})' if FIX else '(SCHEDULE: SHEAR WALLS SCHEDULE - FROM FOUNDATION TO UPPER ROOF)'), 2000, 26400, ST['sub'], 'S-SEC', maxw=18000)
+    k = min(4.0, 15500 / W, 18500 / H); ox, oy = 3200, 25200 - H * k   # wide cores scaled down: the plan stays left of the bar details (x 22300)
     P = lambda x, y: (ox + x * k, oy + y * k)
     outl = [(0, 0), (W, 0), (W, H), (W - R, H), (W - R, H - t), (W - t, H - t), (W - t, t), (t, t), (t, H - t), (R, H - t), (R, H), (0, H)]
     s1.pline([P(*p) for p in outl], 'S-GB-CONC', 0, True)
@@ -144,8 +160,9 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     U_((c_, c_), (W - c_, c_), (0, 1)); U_((c_ + o_, t - c_), (W - c_ - o_, t - c_), (0, -1))            # back wall
     U_((c_, c_ + o_), (c_, H - c_), (1, 0)); U_((t - c_, c_), (t - c_, H - c_ - o_), (-1, 0))            # left wall
     U_((W - c_, c_ + o_), (W - c_, H - c_), (-1, 0)); U_((W - t + c_, c_), (W - t + c_, H - c_ - o_), (1, 0))  # right wall
-    U_((c_ + o_, H - c_), (R - c_, H - c_), (0, -1)); U_((c_, H - t + c_), (R - c_ - o_, H - t + c_), (0, 1))  # left return
-    U_((W - R + c_, H - c_), (W - c_ - o_, H - c_), (0, -1)); U_((W - R + c_ + o_, H - t + c_), (W - c_, H - t + c_), (0, 1))  # right return
+    if R > t:
+        U_((c_ + o_, H - c_), (R - c_, H - c_), (0, -1)); U_((c_, H - t + c_), (R - c_ - o_, H - t + c_), (0, 1))  # left return
+        U_((W - R + c_, H - c_), (W - c_ - o_, H - c_), (0, -1)); U_((W - R + c_ + o_, H - t + c_), (W - c_, H - t + c_), (0, 1))  # right return
     for x, y, d, kd in V:
         hh = s1.m.add_hatch(color=7, dxfattribs={'layer': 'S-RFT-TOP'})
         hh.paths.add_edge_path().add_arc(s1.P(*P(x, y)), d / 2 * k, 0, 360)
@@ -171,30 +188,32 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     s1.dim(P(0, H), P(R, H), (P(0, H)[0], P(0, H)[1] + 700), text=str(R))
     s1.dim(P(R, H), P(W - R, H), (P(R, H)[0], P(0, H)[1] + 700), text=str(W - 2 * R))
     s1.dim(P(W - R, H), P(W, H), (P(W - R, H)[0], P(0, H)[1] + 700), text=str(R))
+    s1.dim(P(W - t, H / 2), P(W, H / 2), (P(W, 0)[0], P(0, H / 2)[1] + 400), text=str(t))
+    s1.dim(P(W / 2, 0), P(W / 2, t), (P(W / 2, 0)[0] + 500, P(0, 0)[1]), angle=90, text=str(t))
     s1.dim(P(0, H / 2), P(t, H / 2), (P(0, 0)[0], P(0, H / 2)[1] + 400), text=str(t))
-    s1.text('DOOR / OPENING', *P(W / 2, H - t / 2), 220, 'S-SEC', align=TA.MIDDLE_CENTER)
+    s1.text('OPEN SIDE' if R <= t else 'DOOR / OPENING', *P(W / 2, H - t / 2), 220, 'S-SEC', align=TA.MIDDLE_CENTER)
     # call-outs (right of the plan) with leaders
     cx = P(W, 0)[0] + 1800; cy = P(0, H)[1] - 200
     vc, vw = dv['C'], dv['W']
     ew_ = CC + dh + ct['web'][0] / 2
-    items = [(vc['mk'], callout(vc['n'], vc['d'], vc['mk'], vc['L'], layer='V') + f"  STARTERS ({ct['corner'][0]} PER CORNER + {ct['end'][0]} PER RETURN END)",
+    items = [(vc['mk'], callout(vc['n'], vc['d'], vc['mk'], vc['L'], layer='V') + (f"  BOUNDARY BARS ({ct.get('corner_n', 8)} PER BASE CORNER + 8 PER FREE END, STIRRUPS T{ct['ctie'][0]}@{ct['ctie'][1]})" if FIX else f"  STARTERS ({ct['corner'][0]} PER CORNER + {ct['end'][0]} PER RETURN END)"),
               (W - CC - dh - ct['corner'][1] / 2, H - CC - dh - ct['corner'][1] / 2)),
              ] + ([] if starter else [(vc['mkn'], callout(vc['n'], vc['d'], vc['mkn'], vc['Ln'], layer='V') + '  NECK BARS (BOUNDARY)', (CC + dh + ct['corner'][1] / 2, H - CC - dh - ct['corner'][1] / 2)),
                                     (vw['mkn'], callout(vw['n'], vw['d'], vw['mkn'], vw['Ln'], ct['web'][1], 'V') + '  NECK BARS EACH FACE', (ew_, H * 0.5))]) + [
-             (mt, callout(4 * n_ct, dt, mt, 4 * tw + 2 * HOOK, stt, 'TIE') + '  4 CORNERS', (W - t / 2, H - t + CC + dh)),
+             (mt, callout(4 * n_ct, dt, mt, 4 * tw + 2 * HOOK, stt, 'TIE') + ('  STIRRUPS: 2 BASE CORNERS + 2 FREE ENDS' if FIX else '  4 CORNERS'), (W - t / 2, H - t + CC + dh)),
              (hu['SIDE WALL']['mk'], callout(hu['SIDE WALL']['n'], dh, hu['SIDE WALL']['mk'], hu['SIDE WALL']['L'], sh_, 'H') + '  U-BARS SIDE WALLS (2 PER WALL)', (W - CC - dh / 2, H * 0.72)),
-             (vw['mk'], callout(vw['n'], vw['d'], vw['mk'], vw['L'], ct['web'][1], 'V') + '  STARTERS EACH FACE',
+             (vw['mk'], callout(vw['n'], vw['d'], vw['mk'], vw['L'], ct['web'][1], 'V') + ('  VL. BARS EACH FACE' if FIX else '  STARTERS EACH FACE'),
               min((v for v in V if v[3] == 'W' and abs(v[0] - (W - ew_)) < 1), key=lambda v: abs(v[1] - H * 0.6))[:2]),
              ] + ([(ml, callout(len(links) * rows_l, dl, ml, lw + 2 * HOOK, sl, 'LINK') + f'  ({len(links)} PER ROW, {rows_l} ROWS)', (W - t / 2, H * 0.45))] if ml else []) + [
-             (hu['BACK WALL']['mk'], callout(hu['BACK WALL']['n'], dh, hu['BACK WALL']['mk'], hu['BACK WALL']['L'], sh_, 'H') + '  U-BARS BACK WALL (2)', (W * 0.6, CC + dh / 2)),
-             (hu['RETURN']['mk'], callout(hu['RETURN']['n'], dh, hu['RETURN']['mk'], hu['RETURN']['L'], sh_, 'H') + '  U-BARS RETURNS (2 PER RETURN)', (W - R / 2, H - CC - dh / 2))]
+             (hu['BACK WALL']['mk'], callout(hu['BACK WALL']['n'], dh, hu['BACK WALL']['mk'], hu['BACK WALL']['L'], sh_, 'H') + '  U-BARS BACK WALL (2)', (W * 0.6, CC + dh / 2))] + (
+             [(hu['RETURN']['mk'], callout(hu['RETURN']['n'], dh, hu['RETURN']['mk'], hu['RETURN']['L'], sh_, 'H') + '  U-BARS RETURNS (2 PER RETURN)', (W - R / 2, H - CC - dh / 2))] if 'RETURN' in hu else [])
     for i, (mk, txt, at) in enumerate(items):
         y = cy - i * 800
         s1.ctext(mk, txt, cx, y, ST['call'] * 0.85, maxw=12500)
         a_ = P(*at)
         s1.pline([a_, (P(W, 0)[0] + 500, a_[1]), (cx - 80, y + 100)], 'S-DIM')
         s1.circle(*a_, 30, 'S-DIM')
-    s1.text(f'PLAN SECTION  {name}  1:25   (COVER {CC}; VERTICAL BARS INSIDE THE HORIZONTAL BARS)', P(W / 2, 0)[0], P(0, 0)[1] - 1700,
+    s1.text(f'PLAN SECTION  {name}  1:{round(100 / k)}   (COVER {CC}; VERTICAL BARS INSIDE THE HORIZONTAL BARS)', P(W / 2, 0)[0], P(0, 0)[1] - 1700,
             ST['panel'], 'S-SEC', align=TA.TOP_CENTER)
     # horizontal bar / link / tie details (out-to-out lengths)
     def bar_detail(pth, L, mk, x0, y0, kk, title):
@@ -235,8 +254,8 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     meta = dict(meta0); meta['title'] = f'CORE NECKS - {name} ON {f["name"]}\nSECTION + BAR DETAILS'
     meta['dwg'] = f"{meta['prefix']}-{name.replace(' ', '')}-{f['name']}-2"
     s2 = Sheet(doc, 0, -(idx + 1) * 32000, meta)
-    draw_legend(s2, 21000, 27900)
-    s2.text(f'{"STARTER BARS" if starter else "NECK"} {name}  ON  {f["name"]}  - SECTION THROUGH THE WALL', 2000, 27900, ST['name'] * 0.8, 'S-AXIS-TXT')
+    if not PRJ.get('no_legend'): draw_legend(s2, 21000, 27900)
+    s2.text(f'{"NECK" if FIX or not starter else "STARTER BARS"} {name}  ON  {f["name"]}  - SECTION THROUGH THE WALL', 2000, 27900, ST['name'] * 0.8, 'S-AXIS-TXT')
     top = f['h'] + Hn
     lpv = vw['lp']
     k2 = next(kk_ for kk_ in (4.0, 10 / 3, 2.5, 2.0, 1.6) if kk_ * (f['h'] + Hn + vc['lp'] + 900) <= 20500)
@@ -274,20 +293,22 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
     # levels, dims
     XD = t + 3300
     if not starter: s2.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 450, f['h']), angle=90, text=str(Hn))
-    s2.dim(Q(XD, top), Q(XD, top + lpv), Q(XD + 450, top), angle=90, text=f'LAP {lpv}')
+    if FIX: s2.dim(Q(XD, f['h']), Q(XD, top), Q(XD + 450, f['h']), angle=90, text=str(Hn))
+    else: s2.dim(Q(XD, top), Q(XD, top + lpv), Q(XD + 450, top), angle=90, text=f'LAP {lpv}')
     if not starter: s2.dim(Q(-450, f['h']), Q(-450, f['h'] + lpv), Q(-850, f['h']), angle=90, text=f'LAP {lpv}')
     s2.dim(Q(xo - 160, yb), Q(xo - 160, f['h']), Q(fx0 + 400, yb), angle=90, text=str(emb))
     s2.dim(Q(xi, yb + vw['d']), Q(xi + vw['foot'], yb + vw['d']), Q(xi, yb + 260), text=str(vw['foot']))
-    for yy_, lab in ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"),
-                     (f['h'], f"T.O.F = T.O.SLAB {tof:+.2f}" if starter else f"T.O.F {tof:+.2f}")) + (() if starter else ((top, f"T.O.GB {tgb:+.2f}"),)):
+    LV = (((-100, 'F.L (B.O.PC) - LEVELS: ' + PRJ.get('levels_rfi', 'RFI')), (0, 'T.O.PC'), (f['h'], 'T.O.F')) if NOP else ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F {tof:+.2f}"))) + ((top, f"BAR TOP (FOOT {vw['foot']} + {vw['vert']} FIXED)"),) if FIX else \
+         ((-100, f"F.L (B.O.PC) {fl:+.2f}"), (0, f"T.O.PC {tpc:+.2f}"), (f['h'], f"T.O.F = T.O.SLAB {tof:+.2f}" if starter else f"T.O.F {tof:+.2f}")) + (() if starter else ((top, f"T.O.GB {tgb:+.2f}"),))
+    for yy_, lab in LV:
         xl_ = Q(fx0, 0)[0]
         s2.line((xl_ - 3600, Q(0, yy_)[1]), (xl_ - 150, Q(0, yy_)[1]), 'S-DIM'); s2.text(lab, xl_ - 3600, Q(0, yy_)[1] + 50, 170, 'S-DIM')
     s2.text(f"Ld = {emb} + {vw['foot']} = {emb + vw['foot']} >= {LDN}d = {vw['LD']}  (T{vw['d']});  "
             f"T{vc['d']}: {emb} + {vc['foot']} = {emb + vc['foot']} >= {vc['LD']}", Q(fx0, 0)[0] - 3600, Q(0, -100)[1] - 900, ST['note'], 'S-DIM')
-    s2.text('FEET TURNED INTO THE CORE, ON THE BOTTOM MESH', Q(fx0, 0)[0] - 3600, Q(0, -100)[1] - 1250, ST['note'], 'S-DIM')
+    s2.text('FEET ON THE BOTTOM MESH, TURNED INTO THE CORE' + (' - ONE BAR PER POSITION (NO LAP IN THE NECK), AS THE COLUMN NECKS' if FIX else ''), Q(fx0, 0)[0] - 3600, Q(0, -100)[1] - 1250, ST['note'], 'S-DIM')
     if not starter:
         s2.ctext(vw['mkn'], callout(vw['n'], vw['d'], vw['mkn'], vw['Ln'], ct['web'][1], 'V') + '  NECK BARS', Q(t + 300, 0)[0], Q(0, top + lpv * 0.5)[1], ST['call'] * 0.85)
-    s2.ctext(vw['mk'], callout(vw['n'], vw['d'], vw['mk'], vw['L'], ct['web'][1], 'V') + '  STARTERS', Q(t + 300, 0)[0],
+    s2.ctext(vw['mk'], callout(vw['n'], vw['d'], vw['mk'], vw['L'], ct['web'][1], 'V') + ('  VL. BARS' if FIX else '  STARTERS'), Q(t + 300, 0)[0],
              Q(0, f['h'] + lpv * 0.5)[1] if not starter else Q(0, top + lpv * 0.5)[1], ST['call'] * 0.85)
     us = hu['SIDE WALL']
     s2.ctext(us['mk'], callout(us['n'], dh, us['mk'], us['L'], sh_, 'H') + '  U-BARS', Q(t + 300, 0)[0], Q(0, f['h'] + Hn * 0.55)[1], ST['call'] * 0.85)
@@ -303,7 +324,7 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
         s2.pline([B_(fx_, 0), B_(0, 0), B_(0, v['vert'])], 'S-RFT-TOP', max(v['d'] * kb, 30), r=3 * v['d'] * kb)
         s2.text(str(v['foot']), *B_(fx_ / 2, -100 / kb), ST['len'], 'S-DIM', align=TA.TOP_CENTER)
         s2.text(str(v['vert']), *B_(-150 / kb, v['vert'] / 2), ST['len'], 'S-DIM', rot=90, align=TA.BOTTOM_CENTER)
-        for yy_, tt in ((emb, f'T.O.F ({emb} IN FOOTING)'), (emb + v['lp'] / 2, f"LAP {v['lp']}")):
+        for yy_, tt in (((emb, f'T.O.F ({emb} IN FOOTING)'),) if FIX else ((emb, f'T.O.F ({emb} IN FOOTING)'), (emb + v['lp'] / 2, f"LAP {v['lp']}"))):
             s2.line(B_(-60 / kb, yy_), B_(350 / kb, yy_), 'S-DIM'); s2.text(tt, B_(400 / kb, 0)[0], B_(0, yy_)[1] - 60, ST['note'], 'S-DIM')
         if not starter:                                              # the neck bar beside it, from T.O.F
             nx_ = bx0 + 3400
@@ -315,12 +336,13 @@ def draw_pair(doc, idx, name, ct, f, no, bl, meta0):
             s2.ctext(v['mkn'], callout(v['n'], v['d'], v['mkn'], v['Ln'], layer='V'), nx_, by0 + (emb + v['Ln']) * kb + 300, ST['call'] * 0.75)
         s2.ctext(v['mk'], callout(v['n'], v['d'], v['mk'], v['L'], layer='V'), bx0, by0 + v['vert'] * kb + 700, ST['call'] * 0.75)
         s2.text(f"L = {v['foot']} + {v['vert']} = {v['L']}", bx0, by0 + v['vert'] * kb + 300, ST['note'], 'S-RFT-TXT')
-        s2.text(ttl + ('' if starter else ': STARTER + NECK BAR'), bx0, by0 - 900, ST['panel'] * 0.7, 'S-SEC', maxw=6400)
+        s2.text(ttl.replace('RETURN ENDS', 'FREE ENDS') + ('' if starter else ': STARTER + NECK BAR'), bx0, by0 - 900, ST['panel'] * 0.7, 'S-SEC', maxw=6400)
         s2.text(f"Ld = {emb} + {v['foot']} = {emb + v['foot']} >= {LDN}d = {v['LD']}", bx0, by0 - 1300, ST['note'], 'S-DIM')
     return Hn, dv
 
 
 def main():
+    import os
     types = PRJ['core_types']; pairs = PRJ['core_pairs']
     lib = json.load(open('footings.json'))
     import os
@@ -329,7 +351,7 @@ def main():
     meta0 = dict(client='', project='', consultant='', contractor='', ref='', author='', checker='', approver='',
                  rev='00', rev_desc='ISSUED FOR APPROVAL', date='', scale='1:25', prefix='SDW-STR-NCK')
     meta0.update(PRJ.get('meta', {})); meta0['scale'] = '1:25'
-    meta0['notes'] = project_notes(f'COVER CORE WALLS {CC}.', 'VERTICAL BARS: STARTERS (Ld IN THE FOOTING, FEET INTO THE CORE) + NECK BARS TO T.O.GB + LAP 65d.')
+    meta0['notes'] = project_notes(f'COVER CORE WALLS {CC}.', 'VERTICAL BARS: ONE BAR PER POSITION, FOOT ON THE BOTTOM MESH + FIXED VERTICAL (AS THE COLUMN NECKS).' if PRJ.get('neck_fixed_vert') else 'VERTICAL BARS: STARTERS (Ld IN THE FOOTING, FEET INTO THE CORE) + NECK BARS TO T.O.GB + LAP 65d.')
     idx = 0
     for nm, fn, no in pairs:
         f = dict(lib[fn]); f.setdefault('name', fn)
@@ -338,7 +360,7 @@ def main():
         idx += 2
     meta = dict(meta0); meta['title'] = 'CORE NECKS'; meta['dwg'] = 'SDW-STR-NCK-CORES'
     nb = draw_bbs(doc, idx, bl.sorted(), meta)
-    doc.saveas('out/CORE_NECKS.dxf'); print('sheets', idx, '+ BBS', nb)
+    doc.saveas(os.environ.get('CORE_OUT', 'out/CORE_NECKS.dxf')); print('sheets', idx, '+ BBS', nb)
 
 
 if __name__ == '__main__':
